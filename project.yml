@@ -1,0 +1,57 @@
+name: RemuxV2
+options:
+  bundleIdPrefix: dev.remux.v2
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.app
+    PRODUCT_NAME: RemuxV2
+    SWIFT_VERSION: 6.0
+    IPHONEOS_DEPLOYMENT_TARGET: 18.0
+    TARGETED_DEVICE_FAMILY: 1
+    SUPPORTS_MACCATALYST: NO
+    "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+    OTHER_LDFLAGS:
+      - -lc++
+packages:
+  Citadel:
+    url: https://github.com/orlandos-nl/Citadel.git
+    exactVersion: 0.12.1
+targets:
+  RemuxV2:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: RemuxV2App/Sources
+    dependencies:
+      - framework: ../ghostty-remux-track3/macos/GhosttyKit.xcframework
+        embed: false
+      - package: Citadel
+    info:
+      path: RemuxV2App/Info.plist
+      properties:
+        CFBundleDisplayName: Remux V2
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+  RemuxV2Tests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: RemuxV2AppTests
+    dependencies:
+      - target: RemuxV2
+      - framework: ../ghostty-remux-track3/macos/GhosttyKit.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.appTests
+        PRODUCT_NAME: RemuxV2Tests
+        PRODUCT_MODULE_NAME: RemuxV2Tests
+        GENERATE_INFOPLIST_FILE: YES

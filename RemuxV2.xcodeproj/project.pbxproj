@@ -1,0 +1,632 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0F5060F4E7020B09AA382A60 /* DebugConnectionProfileSeederTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02B12E11EF09FA9C26380D83 /* DebugConnectionProfileSeederTests.swift */; };
+		1374C5C1DE723AEC546EF3D7 /* TmuxConnectionTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10737967F1A200C0750F3D9 /* TmuxConnectionTarget.swift */; };
+		17C3E7DD2BC6486C0E429A28 /* GhosttyKitRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA85F128DBF20EB1200B3FA8 /* GhosttyKitRuntime.swift */; };
+		1BDF3BB2CFE5D976300F92C2 /* RemuxV2App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DE9AFE5A064EB80CEAE07CA /* RemuxV2App.swift */; };
+		1FF1D18A9A1F7879E76BDE50 /* GhosttySurfaceTreeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0061912FC44EB91AB1A29C /* GhosttySurfaceTreeModel.swift */; };
+		20A8DA9E6D7B7F1EAAF6FC3B /* GhosttySurfaceTreeModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84879EEDF23067C328BC48F6 /* GhosttySurfaceTreeModelTests.swift */; };
+		23EB635D76A43C9B14C522A8 /* GhosttyKitControlSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98CFCD04D4512EC13C8CA6F5 /* GhosttyKitControlSurfaceTests.swift */; };
+		3132157B2624CF14A7CC89C1 /* DeterministicTmuxControlTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E408350765BA497AF27E34A4 /* DeterministicTmuxControlTransport.swift */; };
+		32D8B6863F084EB75C669C70 /* GhosttyKitControlSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DE073DD611FE2DCFA372FB /* GhosttyKitControlSurface.swift */; };
+		348E3F54541C78D826407824 /* RemuxV2SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AC2D048112DD34C2535801A /* RemuxV2SmokeTests.swift */; };
+		46AB566E5FE20B0A9870948B /* DebugConnectionProfileSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 817FDD4BEB6464048799A5A4 /* DebugConnectionProfileSeeder.swift */; };
+		4ACAC813C195A9AAED1696FC /* GhosttySurfaceTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D85C4CD144018B1A6F19FB /* GhosttySurfaceTreeView.swift */; };
+		4CE8CA7CFF32FD650B4BB331 /* SSHTmuxControlTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4432D556677AE39DFEE7FFAB /* SSHTmuxControlTransportTests.swift */; };
+		5ACFF1E79614C6FF62A4821B /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41E02C354D0A66DB9BBAC7D2 /* RootView.swift */; };
+		614A980BBEFAE16F14837ED0 /* GhosttySurfaceScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48694C93DC09A2911401103F /* GhosttySurfaceScreen.swift */; };
+		65D8BE172BA63D100D254EB3 /* RemuxRootModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 231B77B425C48FE9E9F40B6C /* RemuxRootModel.swift */; };
+		69339533904C776DF7D87FF1 /* TrustedHostStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF4524FB120EAF9C5FE0417 /* TrustedHostStore.swift */; };
+		6E3E994F16DDD14D0243CE58 /* TmuxConnectionDraftValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05F48AC73F901DB106E6C01C /* TmuxConnectionDraftValidatorTests.swift */; };
+		744AE7C46F2B7BFABD13B5FE /* GhosttyKitRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB15A47F01E5E01A3C97AF82 /* GhosttyKitRuntimeTests.swift */; };
+		817FFD50DAA9E55B2041B66F /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 40AA12A9CFF27C8A2EE740ED /* GhosttyKit.xcframework */; };
+		8C36119E7B50C0156665AC77 /* SSHTmuxControlTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25A5F8B3F6F2AA99BC525D80 /* SSHTmuxControlTransport.swift */; };
+		93CC81D18FF605C503C3BF83 /* ApplicationStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9493DB626B1C1661E681CFD /* ApplicationStorage.swift */; };
+		94F67FB1A6A504DC8F1E3588 /* JSONFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9035AB97835701A81F4FBE71 /* JSONFileStore.swift */; };
+		9CE992E64B3616CB8811BBD9 /* GhosttySurfaceScreenModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5C84159B5274C0F6598D0D0 /* GhosttySurfaceScreenModel.swift */; };
+		9D85793E68C6E00BCC47D768 /* KeychainPasswordStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B29F8D9D72366599627C13 /* KeychainPasswordStore.swift */; };
+		A0B932FAA41E9006795EE777 /* ConnectionProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7E94FDA6CA3C2B969F45D0 /* ConnectionProfileRepository.swift */; };
+		A4A1E94BD85017D39A25DB9A /* GhosttyControlHostSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725A21DEE2B5F75D277EB875 /* GhosttyControlHostSurfaceTests.swift */; };
+		AAD5EA0D8FF9A4F53853495C /* Citadel in Frameworks */ = {isa = PBXBuildFile; productRef = 01EAAE0273ACDE747CF91DE5 /* Citadel */; };
+		BEE6DE691ED8D5F30AA5289A /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 40AA12A9CFF27C8A2EE740ED /* GhosttyKit.xcframework */; };
+		C5303E7FB7A038493A16AD5C /* RemuxAppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D5982E4C03BB4206C1EC1D /* RemuxAppDependencies.swift */; };
+		C5CB8B039968D74A790A4FB5 /* GhosttySurfaceScreenModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 644F54738FC3E671DF24BFB6 /* GhosttySurfaceScreenModelTests.swift */; };
+		CF1C7F9C03EC20D7F4A105E7 /* ConnectionProfileRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE274C87CA588842934B7C7F /* ConnectionProfileRepositoryTests.swift */; };
+		D27F84497DF9FAE4EBA177E0 /* GhosttyRuntimeSurfaceRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0295094F40F1467AEF5109A8 /* GhosttyRuntimeSurfaceRegistry.swift */; };
+		EC5DBB8A8B8824D943732BCA /* GhosttyControlHostSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DDE8129B6C36343743DAC34 /* GhosttyControlHostSurface.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		607EC46C7A702E0F87ADA7B6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F71D0DEBE83F93BD999F8CE5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F98DFF6057EE67138721D8F0;
+			remoteInfo = RemuxV2;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0295094F40F1467AEF5109A8 /* GhosttyRuntimeSurfaceRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceRegistry.swift; sourceTree = "<group>"; };
+		02B12E11EF09FA9C26380D83 /* DebugConnectionProfileSeederTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConnectionProfileSeederTests.swift; sourceTree = "<group>"; };
+		05F48AC73F901DB106E6C01C /* TmuxConnectionDraftValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxConnectionDraftValidatorTests.swift; sourceTree = "<group>"; };
+		0DE9AFE5A064EB80CEAE07CA /* RemuxV2App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxV2App.swift; sourceTree = "<group>"; };
+		16B29F8D9D72366599627C13 /* KeychainPasswordStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainPasswordStore.swift; sourceTree = "<group>"; };
+		231B77B425C48FE9E9F40B6C /* RemuxRootModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxRootModel.swift; sourceTree = "<group>"; };
+		25A5F8B3F6F2AA99BC525D80 /* SSHTmuxControlTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlTransport.swift; sourceTree = "<group>"; };
+		27D85C4CD144018B1A6F19FB /* GhosttySurfaceTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceTreeView.swift; sourceTree = "<group>"; };
+		39D5982E4C03BB4206C1EC1D /* RemuxAppDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxAppDependencies.swift; sourceTree = "<group>"; };
+		3AC2D048112DD34C2535801A /* RemuxV2SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxV2SmokeTests.swift; sourceTree = "<group>"; };
+		40AA12A9CFF27C8A2EE740ED /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = "../ghostty-remux-track3/macos/GhosttyKit.xcframework"; sourceTree = "<group>"; };
+		41E02C354D0A66DB9BBAC7D2 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		4432D556677AE39DFEE7FFAB /* SSHTmuxControlTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlTransportTests.swift; sourceTree = "<group>"; };
+		48694C93DC09A2911401103F /* GhosttySurfaceScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceScreen.swift; sourceTree = "<group>"; };
+		5A07D24C09B950C23E8AD29A /* RemuxV2Tests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = RemuxV2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		644F54738FC3E671DF24BFB6 /* GhosttySurfaceScreenModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceScreenModelTests.swift; sourceTree = "<group>"; };
+		6BF4524FB120EAF9C5FE0417 /* TrustedHostStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedHostStore.swift; sourceTree = "<group>"; };
+		725A21DEE2B5F75D277EB875 /* GhosttyControlHostSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyControlHostSurfaceTests.swift; sourceTree = "<group>"; };
+		7C7E94FDA6CA3C2B969F45D0 /* ConnectionProfileRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionProfileRepository.swift; sourceTree = "<group>"; };
+		7DDE8129B6C36343743DAC34 /* GhosttyControlHostSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyControlHostSurface.swift; sourceTree = "<group>"; };
+		817FDD4BEB6464048799A5A4 /* DebugConnectionProfileSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConnectionProfileSeeder.swift; sourceTree = "<group>"; };
+		84879EEDF23067C328BC48F6 /* GhosttySurfaceTreeModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceTreeModelTests.swift; sourceTree = "<group>"; };
+		849F7F39754D25C0F22EBD0E /* RemuxV2.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RemuxV2.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9035AB97835701A81F4FBE71 /* JSONFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONFileStore.swift; sourceTree = "<group>"; };
+		98CFCD04D4512EC13C8CA6F5 /* GhosttyKitControlSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKitControlSurfaceTests.swift; sourceTree = "<group>"; };
+		99DE073DD611FE2DCFA372FB /* GhosttyKitControlSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKitControlSurface.swift; sourceTree = "<group>"; };
+		B10737967F1A200C0750F3D9 /* TmuxConnectionTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxConnectionTarget.swift; sourceTree = "<group>"; };
+		B9493DB626B1C1661E681CFD /* ApplicationStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationStorage.swift; sourceTree = "<group>"; };
+		CE274C87CA588842934B7C7F /* ConnectionProfileRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionProfileRepositoryTests.swift; sourceTree = "<group>"; };
+		E408350765BA497AF27E34A4 /* DeterministicTmuxControlTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeterministicTmuxControlTransport.swift; sourceTree = "<group>"; };
+		E5C84159B5274C0F6598D0D0 /* GhosttySurfaceScreenModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceScreenModel.swift; sourceTree = "<group>"; };
+		FA85F128DBF20EB1200B3FA8 /* GhosttyKitRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKitRuntime.swift; sourceTree = "<group>"; };
+		FB15A47F01E5E01A3C97AF82 /* GhosttyKitRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKitRuntimeTests.swift; sourceTree = "<group>"; };
+		FE0061912FC44EB91AB1A29C /* GhosttySurfaceTreeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceTreeModel.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		41426B5001C02EA391137013 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BEE6DE691ED8D5F30AA5289A /* GhosttyKit.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F6EB0DC0D2FDC3BCBDAC7D01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				817FFD50DAA9E55B2041B66F /* GhosttyKit.xcframework in Frameworks */,
+				AAD5EA0D8FF9A4F53853495C /* Citadel in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		202324FEAF2AF1351E6498F6 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				817FDD4BEB6464048799A5A4 /* DebugConnectionProfileSeeder.swift */,
+				39D5982E4C03BB4206C1EC1D /* RemuxAppDependencies.swift */,
+				231B77B425C48FE9E9F40B6C /* RemuxRootModel.swift */,
+				0DE9AFE5A064EB80CEAE07CA /* RemuxV2App.swift */,
+				41E02C354D0A66DB9BBAC7D2 /* RootView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		2368648125C1E60188451233 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				202324FEAF2AF1351E6498F6 /* App */,
+				434DE5AC607482FC9000C4E1 /* Domain */,
+				BCD1788CFB502166B2C0C893 /* Ghostty */,
+				32C4A3E33862DC40C37455C4 /* Persistence */,
+				90CF56472D81AFFD42974B1F /* Tmux */,
+			);
+			name = Sources;
+			path = RemuxV2App/Sources;
+			sourceTree = "<group>";
+		};
+		32C4A3E33862DC40C37455C4 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				B9493DB626B1C1661E681CFD /* ApplicationStorage.swift */,
+				7C7E94FDA6CA3C2B969F45D0 /* ConnectionProfileRepository.swift */,
+				9035AB97835701A81F4FBE71 /* JSONFileStore.swift */,
+				16B29F8D9D72366599627C13 /* KeychainPasswordStore.swift */,
+				6BF4524FB120EAF9C5FE0417 /* TrustedHostStore.swift */,
+			);
+			path = Persistence;
+			sourceTree = "<group>";
+		};
+		372F2C966150BB219DF8C093 /* RemuxV2AppTests */ = {
+			isa = PBXGroup;
+			children = (
+				CE274C87CA588842934B7C7F /* ConnectionProfileRepositoryTests.swift */,
+				02B12E11EF09FA9C26380D83 /* DebugConnectionProfileSeederTests.swift */,
+				725A21DEE2B5F75D277EB875 /* GhosttyControlHostSurfaceTests.swift */,
+				98CFCD04D4512EC13C8CA6F5 /* GhosttyKitControlSurfaceTests.swift */,
+				FB15A47F01E5E01A3C97AF82 /* GhosttyKitRuntimeTests.swift */,
+				644F54738FC3E671DF24BFB6 /* GhosttySurfaceScreenModelTests.swift */,
+				84879EEDF23067C328BC48F6 /* GhosttySurfaceTreeModelTests.swift */,
+				3AC2D048112DD34C2535801A /* RemuxV2SmokeTests.swift */,
+				4432D556677AE39DFEE7FFAB /* SSHTmuxControlTransportTests.swift */,
+				05F48AC73F901DB106E6C01C /* TmuxConnectionDraftValidatorTests.swift */,
+			);
+			path = RemuxV2AppTests;
+			sourceTree = "<group>";
+		};
+		434DE5AC607482FC9000C4E1 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				B10737967F1A200C0750F3D9 /* TmuxConnectionTarget.swift */,
+			);
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		73B57B978E90643071BC1A2E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				849F7F39754D25C0F22EBD0E /* RemuxV2.app */,
+				5A07D24C09B950C23E8AD29A /* RemuxV2Tests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		90CF56472D81AFFD42974B1F /* Tmux */ = {
+			isa = PBXGroup;
+			children = (
+				E408350765BA497AF27E34A4 /* DeterministicTmuxControlTransport.swift */,
+				7DDE8129B6C36343743DAC34 /* GhosttyControlHostSurface.swift */,
+				25A5F8B3F6F2AA99BC525D80 /* SSHTmuxControlTransport.swift */,
+			);
+			path = Tmux;
+			sourceTree = "<group>";
+		};
+		92B438F290E15BA2500D7FD0 = {
+			isa = PBXGroup;
+			children = (
+				372F2C966150BB219DF8C093 /* RemuxV2AppTests */,
+				2368648125C1E60188451233 /* Sources */,
+				F1C1780B365E6FCB7D2D468B /* Frameworks */,
+				73B57B978E90643071BC1A2E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		BCD1788CFB502166B2C0C893 /* Ghostty */ = {
+			isa = PBXGroup;
+			children = (
+				99DE073DD611FE2DCFA372FB /* GhosttyKitControlSurface.swift */,
+				FA85F128DBF20EB1200B3FA8 /* GhosttyKitRuntime.swift */,
+				0295094F40F1467AEF5109A8 /* GhosttyRuntimeSurfaceRegistry.swift */,
+				48694C93DC09A2911401103F /* GhosttySurfaceScreen.swift */,
+				E5C84159B5274C0F6598D0D0 /* GhosttySurfaceScreenModel.swift */,
+				FE0061912FC44EB91AB1A29C /* GhosttySurfaceTreeModel.swift */,
+				27D85C4CD144018B1A6F19FB /* GhosttySurfaceTreeView.swift */,
+			);
+			path = Ghostty;
+			sourceTree = "<group>";
+		};
+		F1C1780B365E6FCB7D2D468B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				40AA12A9CFF27C8A2EE740ED /* GhosttyKit.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CBB5BD9F4D9BEBAEC6F0DA69 /* RemuxV2Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F4F2215768813C57FD5AF7B /* Build configuration list for PBXNativeTarget "RemuxV2Tests" */;
+			buildPhases = (
+				E9F85072720003168C521370 /* Sources */,
+				41426B5001C02EA391137013 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0C2319314A4040ECE9751158 /* PBXTargetDependency */,
+			);
+			name = RemuxV2Tests;
+			packageProductDependencies = (
+			);
+			productName = RemuxV2Tests;
+			productReference = 5A07D24C09B950C23E8AD29A /* RemuxV2Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F98DFF6057EE67138721D8F0 /* RemuxV2 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D5AC72D092D12203A8B3F22 /* Build configuration list for PBXNativeTarget "RemuxV2" */;
+			buildPhases = (
+				232631D8A4B754AE6C508F74 /* Sources */,
+				F6EB0DC0D2FDC3BCBDAC7D01 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RemuxV2;
+			packageProductDependencies = (
+				01EAAE0273ACDE747CF91DE5 /* Citadel */,
+			);
+			productName = RemuxV2;
+			productReference = 849F7F39754D25C0F22EBD0E /* RemuxV2.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F71D0DEBE83F93BD999F8CE5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 0EB2BDBBF89CECD5BB045044 /* Build configuration list for PBXProject "RemuxV2" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 92B438F290E15BA2500D7FD0;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				426E9B6A1E1EEAA42C033DCC /* XCRemoteSwiftPackageReference "Citadel" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 73B57B978E90643071BC1A2E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F98DFF6057EE67138721D8F0 /* RemuxV2 */,
+				CBB5BD9F4D9BEBAEC6F0DA69 /* RemuxV2Tests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		232631D8A4B754AE6C508F74 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				93CC81D18FF605C503C3BF83 /* ApplicationStorage.swift in Sources */,
+				A0B932FAA41E9006795EE777 /* ConnectionProfileRepository.swift in Sources */,
+				46AB566E5FE20B0A9870948B /* DebugConnectionProfileSeeder.swift in Sources */,
+				3132157B2624CF14A7CC89C1 /* DeterministicTmuxControlTransport.swift in Sources */,
+				EC5DBB8A8B8824D943732BCA /* GhosttyControlHostSurface.swift in Sources */,
+				32D8B6863F084EB75C669C70 /* GhosttyKitControlSurface.swift in Sources */,
+				17C3E7DD2BC6486C0E429A28 /* GhosttyKitRuntime.swift in Sources */,
+				D27F84497DF9FAE4EBA177E0 /* GhosttyRuntimeSurfaceRegistry.swift in Sources */,
+				614A980BBEFAE16F14837ED0 /* GhosttySurfaceScreen.swift in Sources */,
+				9CE992E64B3616CB8811BBD9 /* GhosttySurfaceScreenModel.swift in Sources */,
+				1FF1D18A9A1F7879E76BDE50 /* GhosttySurfaceTreeModel.swift in Sources */,
+				4ACAC813C195A9AAED1696FC /* GhosttySurfaceTreeView.swift in Sources */,
+				94F67FB1A6A504DC8F1E3588 /* JSONFileStore.swift in Sources */,
+				9D85793E68C6E00BCC47D768 /* KeychainPasswordStore.swift in Sources */,
+				C5303E7FB7A038493A16AD5C /* RemuxAppDependencies.swift in Sources */,
+				65D8BE172BA63D100D254EB3 /* RemuxRootModel.swift in Sources */,
+				1BDF3BB2CFE5D976300F92C2 /* RemuxV2App.swift in Sources */,
+				5ACFF1E79614C6FF62A4821B /* RootView.swift in Sources */,
+				8C36119E7B50C0156665AC77 /* SSHTmuxControlTransport.swift in Sources */,
+				1374C5C1DE723AEC546EF3D7 /* TmuxConnectionTarget.swift in Sources */,
+				69339533904C776DF7D87FF1 /* TrustedHostStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E9F85072720003168C521370 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CF1C7F9C03EC20D7F4A105E7 /* ConnectionProfileRepositoryTests.swift in Sources */,
+				0F5060F4E7020B09AA382A60 /* DebugConnectionProfileSeederTests.swift in Sources */,
+				A4A1E94BD85017D39A25DB9A /* GhosttyControlHostSurfaceTests.swift in Sources */,
+				23EB635D76A43C9B14C522A8 /* GhosttyKitControlSurfaceTests.swift in Sources */,
+				744AE7C46F2B7BFABD13B5FE /* GhosttyKitRuntimeTests.swift in Sources */,
+				C5CB8B039968D74A790A4FB5 /* GhosttySurfaceScreenModelTests.swift in Sources */,
+				20A8DA9E6D7B7F1EAAF6FC3B /* GhosttySurfaceTreeModelTests.swift in Sources */,
+				348E3F54541C78D826407824 /* RemuxV2SmokeTests.swift in Sources */,
+				4CE8CA7CFF32FD650B4BB331 /* SSHTmuxControlTransportTests.swift in Sources */,
+				6E3E994F16DDD14D0243CE58 /* TmuxConnectionDraftValidatorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0C2319314A4040ECE9751158 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F98DFF6057EE67138721D8F0 /* RemuxV2 */;
+			targetProxy = 607EC46C7A702E0F87ADA7B6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		191352228434F58B6DEE2F1D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"../ghostty-remux-track3/macos\"",
+				);
+				INFOPLIST_FILE = RemuxV2App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		2F2366F491070DE42180CBA5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.app;
+				PRODUCT_NAME = RemuxV2;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		3C0F889E19BB4BFA1057EF95 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				OTHER_LDFLAGS = (
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.app;
+				PRODUCT_NAME = RemuxV2;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		4FC6A60E5C56BBD770BA4A78 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"../ghostty-remux-track3/macos\"",
+				);
+				INFOPLIST_FILE = RemuxV2App/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		66AFDA2312C9BEC6DBD48A32 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"../ghostty-remux-track3/macos\"",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.appTests;
+				PRODUCT_MODULE_NAME = RemuxV2Tests;
+				PRODUCT_NAME = RemuxV2Tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RemuxV2.app/RemuxV2";
+			};
+			name = Debug;
+		};
+		6A1A590F836AB1E5CC07F3B4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"../ghostty-remux-track3/macos\"",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.appTests;
+				PRODUCT_MODULE_NAME = RemuxV2Tests;
+				PRODUCT_NAME = RemuxV2Tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RemuxV2.app/RemuxV2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0EB2BDBBF89CECD5BB045044 /* Build configuration list for PBXProject "RemuxV2" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2F2366F491070DE42180CBA5 /* Debug */,
+				3C0F889E19BB4BFA1057EF95 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		2F4F2215768813C57FD5AF7B /* Build configuration list for PBXNativeTarget "RemuxV2Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				66AFDA2312C9BEC6DBD48A32 /* Debug */,
+				6A1A590F836AB1E5CC07F3B4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4D5AC72D092D12203A8B3F22 /* Build configuration list for PBXNativeTarget "RemuxV2" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				191352228434F58B6DEE2F1D /* Debug */,
+				4FC6A60E5C56BBD770BA4A78 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		426E9B6A1E1EEAA42C033DCC /* XCRemoteSwiftPackageReference "Citadel" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/orlandos-nl/Citadel.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.12.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		01EAAE0273ACDE747CF91DE5 /* Citadel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 426E9B6A1E1EEAA42C033DCC /* XCRemoteSwiftPackageReference "Citadel" */;
+			productName = Citadel;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F71D0DEBE83F93BD999F8CE5 /* Project object */;
+}
