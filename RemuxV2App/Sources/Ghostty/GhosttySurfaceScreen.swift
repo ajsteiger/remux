@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GhosttySurfaceScreen: View {
     @StateObject private var model: GhosttySurfaceScreenModel
+    @State private var modifierState = GhosttyModifierState()
     @State private var pendingInput = ""
     @State private var terminalInputActivationToken = 0
 
@@ -62,9 +63,10 @@ struct GhosttySurfaceScreen: View {
                             .background(Color.black)
 
                         GhosttyTerminalResponderRepresentable(
-                            model: model,
                             isEnabled: model.state == .running && registry.selectedTopLevel?.resolvedFocusedLeafID != nil,
-                            activationToken: terminalInputActivationToken
+                            activationToken: terminalInputActivationToken,
+                            sendText: sendTerminalText,
+                            sendKeyEvent: sendTerminalKeyEvent
                         )
                         .frame(width: 1, height: 1)
                         .opacity(0.01)
@@ -84,6 +86,8 @@ struct GhosttySurfaceScreen: View {
                 GhosttyPaneInputBar(
                     text: $pendingInput,
                     isEnabled: model.state == .running && registry.selectedTopLevel != nil,
+                    isControlArmed: modifierState.isControlArmed,
+                    onToggleControl: toggleControlModifier,
                     quickActions: GhosttyTerminalQuickAction.allCases,
                     onQuickAction: performQuickAction,
                     onSubmit: submitInput
@@ -101,7 +105,7 @@ struct GhosttySurfaceScreen: View {
     private func submitInput() {
         let input = pendingInput
         guard !input.isEmpty else { return }
-        guard model.sendInputToFocusedSurface(input + "\r") else { return }
+        guard sendTerminalText(input + "\r") else { return }
         pendingInput = ""
     }
 
@@ -109,11 +113,28 @@ struct GhosttySurfaceScreen: View {
         terminalInputActivationToken += 1
     }
 
+    private func toggleControlModifier() {
+        modifierState.toggleControl()
+        if modifierState.isControlArmed {
+            activateTerminalInput()
+        }
+    }
+
+    private func sendTerminalText(_ text: String) -> Bool {
+        let outbound = modifierState.apply(to: text)
+        return model.sendInputToFocusedSurface(outbound)
+    }
+
+    private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        let outbound = modifierState.apply(to: event)
+        return model.sendKeyEventToFocusedSurface(outbound)
+    }
+
     private func performQuickAction(_ action: GhosttyTerminalQuickAction) {
         _ = action.perform(
             activateKeyboard: activateTerminalInput,
-            sendText: model.sendInputToFocusedSurface,
-            sendKey: model.sendKeyEventToFocusedSurface
+            sendText: sendTerminalText,
+            sendKey: sendTerminalKeyEvent
         )
     }
 }
@@ -122,6 +143,8 @@ private struct GhosttyPaneInputBar: View {
     @Binding var text: String
 
     let isEnabled: Bool
+    let isControlArmed: Bool
+    let onToggleControl: () -> Void
     let quickActions: [GhosttyTerminalQuickAction]
     let onQuickAction: (GhosttyTerminalQuickAction) -> Void
     let onSubmit: () -> Void
@@ -130,6 +153,19 @@ private struct GhosttyPaneInputBar: View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    Button("Ctrl") {
+                        onToggleControl()
+                    }
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(isControlArmed ? .black : Color.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isControlArmed ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white.opacity(0.08))
+                    )
+                    .disabled(!isEnabled)
+
                     ForEach(quickActions) { action in
                         Button(action.title) {
                             onQuickAction(action)

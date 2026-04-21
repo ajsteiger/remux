@@ -2,9 +2,10 @@ import SwiftUI
 import UIKit
 
 struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
-    @ObservedObject var model: GhosttySurfaceScreenModel
     let isEnabled: Bool
     let activationToken: Int
+    let sendText: (String) -> Bool
+    let sendKeyEvent: (GhosttySurfaceKeyEvent) -> Bool
 
     func makeUIView(context: Context) -> GhosttyTerminalResponderUIView {
         GhosttyTerminalResponderUIView()
@@ -14,8 +15,8 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
         uiView.update(
             isEnabled: isEnabled,
             activationToken: activationToken,
-            sendText: { model.sendInputToFocusedSurface(Self.normalizeTerminalInput($0)) },
-            sendKeyEvent: { model.sendKeyEventToFocusedSurface($0) }
+            sendText: { sendText(Self.normalizeTerminalInput($0)) },
+            sendKeyEvent: sendKeyEvent
         )
     }
 
