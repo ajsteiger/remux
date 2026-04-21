@@ -66,6 +66,39 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     }
 
     @MainActor
+    func isMouseCaptured() -> Bool {
+        ghostty_surface_mouse_captured(storage.surface)
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMouseButton(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
+        event.withCValues {
+            ghostty_surface_mouse_button(storage.surface, $0, $1, $2)
+        }
+    }
+
+    @MainActor
+    func sendMousePosition(_ position: CGPoint, mods: GhosttySurfaceKeyEvent.Mods = []) {
+        ghostty_surface_mouse_pos(
+            storage.surface,
+            position.x,
+            position.y,
+            ghostty_input_mods_e(mods.rawValue)
+        )
+    }
+
+    @MainActor
+    func sendMouseScroll(_ event: GhosttySurfaceMouseScrollEvent) {
+        ghostty_surface_mouse_scroll(
+            storage.surface,
+            event.deltaX,
+            event.deltaY,
+            ghostty_input_scroll_mods_t(event.mods.rawValue)
+        )
+    }
+
+    @MainActor
     func updateDisplay(size: CGSize, scale: CGFloat) {
         let safeScale = max(Double(scale), 1)
         let width = max(UInt32(size.width * scale), 1)
