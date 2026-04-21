@@ -66,6 +66,21 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
     private var topLevel: GhosttyTopLevelSurface?
     private var onSurfaceInteraction: (() -> Void)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
+    private lazy var panRecognizer: UIPanGestureRecognizer = {
+        let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
+        recognizer.maximumNumberOfTouches = 1
+        return recognizer
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        addGestureRecognizer(panRecognizer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     func update(
         topLevel: GhosttyTopLevelSurface?,
@@ -199,6 +214,24 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
         registry.selectSurface(surfaceID)
         onSurfaceInteraction?()
         setNeedsLayout()
+    }
+
+    @objc
+    private func handleSurfacePan(_ recognizer: UIPanGestureRecognizer) {
+        guard
+            let registry,
+            recognizer.state == .changed
+        else {
+            return
+        }
+
+        let translation = recognizer.translation(in: self)
+        guard let event = GhosttySurfaceScrollGesture.event(forTranslation: translation) else {
+            return
+        }
+
+        _ = registry.sendMouseScrollToFocusedSurface(event)
+        recognizer.setTranslation(.zero, in: self)
     }
 
     private var effectiveScale: CGFloat {
