@@ -13,6 +13,7 @@
 		1BDF3BB2CFE5D976300F92C2 /* RemuxV2App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DE9AFE5A064EB80CEAE07CA /* RemuxV2App.swift */; };
 		1FF1D18A9A1F7879E76BDE50 /* GhosttySurfaceTreeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0061912FC44EB91AB1A29C /* GhosttySurfaceTreeModel.swift */; };
 		20A8DA9E6D7B7F1EAAF6FC3B /* GhosttySurfaceTreeModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84879EEDF23067C328BC48F6 /* GhosttySurfaceTreeModelTests.swift */; };
+		223489E52DFBECF651EE90F9 /* GhosttyTerminalQuickAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA78B8BE55F285D180BCAD9C /* GhosttyTerminalQuickAction.swift */; };
 		23EB635D76A43C9B14C522A8 /* GhosttyKitControlSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98CFCD04D4512EC13C8CA6F5 /* GhosttyKitControlSurfaceTests.swift */; };
 		3132157B2624CF14A7CC89C1 /* DeterministicTmuxControlTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E408350765BA497AF27E34A4 /* DeterministicTmuxControlTransport.swift */; };
 		32D8B6863F084EB75C669C70 /* GhosttyKitControlSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99DE073DD611FE2DCFA372FB /* GhosttyKitControlSurface.swift */; };
@@ -45,6 +46,7 @@
 		CF1C7F9C03EC20D7F4A105E7 /* ConnectionProfileRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE274C87CA588842934B7C7F /* ConnectionProfileRepositoryTests.swift */; };
 		D27F84497DF9FAE4EBA177E0 /* GhosttyRuntimeSurfaceRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0295094F40F1467AEF5109A8 /* GhosttyRuntimeSurfaceRegistry.swift */; };
 		EC5DBB8A8B8824D943732BCA /* GhosttyControlHostSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DDE8129B6C36343743DAC34 /* GhosttyControlHostSurface.swift */; };
+		F88CD7C9F8DDC99E64128734 /* GhosttyTerminalQuickActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F2A5A9FD21117F83EA444B /* GhosttyTerminalQuickActionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,6 +85,7 @@
 		817FDD4BEB6464048799A5A4 /* DebugConnectionProfileSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConnectionProfileSeeder.swift; sourceTree = "<group>"; };
 		84879EEDF23067C328BC48F6 /* GhosttySurfaceTreeModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceTreeModelTests.swift; sourceTree = "<group>"; };
 		849F7F39754D25C0F22EBD0E /* RemuxV2.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RemuxV2.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		88F2A5A9FD21117F83EA444B /* GhosttyTerminalQuickActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalQuickActionTests.swift; sourceTree = "<group>"; };
 		8ADAF2C1C0E8974A8C9E3DC3 /* GhosttySurfaceKeyEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceKeyEvent.swift; sourceTree = "<group>"; };
 		9035AB97835701A81F4FBE71 /* JSONFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONFileStore.swift; sourceTree = "<group>"; };
 		98CFCD04D4512EC13C8CA6F5 /* GhosttyKitControlSurfaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKitControlSurfaceTests.swift; sourceTree = "<group>"; };
@@ -90,6 +93,7 @@
 		B10737967F1A200C0750F3D9 /* TmuxConnectionTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxConnectionTarget.swift; sourceTree = "<group>"; };
 		B479547BF840F8555FF2240D /* GhosttyTerminalResponderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalResponderView.swift; sourceTree = "<group>"; };
 		B9493DB626B1C1661E681CFD /* ApplicationStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationStorage.swift; sourceTree = "<group>"; };
+		CA78B8BE55F285D180BCAD9C /* GhosttyTerminalQuickAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalQuickAction.swift; sourceTree = "<group>"; };
 		CE274C87CA588842934B7C7F /* ConnectionProfileRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionProfileRepositoryTests.swift; sourceTree = "<group>"; };
 		E408350765BA497AF27E34A4 /* DeterministicTmuxControlTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeterministicTmuxControlTransport.swift; sourceTree = "<group>"; };
 		E5C84159B5274C0F6598D0D0 /* GhosttySurfaceScreenModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceScreenModel.swift; sourceTree = "<group>"; };
@@ -167,6 +171,7 @@
 				2603EE7F2B9AA64884829DCF /* GhosttySurfaceKeyEventTests.swift */,
 				644F54738FC3E671DF24BFB6 /* GhosttySurfaceScreenModelTests.swift */,
 				84879EEDF23067C328BC48F6 /* GhosttySurfaceTreeModelTests.swift */,
+				88F2A5A9FD21117F83EA444B /* GhosttyTerminalQuickActionTests.swift */,
 				71728CF4516E0B362963FB46 /* GhosttyTerminalResponderViewTests.swift */,
 				3AC2D048112DD34C2535801A /* RemuxV2SmokeTests.swift */,
 				4432D556677AE39DFEE7FFAB /* SSHTmuxControlTransportTests.swift */,
@@ -223,6 +228,7 @@
 				E5C84159B5274C0F6598D0D0 /* GhosttySurfaceScreenModel.swift */,
 				FE0061912FC44EB91AB1A29C /* GhosttySurfaceTreeModel.swift */,
 				27D85C4CD144018B1A6F19FB /* GhosttySurfaceTreeView.swift */,
+				CA78B8BE55F285D180BCAD9C /* GhosttyTerminalQuickAction.swift */,
 				B479547BF840F8555FF2240D /* GhosttyTerminalResponderView.swift */,
 			);
 			path = Ghostty;
@@ -329,6 +335,7 @@
 				9CE992E64B3616CB8811BBD9 /* GhosttySurfaceScreenModel.swift in Sources */,
 				1FF1D18A9A1F7879E76BDE50 /* GhosttySurfaceTreeModel.swift in Sources */,
 				4ACAC813C195A9AAED1696FC /* GhosttySurfaceTreeView.swift in Sources */,
+				223489E52DFBECF651EE90F9 /* GhosttyTerminalQuickAction.swift in Sources */,
 				467CABFB6959DCF0DF3AB217 /* GhosttyTerminalResponderView.swift in Sources */,
 				94F67FB1A6A504DC8F1E3588 /* JSONFileStore.swift in Sources */,
 				9D85793E68C6E00BCC47D768 /* KeychainPasswordStore.swift in Sources */,
@@ -354,6 +361,7 @@
 				574272C731DDC6451B62FD10 /* GhosttySurfaceKeyEventTests.swift in Sources */,
 				C5CB8B039968D74A790A4FB5 /* GhosttySurfaceScreenModelTests.swift in Sources */,
 				20A8DA9E6D7B7F1EAAF6FC3B /* GhosttySurfaceTreeModelTests.swift in Sources */,
+				F88CD7C9F8DDC99E64128734 /* GhosttyTerminalQuickActionTests.swift in Sources */,
 				5AC004490938EFAF217F11D5 /* GhosttyTerminalResponderViewTests.swift in Sources */,
 				348E3F54541C78D826407824 /* RemuxV2SmokeTests.swift in Sources */,
 				4CE8CA7CFF32FD650B4BB331 /* SSHTmuxControlTransportTests.swift in Sources */,

@@ -84,6 +84,8 @@ struct GhosttySurfaceScreen: View {
                 GhosttyPaneInputBar(
                     text: $pendingInput,
                     isEnabled: model.state == .running && registry.selectedTopLevel != nil,
+                    quickActions: GhosttyTerminalQuickAction.allCases,
+                    onQuickAction: performQuickAction,
                     onSubmit: submitInput
                 )
                 .padding(.horizontal, 12)
@@ -106,37 +108,68 @@ struct GhosttySurfaceScreen: View {
     private func activateTerminalInput() {
         terminalInputActivationToken += 1
     }
+
+    private func performQuickAction(_ action: GhosttyTerminalQuickAction) {
+        _ = action.perform(
+            activateKeyboard: activateTerminalInput,
+            sendText: model.sendInputToFocusedSurface,
+            sendKey: model.sendKeyEventToFocusedSurface
+        )
+    }
 }
 
 private struct GhosttyPaneInputBar: View {
     @Binding var text: String
 
     let isEnabled: Bool
+    let quickActions: [GhosttyTerminalQuickAction]
+    let onQuickAction: (GhosttyTerminalQuickAction) -> Void
     let onSubmit: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            TextField("Send to focused tmux pane", text: $text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.system(size: 15, weight: .regular, design: .monospaced))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .submitLabel(.send)
-                .disabled(!isEnabled)
-                .onSubmit(onSubmit)
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(quickActions) { action in
+                        Button(action.title) {
+                            onQuickAction(action)
+                        }
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(action == .interrupt ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.white.opacity(0.08))
+                        )
+                        .disabled(!isEnabled)
+                    }
+                }
+            }
 
-            Button("Send", action: onSubmit)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(.black)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(isEnabled ? Color.white : Color.white.opacity(0.35))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .disabled(!isEnabled)
+            HStack(spacing: 10) {
+                TextField("Send to focused tmux pane", text: $text)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 15, weight: .regular, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .submitLabel(.send)
+                    .disabled(!isEnabled)
+                    .onSubmit(onSubmit)
+
+                Button("Send", action: onSubmit)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(isEnabled ? Color.white : Color.white.opacity(0.35))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .disabled(!isEnabled)
+            }
         }
     }
 }
