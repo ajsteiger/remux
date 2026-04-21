@@ -139,6 +139,57 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "key dropped: no focused tmux pane")
     }
 
+    func testMouseButtonRoutesToFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var received: [GhosttySurfaceMouseButtonEvent] = []
+        let surface = Self.managedSurface(sendMouseButton: {
+            received.append($0)
+            return true
+        })
+
+        registry.registerManagedSurfaceForTesting(surface)
+
+        let event = GhosttySurfaceMouseButtonEvent(state: .press, button: .left)
+        XCTAssertTrue(registry.sendMouseButtonToFocusedSurface(event))
+        XCTAssertEqual(received, [event])
+    }
+
+    func testMouseScrollWithoutFocusedSurfaceIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertFalse(
+            registry.sendMouseScrollToFocusedSurface(
+                GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+            )
+        )
+        XCTAssertTrue(registry.debugSummary.contains("mouse scroll dropped"))
+    }
+
+    func testModelMousePositionWithoutFocusedSurfaceUpdatesDebugStatus() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+
+        XCTAssertFalse(model.sendMousePositionToFocusedSurface(CGPoint(x: 10, y: 20)))
+        XCTAssertEqual(model.debugStatus, "mouse position dropped: no focused tmux pane")
+    }
+
+    func testFocusedSurfaceMouseCapturedReflectsManagedSurfaceState() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let uncaptured = Self.managedSurface(isMouseCaptured: { false })
+        let captured = Self.managedSurface(isMouseCaptured: { true })
+
+        registry.registerManagedSurfaceForTesting(uncaptured)
+        registry.registerManagedSurfaceForTesting(captured)
+
+        XCTAssertTrue(registry.focusedSurfaceMouseCaptured())
+
+        registry.selectSurface(captured.id)
+        XCTAssertTrue(registry.focusedSurfaceMouseCaptured())
+    }
+
     func testDebugPaneInputSmokeIsDisabledWithoutConfiguredText() {
         XCTAssertNil(DebugPaneInputSmokeCommand(nil))
         XCTAssertNil(DebugPaneInputSmokeCommand(""))
@@ -204,7 +255,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     private static func managedSurface(
         sendInput: (@MainActor (String) -> Bool)? = nil,
-        sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil
+        sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
+        sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
+        sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
+        sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
+        isMouseCaptured: (@MainActor () -> Bool)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: UUID(),
@@ -214,7 +269,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 ownsSurface: false
             ),
             sendInput: sendInput,
-            sendKeyEvent: sendKeyEvent
+            sendKeyEvent: sendKeyEvent,
+            sendMouseButton: sendMouseButton,
+            sendMousePosition: sendMousePosition,
+            sendMouseScroll: sendMouseScroll,
+            isMouseCaptured: isMouseCaptured
         )
     }
 }

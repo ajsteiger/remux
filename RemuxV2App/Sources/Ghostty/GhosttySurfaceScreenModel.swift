@@ -167,6 +167,43 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return accepted
     }
 
+    @discardableResult
+    func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
+        let accepted = surfaceRegistry.sendMouseButtonToFocusedSurface(event)
+        if !accepted {
+            debugStatus = "mouse button dropped: no focused tmux pane"
+        }
+
+        return accepted
+    }
+
+    @discardableResult
+    func sendMousePositionToFocusedSurface(
+        _ position: CGPoint,
+        mods: GhosttySurfaceKeyEvent.Mods = []
+    ) -> Bool {
+        let accepted = surfaceRegistry.sendMousePositionToFocusedSurface(position, mods: mods)
+        if !accepted {
+            debugStatus = "mouse position dropped: no focused tmux pane"
+        }
+
+        return accepted
+    }
+
+    @discardableResult
+    func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> Bool {
+        let accepted = surfaceRegistry.sendMouseScrollToFocusedSurface(event)
+        if !accepted {
+            debugStatus = "mouse scroll dropped: no focused tmux pane"
+        }
+
+        return accepted
+    }
+
+    func focusedSurfaceMouseCaptured() -> Bool {
+        surfaceRegistry.focusedSurfaceMouseCaptured()
+    }
+
     private func startTransportWhenSurfaceIsSized(
         _ transport: any TmuxControlTransport,
         surface: GhosttyKitControlSurface

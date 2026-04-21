@@ -107,6 +107,73 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         return true
     }
 
+    @MainActor
+    @discardableResult
+    func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
+        guard
+            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = managedSurfaces[surfaceID]
+        else {
+            updateDebugSummary("mouse button dropped: no focused surface")
+            return false
+        }
+
+        guard surface.sendMouseButton(event) else {
+            updateDebugSummary("mouse button rejected by focused surface")
+            return false
+        }
+
+        updateDebugSummary("sent mouse button")
+        return true
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMousePositionToFocusedSurface(
+        _ position: CGPoint,
+        mods: GhosttySurfaceKeyEvent.Mods = []
+    ) -> Bool {
+        guard
+            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = managedSurfaces[surfaceID]
+        else {
+            updateDebugSummary("mouse position dropped: no focused surface")
+            return false
+        }
+
+        surface.sendMousePosition(position, mods: mods)
+        updateDebugSummary("sent mouse position")
+        return true
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> Bool {
+        guard
+            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = managedSurfaces[surfaceID]
+        else {
+            updateDebugSummary("mouse scroll dropped: no focused surface")
+            return false
+        }
+
+        surface.sendMouseScroll(event)
+        updateDebugSummary("sent mouse scroll")
+        return true
+    }
+
+    @MainActor
+    func focusedSurfaceMouseCaptured() -> Bool {
+        guard
+            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = managedSurfaces[surfaceID]
+        else {
+            return false
+        }
+
+        return surface.isMouseCaptured()
+    }
+
     func runtimeCreateSurface(
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_s
@@ -421,19 +488,31 @@ final class GhosttyManagedSurface {
     let controlSurface: GhosttyKitControlSurface
     private let sendInputHandler: (@MainActor (String) -> Bool)?
     private let sendKeyEventHandler: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)?
+    private let sendMouseButtonHandler: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)?
+    private let sendMousePositionHandler: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)?
+    private let sendMouseScrollHandler: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)?
+    private let isMouseCapturedHandler: (@MainActor () -> Bool)?
 
     init(
         id: UUID,
         view: GhosttyKitSurfaceView,
         controlSurface: GhosttyKitControlSurface,
         sendInput: (@MainActor (String) -> Bool)? = nil,
-        sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil
+        sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
+        sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
+        sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
+        sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
+        isMouseCaptured: (@MainActor () -> Bool)? = nil
     ) {
         self.id = id
         self.view = view
         self.controlSurface = controlSurface
         self.sendInputHandler = sendInput
         self.sendKeyEventHandler = sendKeyEvent
+        self.sendMouseButtonHandler = sendMouseButton
+        self.sendMousePositionHandler = sendMousePosition
+        self.sendMouseScrollHandler = sendMouseScroll
+        self.isMouseCapturedHandler = isMouseCaptured
     }
 
     @MainActor
@@ -454,6 +533,48 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.sendKeyEvent(event)
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMouseButton(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
+        if let sendMouseButtonHandler {
+            return sendMouseButtonHandler(event)
+        }
+
+        return controlSurface.sendMouseButton(event)
+    }
+
+    @MainActor
+    func sendMousePosition(
+        _ position: CGPoint,
+        mods: GhosttySurfaceKeyEvent.Mods = []
+    ) {
+        if let sendMousePositionHandler {
+            sendMousePositionHandler(position, mods)
+            return
+        }
+
+        controlSurface.sendMousePosition(position, mods: mods)
+    }
+
+    @MainActor
+    func sendMouseScroll(_ event: GhosttySurfaceMouseScrollEvent) {
+        if let sendMouseScrollHandler {
+            sendMouseScrollHandler(event)
+            return
+        }
+
+        controlSurface.sendMouseScroll(event)
+    }
+
+    @MainActor
+    func isMouseCaptured() -> Bool {
+        if let isMouseCapturedHandler {
+            return isMouseCapturedHandler()
+        }
+
+        return controlSurface.isMouseCaptured()
     }
 }
 
