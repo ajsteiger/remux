@@ -169,6 +169,7 @@ enum GhosttyTerminalHardwareCommandMapping {
         .init(input: UIKeyCommand.inputLeftArrow, modifiers: [], action: .keyEvent(.init(keyCode: .arrowLeft))),
         .init(input: UIKeyCommand.inputRightArrow, modifiers: [], action: .keyEvent(.init(keyCode: .arrowRight))),
         .init(input: UIKeyCommand.inputEscape, modifiers: [], action: .keyEvent(.init(keyCode: .escape))),
+        .init(input: UIKeyCommand.inputDelete, modifiers: [], action: .keyEvent(.init(keyCode: .backspace))),
         .init(input: "\t", modifiers: [], action: .keyEvent(.init(keyCode: .tab))),
         .init(input: "c", modifiers: .control, action: .text("\u{03}")),
         .init(input: "d", modifiers: .control, action: .text("\u{04}")),

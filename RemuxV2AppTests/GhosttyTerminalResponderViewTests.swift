@@ -57,6 +57,16 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
     }
 
+    func testHardwareCommandMappingResolvesInputDeleteToBackspace() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolve(
+                input: UIKeyCommand.inputDelete,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .backspace))
+        )
+    }
+
     func testHardwareCommandMappingResolvesBackspaceHIDUsage() {
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
