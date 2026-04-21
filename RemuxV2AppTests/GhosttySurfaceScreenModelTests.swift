@@ -128,6 +128,17 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("key rejected"))
     }
 
+    func testModelKeyEventWithoutFocusedSurfaceUpdatesDebugStatus() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+
+        XCTAssertFalse(model.sendKeyEventToFocusedSurface(.init(keyCode: .escape)))
+        XCTAssertEqual(model.debugStatus, "key dropped: no focused tmux pane")
+    }
+
     func testDebugPaneInputSmokeIsDisabledWithoutConfiguredText() {
         XCTAssertNil(DebugPaneInputSmokeCommand(nil))
         XCTAssertNil(DebugPaneInputSmokeCommand(""))

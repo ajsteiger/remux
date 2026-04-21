@@ -2,6 +2,7 @@ import SwiftUI
 
 struct GhosttyRuntimePaneTreeView: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
+    let onSurfaceInteraction: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 10) {
@@ -11,6 +12,7 @@ struct GhosttyRuntimePaneTreeView: View {
                         ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
                             Button("Window \(index + 1)") {
                                 registry.selectTopLevel(topLevel.id)
+                                onSurfaceInteraction?()
                             }
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundStyle(topLevel.id == registry.selectedTopLevel?.id ? Color.black : Color.white)
@@ -29,7 +31,8 @@ struct GhosttyRuntimePaneTreeView: View {
 
             GhosttySurfaceTreeContainerRepresentable(
                 registry: registry,
-                topLevel: registry.selectedTopLevel
+                topLevel: registry.selectedTopLevel,
+                onSurfaceInteraction: onSurfaceInteraction
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -40,6 +43,7 @@ struct GhosttyRuntimePaneTreeView: View {
 private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     let topLevel: GhosttyTopLevelSurface?
+    let onSurfaceInteraction: (() -> Void)?
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
@@ -51,7 +55,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: GhosttySurfaceTreeContainerUIView, context: Context) {
         uiView.update(
             topLevel: topLevel,
-            registry: registry
+            registry: registry,
+            onSurfaceInteraction: onSurfaceInteraction
         )
     }
 }
@@ -59,14 +64,17 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 private final class GhosttySurfaceTreeContainerUIView: UIView {
     private weak var registry: GhosttyRuntimeSurfaceRegistry?
     private var topLevel: GhosttyTopLevelSurface?
+    private var onSurfaceInteraction: (() -> Void)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
 
     func update(
         topLevel: GhosttyTopLevelSurface?,
-        registry: GhosttyRuntimeSurfaceRegistry
+        registry: GhosttyRuntimeSurfaceRegistry,
+        onSurfaceInteraction: (() -> Void)?
     ) {
         self.topLevel = topLevel
         self.registry = registry
+        self.onSurfaceInteraction = onSurfaceInteraction
         syncAttachedViews()
         setNeedsLayout()
     }
@@ -189,6 +197,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
 
         guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
         registry.selectSurface(surfaceID)
+        onSurfaceInteraction?()
         setNeedsLayout()
     }
 

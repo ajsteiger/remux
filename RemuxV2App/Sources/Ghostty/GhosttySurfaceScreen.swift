@@ -3,6 +3,7 @@ import SwiftUI
 struct GhosttySurfaceScreen: View {
     @StateObject private var model: GhosttySurfaceScreenModel
     @State private var pendingInput = ""
+    @State private var terminalInputActivationToken = 0
 
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
@@ -53,9 +54,21 @@ struct GhosttySurfaceScreen: View {
                             .opacity(0.001)
                             .allowsHitTesting(false)
 
-                        GhosttyRuntimePaneTreeView(registry: registry)
+                        GhosttyRuntimePaneTreeView(
+                            registry: registry,
+                            onSurfaceInteraction: activateTerminalInput
+                        )
                             .id(model.surfaceRegistryRevision)
                             .background(Color.black)
+
+                        GhosttyTerminalResponderRepresentable(
+                            model: model,
+                            isEnabled: model.state == .running && registry.selectedTopLevel?.resolvedFocusedLeafID != nil,
+                            activationToken: terminalInputActivationToken
+                        )
+                        .frame(width: 1, height: 1)
+                        .opacity(0.01)
+                        .allowsHitTesting(false)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay(alignment: .topLeading) {
@@ -88,6 +101,10 @@ struct GhosttySurfaceScreen: View {
         guard !input.isEmpty else { return }
         guard model.sendInputToFocusedSurface(input + "\r") else { return }
         pendingInput = ""
+    }
+
+    private func activateTerminalInput() {
+        terminalInputActivationToken += 1
     }
 }
 
@@ -154,6 +171,7 @@ private struct GhosttySurfaceStatusOverlay: View {
                 .background(Color.black.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .padding(10)
+
             }
 
         case .failed(let message):

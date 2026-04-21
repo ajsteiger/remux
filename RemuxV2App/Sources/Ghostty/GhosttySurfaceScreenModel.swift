@@ -157,6 +157,16 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return accepted
     }
 
+    @discardableResult
+    func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        let accepted = surfaceRegistry.sendKeyEventToFocusedSurface(event)
+        if !accepted {
+            debugStatus = "key dropped: no focused tmux pane"
+        }
+
+        return accepted
+    }
+
     private func startTransportWhenSurfaceIsSized(
         _ transport: any TmuxControlTransport,
         surface: GhosttyKitControlSurface
