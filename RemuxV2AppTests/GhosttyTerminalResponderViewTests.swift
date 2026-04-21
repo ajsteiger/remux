@@ -57,6 +57,45 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
     }
 
+    func testHardwareCommandMappingResolvesBackspaceHIDUsage() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardDeleteOrBackspace,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .backspace))
+        )
+    }
+
+    func testHardwareCommandMappingResolvesForwardDeleteHIDUsage() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardDeleteForward,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .delete))
+        )
+    }
+
+    func testHardwareCommandMappingPreservesHIDModifiers() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardLeftArrow,
+                modifiers: [.shift, .control]
+            ),
+            .keyEvent(.init(keyCode: .arrowLeft, mods: [.shift, .ctrl]))
+        )
+    }
+
+    func testHardwareCommandMappingRejectsUnmappedHIDUsage() {
+        XCTAssertNil(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardA,
+                modifiers: []
+            )
+        )
+    }
+
     func testHardwareCommandMappingResolvesCtrlCToText() {
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolve(

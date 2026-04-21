@@ -98,6 +98,33 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         _ = sendTextHandler?(text)
     }
 
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard isInputEnabled else {
+            super.pressesBegan(presses, with: event)
+            return
+        }
+
+        var unhandledPresses = Set<UIPress>()
+        for press in presses {
+            guard
+                let key = press.key,
+                let action = GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                    keyCode: key.keyCode,
+                    modifiers: key.modifierFlags
+                )
+            else {
+                unhandledPresses.insert(press)
+                continue
+            }
+
+            handleHardwareCommandAction(action)
+        }
+
+        if !unhandledPresses.isEmpty {
+            super.pressesBegan(unhandledPresses, with: event)
+        }
+    }
+
     @objc
     private func handleKeyCommand(_ command: UIKeyCommand) {
         guard
@@ -111,6 +138,10 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             return
         }
 
+        handleHardwareCommandAction(action)
+    }
+
+    private func handleHardwareCommandAction(_ action: GhosttyTerminalHardwareCommandAction) {
         switch action {
         case .keyEvent(let event):
             _ = sendKeyEventHandler?(event)
@@ -145,11 +176,41 @@ enum GhosttyTerminalHardwareCommandMapping {
         .init(input: "z", modifiers: .control, action: .text("\u{1A}")),
     ]
 
+    private static let hardwareKeyCodes: [UIKeyboardHIDUsage: GhosttySurfaceKeyEvent.KeyCode] = [
+        .keyboardDeleteOrBackspace: .backspace,
+        .keyboardDeleteForward: .delete,
+        .keyboardReturnOrEnter: .enter,
+        .keyboardTab: .tab,
+        .keyboardEscape: .escape,
+        .keyboardUpArrow: .arrowUp,
+        .keyboardDownArrow: .arrowDown,
+        .keyboardLeftArrow: .arrowLeft,
+        .keyboardRightArrow: .arrowRight,
+        .keyboardHome: .home,
+        .keyboardEnd: .end,
+        .keyboardPageUp: .pageUp,
+        .keyboardPageDown: .pageDown,
+    ]
+
     static func resolve(
         input: String,
         modifiers: UIKeyModifierFlags
     ) -> GhosttyTerminalHardwareCommandAction? {
         mappings.first(where: { $0.input == input && $0.modifiers == modifiers })?.action
+    }
+
+    static func resolveHardwareKey(
+        keyCode: UIKeyboardHIDUsage,
+        modifiers: UIKeyModifierFlags
+    ) -> GhosttyTerminalHardwareCommandAction? {
+        guard let mappedKeyCode = hardwareKeyCodes[keyCode] else { return nil }
+
+        return .keyEvent(
+            .init(
+                keyCode: mappedKeyCode,
+                mods: ghosttyModifiers(from: modifiers)
+            )
+        )
     }
 
     @MainActor
@@ -166,5 +227,17 @@ enum GhosttyTerminalHardwareCommandMapping {
             command.wantsPriorityOverSystemBehavior = true
             return command
         }
+    }
+
+    private static func ghosttyModifiers(from modifiers: UIKeyModifierFlags) -> GhosttySurfaceKeyEvent.Mods {
+        var result: GhosttySurfaceKeyEvent.Mods = []
+
+        if modifiers.contains(.shift) { result.insert(.shift) }
+        if modifiers.contains(.control) { result.insert(.ctrl) }
+        if modifiers.contains(.alternate) { result.insert(.alt) }
+        if modifiers.contains(.command) { result.insert(.super) }
+        if modifiers.contains(.alphaShift) { result.insert(.caps) }
+
+        return result
     }
 }
