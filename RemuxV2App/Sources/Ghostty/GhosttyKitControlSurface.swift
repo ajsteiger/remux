@@ -99,6 +99,21 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     }
 
     @MainActor
+    func hasSelection() -> Bool {
+        ghostty_surface_has_selection(storage.surface)
+    }
+
+    @MainActor
+    func readSelection() -> String? {
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_selection(storage.surface, &text) else {
+            return nil
+        }
+        defer { ghostty_surface_free_text(storage.surface, &text) }
+        return Self.decodeGhosttyText(text)
+    }
+
+    @MainActor
     func updateDisplay(size: CGSize, scale: CGFloat) {
         let safeScale = max(Double(scale), 1)
         let width = max(UInt32(size.width * scale), 1)
@@ -121,6 +136,21 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     func currentSize() -> ghostty_surface_size_s {
         ghostty_surface_size(storage.surface)
+    }
+
+    static func decodeGhosttyText(_ text: ghostty_text_s) -> String {
+        guard
+            let pointer = text.text,
+            text.text_len > 0
+        else {
+            return ""
+        }
+
+        let buffer = UnsafeRawBufferPointer(
+            start: UnsafeRawPointer(pointer),
+            count: Int(text.text_len)
+        )
+        return String(decoding: buffer, as: UTF8.self)
     }
 }
 
