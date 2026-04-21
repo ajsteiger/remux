@@ -37,7 +37,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         )
     }
 
-    var hasText: Bool { false }
+    var hasText: Bool { isInputEnabled }
     var keyboardAppearance: UIKeyboardAppearance = .dark
     var keyboardType: UIKeyboardType = .default
     var returnKeyType: UIReturnKeyType = .default

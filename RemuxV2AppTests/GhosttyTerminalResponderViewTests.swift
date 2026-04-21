@@ -3,6 +3,40 @@ import XCTest
 @testable import RemuxV2
 
 final class GhosttyTerminalResponderViewTests: XCTestCase {
+    @MainActor
+    func testResponderReportsTextWhenEnabled() {
+        let view = GhosttyTerminalResponderUIView()
+
+        view.update(
+            isEnabled: true,
+            activationToken: 1,
+            sendText: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+
+        XCTAssertTrue(view.hasText)
+    }
+
+    @MainActor
+    func testDeleteBackwardSendsBackspaceKeyEvent() {
+        let view = GhosttyTerminalResponderUIView()
+        var receivedEvent: GhosttySurfaceKeyEvent?
+
+        view.update(
+            isEnabled: true,
+            activationToken: 1,
+            sendText: { _ in true },
+            sendKeyEvent: {
+                receivedEvent = $0
+                return true
+            }
+        )
+
+        view.deleteBackward()
+
+        XCTAssertEqual(receivedEvent, .init(keyCode: .backspace))
+    }
+
     func testHardwareCommandMappingResolvesArrowUpToKeyEvent() {
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolve(
