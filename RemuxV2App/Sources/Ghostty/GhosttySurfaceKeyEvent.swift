@@ -49,20 +49,23 @@ struct GhosttySurfaceKeyEvent: Equatable {
             self.rawValue = rawValue
         }
 
-        static let enter = Self(rawValue: GHOSTTY_KEY_ENTER.rawValue)
-        static let tab = Self(rawValue: GHOSTTY_KEY_TAB.rawValue)
-        static let escape = Self(rawValue: GHOSTTY_KEY_ESCAPE.rawValue)
-        static let backspace = Self(rawValue: GHOSTTY_KEY_BACKSPACE.rawValue)
-        static let delete = Self(rawValue: GHOSTTY_KEY_DELETE.rawValue)
-        static let arrowUp = Self(rawValue: GHOSTTY_KEY_ARROW_UP.rawValue)
-        static let arrowDown = Self(rawValue: GHOSTTY_KEY_ARROW_DOWN.rawValue)
-        static let arrowLeft = Self(rawValue: GHOSTTY_KEY_ARROW_LEFT.rawValue)
-        static let arrowRight = Self(rawValue: GHOSTTY_KEY_ARROW_RIGHT.rawValue)
-        static let home = Self(rawValue: GHOSTTY_KEY_HOME.rawValue)
-        static let end = Self(rawValue: GHOSTTY_KEY_END.rawValue)
-        static let pageUp = Self(rawValue: GHOSTTY_KEY_PAGE_UP.rawValue)
-        static let pageDown = Self(rawValue: GHOSTTY_KEY_PAGE_DOWN.rawValue)
-        static let space = Self(rawValue: GHOSTTY_KEY_SPACE.rawValue)
+        /// `ghostty_surface_key` takes platform-native keycodes, not the
+        /// public `GHOSTTY_KEY_*` enum values. Ghostty's iOS build shares the
+        /// Darwin/macOS keycode table in `src/input/keycodes.zig`.
+        static let enter = Self(rawValue: 0x24)
+        static let tab = Self(rawValue: 0x30)
+        static let escape = Self(rawValue: 0x35)
+        static let backspace = Self(rawValue: 0x33)
+        static let delete = Self(rawValue: 0x75)
+        static let arrowUp = Self(rawValue: 0x7E)
+        static let arrowDown = Self(rawValue: 0x7D)
+        static let arrowLeft = Self(rawValue: 0x7B)
+        static let arrowRight = Self(rawValue: 0x7C)
+        static let home = Self(rawValue: 0x73)
+        static let end = Self(rawValue: 0x77)
+        static let pageUp = Self(rawValue: 0x74)
+        static let pageDown = Self(rawValue: 0x79)
+        static let space = Self(rawValue: 0x31)
     }
 
     let action: Action

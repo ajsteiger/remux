@@ -2,6 +2,18 @@ import XCTest
 @testable import RemuxV2
 
 final class GhosttySurfaceKeyEventTests: XCTestCase {
+    func testKeyCodeConstantsUseGhosttyDarwinNativeKeycodes() {
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.backspace.rawValue, 0x33)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.escape.rawValue, 0x35)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.enter.rawValue, 0x24)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.tab.rawValue, 0x30)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.delete.rawValue, 0x75)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.arrowLeft.rawValue, 0x7B)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.arrowRight.rawValue, 0x7C)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.arrowDown.rawValue, 0x7D)
+        XCTAssertEqual(GhosttySurfaceKeyEvent.KeyCode.arrowUp.rawValue, 0x7E)
+    }
+
     func testWithCValuePreservesCoreFields() {
         let event = GhosttySurfaceKeyEvent(
             action: .repeat,
