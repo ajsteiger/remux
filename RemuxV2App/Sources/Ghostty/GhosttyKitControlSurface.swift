@@ -60,6 +60,12 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     }
 
     @MainActor
+    @discardableResult
+    func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        event.withCValue { ghostty_surface_key(storage.surface, $0) }
+    }
+
+    @MainActor
     func updateDisplay(size: CGSize, scale: CGFloat) {
         let safeScale = max(Double(scale), 1)
         let width = max(UInt32(size.width * scale), 1)

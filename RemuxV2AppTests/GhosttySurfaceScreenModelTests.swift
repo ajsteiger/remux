@@ -84,6 +84,50 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("input rejected"))
     }
 
+    func testKeyEventRoutesToFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var firstEvents: [GhosttySurfaceKeyEvent] = []
+        var secondEvents: [GhosttySurfaceKeyEvent] = []
+        let first = Self.managedSurface(sendKeyEvent: {
+            firstEvents.append($0)
+            return true
+        })
+        let second = Self.managedSurface(sendKeyEvent: {
+            secondEvents.append($0)
+            return true
+        })
+        let event = GhosttySurfaceKeyEvent(
+            keyCode: .arrowDown,
+            mods: [.ctrl]
+        )
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(second.id)
+
+        XCTAssertTrue(registry.sendKeyEventToFocusedSurface(event))
+        XCTAssertTrue(firstEvents.isEmpty)
+        XCTAssertEqual(secondEvents, [event])
+    }
+
+    func testKeyEventWithoutFocusedSurfaceIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let event = GhosttySurfaceKeyEvent(keyCode: .escape)
+
+        XCTAssertFalse(registry.sendKeyEventToFocusedSurface(event))
+        XCTAssertTrue(registry.debugSummary.contains("key dropped"))
+    }
+
+    func testKeyEventRejectedByFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface(sendKeyEvent: { _ in false })
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertFalse(registry.sendKeyEventToFocusedSurface(.init(keyCode: .tab)))
+        XCTAssertTrue(registry.debugSummary.contains("key rejected"))
+    }
+
     func testDebugPaneInputSmokeIsDisabledWithoutConfiguredText() {
         XCTAssertNil(DebugPaneInputSmokeCommand(nil))
         XCTAssertNil(DebugPaneInputSmokeCommand(""))
@@ -148,7 +192,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     private static func managedSurface(
-        sendInput: (@MainActor (String) -> Bool)? = nil
+        sendInput: (@MainActor (String) -> Bool)? = nil,
+        sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: UUID(),
@@ -157,7 +202,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 surface: UnsafeMutableRawPointer(bitPattern: 0x1)!,
                 ownsSurface: false
             ),
-            sendInput: sendInput
+            sendInput: sendInput,
+            sendKeyEvent: sendKeyEvent
         )
     }
 }

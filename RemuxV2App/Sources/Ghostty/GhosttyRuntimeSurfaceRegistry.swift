@@ -87,6 +87,26 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         return true
     }
 
+    @MainActor
+    @discardableResult
+    func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        guard
+            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = managedSurfaces[surfaceID]
+        else {
+            updateDebugSummary("key dropped: no focused surface")
+            return false
+        }
+
+        guard surface.sendKeyEvent(event) else {
+            updateDebugSummary("key rejected by focused surface")
+            return false
+        }
+
+        updateDebugSummary("sent key code=\(event.keyCode.rawValue)")
+        return true
+    }
+
     func runtimeCreateSurface(
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_s
@@ -400,17 +420,20 @@ final class GhosttyManagedSurface {
     let view: GhosttyKitSurfaceView
     let controlSurface: GhosttyKitControlSurface
     private let sendInputHandler: (@MainActor (String) -> Bool)?
+    private let sendKeyEventHandler: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)?
 
     init(
         id: UUID,
         view: GhosttyKitSurfaceView,
         controlSurface: GhosttyKitControlSurface,
-        sendInput: (@MainActor (String) -> Bool)? = nil
+        sendInput: (@MainActor (String) -> Bool)? = nil,
+        sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil
     ) {
         self.id = id
         self.view = view
         self.controlSurface = controlSurface
         self.sendInputHandler = sendInput
+        self.sendKeyEventHandler = sendKeyEvent
     }
 
     @MainActor
@@ -421,6 +444,16 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.sendInput(text)
+    }
+
+    @MainActor
+    @discardableResult
+    func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        if let sendKeyEventHandler {
+            return sendKeyEventHandler(event)
+        }
+
+        return controlSurface.sendKeyEvent(event)
     }
 }
 
