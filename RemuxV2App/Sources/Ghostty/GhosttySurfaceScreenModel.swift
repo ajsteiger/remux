@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import GhosttyKit
 import UIKit
 
 @MainActor
@@ -202,6 +203,88 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func focusedSurfaceMouseCaptured() -> Bool {
         surfaceRegistry.focusedSurfaceMouseCaptured()
+    }
+
+    @discardableResult
+    func focusTmuxPane(_ id: UUID) -> Bool {
+        guard let surface = surfaceRegistry.managedSurface(for: id) else {
+            debugStatus = "tmux focus dropped: pane missing"
+            return false
+        }
+
+        guard surface.tmuxFocus() else {
+            debugStatus = "tmux focus rejected"
+            return false
+        }
+
+        surfaceRegistry.selectSurface(id)
+        debugStatus = "tmux focus queued"
+        return true
+    }
+
+    @discardableResult
+    func focusTmuxTopLevel(_ id: UUID) -> Bool {
+        guard let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == id }) else {
+            debugStatus = "tmux focus dropped: window missing"
+            return false
+        }
+
+        guard let paneID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first else {
+            debugStatus = "tmux focus dropped: window has no pane"
+            return false
+        }
+
+        return focusTmuxPane(paneID)
+    }
+
+    @discardableResult
+    func focusAdjacentTmuxTopLevel(_ direction: GhosttyRuntimeSelectionDirection) -> Bool {
+        guard surfaceRegistry.topLevels.count > 1 else {
+            debugStatus = "tmux focus dropped: no adjacent window"
+            return false
+        }
+
+        let currentIndex = surfaceRegistry.selectedTopLevelIndex ?? 0
+        let nextIndex = direction.advancedIndex(
+            from: currentIndex,
+            count: surfaceRegistry.topLevels.count
+        )
+        return focusTmuxTopLevel(surfaceRegistry.topLevels[nextIndex].id)
+    }
+
+    @discardableResult
+    func createTmuxWindow() -> Bool {
+        guard let controlSurface else {
+            debugStatus = "tmux new-window dropped: host missing"
+            return false
+        }
+
+        guard controlSurface.tmuxNewWindow() else {
+            debugStatus = "tmux new-window rejected"
+            return false
+        }
+
+        debugStatus = "tmux new-window queued"
+        return true
+    }
+
+    @discardableResult
+    func splitFocusedTmuxPane(_ direction: ghostty_action_split_direction_e) -> Bool {
+        guard
+            let surfaceID = surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = surfaceRegistry.managedSurface(for: surfaceID)
+        else {
+            debugStatus = "tmux split dropped: no focused pane"
+            return false
+        }
+
+        guard surface.tmuxSplit(direction) else {
+            debugStatus = "tmux split rejected"
+            return false
+        }
+
+        debugStatus = "tmux split queued"
+        return true
     }
 
     private func startTransportWhenSurfaceIsSized(

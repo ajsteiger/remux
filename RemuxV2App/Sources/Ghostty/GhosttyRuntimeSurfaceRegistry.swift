@@ -563,6 +563,8 @@ final class GhosttyManagedSurface {
     private let sendMousePositionHandler: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)?
     private let sendMouseScrollHandler: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)?
     private let isMouseCapturedHandler: (@MainActor () -> Bool)?
+    private let tmuxFocusHandler: (@MainActor () -> Bool)?
+    private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
 
     init(
         id: UUID,
@@ -573,7 +575,9 @@ final class GhosttyManagedSurface {
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
         sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
-        isMouseCaptured: (@MainActor () -> Bool)? = nil
+        isMouseCaptured: (@MainActor () -> Bool)? = nil,
+        tmuxFocus: (@MainActor () -> Bool)? = nil,
+        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil
     ) {
         self.id = id
         self.view = view
@@ -584,6 +588,8 @@ final class GhosttyManagedSurface {
         self.sendMousePositionHandler = sendMousePosition
         self.sendMouseScrollHandler = sendMouseScroll
         self.isMouseCapturedHandler = isMouseCaptured
+        self.tmuxFocusHandler = tmuxFocus
+        self.tmuxSplitHandler = tmuxSplit
     }
 
     @MainActor
@@ -646,6 +652,26 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.isMouseCaptured()
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxFocus() -> Bool {
+        if let tmuxFocusHandler {
+            return tmuxFocusHandler()
+        }
+
+        return controlSurface.tmuxFocus()
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool {
+        if let tmuxSplitHandler {
+            return tmuxSplitHandler(direction)
+        }
+
+        return controlSurface.tmuxSplit(direction)
     }
 }
 

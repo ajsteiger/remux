@@ -1,4 +1,5 @@
 import Foundation
+import GhosttyKit
 
 protocol TmuxControlTransport: Sendable {
     var receivedBytes: AsyncThrowingStream<Data, Error> { get }
@@ -28,6 +29,18 @@ protocol GhosttyControlSurface: AnyObject {
     /// implementation is expected to call ghostty_surface_set_backing_exited.
     @MainActor
     func setBackingExited(_ exited: Bool)
+
+    /// Queue tmux focus for the pane bound to this surface.
+    @MainActor
+    func tmuxFocus() -> Bool
+
+    /// Queue creation of a new tmux window using the session bound to this surface.
+    @MainActor
+    func tmuxNewWindow() -> Bool
+
+    /// Queue a tmux split for the pane bound to this surface.
+    @MainActor
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool
 }
 
 @MainActor

@@ -2,15 +2,15 @@ import SwiftUI
 
 struct GhosttyRuntimePaneTreeView: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
-    let onSurfaceTap: (() -> Void)?
-    let onSelectionChange: (() -> Void)?
+    let onSurfaceTap: ((UUID) -> Void)?
+    let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
 
     var body: some View {
         GhosttySurfaceTreeContainerRepresentable(
             registry: registry,
             topLevel: registry.selectedTopLevel,
             onSurfaceTap: onSurfaceTap,
-            onSelectionChange: onSelectionChange
+            onWindowSwipe: onWindowSwipe
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -19,8 +19,8 @@ struct GhosttyRuntimePaneTreeView: View {
 private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     let topLevel: GhosttyTopLevelSurface?
-    let onSurfaceTap: (() -> Void)?
-    let onSelectionChange: (() -> Void)?
+    let onSurfaceTap: ((UUID) -> Void)?
+    let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
@@ -34,7 +34,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
             topLevel: topLevel,
             registry: registry,
             onSurfaceTap: onSurfaceTap,
-            onSelectionChange: onSelectionChange
+            onWindowSwipe: onWindowSwipe
         )
     }
 }
@@ -42,8 +42,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate {
     private weak var registry: GhosttyRuntimeSurfaceRegistry?
     private var topLevel: GhosttyTopLevelSurface?
-    private var onSurfaceTap: (() -> Void)?
-    private var onSelectionChange: (() -> Void)?
+    private var onSurfaceTap: ((UUID) -> Void)?
+    private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
@@ -81,13 +81,13 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     func update(
         topLevel: GhosttyTopLevelSurface?,
         registry: GhosttyRuntimeSurfaceRegistry,
-        onSurfaceTap: (() -> Void)?,
-        onSelectionChange: (() -> Void)?
+        onSurfaceTap: ((UUID) -> Void)?,
+        onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     ) {
         self.topLevel = topLevel
         self.registry = registry
         self.onSurfaceTap = onSurfaceTap
-        self.onSelectionChange = onSelectionChange
+        self.onWindowSwipe = onWindowSwipe
         syncAttachedViews()
         setNeedsLayout()
     }
@@ -209,11 +209,12 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         }
 
         guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
+        let mouseCaptured = registry.focusedSurfaceMouseCaptured()
         registry.selectSurface(surfaceID)
 
         for action in GhosttySurfaceTapGesture.actions(
             forLocalPoint: recognizer.location(in: view),
-            mouseCaptured: registry.focusedSurfaceMouseCaptured()
+            mouseCaptured: mouseCaptured
         ) {
             switch action {
             case .mousePosition(let position):
@@ -224,18 +225,16 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             }
         }
 
-        onSurfaceTap?()
+        if !mouseCaptured {
+            onSurfaceTap?(surfaceID)
+        }
         setNeedsLayout()
     }
 
     @objc
     private func handleWindowSwipe(_ recognizer: UISwipeGestureRecognizer) {
-        guard let registry else { return }
-
         let direction: GhosttyRuntimeSelectionDirection = recognizer.direction == .left ? .next : .previous
-        guard registry.selectAdjacentTopLevel(direction) else { return }
-
-        onSelectionChange?()
+        onWindowSwipe?(direction)
         setNeedsLayout()
     }
 

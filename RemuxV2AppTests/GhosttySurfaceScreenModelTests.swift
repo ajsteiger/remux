@@ -1,4 +1,5 @@
 import Foundation
+import GhosttyKit
 import XCTest
 @testable import RemuxV2
 
@@ -249,6 +250,73 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "mouse position dropped: no focused tmux pane")
     }
 
+    func testModelFocusTmuxPaneRoutesToManagedSurface() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        let first = Self.managedSurface()
+        var focusCallCount = 0
+        let second = Self.managedSurface(tmuxFocus: {
+            focusCallCount += 1
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+
+        XCTAssertTrue(model.focusTmuxPane(second.id))
+        XCTAssertEqual(focusCallCount, 1)
+        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(model.debugStatus, "tmux focus queued")
+    }
+
+    func testModelFocusAdjacentTmuxTopLevelRoutesThroughTargetPane() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        let first = Self.managedSurface()
+        var focusCallCount = 0
+        let second = Self.managedSurface(tmuxFocus: {
+            focusCallCount += 1
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        guard let firstTopLevelID = model.surfaceRegistry.topLevels.first?.id else {
+            XCTFail("expected first top-level to exist")
+            return
+        }
+        model.surfaceRegistry.selectTopLevel(firstTopLevelID)
+
+        XCTAssertTrue(model.focusAdjacentTmuxTopLevel(.next))
+        XCTAssertEqual(focusCallCount, 1)
+        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+    }
+
+    func testModelSplitFocusedTmuxPaneRoutesToManagedSurface() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        var receivedDirections: [ghostty_action_split_direction_e] = []
+        let managed = Self.managedSurface(tmuxSplit: {
+            receivedDirections.append($0)
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertTrue(model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN))
+        XCTAssertEqual(receivedDirections, [GHOSTTY_SPLIT_DIRECTION_DOWN])
+        XCTAssertEqual(model.debugStatus, "tmux split queued")
+    }
+
     func testFocusedSurfaceMouseCapturedReflectsManagedSurfaceState() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let uncaptured = Self.managedSurface(isMouseCaptured: { false })
@@ -346,7 +414,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
         sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
-        isMouseCaptured: (@MainActor () -> Bool)? = nil
+        isMouseCaptured: (@MainActor () -> Bool)? = nil,
+        tmuxFocus: (@MainActor () -> Bool)? = nil,
+        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: UUID(),
@@ -360,7 +430,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             sendMouseButton: sendMouseButton,
             sendMousePosition: sendMousePosition,
             sendMouseScroll: sendMouseScroll,
-            isMouseCaptured: isMouseCaptured
+            isMouseCaptured: isMouseCaptured,
+            tmuxFocus: tmuxFocus ?? { false },
+            tmuxSplit: tmuxSplit ?? { _ in false }
         )
     }
 }

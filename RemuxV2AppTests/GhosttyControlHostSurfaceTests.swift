@@ -1,4 +1,5 @@
 import Foundation
+import GhosttyKit
 import XCTest
 @testable import RemuxV2
 
@@ -222,5 +223,18 @@ private final class RecordingGhosttyControlSurface: GhosttyControlSurface {
 
     func setBackingExited(_ exited: Bool) {
         backingExited.append(exited)
+    }
+
+    func tmuxFocus() -> Bool {
+        true
+    }
+
+    func tmuxNewWindow() -> Bool {
+        true
+    }
+
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool {
+        _ = direction
+        return true
     }
 }

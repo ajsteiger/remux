@@ -61,6 +61,24 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     @discardableResult
+    func tmuxFocus() -> Bool {
+        ghostty_surface_tmux_focus(storage.surface)
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxNewWindow() -> Bool {
+        ghostty_surface_tmux_new_window(storage.surface)
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool {
+        ghostty_surface_tmux_split(storage.surface, direction)
+    }
+
+    @MainActor
+    @discardableResult
     func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
         event.withCValue { ghostty_surface_key(storage.surface, $0) }
     }

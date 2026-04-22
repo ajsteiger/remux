@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import GhosttyKit
 
 struct GhosttySurfaceScreen: View {
     @StateObject private var model: GhosttySurfaceScreenModel
@@ -51,7 +52,7 @@ struct GhosttySurfaceScreen: View {
                         GhosttyRuntimePaneTreeView(
                             registry: registry,
                             onSurfaceTap: handleSurfaceTap,
-                            onSelectionChange: handleSelectionChange
+                            onWindowSwipe: handleWindowSwipe
                         )
                             .id(model.surfaceRegistryRevision)
                             .background(GhosttyPhoneChromePalette.screenBackground)
@@ -157,13 +158,15 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
-    private func handleSurfaceTap() {
+    private func handleSurfaceTap(_ surfaceID: UUID) {
+        _ = model.focusTmuxPane(surfaceID)
         withAnimation(Self.keyboardAnimation) {
             inputCoordinator.handleSurfaceTap(isInputAvailable: isTerminalInputAvailable)
         }
     }
 
-    private func handleSelectionChange() {
+    private func handleWindowSwipe(_ direction: GhosttyRuntimeSelectionDirection) {
+        _ = model.focusAdjacentTmuxTopLevel(direction)
         withAnimation(Self.keyboardAnimation) {
             inputCoordinator.handleSelectionChange(isInputAvailable: isTerminalInputAvailable)
         }
@@ -243,9 +246,13 @@ struct GhosttySurfaceScreen: View {
             GhosttyWindowSelectionSheet(
                 registry: registry,
                 sessionName: target.workspace.sessionName,
-                onCreateWindow: nil,
+                onCreateWindow: {
+                    guard model.createTmuxWindow() else { return }
+                    selectionSheet = nil
+                    refocusSystemKeyboardIfActive()
+                },
                 onSelect: { id in
-                    registry.selectTopLevel(id)
+                    guard model.focusTmuxTopLevel(id) else { return }
                     selectionSheet = nil
                     refocusSystemKeyboardIfActive()
                 }
@@ -254,10 +261,18 @@ struct GhosttySurfaceScreen: View {
         case .panes:
             GhosttyPaneSelectionSheet(
                 registry: registry,
-                onSplitPane: nil,
-                onStackPane: nil,
+                onSplitPane: {
+                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT) else { return }
+                    selectionSheet = nil
+                    refocusSystemKeyboardIfActive()
+                },
+                onStackPane: {
+                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) else { return }
+                    selectionSheet = nil
+                    refocusSystemKeyboardIfActive()
+                },
                 onSelect: { id in
-                    registry.selectSurface(id)
+                    guard model.focusTmuxPane(id) else { return }
                     selectionSheet = nil
                     refocusSystemKeyboardIfActive()
                 }
