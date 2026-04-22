@@ -1,10 +1,14 @@
 import SwiftUI
+import UIKit
 
 struct GhosttySurfaceScreen: View {
+    @FocusState private var focusedField: GhosttyTerminalFocusState.Field?
     @StateObject private var model: GhosttySurfaceScreenModel
+    @State private var inputFocus = GhosttyTerminalFocusState()
     @State private var modifierState = GhosttyModifierState()
+    @State private var isInjectorExpanded = false
+    @State private var isSoftwareKeyboardVisible = false
     @State private var pendingInput = ""
-    @State private var terminalInputActivationToken = 0
 
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
@@ -25,75 +29,97 @@ struct GhosttySurfaceScreen: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(red: 0.03, green: 0.04, blue: 0.07)
-                .ignoresSafeArea()
+        GeometryReader { screenProxy in
+            let chrome = GhosttyPhoneChromeLayout(
+                screenSize: screenProxy.size,
+                isSoftwareKeyboardVisible: isSoftwareKeyboardVisible
+            )
 
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(target.workspace.sessionName)
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+            ZStack {
+                Color(red: 0.03, green: 0.04, blue: 0.07)
+                    .ignoresSafeArea()
 
-                    Text("\(target.server.displayName) · \(target.server.username)@\(target.server.host)")
+                VStack(alignment: .leading, spacing: chrome.contentSpacing) {
+                    VStack(alignment: .leading, spacing: chrome.headerSpacing) {
+                        Text(target.workspace.sessionName)
+                            .font(.system(size: chrome.titleFontSize, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+
+                        if !chrome.isCompact {
+                            Text("\(target.server.displayName) · \(target.server.username)@\(target.server.host)")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.62))
+                        }
+                    }
+                    .overlay(alignment: .trailing) {
+                        Button("Edit") {
+                            onEditConnection()
+                        }
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.62))
-                }
-                .overlay(alignment: .trailing) {
-                    Button("Edit") {
-                        onEditConnection()
+                        .foregroundStyle(Color.white.opacity(0.8))
                     }
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.8))
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 18)
+                    .padding(.horizontal, chrome.headerHorizontalPadding)
+                    .padding(.top, chrome.headerTopPadding)
 
-                GeometryReader { proxy in
-                    ZStack {
-                        GhosttyHostSurfaceView(model: model, size: proxy.size)
-                            .opacity(0.001)
+                    GeometryReader { proxy in
+                        ZStack {
+                            GhosttyHostSurfaceView(model: model, size: proxy.size)
+                                .opacity(0.001)
+                                .allowsHitTesting(false)
+
+                            GhosttyRuntimePaneTreeView(
+                                registry: registry,
+                                onSurfaceInteraction: activateTerminalInput
+                            )
+                                .id(model.surfaceRegistryRevision)
+                                .background(Color.black)
+
+                            GhosttyTerminalResponderRepresentable(
+                                isEnabled: model.state == .running && registry.selectedTopLevel?.resolvedFocusedLeafID != nil,
+                                activationToken: inputFocus.terminalActivationToken,
+                                sendText: sendTerminalText,
+                                sendKeyEvent: sendTerminalKeyEvent
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .opacity(0.01)
                             .allowsHitTesting(false)
-
-                        GhosttyRuntimePaneTreeView(
-                            registry: registry,
-                            onSurfaceInteraction: activateTerminalInput
-                        )
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: chrome.surfaceCornerRadius, style: .continuous))
+                        .overlay(alignment: .topLeading) {
+                            GhosttySurfaceStatusOverlay(
+                                model: model,
+                                registry: registry
+                            )
                             .id(model.surfaceRegistryRevision)
-                            .background(Color.black)
+                        }
+                    }
+                    .padding(.horizontal, chrome.surfaceHorizontalPadding)
+                    .onChange(of: focusedField) { _, newValue in
+                        inputFocus.syncSystemFocus(newValue)
+                    }
 
-                        GhosttyTerminalResponderRepresentable(
-                            isEnabled: model.state == .running && registry.selectedTopLevel?.resolvedFocusedLeafID != nil,
-                            activationToken: terminalInputActivationToken,
-                            sendText: sendTerminalText,
-                            sendKeyEvent: sendTerminalKeyEvent
-                        )
-                        .frame(width: 1, height: 1)
-                        .opacity(0.01)
-                        .allowsHitTesting(false)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(alignment: .topLeading) {
-                        GhosttySurfaceStatusOverlay(
-                            model: model,
-                            registry: registry
-                        )
-                        .id(model.surfaceRegistryRevision)
-                    }
+                    GhosttyPaneInputBar(
+                        text: $pendingInput,
+                        focusedField: $focusedField,
+                        isEnabled: model.state == .running && registry.selectedTopLevel != nil,
+                        isExpanded: isInjectorExpanded,
+                        isCompact: chrome.isCompact,
+                        isControlArmed: modifierState.isControlArmed,
+                        onToggleExpansion: toggleInjectorExpansion,
+                        onToggleControl: toggleControlModifier,
+                        quickActions: GhosttyTerminalQuickAction.allCases,
+                        onQuickAction: performQuickAction,
+                        onSubmit: submitInput
+                    )
+                    .padding(.horizontal, chrome.surfaceHorizontalPadding)
+                    .padding(.bottom, chrome.bottomPadding)
                 }
-                .padding(.horizontal, 12)
-
-                GhosttyPaneInputBar(
-                    text: $pendingInput,
-                    isEnabled: model.state == .running && registry.selectedTopLevel != nil,
-                    isControlArmed: modifierState.isControlArmed,
-                    onToggleControl: toggleControlModifier,
-                    quickActions: GhosttyTerminalQuickAction.allCases,
-                    onQuickAction: performQuickAction,
-                    onSubmit: submitInput
-                )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
+                updateKeyboardVisibility(with: $0)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                isSoftwareKeyboardVisible = false
             }
         }
     }
@@ -107,10 +133,24 @@ struct GhosttySurfaceScreen: View {
         guard !input.isEmpty else { return }
         guard sendTerminalText(input + "\r") else { return }
         pendingInput = ""
+        isInjectorExpanded = false
+        activateTerminalInput()
     }
 
     private func activateTerminalInput() {
-        terminalInputActivationToken += 1
+        inputFocus.activateTerminal()
+        focusedField = inputFocus.preferredField
+    }
+
+    private func toggleInjectorExpansion() {
+        if isInjectorExpanded {
+            isInjectorExpanded = false
+            activateTerminalInput()
+            return
+        }
+
+        isInjectorExpanded = true
+        focusedField = .sendBar
     }
 
     private func toggleControlModifier() {
@@ -137,13 +177,33 @@ struct GhosttySurfaceScreen: View {
             sendKey: sendTerminalKeyEvent
         )
     }
+
+    private func updateKeyboardVisibility(with notification: Notification) {
+        guard
+            let frameValue = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
+        else {
+            return
+        }
+
+        let keyboardFrame = frameValue.cgRectValue
+        let screenBounds = UIScreen.main.bounds
+        isSoftwareKeyboardVisible = keyboardFrame.minY < screenBounds.height - 1
+
+        if !isSoftwareKeyboardVisible, focusedField != .sendBar {
+            isInjectorExpanded = false
+        }
+    }
 }
 
 private struct GhosttyPaneInputBar: View {
     @Binding var text: String
+    var focusedField: FocusState<GhosttyTerminalFocusState.Field?>.Binding
 
     let isEnabled: Bool
+    let isExpanded: Bool
+    let isCompact: Bool
     let isControlArmed: Bool
+    let onToggleExpansion: () -> Void
     let onToggleControl: () -> Void
     let quickActions: [GhosttyTerminalQuickAction]
     let onQuickAction: (GhosttyTerminalQuickAction) -> Void
@@ -151,62 +211,144 @@ private struct GhosttyPaneInputBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    Button("Ctrl") {
-                        onToggleControl()
-                    }
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(isControlArmed ? .black : Color.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(isControlArmed ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white.opacity(0.08))
-                    )
-                    .disabled(!isEnabled)
-
-                    ForEach(quickActions) { action in
-                        Button(action.title) {
-                            onQuickAction(action)
+            HStack(alignment: .center, spacing: 10) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Button("Ctrl") {
+                            onToggleControl()
                         }
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(action == .interrupt ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white)
+                        .foregroundStyle(isControlArmed ? .black : Color.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
+                                .fill(isControlArmed ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white.opacity(0.08))
                         )
                         .disabled(!isEnabled)
+
+                        ForEach(quickActions) { action in
+                            Button(action.title) {
+                                onQuickAction(action)
+                            }
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundStyle(action == .interrupt ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.white.opacity(0.08))
+                            )
+                            .disabled(!isEnabled)
+                        }
                     }
                 }
+
+                Button(isExpanded ? "Hide" : "Raw Input") {
+                    onToggleExpansion()
+                }
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(isExpanded ? .black : Color.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isExpanded ? Color.white : Color.white.opacity(0.08))
+                )
+                .disabled(!isEnabled)
             }
 
-            HStack(spacing: 10) {
-                TextField("Send to focused tmux pane", text: $text)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.system(size: 15, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .submitLabel(.send)
-                    .disabled(!isEnabled)
-                    .onSubmit(onSubmit)
+            if isExpanded {
+                HStack(spacing: 10) {
+                    TextField("Inject raw input into focused pane", text: $text)
+                        .focused(focusedField, equals: .sendBar)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 15, weight: .regular, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .submitLabel(.send)
+                        .disabled(!isEnabled)
+                        .onSubmit(onSubmit)
 
-                Button("Send", action: onSubmit)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(isEnabled ? Color.white : Color.white.opacity(0.35))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .disabled(!isEnabled)
+                    Button("Inject", action: onSubmit)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(isEnabled ? Color.white : Color.white.opacity(0.35))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .disabled(!isEnabled)
+                }
             }
         }
+        .padding(.vertical, isCompact ? 4 : 0)
+    }
+}
+
+struct GhosttyTerminalFocusState: Equatable {
+    enum Field: Hashable {
+        case sendBar
+    }
+
+    private(set) var terminalActivationToken = 0
+    private(set) var preferredField: Field?
+
+    mutating func activateTerminal() {
+        preferredField = nil
+        terminalActivationToken += 1
+    }
+
+    mutating func syncSystemFocus(_ field: Field?) {
+        preferredField = field
+    }
+}
+
+struct GhosttyPhoneChromeLayout: Equatable {
+    let screenSize: CGSize
+    let isSoftwareKeyboardVisible: Bool
+
+    var isLandscape: Bool {
+        screenSize.width > screenSize.height
+    }
+
+    var isCompact: Bool {
+        isLandscape || isSoftwareKeyboardVisible
+    }
+
+    var titleFontSize: CGFloat {
+        isCompact ? 18 : 22
+    }
+
+    var headerSpacing: CGFloat {
+        isCompact ? 2 : 4
+    }
+
+    var contentSpacing: CGFloat {
+        isCompact ? 10 : 14
+    }
+
+    var headerHorizontalPadding: CGFloat {
+        isCompact ? 12 : 18
+    }
+
+    var headerTopPadding: CGFloat {
+        isCompact ? 10 : 18
+    }
+
+    var surfaceHorizontalPadding: CGFloat {
+        isCompact ? 8 : 12
+    }
+
+    var surfaceCornerRadius: CGFloat {
+        isCompact ? 14 : 18
+    }
+
+    var bottomPadding: CGFloat {
+        isCompact ? 8 : 12
     }
 }
 
