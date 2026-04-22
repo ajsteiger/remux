@@ -146,14 +146,19 @@ struct GhosttyPaneSelectionSheet: View {
         }
     }
 
-    // Snapshot-on-open cache. While Codex's C API is under construction we
-    // seed the cache with fixture snapshots keyed by position. The real path
-    // will call `registry.managedSurface(for: id)?.controlSurface.snapshotPreview()`
-    // at the same point, with no other changes to this file.
+    // Snapshot-on-open cache. Each pane's live terminal is sampled once when
+    // the sheet appears (or when the pane set changes) via the non-mutating
+    // ghostty_surface_preview_snapshot API. Snapshots are kept for the sheet's
+    // lifetime; the sheet calls this again whenever `leafIDs` changes.
+    @MainActor
     private func rebuildPreviews(_ leafIDs: [UUID]) {
         var map: [UUID: PanePreviewSnapshot] = [:]
-        for (index, id) in leafIDs.enumerated() {
-            map[id] = PanePreviewSnapshot.sample(for: index)
+        for id in leafIDs {
+            guard let managed = registry.managedSurface(for: id) else { continue }
+            map[id] = managed.controlSurface.snapshotPreview(
+                maxCols: PanePreviewGeometry.defaultCols,
+                maxRows: PanePreviewGeometry.defaultRows
+            )
         }
         previewsByID = map
     }
@@ -361,7 +366,12 @@ struct PanePreviewAttributes: OptionSet, Equatable {
     static let strikethrough = PanePreviewAttributes(rawValue: 1 << 3)
     static let dim = PanePreviewAttributes(rawValue: 1 << 4)
     static let blink = PanePreviewAttributes(rawValue: 1 << 5)
+    // Reverse colors are already swapped by Ghostty before the snapshot is
+    // produced; this bit remains as metadata only, so the renderer should not
+    // swap fg/bg again.
     static let reverse = PanePreviewAttributes(rawValue: 1 << 6)
+    static let invisible = PanePreviewAttributes(rawValue: 1 << 7)
+    static let overline = PanePreviewAttributes(rawValue: 1 << 8)
 }
 
 struct PanePreviewCursor: Equatable {

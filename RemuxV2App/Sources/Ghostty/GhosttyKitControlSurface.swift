@@ -123,6 +123,25 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
         ghostty_surface_set_size(storage.surface, width, height)
     }
 
+    // Read-only, snapshot-on-open styled viewport capture. Under the hood this
+    // locks the surface renderer mutex briefly, walks the active screen's
+    // pages, and returns resolved RGB runs without disturbing dirty tracking.
+    // A `nil` return signals the surface is not ready to be sampled yet (no
+    // active screen, pre-attach, etc).
+    @MainActor
+    func snapshotPreview(maxCols: Int = 0, maxRows: Int = 0) -> PanePreviewSnapshot? {
+        let options = ghostty_surface_preview_options_s(
+            max_cols: UInt16(clamping: max(maxCols, 0)),
+            max_rows: UInt16(clamping: max(maxRows, 0))
+        )
+        var out = ghostty_surface_preview_snapshot_s()
+        guard ghostty_surface_preview_snapshot(storage.surface, options, &out) else {
+            return nil
+        }
+        defer { ghostty_surface_free_preview_snapshot(storage.surface, &out) }
+        return PanePreviewSnapshot(cSnapshot: out)
+    }
+
     @MainActor
     func setFocused(_ focused: Bool) {
         ghostty_surface_set_focus(storage.surface, focused)
@@ -151,6 +170,100 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
             count: Int(text.text_len)
         )
         return String(decoding: buffer, as: UTF8.self)
+    }
+}
+
+// MARK: - Pane preview C→Swift conversion
+
+private extension PanePreviewColor {
+    init(_ rgb: ghostty_rgb_s) {
+        self.init(red: rgb.r, green: rgb.g, blue: rgb.b)
+    }
+}
+
+private extension PanePreviewCursor.Style {
+    init(_ cStyle: ghostty_surface_preview_cursor_style_e) {
+        switch cStyle {
+        case GHOSTTY_SURFACE_PREVIEW_CURSOR_BLOCK:
+            self = .block
+        case GHOSTTY_SURFACE_PREVIEW_CURSOR_UNDERLINE:
+            self = .underline
+        case GHOSTTY_SURFACE_PREVIEW_CURSOR_BLOCK_HOLLOW:
+            self = .blockHollow
+        default:
+            self = .bar
+        }
+    }
+}
+
+extension PanePreviewSnapshot {
+    fileprivate init(cSnapshot: ghostty_surface_preview_snapshot_s) {
+        let cursor: PanePreviewCursor? = cSnapshot.cursor.visible
+            ? PanePreviewCursor(
+                row: Int(cSnapshot.cursor.row),
+                col: Int(cSnapshot.cursor.col),
+                style: PanePreviewCursor.Style(cSnapshot.cursor.style),
+                color: cSnapshot.cursor.has_color ? PanePreviewColor(cSnapshot.cursor.color) : nil,
+                visible: true
+            )
+            : nil
+
+        let runs = Self.decodeRuns(cSnapshot)
+
+        self.init(
+            cols: Int(cSnapshot.cols),
+            rows: Int(cSnapshot.rows),
+            defaultForeground: PanePreviewColor(cSnapshot.default_fg),
+            defaultBackground: PanePreviewColor(cSnapshot.default_bg),
+            cursor: cursor,
+            runs: runs
+        )
+    }
+
+    private static func decodeRuns(
+        _ cSnapshot: ghostty_surface_preview_snapshot_s
+    ) -> [PanePreviewRun] {
+        guard
+            let runsPtr = cSnapshot.runs,
+            let textPtr = cSnapshot.text,
+            cSnapshot.run_count > 0
+        else {
+            return []
+        }
+
+        let runCount = Int(cSnapshot.run_count)
+        let textLen = Int(cSnapshot.text_len)
+        let textBase = UnsafeRawPointer(textPtr)
+        let runsBuffer = UnsafeBufferPointer(start: runsPtr, count: runCount)
+
+        var runs: [PanePreviewRun] = []
+        runs.reserveCapacity(runCount)
+
+        for cRun in runsBuffer {
+            let offset = Int(cRun.text_offset)
+            let length = Int(cRun.text_len)
+            let text: String
+            if length > 0, offset >= 0, offset + length <= textLen {
+                text = String(
+                    data: Data(bytes: textBase.advanced(by: offset), count: length),
+                    encoding: .utf8
+                ) ?? ""
+            } else {
+                text = ""
+            }
+
+            runs.append(PanePreviewRun(
+                row: Int(cRun.row),
+                col: Int(cRun.col),
+                cellWidth: Int(cRun.cell_width),
+                text: text,
+                foreground: cRun.has_fg ? PanePreviewColor(cRun.fg) : nil,
+                background: cRun.has_bg ? PanePreviewColor(cRun.bg) : nil,
+                attributes: PanePreviewAttributes(rawValue: cRun.attrs)
+            ))
+        }
+
+        return runs
     }
 }
 
