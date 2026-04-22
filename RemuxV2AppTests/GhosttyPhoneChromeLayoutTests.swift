@@ -11,7 +11,7 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
 
         XCTAssertFalse(layout.isCompact)
         XCTAssertEqual(layout.surfaceHorizontalPadding, 12)
-        XCTAssertEqual(layout.bottomPadding, 10)
+        XCTAssertEqual(layout.bottomPadding, 4)
     }
 
     func testKeyboardForcesCompactChromeInPortrait() {
@@ -22,7 +22,7 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
 
         XCTAssertTrue(layout.isCompact)
         XCTAssertEqual(layout.surfaceHorizontalPadding, 8)
-        XCTAssertEqual(layout.bottomPadding, 6)
+        XCTAssertEqual(layout.bottomPadding, 2)
     }
 
     func testLandscapeUsesCompactChromeWithoutKeyboard() {
@@ -34,6 +34,6 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
         XCTAssertTrue(layout.isLandscape)
         XCTAssertTrue(layout.isCompact)
         XCTAssertEqual(layout.surfaceHorizontalPadding, 8)
-        XCTAssertEqual(layout.bottomPadding, 6)
+        XCTAssertEqual(layout.bottomPadding, 2)
     }
 }

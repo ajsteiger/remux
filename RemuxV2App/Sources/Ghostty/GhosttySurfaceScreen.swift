@@ -101,8 +101,8 @@ struct GhosttySurfaceScreen: View {
                     sendKey: sendTerminalKeyEvent
                 )
                 .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                .padding(.top, keyboardMode.showsInputControls ? 6 : 4)
-                .padding(.bottom, max(screenProxy.safeAreaInsets.bottom, chrome.bottomPadding))
+                .padding(.top, keyboardMode.showsInputControls ? 4 : 2)
+                .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .background(GhosttyPhoneChromePalette.screenBackground)
             }
@@ -334,7 +334,7 @@ struct GhosttyPhoneChromeLayout: Equatable {
     }
 
     var bottomPadding: CGFloat {
-        isCompact ? 6 : 10
+        isCompact ? 2 : 4
     }
 }
 
