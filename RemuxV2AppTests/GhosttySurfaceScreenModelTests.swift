@@ -67,6 +67,79 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(secondInput, ["echo focused\r"])
     }
 
+    func testAdjacentTopLevelSelectionWrapsAcrossWindows() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        let third = Self.managedSurface()
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.registerManagedSurfaceForTesting(third)
+
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+
+        XCTAssertTrue(registry.selectAdjacentTopLevel(.next))
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+
+        XCTAssertTrue(registry.selectAdjacentTopLevel(.previous))
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+    }
+
+    func testAdjacentTopLevelSelectionRejectsSingleWindow() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface()
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertFalse(registry.selectAdjacentTopLevel(.next))
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, managed.id)
+    }
+
+    func testAdjacentPaneSelectionWrapsWithinSelectedWindow() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        let third = Self.managedSurface()
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [first, second, third],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .split(
+                        axis: .vertical,
+                        ratio: 0.5,
+                        left: .leaf(second.id),
+                        right: .leaf(third.id)
+                    )
+                )
+            ),
+            focusedLeafID: second.id
+        )
+
+        XCTAssertTrue(registry.selectAdjacentPane(.next))
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+
+        XCTAssertTrue(registry.selectAdjacentPane(.next))
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+
+        XCTAssertTrue(registry.selectAdjacentPane(.previous))
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+    }
+
+    func testAdjacentPaneSelectionRejectsSinglePane() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface()
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertFalse(registry.selectAdjacentPane(.next))
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, managed.id)
+    }
+
     func testInputWithoutFocusedSurfaceIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 

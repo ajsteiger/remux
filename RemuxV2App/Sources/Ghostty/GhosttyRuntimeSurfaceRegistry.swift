@@ -2,6 +2,22 @@ import Foundation
 import GhosttyKit
 import UIKit
 
+enum GhosttyRuntimeSelectionDirection {
+    case previous
+    case next
+
+    func advancedIndex(from index: Int, count: Int) -> Int {
+        precondition(count > 0)
+
+        return switch self {
+        case .previous:
+            (index - 1 + count) % count
+        case .next:
+            (index + 1) % count
+        }
+    }
+}
+
 protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     func runtimeCreateSurface(
         app: ghostty_app_t?,
@@ -31,6 +47,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         return topLevels.first(where: { $0.id == selectedTopLevelID }) ?? topLevels.first
     }
 
+    var selectedTopLevelIndex: Int? {
+        guard !topLevels.isEmpty else { return nil }
+        guard let selectedTopLevelID else { return 0 }
+        return topLevels.firstIndex(where: { $0.id == selectedTopLevelID }) ?? 0
+    }
+
     func reset() {
         topLevels = []
         selectedTopLevelID = nil
@@ -48,6 +70,20 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         notifyChanged()
     }
 
+    @discardableResult
+    func selectAdjacentTopLevel(_ direction: GhosttyRuntimeSelectionDirection) -> Bool {
+        guard topLevels.count > 1 else { return false }
+
+        let currentIndex = selectedTopLevelIndex ?? 0
+        let nextIndex = direction.advancedIndex(
+            from: currentIndex,
+            count: topLevels.count
+        )
+        selectedTopLevelID = topLevels[nextIndex].id
+        notifyChanged()
+        return true
+    }
+
     func selectSurface(_ id: UUID) {
         for index in topLevels.indices {
             guard topLevels[index].tree.contains(id) else { continue }
@@ -56,6 +92,25 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             notifyChanged()
             return
         }
+    }
+
+    @discardableResult
+    func selectAdjacentPane(_ direction: GhosttyRuntimeSelectionDirection) -> Bool {
+        guard let topLevelIndex = selectedTopLevelIndex else { return false }
+
+        let leafIDs = topLevels[topLevelIndex].leafIDs
+        guard leafIDs.count > 1 else { return false }
+
+        let focusedLeafID = topLevels[topLevelIndex].resolvedFocusedLeafID ?? leafIDs[0]
+        let currentIndex = leafIDs.firstIndex(of: focusedLeafID) ?? 0
+        let nextIndex = direction.advancedIndex(
+            from: currentIndex,
+            count: leafIDs.count
+        )
+
+        topLevels[topLevelIndex].focusedLeafID = leafIDs[nextIndex]
+        notifyChanged()
+        return true
     }
 
     func managedSurface(for id: UUID) -> GhosttyManagedSurface? {
@@ -346,6 +401,21 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         topLevels.append(topLevel)
         selectedTopLevelID = topLevel.id
         updateDebugSummary("test surface registered")
+    }
+
+    func registerManagedSurfaceTreeForTesting(
+        _ surfaces: [GhosttyManagedSurface],
+        tree: GhosttySurfaceTree,
+        focusedLeafID: UUID? = nil
+    ) {
+        register(surfaces)
+        let topLevel = GhosttyTopLevelSurface(
+            tree: tree,
+            focusedLeafID: focusedLeafID
+        )
+        topLevels.append(topLevel)
+        selectedTopLevelID = topLevel.id
+        updateDebugSummary("test surface tree registered")
     }
 #endif
 
