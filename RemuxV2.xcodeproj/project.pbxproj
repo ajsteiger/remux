@@ -28,6 +28,7 @@
 		4B1FFA463606743BFA3E09A9 /* GhosttySurfaceMouseEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2716DF37F893EE167C27B017 /* GhosttySurfaceMouseEvent.swift */; };
 		4CE8CA7CFF32FD650B4BB331 /* SSHTmuxControlTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4432D556677AE39DFEE7FFAB /* SSHTmuxControlTransportTests.swift */; };
 		574272C731DDC6451B62FD10 /* GhosttySurfaceKeyEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2603EE7F2B9AA64884829DCF /* GhosttySurfaceKeyEventTests.swift */; };
+		58B436A0693C876BAF2B1A8E /* GhosttyClipboardContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21CB47BEA0CDB95CEEF49247 /* GhosttyClipboardContentTests.swift */; };
 		5AC004490938EFAF217F11D5 /* GhosttyTerminalResponderViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71728CF4516E0B362963FB46 /* GhosttyTerminalResponderViewTests.swift */; };
 		5ACFF1E79614C6FF62A4821B /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41E02C354D0A66DB9BBAC7D2 /* RootView.swift */; };
 		614A980BBEFAE16F14837ED0 /* GhosttySurfaceScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48694C93DC09A2911401103F /* GhosttySurfaceScreen.swift */; };
@@ -47,6 +48,7 @@
 		A0B932FAA41E9006795EE777 /* ConnectionProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C7E94FDA6CA3C2B969F45D0 /* ConnectionProfileRepository.swift */; };
 		A4A1E94BD85017D39A25DB9A /* GhosttyControlHostSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725A21DEE2B5F75D277EB875 /* GhosttyControlHostSurfaceTests.swift */; };
 		AAD5EA0D8FF9A4F53853495C /* Citadel in Frameworks */ = {isa = PBXBuildFile; productRef = 01EAAE0273ACDE747CF91DE5 /* Citadel */; };
+		AD7921666070B7A8F1FCC40E /* GhosttyClipboardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1514C86D957A41DBAD386EB6 /* GhosttyClipboardContent.swift */; };
 		BC8C8A524E76D05C49037BC9 /* GhosttyModifierStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34BCE062787B6F67837EC22F /* GhosttyModifierStateTests.swift */; };
 		BEE6DE691ED8D5F30AA5289A /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 40AA12A9CFF27C8A2EE740ED /* GhosttyKit.xcframework */; };
 		C5303E7FB7A038493A16AD5C /* RemuxAppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D5982E4C03BB4206C1EC1D /* RemuxAppDependencies.swift */; };
@@ -73,7 +75,9 @@
 		05F48AC73F901DB106E6C01C /* TmuxConnectionDraftValidatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxConnectionDraftValidatorTests.swift; sourceTree = "<group>"; };
 		0DE9AFE5A064EB80CEAE07CA /* RemuxV2App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxV2App.swift; sourceTree = "<group>"; };
 		0FC4A50DCCD22311BD0A820D /* GhosttyPhoneChromeLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPhoneChromeLayoutTests.swift; sourceTree = "<group>"; };
+		1514C86D957A41DBAD386EB6 /* GhosttyClipboardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyClipboardContent.swift; sourceTree = "<group>"; };
 		16B29F8D9D72366599627C13 /* KeychainPasswordStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainPasswordStore.swift; sourceTree = "<group>"; };
+		21CB47BEA0CDB95CEEF49247 /* GhosttyClipboardContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyClipboardContentTests.swift; sourceTree = "<group>"; };
 		231B77B425C48FE9E9F40B6C /* RemuxRootModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxRootModel.swift; sourceTree = "<group>"; };
 		25A5F8B3F6F2AA99BC525D80 /* SSHTmuxControlTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlTransport.swift; sourceTree = "<group>"; };
 		2603EE7F2B9AA64884829DCF /* GhosttySurfaceKeyEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceKeyEventTests.swift; sourceTree = "<group>"; };
@@ -181,6 +185,7 @@
 			children = (
 				CE274C87CA588842934B7C7F /* ConnectionProfileRepositoryTests.swift */,
 				02B12E11EF09FA9C26380D83 /* DebugConnectionProfileSeederTests.swift */,
+				21CB47BEA0CDB95CEEF49247 /* GhosttyClipboardContentTests.swift */,
 				725A21DEE2B5F75D277EB875 /* GhosttyControlHostSurfaceTests.swift */,
 				98CFCD04D4512EC13C8CA6F5 /* GhosttyKitControlSurfaceTests.swift */,
 				FB15A47F01E5E01A3C97AF82 /* GhosttyKitRuntimeTests.swift */,
@@ -241,6 +246,7 @@
 		BCD1788CFB502166B2C0C893 /* Ghostty */ = {
 			isa = PBXGroup;
 			children = (
+				1514C86D957A41DBAD386EB6 /* GhosttyClipboardContent.swift */,
 				99DE073DD611FE2DCFA372FB /* GhosttyKitControlSurface.swift */,
 				FA85F128DBF20EB1200B3FA8 /* GhosttyKitRuntime.swift */,
 				D5A35EA77767B232921E8790 /* GhosttyModifierState.swift */,
@@ -350,6 +356,7 @@
 				A0B932FAA41E9006795EE777 /* ConnectionProfileRepository.swift in Sources */,
 				46AB566E5FE20B0A9870948B /* DebugConnectionProfileSeeder.swift in Sources */,
 				3132157B2624CF14A7CC89C1 /* DeterministicTmuxControlTransport.swift in Sources */,
+				AD7921666070B7A8F1FCC40E /* GhosttyClipboardContent.swift in Sources */,
 				EC5DBB8A8B8824D943732BCA /* GhosttyControlHostSurface.swift in Sources */,
 				32D8B6863F084EB75C669C70 /* GhosttyKitControlSurface.swift in Sources */,
 				17C3E7DD2BC6486C0E429A28 /* GhosttyKitRuntime.swift in Sources */,
@@ -382,6 +389,7 @@
 			files = (
 				CF1C7F9C03EC20D7F4A105E7 /* ConnectionProfileRepositoryTests.swift in Sources */,
 				0F5060F4E7020B09AA382A60 /* DebugConnectionProfileSeederTests.swift in Sources */,
+				58B436A0693C876BAF2B1A8E /* GhosttyClipboardContentTests.swift in Sources */,
 				A4A1E94BD85017D39A25DB9A /* GhosttyControlHostSurfaceTests.swift in Sources */,
 				23EB635D76A43C9B14C522A8 /* GhosttyKitControlSurfaceTests.swift in Sources */,
 				744AE7C46F2B7BFABD13B5FE /* GhosttyKitRuntimeTests.swift in Sources */,

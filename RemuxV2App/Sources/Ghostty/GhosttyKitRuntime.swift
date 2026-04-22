@@ -331,10 +331,18 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         confirm: Bool
     ) {
         _ = userdata
-        _ = clipboard
-        _ = contents
-        _ = count
-        _ = confirm
+        guard clipboard == GHOSTTY_CLIPBOARD_STANDARD else { return }
+        guard !confirm else { return }
+        guard let text = GhosttyClipboardContentDecoder.plainText(
+            contents: contents,
+            count: count
+        ) else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            UIPasteboard.general.string = text
+        }
     }
 
     static func closeSurface(
