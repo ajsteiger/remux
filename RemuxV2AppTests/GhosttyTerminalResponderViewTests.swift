@@ -97,7 +97,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
     }
 
-    func testHardwareCommandMappingRejectsUnmappedHIDUsage() {
+    func testHardwareCommandMappingRejectsUnmappedHIDUsageWithoutControlModifiers() {
         XCTAssertNil(
             GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
                 keyCode: .keyboardA,
@@ -106,17 +106,48 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
     }
 
-    func testHardwareCommandMappingResolvesCtrlCToText() {
+    func testHardwareCommandMappingResolvesCtrlAToText() {
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolve(
-                input: "c",
+                input: "a",
                 modifiers: .control
             ),
-            .text("\u{03}")
+            .text("\u{01}")
         )
     }
 
-    func testHardwareCommandMappingRejectsUnknownBinding() {
+    func testHardwareCommandMappingResolvesCtrlLeftBracketToEscapeText() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolve(
+                input: "[",
+                modifiers: .control
+            ),
+            .text("\u{1B}")
+        )
+    }
+
+    func testHardwareCommandMappingResolvesCtrlSpaceToNulText() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolve(
+                input: " ",
+                modifiers: .control
+            ),
+            .text("\u{00}")
+        )
+    }
+
+    func testHardwareCommandMappingResolvesCtrlHardwareLetterToText() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardA,
+                modifiers: .control,
+                charactersIgnoringModifiers: "a"
+            ),
+            .text("\u{01}")
+        )
+    }
+
+    func testHardwareCommandMappingRejectsUnknownBindingWithoutControlModifiers() {
         XCTAssertNil(
             GhosttyTerminalHardwareCommandMapping.resolve(
                 input: "x",

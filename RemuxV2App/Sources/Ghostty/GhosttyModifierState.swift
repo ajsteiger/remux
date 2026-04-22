@@ -3,6 +3,13 @@ import Foundation
 struct GhosttyModifierState: Equatable {
     private(set) var controlArmed = false
 
+    static let supportedControlInputs: [String] = {
+        let letters = (UnicodeScalar("a").value ... UnicodeScalar("z").value)
+            .compactMap(UnicodeScalar.init)
+            .map(String.init)
+        return letters + [" ", "@", "[", "\\", "]", "^", "-", "_"]
+    }()
+
     var isControlArmed: Bool {
         controlArmed
     }
@@ -14,16 +21,7 @@ struct GhosttyModifierState: Equatable {
     mutating func apply(to text: String) -> String {
         guard controlArmed else { return text }
         defer { controlArmed = false }
-
-        guard
-            text.count == 1,
-            let scalar = text.unicodeScalars.first,
-            let translated = Self.controlScalar(for: scalar)
-        else {
-            return text
-        }
-
-        return String(translated)
+        return Self.controlText(for: text) ?? text
     }
 
     mutating func apply(to event: GhosttySurfaceKeyEvent) -> GhosttySurfaceKeyEvent {
@@ -41,7 +39,19 @@ struct GhosttyModifierState: Equatable {
         )
     }
 
-    private static func controlScalar(for scalar: UnicodeScalar) -> UnicodeScalar? {
+    static func controlText(for text: String) -> String? {
+        guard
+            text.count == 1,
+            let scalar = text.unicodeScalars.first,
+            let translated = controlScalar(for: scalar)
+        else {
+            return nil
+        }
+
+        return String(translated)
+    }
+
+    static func controlScalar(for scalar: UnicodeScalar) -> UnicodeScalar? {
         switch scalar.value {
         case 0x41 ... 0x5A:
             return UnicodeScalar(scalar.value - 0x40)

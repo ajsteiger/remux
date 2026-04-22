@@ -18,6 +18,14 @@ final class GhosttyModifierStateTests: XCTestCase {
         XCTAssertFalse(state.isControlArmed)
     }
 
+    func testControlLatchTransformsSpaceIntoNul() {
+        var state = GhosttyModifierState()
+        state.toggleControl()
+
+        XCTAssertEqual(state.apply(to: " "), "\u{00}")
+        XCTAssertFalse(state.isControlArmed)
+    }
+
     func testControlLatchFallsBackToPlainTextAndClears() {
         var state = GhosttyModifierState()
         state.toggleControl()
@@ -36,5 +44,12 @@ final class GhosttyModifierStateTests: XCTestCase {
             GhosttySurfaceKeyEvent(keyCode: .arrowUp, mods: [.ctrl])
         )
         XCTAssertFalse(state.isControlArmed)
+    }
+
+    func testSupportedControlInputsIncludeTerminalControlCharacters() {
+        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains("a"))
+        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains(" "))
+        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains("["))
+        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains("_"))
     }
 }

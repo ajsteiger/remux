@@ -8,7 +8,10 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
     let sendKeyEvent: (GhosttySurfaceKeyEvent) -> Bool
 
     func makeUIView(context: Context) -> GhosttyTerminalResponderUIView {
-        GhosttyTerminalResponderUIView()
+        let view = GhosttyTerminalResponderUIView()
+        view.backgroundColor = .clear
+        view.isAccessibilityElement = false
+        return view
     }
 
     func updateUIView(_ uiView: GhosttyTerminalResponderUIView, context: Context) {
@@ -51,6 +54,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
 
     private var isInputEnabled = false
     private var activationToken = -1
+    private var pendingFirstResponderRequest = false
     private var sendTextHandler: ((String) -> Bool)?
     private var sendKeyEventHandler: ((GhosttySurfaceKeyEvent) -> Bool)?
 
@@ -68,18 +72,25 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             if isFirstResponder {
                 resignFirstResponder()
             }
+            pendingFirstResponderRequest = false
             self.activationToken = activationToken
             return
         }
 
         guard activationToken != self.activationToken else { return }
         self.activationToken = activationToken
-        becomeFirstResponder()
+        pendingFirstResponderRequest = true
+        requestFirstResponderIfNeeded()
     }
 
     func insertText(_ text: String) {
         guard isInputEnabled else { return }
         _ = sendTextHandler?(text)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        requestFirstResponderIfNeeded()
     }
 
     func deleteBackward() {
@@ -110,7 +121,8 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
                 let key = press.key,
                 let action = GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
                     keyCode: key.keyCode,
-                    modifiers: key.modifierFlags
+                    modifiers: key.modifierFlags,
+                    charactersIgnoringModifiers: key.charactersIgnoringModifiers
                 )
             else {
                 unhandledPresses.insert(press)
@@ -149,6 +161,22 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             _ = sendTextHandler?(text)
         }
     }
+
+    private func requestFirstResponderIfNeeded() {
+        guard pendingFirstResponderRequest else { return }
+        guard isInputEnabled else { return }
+        guard window != nil else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard self.pendingFirstResponderRequest else { return }
+            guard self.isInputEnabled else { return }
+
+            if self.becomeFirstResponder() {
+                self.pendingFirstResponderRequest = false
+            }
+        }
+    }
 }
 
 enum GhosttyTerminalHardwareCommandAction: Equatable {
@@ -171,10 +199,6 @@ enum GhosttyTerminalHardwareCommandMapping {
         .init(input: UIKeyCommand.inputEscape, modifiers: [], action: .keyEvent(.init(keyCode: .escape))),
         .init(input: UIKeyCommand.inputDelete, modifiers: [], action: .keyEvent(.init(keyCode: .backspace))),
         .init(input: "\t", modifiers: [], action: .keyEvent(.init(keyCode: .tab))),
-        .init(input: "c", modifiers: .control, action: .text("\u{03}")),
-        .init(input: "d", modifiers: .control, action: .text("\u{04}")),
-        .init(input: "l", modifiers: .control, action: .text("\u{0C}")),
-        .init(input: "z", modifiers: .control, action: .text("\u{1A}")),
     ]
 
     private static let hardwareKeyCodes: [UIKeyboardHIDUsage: GhosttySurfaceKeyEvent.KeyCode] = [
@@ -197,21 +221,36 @@ enum GhosttyTerminalHardwareCommandMapping {
         input: String,
         modifiers: UIKeyModifierFlags
     ) -> GhosttyTerminalHardwareCommandAction? {
-        mappings.first(where: { $0.input == input && $0.modifiers == modifiers })?.action
+        if let mapped = mappings.first(where: { $0.input == input && $0.modifiers == modifiers }) {
+            return mapped.action
+        }
+
+        guard supportsControlTextTranslation(modifiers: modifiers) else { return nil }
+        guard let translated = GhosttyModifierState.controlText(for: input) else { return nil }
+        return .text(translated)
     }
 
     static func resolveHardwareKey(
         keyCode: UIKeyboardHIDUsage,
-        modifiers: UIKeyModifierFlags
+        modifiers: UIKeyModifierFlags,
+        charactersIgnoringModifiers: String? = nil
     ) -> GhosttyTerminalHardwareCommandAction? {
-        guard let mappedKeyCode = hardwareKeyCodes[keyCode] else { return nil }
-
-        return .keyEvent(
-            .init(
-                keyCode: mappedKeyCode,
-                mods: ghosttyModifiers(from: modifiers)
+        if let mappedKeyCode = hardwareKeyCodes[keyCode] {
+            return .keyEvent(
+                .init(
+                    keyCode: mappedKeyCode,
+                    mods: ghosttyModifiers(from: modifiers)
+                )
             )
-        )
+        }
+
+        guard supportsControlTextTranslation(modifiers: modifiers) else { return nil }
+        guard let charactersIgnoringModifiers else { return nil }
+        guard let translated = GhosttyModifierState.controlText(for: charactersIgnoringModifiers) else {
+            return nil
+        }
+
+        return .text(translated)
     }
 
     @MainActor
@@ -219,15 +258,34 @@ enum GhosttyTerminalHardwareCommandMapping {
         target: Any?,
         action: Selector
     ) -> [UIKeyCommand] {
-        mappings.map {
-            let command = UIKeyCommand(
-                input: $0.input,
-                modifierFlags: $0.modifiers,
-                action: action
-            )
-            command.wantsPriorityOverSystemBehavior = true
-            return command
+        let directCommands = mappings.map {
+            makeKeyCommand(input: $0.input, modifiers: $0.modifiers, target: target, action: action)
         }
+        let controlCommands = GhosttyModifierState.supportedControlInputs.map {
+            makeKeyCommand(input: $0, modifiers: .control, target: target, action: action)
+        }
+        return directCommands + controlCommands
+    }
+
+    @MainActor
+    private static func makeKeyCommand(
+        input: String,
+        modifiers: UIKeyModifierFlags,
+        target: Any?,
+        action: Selector
+    ) -> UIKeyCommand {
+        let command = UIKeyCommand(
+            input: input,
+            modifierFlags: modifiers,
+            action: action
+        )
+        command.wantsPriorityOverSystemBehavior = true
+        return command
+    }
+
+    private static func supportsControlTextTranslation(modifiers: UIKeyModifierFlags) -> Bool {
+        guard modifiers.contains(.control) else { return false }
+        return !modifiers.contains(.command) && !modifiers.contains(.alternate)
     }
 
     private static func ghosttyModifiers(from modifiers: UIKeyModifierFlags) -> GhosttySurfaceKeyEvent.Mods {
