@@ -46,7 +46,6 @@ enum GhosttyKeyboardChromeMode: Equatable {
 }
 
 struct GhosttyKeyboardChrome: View {
-    let sessionName: String
     let keyboardMode: GhosttyKeyboardChromeMode
     let isEnabled: Bool
     let isCompact: Bool
@@ -86,7 +85,7 @@ struct GhosttyKeyboardChrome: View {
                 title: windowTitle,
                 detail: windowDetail,
                 systemName: "rectangle.on.rectangle",
-                isEnabled: isEnabled && windowCount > 1,
+                isEnabled: isEnabled && windowCount > 0,
                 action: onShowWindows
             )
 
@@ -94,7 +93,7 @@ struct GhosttyKeyboardChrome: View {
                 title: paneTitle,
                 detail: paneDetail,
                 systemName: "square.split.2x1",
-                isEnabled: isEnabled && paneCount > 1,
+                isEnabled: isEnabled && paneCount > 0,
                 action: onShowPanes
             )
 
@@ -246,21 +245,21 @@ struct GhosttyKeyboardChrome: View {
     }
 
     private var windowTitle: String {
-        guard windowCount > 1 else { return sessionName }
+        guard windowCount > 0 else { return "Window" }
         return "Window \(displayIndex(selectedWindowIndex, count: windowCount))/\(windowCount)"
     }
 
     private var windowDetail: String? {
-        windowCount > 1 ? nil : "window"
+        windowCount > 1 ? "switch or create" : "create"
     }
 
     private var paneTitle: String {
-        guard paneCount > 1 else { return "Pane" }
+        guard paneCount > 0 else { return "Pane" }
         return "Pane \(displayIndex(selectedPaneIndex, count: paneCount))/\(paneCount)"
     }
 
     private var paneDetail: String? {
-        paneCount > 1 ? nil : "single"
+        paneCount > 1 ? "switch or split" : "split or stack"
     }
 
     private func displayIndex(_ index: Int?, count: Int) -> Int {

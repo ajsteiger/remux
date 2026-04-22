@@ -9,9 +9,9 @@ enum GhosttySurfaceSelectionSheet: String, Identifiable {
     var preferredHeight: CGFloat {
         switch self {
         case .windows:
-            310
+            370
         case .panes:
-            360
+            430
         }
     }
 }
@@ -20,6 +20,7 @@ struct GhosttyWindowSelectionSheet: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
 
     let sessionName: String
+    let onCreateWindow: (() -> Void)?
     let onSelect: (UUID) -> Void
 
     var body: some View {
@@ -34,6 +35,13 @@ struct GhosttyWindowSelectionSheet: View {
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.black)
             }
+
+            GhosttySheetActionButton(
+                title: "Create Window",
+                subtitle: "Requires Ghostty tmux action API",
+                systemName: "plus",
+                action: onCreateWindow
+            )
 
             VStack(spacing: 8) {
                 ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
@@ -61,6 +69,8 @@ struct GhosttyWindowSelectionSheet: View {
 struct GhosttyPaneSelectionSheet: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
 
+    let onSplitPane: (() -> Void)?
+    let onStackPane: (() -> Void)?
     let onSelect: (UUID) -> Void
 
     private let columns = [
@@ -82,6 +92,22 @@ struct GhosttyPaneSelectionSheet: View {
                 Text("\(leafIDs.count) \(leafIDs.count == 1 ? "pane" : "panes")")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.black)
+            }
+
+            HStack(spacing: 10) {
+                GhosttySheetActionButton(
+                    title: "Split",
+                    subtitle: "Horizontal tmux split",
+                    systemName: "square.split.2x1",
+                    action: onSplitPane
+                )
+
+                GhosttySheetActionButton(
+                    title: "Stack",
+                    subtitle: "Vertical tmux split",
+                    systemName: "square.split.1x2",
+                    action: onStackPane
+                )
             }
 
             LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
@@ -107,6 +133,50 @@ struct GhosttyPaneSelectionSheet: View {
         .padding(.horizontal, 18)
         .padding(.top, 18)
         .padding(.bottom, 12)
+    }
+}
+
+private struct GhosttySheetActionButton: View {
+    let title: String
+    let subtitle: String
+    let systemName: String
+    let action: (() -> Void)?
+
+    var body: some View {
+        Button {
+            action?()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .background(Color.black.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.black)
+
+                    Text(action == nil ? "Not wired yet" : subtitle)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.black.opacity(0.48))
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(action == nil ? Color.black.opacity(0.04) : Color.white.opacity(0.76))
+            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+            }
+            .opacity(action == nil ? 0.62 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
     }
 }
 

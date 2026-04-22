@@ -7,6 +7,7 @@ struct GhosttySurfaceScreen: View {
     @State private var inputFocus = GhosttyTerminalFocusState()
     @State private var modifierState = GhosttyModifierState()
     @State private var keyboardMode: GhosttyKeyboardChromeMode = .hidden
+    @State private var isKeyboardDismissalRequested = false
     @State private var isSoftwareKeyboardVisible = false
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
 
@@ -39,67 +40,46 @@ struct GhosttySurfaceScreen: View {
                 Color(red: 0.03, green: 0.04, blue: 0.07)
                     .ignoresSafeArea()
 
-                VStack(alignment: .leading, spacing: chrome.contentSpacing) {
-                    VStack(alignment: .leading, spacing: chrome.headerSpacing) {
-                        Text(target.workspace.sessionName)
-                            .font(.system(size: chrome.titleFontSize, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-
-                        if !chrome.isCompact {
-                            Text("\(target.server.displayName) · \(target.server.username)@\(target.server.host)")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.white.opacity(0.62))
-                        }
-                    }
-                    .overlay(alignment: .trailing) {
-                        Button("Edit") {
-                            onEditConnection()
-                        }
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.8))
-                    }
-                    .padding(.horizontal, chrome.headerHorizontalPadding)
-                    .padding(.top, chrome.headerTopPadding)
-
-                    GeometryReader { proxy in
-                        ZStack {
-                            GhosttyHostSurfaceView(model: model, size: proxy.size)
-                                .opacity(0.001)
-                                .allowsHitTesting(false)
-
-                            GhosttyRuntimePaneTreeView(
-                                registry: registry,
-                                onSurfaceInteraction: showSystemKeyboard
-                            )
-                                .id(model.surfaceRegistryRevision)
-                                .background(Color.black)
-
-                            GhosttyTerminalResponderRepresentable(
-                                isEnabled: keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
-                                activationToken: inputFocus.terminalActivationToken,
-                                sendText: sendTerminalText,
-                                sendKeyEvent: sendTerminalKeyEvent
-                            )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .opacity(0.01)
+                GeometryReader { proxy in
+                    ZStack {
+                        GhosttyHostSurfaceView(model: model, size: proxy.size)
+                            .opacity(0.001)
                             .allowsHitTesting(false)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: chrome.surfaceCornerRadius, style: .continuous))
-                        .overlay(alignment: .topLeading) {
-                            GhosttySurfaceStatusOverlay(
-                                model: model,
-                                registry: registry
-                            )
+
+                        GhosttyRuntimePaneTreeView(
+                            registry: registry,
+                            onSurfaceInteraction: showSystemKeyboard
+                        )
                             .id(model.surfaceRegistryRevision)
-                        }
+                            .background(Color.black)
+
+                        GhosttyTerminalResponderRepresentable(
+                            isEnabled: keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
+                            activationToken: inputFocus.terminalActivationToken,
+                            sendText: sendTerminalText,
+                            sendKeyEvent: sendTerminalKeyEvent
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .opacity(0.01)
+                        .allowsHitTesting(false)
                     }
-                    .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                    .onChange(of: focusedField) { _, newValue in
-                        inputFocus.syncSystemFocus(newValue)
+                    .overlay(alignment: .topLeading) {
+                        GhosttySurfaceStatusOverlay(
+                            model: model,
+                            registry: registry
+                        )
+                        .id(model.surfaceRegistryRevision)
                     }
+                }
+                .ignoresSafeArea(.container, edges: .bottom)
+                .onChange(of: focusedField) { _, newValue in
+                    inputFocus.syncSystemFocus(newValue)
+                }
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
 
                     GhosttyKeyboardChrome(
-                        sessionName: target.workspace.sessionName,
                         keyboardMode: keyboardMode,
                         isEnabled: isTerminalInputAvailable,
                         isCompact: chrome.isCompact,
@@ -118,7 +98,7 @@ struct GhosttySurfaceScreen: View {
                         sendKey: sendTerminalKeyEvent
                     )
                     .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                    .padding(.bottom, chrome.bottomPadding)
+                    .padding(.bottom, max(screenProxy.safeAreaInsets.bottom, chrome.bottomPadding))
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
@@ -126,7 +106,10 @@ struct GhosttySurfaceScreen: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 isSoftwareKeyboardVisible = false
-                keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+                if isKeyboardDismissalRequested {
+                    keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+                    isKeyboardDismissalRequested = false
+                }
             }
             .sheet(item: $selectionSheet) { sheet in
                 selectionSheetContent(sheet)
@@ -158,6 +141,7 @@ struct GhosttySurfaceScreen: View {
 
     private func showSystemKeyboard() {
         guard isTerminalInputAvailable else { return }
+        isKeyboardDismissalRequested = false
         keyboardMode = .system
         inputFocus.activateTerminal()
         focusedField = inputFocus.preferredField
@@ -169,9 +153,11 @@ struct GhosttySurfaceScreen: View {
         case .system:
             showSystemKeyboard()
         case .hidden:
+            isKeyboardDismissalRequested = true
             keyboardMode = .hidden
             focusedField = nil
         case .custom:
+            isKeyboardDismissalRequested = false
             keyboardMode = .custom
             focusedField = nil
         }
@@ -185,9 +171,11 @@ struct GhosttySurfaceScreen: View {
         case .system:
             showSystemKeyboard()
         case .custom:
+            isKeyboardDismissalRequested = false
             keyboardMode = .custom
             focusedField = nil
         case .hidden:
+            isKeyboardDismissalRequested = true
             keyboardMode = .hidden
             focusedField = nil
         }
@@ -206,12 +194,12 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showWindows() {
-        guard registry.topLevels.count > 1 else { return }
+        guard !registry.topLevels.isEmpty else { return }
         selectionSheet = .windows
     }
 
     private func showPanes() {
-        guard (registry.selectedTopLevel?.leafIDs.count ?? 0) > 1 else { return }
+        guard registry.selectedTopLevel != nil else { return }
         selectionSheet = .panes
     }
 
@@ -244,7 +232,13 @@ struct GhosttySurfaceScreen: View {
         let screenBounds = UIScreen.main.bounds
         isSoftwareKeyboardVisible = keyboardFrame.minY < screenBounds.height - 1
 
-        keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(isSoftwareKeyboardVisible)
+        if isSoftwareKeyboardVisible {
+            isKeyboardDismissalRequested = false
+            keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(true)
+        } else if isKeyboardDismissalRequested {
+            keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+            isKeyboardDismissalRequested = false
+        }
     }
 
     @ViewBuilder
@@ -254,6 +248,7 @@ struct GhosttySurfaceScreen: View {
             GhosttyWindowSelectionSheet(
                 registry: registry,
                 sessionName: target.workspace.sessionName,
+                onCreateWindow: nil,
                 onSelect: { id in
                     registry.selectTopLevel(id)
                     selectionSheet = nil
@@ -264,6 +259,8 @@ struct GhosttySurfaceScreen: View {
         case .panes:
             GhosttyPaneSelectionSheet(
                 registry: registry,
+                onSplitPane: nil,
+                onStackPane: nil,
                 onSelect: { id in
                     registry.selectSurface(id)
                     selectionSheet = nil
@@ -304,32 +301,8 @@ struct GhosttyPhoneChromeLayout: Equatable {
         isLandscape || isSoftwareKeyboardVisible
     }
 
-    var titleFontSize: CGFloat {
-        isCompact ? 18 : 22
-    }
-
-    var headerSpacing: CGFloat {
-        isCompact ? 2 : 4
-    }
-
-    var contentSpacing: CGFloat {
-        isCompact ? 10 : 14
-    }
-
-    var headerHorizontalPadding: CGFloat {
-        isCompact ? 12 : 18
-    }
-
-    var headerTopPadding: CGFloat {
-        isCompact ? 10 : 18
-    }
-
     var surfaceHorizontalPadding: CGFloat {
         isCompact ? 8 : 12
-    }
-
-    var surfaceCornerRadius: CGFloat {
-        isCompact ? 14 : 18
     }
 
     var bottomPadding: CGFloat {

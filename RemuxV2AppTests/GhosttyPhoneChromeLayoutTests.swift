@@ -10,7 +10,6 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
         )
 
         XCTAssertFalse(layout.isCompact)
-        XCTAssertEqual(layout.titleFontSize, 22)
         XCTAssertEqual(layout.surfaceHorizontalPadding, 12)
         XCTAssertEqual(layout.bottomPadding, 12)
     }
@@ -22,7 +21,6 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
         )
 
         XCTAssertTrue(layout.isCompact)
-        XCTAssertEqual(layout.titleFontSize, 18)
         XCTAssertEqual(layout.surfaceHorizontalPadding, 8)
         XCTAssertEqual(layout.bottomPadding, 8)
     }
@@ -35,7 +33,7 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
 
         XCTAssertTrue(layout.isLandscape)
         XCTAssertTrue(layout.isCompact)
-        XCTAssertEqual(layout.headerTopPadding, 10)
-        XCTAssertEqual(layout.surfaceCornerRadius, 14)
+        XCTAssertEqual(layout.surfaceHorizontalPadding, 8)
+        XCTAssertEqual(layout.bottomPadding, 8)
     }
 }
