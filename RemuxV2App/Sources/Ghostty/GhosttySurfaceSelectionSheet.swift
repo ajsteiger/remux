@@ -129,34 +129,19 @@ struct GhosttyPaneSelectionSheet: View {
         .onChange(of: leafIDs) { _, newValue in rebuildPreviews(newValue) }
     }
 
-    @ViewBuilder
     private func paneLayout(leafIDs: [UUID], selectedLeafID: UUID?) -> some View {
-        if leafIDs.count == 1, let paneID = leafIDs.first {
-            Button {
-                onSelect(paneID)
-            } label: {
-                GhosttyPaneSelectionTile(
-                    index: 0,
-                    isSelected: paneID == selectedLeafID,
-                    snapshot: previewsByID[paneID],
-                    fillsWidth: true
-                )
-            }
-            .buttonStyle(.plain)
-        } else {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
-                    Button {
-                        onSelect(paneID)
-                    } label: {
-                        GhosttyPaneSelectionTile(
-                            index: index,
-                            isSelected: paneID == selectedLeafID,
-                            snapshot: previewsByID[paneID]
-                        )
-                    }
-                    .buttonStyle(.plain)
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
+                Button {
+                    onSelect(paneID)
+                } label: {
+                    GhosttyPaneSelectionTile(
+                        index: index,
+                        isSelected: paneID == selectedLeafID,
+                        snapshot: previewsByID[paneID]
+                    )
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -286,7 +271,6 @@ private struct GhosttyPaneSelectionTile: View {
     let index: Int
     let isSelected: Bool
     let snapshot: PanePreviewSnapshot?
-    var fillsWidth: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -326,26 +310,20 @@ private struct GhosttyPaneSelectionTile: View {
 
     @ViewBuilder
     private var previewSurface: some View {
-        HStack {
-            if let snapshot {
-                GhosttyPanePreviewView(snapshot: snapshot)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                    }
-            } else {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.black.opacity(0.30))
-                    .frame(
-                        width: PanePreviewGeometry.defaultWidth,
-                        height: PanePreviewGeometry.defaultHeight
-                    )
-            }
-
-            if fillsWidth {
-                Spacer(minLength: 0)
-            }
+        if let snapshot {
+            GhosttyPanePreviewView(snapshot: snapshot)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                }
+        } else {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.black.opacity(0.30))
+                .frame(
+                    width: PanePreviewGeometry.defaultWidth,
+                    height: PanePreviewGeometry.defaultHeight
+                )
         }
     }
 }
