@@ -305,10 +305,25 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         clipboard: ghostty_clipboard_e,
         request: UnsafeMutableRawPointer?
     ) -> Bool {
-        _ = userdata
-        _ = clipboard
-        _ = request
-        return false
+        guard clipboard == GHOSTTY_CLIPBOARD_STANDARD else { return false }
+        guard let request else { return false }
+        guard
+            let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
+            let surface = lifecycle.surfaceHandle
+        else {
+            return false
+        }
+        guard let text = readPasteboardString() else { return false }
+
+        text.withCString { pointer in
+            ghostty_surface_complete_clipboard_request(
+                surface,
+                pointer,
+                request,
+                false
+            )
+        }
+        return true
     }
 
     static func confirmReadClipboard(
@@ -317,10 +332,32 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         request: UnsafeMutableRawPointer?,
         kind: ghostty_clipboard_request_e
     ) {
-        _ = userdata
-        _ = string
-        _ = request
-        _ = kind
+        guard let request else { return }
+        guard
+            let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
+            let surface = lifecycle.surfaceHandle
+        else {
+            return
+        }
+
+        let text: String
+        switch kind {
+        case GHOSTTY_CLIPBOARD_REQUEST_PASTE, GHOSTTY_CLIPBOARD_REQUEST_OSC_52_WRITE:
+            text = string.map(String.init(cString:)) ?? ""
+        default:
+            // Do not expose the iOS pasteboard to terminal-initiated OSC 52
+            // reads until Remux has a user-facing confirmation path.
+            text = ""
+        }
+
+        text.withCString { pointer in
+            ghostty_surface_complete_clipboard_request(
+                surface,
+                pointer,
+                request,
+                true
+            )
+        }
     }
 
     static func writeClipboard(
@@ -342,6 +379,16 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
 
         DispatchQueue.main.async {
             UIPasteboard.general.string = text
+        }
+    }
+
+    private static func readPasteboardString() -> String? {
+        if Thread.isMainThread {
+            return UIPasteboard.general.string
+        }
+
+        return DispatchQueue.main.sync {
+            UIPasteboard.general.string
         }
     }
 

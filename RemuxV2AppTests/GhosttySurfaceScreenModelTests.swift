@@ -190,6 +190,20 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.focusedSurfaceMouseCaptured())
     }
 
+    func testRuntimeSurfaceLifecycleBindsSurfaceHandleForCallbacks() {
+        let lifecycle = GhosttyRuntimeSurfaceLifecycle(
+            registry: GhosttyRuntimeSurfaceRegistry(),
+            surfaceID: UUID()
+        )
+        let surfaceHandle = UnsafeMutableRawPointer(bitPattern: 0x1234)!
+
+        XCTAssertNil(lifecycle.surfaceHandle)
+
+        lifecycle.bind(surfaceHandle: surfaceHandle)
+
+        XCTAssertEqual(lifecycle.surfaceHandle, surfaceHandle)
+    }
+
     func testDebugPaneInputSmokeIsDisabledWithoutConfiguredText() {
         XCTAssertNil(DebugPaneInputSmokeCommand(nil))
         XCTAssertNil(DebugPaneInputSmokeCommand(""))

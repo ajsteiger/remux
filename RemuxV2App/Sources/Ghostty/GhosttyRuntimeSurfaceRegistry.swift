@@ -415,6 +415,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             NSLog("Remux ghostty_surface_new returned nil for runtime-managed surface")
             return nil
         }
+        lifecycle.bind(surfaceHandle: surface)
         NSLog("Remux created managed Ghostty surface id=%@ handle=%@", surfaceID.uuidString, String(describing: surface))
 
         let controlSurface = GhosttyKitControlSurface(
@@ -581,6 +582,12 @@ final class GhosttyManagedSurface {
 final class GhosttyRuntimeSurfaceLifecycle: @unchecked Sendable {
     weak var registry: GhosttyRuntimeSurfaceRegistry?
     let surfaceID: UUID
+    var surfaceHandle: ghostty_surface_t? {
+        lock.withLock { boundSurfaceHandle }
+    }
+
+    private let lock = NSLock()
+    private var boundSurfaceHandle: ghostty_surface_t?
 
     init(
         registry: GhosttyRuntimeSurfaceRegistry,
@@ -588,6 +595,12 @@ final class GhosttyRuntimeSurfaceLifecycle: @unchecked Sendable {
     ) {
         self.registry = registry
         self.surfaceID = surfaceID
+    }
+
+    func bind(surfaceHandle: ghostty_surface_t) {
+        lock.withLock {
+            boundSurfaceHandle = surfaceHandle
+        }
     }
 
     var userdata: UnsafeMutableRawPointer {
