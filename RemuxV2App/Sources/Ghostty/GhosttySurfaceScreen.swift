@@ -101,7 +101,7 @@ struct GhosttySurfaceScreen: View {
                     sendKey: sendTerminalKeyEvent
                 )
                 .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                .padding(.top, keyboardMode.showsInputControls ? 4 : 2)
+                .padding(.top, keyboardMode.showsInputControls ? 2 : 1)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .background(GhosttyPhoneChromePalette.screenBackground)
