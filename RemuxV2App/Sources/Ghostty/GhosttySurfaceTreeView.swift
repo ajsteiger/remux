@@ -5,37 +5,11 @@ struct GhosttyRuntimePaneTreeView: View {
     let onSurfaceInteraction: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 10) {
-            if registry.topLevels.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
-                            Button("Window \(index + 1)") {
-                                registry.selectTopLevel(topLevel.id)
-                                onSurfaceInteraction?()
-                            }
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(topLevel.id == registry.selectedTopLevel?.id ? Color.black : Color.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(topLevel.id == registry.selectedTopLevel?.id ? Color.white : Color.white.opacity(0.12))
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                }
-            }
-
-            GhosttySurfaceTreeContainerRepresentable(
-                registry: registry,
-                topLevel: registry.selectedTopLevel,
-                onSurfaceInteraction: onSurfaceInteraction
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        GhosttySurfaceTreeContainerRepresentable(
+            registry: registry,
+            topLevel: registry.selectedTopLevel,
+            onSurfaceInteraction: onSurfaceInteraction
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -61,7 +35,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     }
 }
 
-private final class GhosttySurfaceTreeContainerUIView: UIView {
+private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate {
     private weak var registry: GhosttyRuntimeSurfaceRegistry?
     private var topLevel: GhosttyTopLevelSurface?
     private var onSurfaceInteraction: (() -> Void)?
@@ -71,10 +45,27 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
         recognizer.maximumNumberOfTouches = 1
         return recognizer
     }()
+    private lazy var previousWindowRecognizer: UISwipeGestureRecognizer = {
+        let recognizer = UISwipeGestureRecognizer(target: self, action: #selector(handleWindowSwipe(_:)))
+        recognizer.direction = .right
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = self
+        return recognizer
+    }()
+    private lazy var nextWindowRecognizer: UISwipeGestureRecognizer = {
+        let recognizer = UISwipeGestureRecognizer(target: self, action: #selector(handleWindowSwipe(_:)))
+        recognizer.direction = .left
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = self
+        return recognizer
+    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        panRecognizer.delegate = self
         addGestureRecognizer(panRecognizer)
+        addGestureRecognizer(previousWindowRecognizer)
+        addGestureRecognizer(nextWindowRecognizer)
     }
 
     @available(*, unavailable)
@@ -231,6 +222,17 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
     }
 
     @objc
+    private func handleWindowSwipe(_ recognizer: UISwipeGestureRecognizer) {
+        guard let registry else { return }
+
+        let direction: GhosttyRuntimeSelectionDirection = recognizer.direction == .left ? .next : .previous
+        guard registry.selectAdjacentTopLevel(direction) else { return }
+
+        onSurfaceInteraction?()
+        setNeedsLayout()
+    }
+
+    @objc
     private func handleSurfacePan(_ recognizer: UIPanGestureRecognizer) {
         guard
             let registry,
@@ -246,6 +248,13 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
 
         _ = registry.sendMouseScrollToFocusedSurface(event)
         recognizer.setTranslation(.zero, in: self)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 
     private var effectiveScale: CGFloat {

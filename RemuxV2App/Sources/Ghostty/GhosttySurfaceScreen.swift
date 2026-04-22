@@ -9,6 +9,7 @@ struct GhosttySurfaceScreen: View {
     @State private var isInjectorExpanded = false
     @State private var isSoftwareKeyboardVisible = false
     @State private var pendingInput = ""
+    @State private var selectionSheet: GhosttySurfaceSelectionSheet?
 
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
@@ -105,8 +106,12 @@ struct GhosttySurfaceScreen: View {
                         isExpanded: isInjectorExpanded,
                         isCompact: chrome.isCompact,
                         isControlArmed: modifierState.isControlArmed,
+                        windowCount: registry.topLevels.count,
+                        paneCount: registry.selectedTopLevel?.leafIDs.count ?? 0,
                         onToggleExpansion: toggleInjectorExpansion,
                         onToggleControl: toggleControlModifier,
+                        onShowWindows: showWindows,
+                        onShowPanes: showPanes,
                         quickActions: GhosttyTerminalQuickAction.allCases,
                         onQuickAction: performQuickAction,
                         onSubmit: submitInput
@@ -120,6 +125,12 @@ struct GhosttySurfaceScreen: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 isSoftwareKeyboardVisible = false
+            }
+            .sheet(item: $selectionSheet) { sheet in
+                selectionSheetContent(sheet)
+                    .presentationDetents([.height(sheet.preferredHeight)])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(Color(red: 0.97, green: 0.96, blue: 0.93))
             }
         }
     }
@@ -160,6 +171,16 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
+    private func showWindows() {
+        guard registry.topLevels.count > 1 else { return }
+        selectionSheet = .windows
+    }
+
+    private func showPanes() {
+        guard (registry.selectedTopLevel?.leafIDs.count ?? 0) > 1 else { return }
+        selectionSheet = .panes
+    }
+
     private func sendTerminalText(_ text: String) -> Bool {
         let outbound = modifierState.apply(to: text)
         return model.sendInputToFocusedSurface(outbound)
@@ -193,6 +214,32 @@ struct GhosttySurfaceScreen: View {
             isInjectorExpanded = false
         }
     }
+
+    @ViewBuilder
+    private func selectionSheetContent(_ sheet: GhosttySurfaceSelectionSheet) -> some View {
+        switch sheet {
+        case .windows:
+            GhosttyWindowSelectionSheet(
+                registry: registry,
+                sessionName: target.workspace.sessionName,
+                onSelect: { id in
+                    registry.selectTopLevel(id)
+                    selectionSheet = nil
+                    activateTerminalInput()
+                }
+            )
+
+        case .panes:
+            GhosttyPaneSelectionSheet(
+                registry: registry,
+                onSelect: { id in
+                    registry.selectSurface(id)
+                    selectionSheet = nil
+                    activateTerminalInput()
+                }
+            )
+        }
+    }
 }
 
 private struct GhosttyPaneInputBar: View {
@@ -203,64 +250,89 @@ private struct GhosttyPaneInputBar: View {
     let isExpanded: Bool
     let isCompact: Bool
     let isControlArmed: Bool
+    let windowCount: Int
+    let paneCount: Int
     let onToggleExpansion: () -> Void
     let onToggleControl: () -> Void
+    let onShowWindows: () -> Void
+    let onShowPanes: () -> Void
     let quickActions: [GhosttyTerminalQuickAction]
     let onQuickAction: (GhosttyTerminalQuickAction) -> Void
     let onSubmit: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 10) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        Button("Ctrl") {
-                            onToggleControl()
+        VStack(alignment: .leading, spacing: isCompact ? 8 : 10) {
+            HStack(spacing: 8) {
+                GhosttyBottomChromeButton(
+                    title: "Windows",
+                    detail: windowCount > 1 ? "\(windowCount)" : nil,
+                    isProminent: false,
+                    isEnabled: isEnabled && windowCount > 1,
+                    action: onShowWindows
+                )
+
+                GhosttyBottomChromeButton(
+                    title: "Panes",
+                    detail: paneCount > 1 ? "\(paneCount)" : nil,
+                    isProminent: false,
+                    isEnabled: isEnabled && paneCount > 1,
+                    action: onShowPanes
+                )
+
+                Spacer(minLength: 6)
+
+                GhosttyBottomChromeButton(
+                    title: "Keyboard",
+                    detail: nil,
+                    isProminent: true,
+                    isEnabled: isEnabled,
+                    action: { onQuickAction(.keyboard) }
+                )
+
+                GhosttyBottomChromeButton(
+                    title: isExpanded ? "Hide" : "Send",
+                    detail: nil,
+                    isProminent: isExpanded,
+                    isEnabled: isEnabled,
+                    action: onToggleExpansion
+                )
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Button("Ctrl") {
+                        onToggleControl()
+                    }
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(isControlArmed ? .black : Color.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isControlArmed ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white.opacity(0.08))
+                    )
+                    .disabled(!isEnabled)
+
+                    ForEach(quickActions.filter { $0 != .keyboard }) { action in
+                        Button(action.title) {
+                            onQuickAction(action)
                         }
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(isControlArmed ? .black : Color.white)
+                        .foregroundStyle(action == .interrupt ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(isControlArmed ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white.opacity(0.08))
+                                .fill(Color.white.opacity(0.08))
                         )
                         .disabled(!isEnabled)
-
-                        ForEach(quickActions) { action in
-                            Button(action.title) {
-                                onQuickAction(action)
-                            }
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(action == .interrupt ? Color(red: 0.42, green: 1.0, blue: 0.85) : Color.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color.white.opacity(0.08))
-                            )
-                            .disabled(!isEnabled)
-                        }
                     }
                 }
-
-                Button(isExpanded ? "Hide" : "Raw Input") {
-                    onToggleExpansion()
-                }
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(isExpanded ? .black : Color.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isExpanded ? Color.white : Color.white.opacity(0.08))
-                )
-                .disabled(!isEnabled)
             }
 
             if isExpanded {
                 HStack(spacing: 10) {
-                    TextField("Inject raw input into focused pane", text: $text)
+                    TextField("Send raw input to focused pane", text: $text)
                         .focused(focusedField, equals: .sendBar)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -274,7 +346,7 @@ private struct GhosttyPaneInputBar: View {
                         .disabled(!isEnabled)
                         .onSubmit(onSubmit)
 
-                    Button("Inject", action: onSubmit)
+                    Button("Send", action: onSubmit)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 14)
@@ -285,7 +357,49 @@ private struct GhosttyPaneInputBar: View {
                 }
             }
         }
-        .padding(.vertical, isCompact ? 4 : 0)
+        .padding(10)
+        .background(Color.white.opacity(0.055))
+        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 18 : 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: isCompact ? 18 : 22, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        }
+        .padding(.vertical, isCompact ? 0 : 2)
+    }
+}
+
+private struct GhosttyBottomChromeButton: View {
+    let title: String
+    let detail: String?
+    let isProminent: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title)
+
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background((isProminent ? Color.black : Color.white).opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(isProminent ? Color.black : Color.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isProminent ? Color.white : Color.white.opacity(0.08))
+            )
+            .opacity(isEnabled ? 1 : 0.38)
+        }
+        .disabled(!isEnabled)
     }
 }
 
