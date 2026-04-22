@@ -94,30 +94,31 @@ struct GhosttyKeyboardChrome: View {
                     )
             }
         }
-        .padding(.top, keyboardMode.showsInputControls ? 0 : 0)
         .animation(Self.transitionAnimation, value: keyboardMode)
         .animation(.easeInOut(duration: 0.18), value: isCompact)
     }
 
     private var selectorRow: some View {
-        HStack(spacing: 8) {
-            GhosttyKeyboardChromeSelector(
-                title: windowTitle,
-                detail: windowDetail,
-                systemName: "rectangle.on.rectangle",
-                isEnabled: isEnabled && windowCount > 0,
-                action: onShowWindows
-            )
-            .frame(maxWidth: .infinity)
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                GhosttyKeyboardChromeSelector(
+                    title: windowTitle,
+                    detail: windowDetail,
+                    systemName: "rectangle.on.rectangle",
+                    isEnabled: isEnabled && windowCount > 0,
+                    action: onShowWindows
+                )
+                .frame(maxWidth: .infinity)
 
-            GhosttyKeyboardChromeSelector(
-                title: paneTitle,
-                detail: paneDetail,
-                systemName: "square.split.2x1",
-                isEnabled: isEnabled && paneCount > 0,
-                action: onShowPanes
-            )
-            .frame(maxWidth: .infinity)
+                GhosttyKeyboardChromeSelector(
+                    title: paneTitle,
+                    detail: paneDetail,
+                    systemName: "square.split.2x1",
+                    isEnabled: isEnabled && paneCount > 0,
+                    action: onShowPanes
+                )
+                .frame(maxWidth: .infinity)
+            }
 
             GhosttyKeyboardChromeIconButton(
                 title: nil,
@@ -225,7 +226,7 @@ struct GhosttyKeyboardChrome: View {
     }
 
     private var customKeyboard: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
 
@@ -238,12 +239,12 @@ struct GhosttyKeyboardChrome: View {
                 )
             }
 
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
                 customGrid(keys: Self.leftCustomKeys)
                 customGrid(keys: Self.rightCustomKeys)
             }
         }
-        .padding(5)
+        .padding(10)
         .background(GhosttyPhoneChromePalette.tray)
         .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
         .overlay {
@@ -254,16 +255,23 @@ struct GhosttyKeyboardChrome: View {
 
     private func customGrid(keys: [GhosttyCustomKeyboardKey]) -> some View {
         LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4),
-            spacing: 6
+            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+            spacing: 10
         ) {
             ForEach(keys) { key in
                 GhosttyKeyboardKeyButton(
                     title: key.title,
+                    fontSize: 10,
+                    minWidth: 0,
+                    minHeight: 30,
+                    horizontalPadding: 0,
+                    verticalPadding: 0,
+                    hugsContent: true,
                     isActive: key.action == .toggleControl && isControlArmed,
                     isEnabled: isEnabled,
                     action: { perform(key.action) }
                 )
+                .padding(1)
             }
         }
     }
@@ -413,7 +421,7 @@ private struct GhosttyKeyboardChromeIconButton: View {
                 }
             }
             .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.86))
-            .frame(width: title == nil ? 40 : 44, height: 36)
+            .frame(width: title == nil ? 40 : 42, height: 34)
             .background(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.pill)
             .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay {
@@ -433,6 +441,7 @@ private struct GhosttyKeyboardKeyButton: View {
     var minHeight: CGFloat = 36
     var horizontalPadding: CGFloat = 6
     var verticalPadding: CGFloat = 6
+    var hugsContent = false
     var isActive = false
     let isEnabled: Bool
     let action: () -> Bool
@@ -447,6 +456,7 @@ private struct GhosttyKeyboardKeyButton: View {
                 .minimumScaleFactor(0.8)
                 .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))
                 .frame(minWidth: minWidth, minHeight: minHeight)
+                .fixedSize(horizontal: hugsContent, vertical: false)
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, verticalPadding)
                 .background(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.keySurface)
