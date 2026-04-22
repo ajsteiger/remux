@@ -189,6 +189,7 @@ private final class GhosttyKitRuntimeState {
             confirm_read_clipboard_cb: GhosttyKitRuntimeCallbacks.confirmReadClipboardCallback,
             write_clipboard_cb: GhosttyKitRuntimeCallbacks.writeClipboardCallback,
             close_surface_cb: GhosttyKitRuntimeCallbacks.closeSurfaceCallback,
+            select_surface_cb: GhosttyKitRuntimeCallbacks.selectSurfaceCallback,
             create_surface_cb: GhosttyKitRuntimeCallbacks.createSurfaceCallback,
             create_surface_tree_cb: GhosttyKitRuntimeCallbacks.createSurfaceTreeCallback
         )
@@ -266,6 +267,12 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
     static var closeSurfaceCallback: ghostty_runtime_close_surface_cb {
         { userdata, processAlive in
             GhosttyKitRuntimeCallbacks.closeSurface(userdata, processAlive: processAlive)
+        }
+    }
+
+    static var selectSurfaceCallback: ghostty_runtime_select_surface_cb {
+        { app, surface in
+            GhosttyKitRuntimeCallbacks.selectSurface(app, surface: surface)
         }
     }
 
@@ -442,6 +449,25 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     app: appBox.value,
                     request: requestBox.value
                 ) ?? false
+            }
+        }
+    }
+
+    static func selectSurface(
+        _ app: ghostty_app_t?,
+        surface: ghostty_surface_t?
+    ) {
+        guard let callbacks = from(app: app) else { return }
+        if Thread.isMainThread {
+            callbacks.surfaceDelegate?.runtimeSelectSurface(app: app, surface: surface)
+        } else {
+            let appBox = UnsafeSendable(app)
+            let surfaceBox = UnsafeSendable(surface)
+            DispatchQueue.main.sync {
+                callbacks.surfaceDelegate?.runtimeSelectSurface(
+                    app: appBox.value,
+                    surface: surfaceBox.value
+                )
             }
         }
     }

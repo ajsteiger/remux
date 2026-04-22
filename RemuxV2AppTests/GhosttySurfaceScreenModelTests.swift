@@ -46,6 +46,24 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.managedSurface(for: managed.id))
     }
 
+    func testRuntimeSelectSurfaceFocusesManagedSurfaceForHandle() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x1001)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x1002)!)
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(first.id)
+
+        registry.runtimeSelectSurface(
+            app: nil,
+            surface: second.controlSurface.handle
+        )
+
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertTrue(registry.debugSummary.contains("selected surface="))
+    }
+
     func testInputRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var firstInput: [String] = []
@@ -409,6 +427,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     private static func managedSurface(
+        handle: ghostty_surface_t = UnsafeMutableRawPointer(bitPattern: 0x1)!,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
@@ -422,7 +441,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             id: UUID(),
             view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600)),
             controlSurface: GhosttyKitControlSurface(
-                surface: UnsafeMutableRawPointer(bitPattern: 0x1)!,
+                surface: handle,
                 ownsSurface: false
             ),
             sendInput: sendInput,

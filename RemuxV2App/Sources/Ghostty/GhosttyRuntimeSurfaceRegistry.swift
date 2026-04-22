@@ -28,6 +28,11 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_tree_s
     ) -> Bool
+
+    func runtimeSelectSurface(
+        app: ghostty_app_t?,
+        surface: ghostty_surface_t?
+    )
 }
 
 final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
@@ -389,6 +394,20 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
 
         removeManagedSurface(id)
+    }
+
+    func runtimeSelectSurface(
+        app: ghostty_app_t?,
+        surface: ghostty_surface_t?
+    ) {
+        _ = app
+        guard let surface, let id = surfaceIDsByHandle[surface] else {
+            updateDebugSummary("select_surface missing handle")
+            return
+        }
+
+        selectSurface(id)
+        updateDebugSummary("selected surface=\(id.uuidString)")
     }
 
 #if DEBUG
