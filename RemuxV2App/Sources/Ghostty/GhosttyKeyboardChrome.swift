@@ -512,16 +512,16 @@ private enum GhosttyCustomKeyboardAction: Equatable {
 }
 
 enum GhosttyPhoneChromePalette {
-    static let screenBackground = Color(red: 0.18, green: 0.20, blue: 0.24)
+    static let screenBackground = Color(red: 0.060, green: 0.071, blue: 0.094)
     static let tray = screenBackground
     static let pill = Color(red: 0.23, green: 0.25, blue: 0.30)
     static let keySurface = Color(red: 0.25, green: 0.27, blue: 0.33)
     static let accent = Color(red: 0.43, green: 1.0, blue: 0.78)
 
     static let uiBackground = UIColor(
-        red: 0.18,
-        green: 0.20,
-        blue: 0.24,
+        red: 0.060,
+        green: 0.071,
+        blue: 0.094,
         alpha: 1
     )
 }
