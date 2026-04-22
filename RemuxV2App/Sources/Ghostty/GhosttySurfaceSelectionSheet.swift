@@ -303,10 +303,7 @@ private struct GhosttyPaneSelectionTile: View {
         } else {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.black.opacity(0.30))
-                .frame(
-                    width: PanePreviewGeometry.defaultWidth,
-                    height: PanePreviewGeometry.defaultHeight
-                )
+                .aspectRatio(PanePreviewGeometry.aspectRatio, contentMode: .fit)
         }
     }
 
@@ -413,88 +410,114 @@ struct PanePreviewSnapshot: Equatable {
 // MARK: - Pane preview view
 
 enum PanePreviewGeometry {
-    static let fontSize: CGFloat = 6
-    static let cellWidth: CGFloat = 3.7
-    static let cellHeight: CGFloat = 7.4
     static let defaultCols: Int = 40
-    static let defaultRows: Int = 10
-    static let defaultWidth: CGFloat = CGFloat(defaultCols) * cellWidth
-    static let defaultHeight: CGFloat = CGFloat(defaultRows) * cellHeight
+    static let defaultRows: Int = 14
+    // Monospace cell aspect (height / width). Mirrors SF Mono metrics:
+    // advance ≈ 0.6× fontSize, line-height ≈ 1.25× fontSize.
+    static let cellAspect: CGFloat = 1.25 / 0.6
+
+    static var aspectRatio: CGFloat {
+        CGFloat(defaultCols) / (CGFloat(defaultRows) * cellAspect)
+    }
 }
 
 struct GhosttyPanePreviewView: View {
     let snapshot: PanePreviewSnapshot
 
     var body: some View {
-        Canvas { context, _ in
-            context.fill(
-                Path(CGRect(
-                    origin: .zero,
-                    size: CGSize(
-                        width: CGFloat(snapshot.cols) * PanePreviewGeometry.cellWidth,
-                        height: CGFloat(snapshot.rows) * PanePreviewGeometry.cellHeight
+        GeometryReader { geo in
+            let cols = max(snapshot.cols, 1)
+            let rows = max(snapshot.rows, 1)
+            let cellWidth = geo.size.width / CGFloat(cols)
+            let cellHeight = geo.size.height / CGFloat(rows)
+            let fontSize = min(cellWidth / 0.6, cellHeight / 1.25)
+
+            Canvas { context, size in
+                context.fill(
+                    Path(CGRect(origin: .zero, size: size)),
+                    with: .color(snapshot.defaultBackground.swiftUIColor)
+                )
+
+                if let cursor = snapshot.cursor, cursor.visible {
+                    drawCursor(
+                        cursor,
+                        cellWidth: cellWidth,
+                        cellHeight: cellHeight,
+                        in: &context
                     )
-                )),
-                with: .color(snapshot.defaultBackground.swiftUIColor)
-            )
+                }
 
-            if let cursor = snapshot.cursor, cursor.visible {
-                drawCursor(cursor, in: &context)
-            }
-
-            for run in snapshot.runs {
-                drawRun(run, in: &context)
+                for run in snapshot.runs {
+                    drawRun(
+                        run,
+                        cellWidth: cellWidth,
+                        cellHeight: cellHeight,
+                        fontSize: fontSize,
+                        in: &context
+                    )
+                }
             }
         }
-        .frame(
-            width: CGFloat(snapshot.cols) * PanePreviewGeometry.cellWidth,
-            height: CGFloat(snapshot.rows) * PanePreviewGeometry.cellHeight
+        .aspectRatio(
+            CGFloat(max(snapshot.cols, 1)) / (CGFloat(max(snapshot.rows, 1)) * PanePreviewGeometry.cellAspect),
+            contentMode: .fit
         )
     }
 
-    private func drawCursor(_ cursor: PanePreviewCursor, in context: inout GraphicsContext) {
-        let x = CGFloat(cursor.col) * PanePreviewGeometry.cellWidth
-        let y = CGFloat(cursor.row) * PanePreviewGeometry.cellHeight
+    private func drawCursor(
+        _ cursor: PanePreviewCursor,
+        cellWidth: CGFloat,
+        cellHeight: CGFloat,
+        in context: inout GraphicsContext
+    ) {
+        let x = CGFloat(cursor.col) * cellWidth
+        let y = CGFloat(cursor.row) * cellHeight
         let color = (cursor.color ?? snapshot.defaultForeground).swiftUIColor
 
         switch cursor.style {
         case .block:
             context.fill(
-                Path(CGRect(x: x, y: y, width: PanePreviewGeometry.cellWidth, height: PanePreviewGeometry.cellHeight)),
+                Path(CGRect(x: x, y: y, width: cellWidth, height: cellHeight)),
                 with: .color(color)
             )
         case .bar:
             context.fill(
-                Path(CGRect(x: x, y: y, width: 1, height: PanePreviewGeometry.cellHeight)),
+                Path(CGRect(x: x, y: y, width: max(cellWidth * 0.25, 1), height: cellHeight)),
                 with: .color(color)
             )
         case .underline:
             context.fill(
                 Path(CGRect(
                     x: x,
-                    y: y + PanePreviewGeometry.cellHeight - 1,
-                    width: PanePreviewGeometry.cellWidth,
-                    height: 1
+                    y: y + cellHeight - max(cellHeight * 0.15, 1),
+                    width: cellWidth,
+                    height: max(cellHeight * 0.15, 1)
                 )),
                 with: .color(color)
             )
         case .blockHollow:
             context.stroke(
-                Path(CGRect(x: x, y: y, width: PanePreviewGeometry.cellWidth, height: PanePreviewGeometry.cellHeight)),
+                Path(CGRect(x: x, y: y, width: cellWidth, height: cellHeight)),
                 with: .color(color),
                 lineWidth: 0.5
             )
         }
     }
 
-    private func drawRun(_ run: PanePreviewRun, in context: inout GraphicsContext) {
-        let x = CGFloat(run.col) * PanePreviewGeometry.cellWidth
-        let y = CGFloat(run.row) * PanePreviewGeometry.cellHeight
-        let runWidth = CGFloat(run.cellWidth) * PanePreviewGeometry.cellWidth
+    private func drawRun(
+        _ run: PanePreviewRun,
+        cellWidth: CGFloat,
+        cellHeight: CGFloat,
+        fontSize: CGFloat,
+        in context: inout GraphicsContext
+    ) {
+        let x = CGFloat(run.col) * cellWidth
+        let y = CGFloat(run.row) * cellHeight
+        let runWidth = CGFloat(run.cellWidth) * cellWidth
 
         if let background = run.background {
             context.fill(
-                Path(CGRect(x: x, y: y, width: runWidth, height: PanePreviewGeometry.cellHeight)),
+                Path(CGRect(x: x, y: y, width: runWidth, height: cellHeight)),
                 with: .color(background.swiftUIColor)
             )
         }
@@ -508,7 +531,7 @@ struct GhosttyPanePreviewView: View {
 
         var attributed = AttributedString(run.text)
         let weight: Font.Weight = run.attributes.contains(.bold) ? .bold : .regular
-        var font = Font.system(size: PanePreviewGeometry.fontSize, weight: weight, design: .monospaced)
+        var font = Font.system(size: fontSize, weight: weight, design: .monospaced)
         if run.attributes.contains(.italic) {
             font = font.italic()
         }
