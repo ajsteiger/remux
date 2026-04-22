@@ -21,7 +21,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
-        view.backgroundColor = .black
+        view.backgroundColor = GhosttyPhoneChromePalette.uiBackground
         view.clipsToBounds = true
         return view
     }

@@ -43,7 +43,7 @@ struct GhosttySurfaceScreen: View {
             )
 
             ZStack {
-                Color.black
+                GhosttyPhoneChromePalette.screenBackground
                     .ignoresSafeArea()
 
                 GeometryReader { proxy in
@@ -57,7 +57,7 @@ struct GhosttySurfaceScreen: View {
                             onSurfaceInteraction: showSystemKeyboard
                         )
                             .id(model.surfaceRegistryRevision)
-                            .background(Color.black)
+                            .background(GhosttyPhoneChromePalette.screenBackground)
 
                         GhosttyTerminalResponderRepresentable(
                             isEnabled: keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
@@ -77,48 +77,34 @@ struct GhosttySurfaceScreen: View {
                         .id(model.surfaceRegistryRevision)
                     }
                 }
-                .ignoresSafeArea(.container, edges: .bottom)
                 .onChange(of: focusedField) { _, newValue in
                     inputFocus.syncSystemFocus(newValue)
                 }
-
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-
-                    GhosttyKeyboardChrome(
-                        keyboardMode: keyboardMode,
-                        isEnabled: isTerminalInputAvailable,
-                        isCompact: chrome.isCompact,
-                        isControlArmed: modifierState.isControlArmed,
-                        selectedWindowIndex: registry.selectedTopLevelIndex,
-                        windowCount: registry.topLevels.count,
-                        selectedPaneIndex: selectedPaneIndex,
-                        paneCount: registry.selectedTopLevel?.leafIDs.count ?? 0,
-                        onShowWindows: showWindows,
-                        onShowPanes: showPanes,
-                        onToggleKeyboard: toggleKeyboardChrome,
-                        onToggleCustomKeyboard: toggleCustomKeyboard,
-                        onToggleControl: toggleControlModifier,
-                        onQuickAction: performQuickAction,
-                        sendText: sendTerminalText,
-                        sendKey: sendTerminalKeyEvent
-                    )
-                    .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                    .padding(.bottom, max(screenProxy.safeAreaInsets.bottom, chrome.bottomPadding))
-                    .background(alignment: .bottom) {
-                        LinearGradient(
-                            colors: [
-                                Color.black.opacity(0),
-                                Color.black.opacity(0.78),
-                                Color.black.opacity(0.96),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .ignoresSafeArea(edges: .bottom)
-                        .allowsHitTesting(false)
-                    }
-                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                GhosttyKeyboardChrome(
+                    keyboardMode: keyboardMode,
+                    isEnabled: isTerminalInputAvailable,
+                    isCompact: chrome.isCompact,
+                    isControlArmed: modifierState.isControlArmed,
+                    selectedWindowIndex: registry.selectedTopLevelIndex,
+                    windowCount: registry.topLevels.count,
+                    selectedPaneIndex: selectedPaneIndex,
+                    paneCount: registry.selectedTopLevel?.leafIDs.count ?? 0,
+                    onShowWindows: showWindows,
+                    onShowPanes: showPanes,
+                    onToggleKeyboard: toggleKeyboardChrome,
+                    onToggleCustomKeyboard: toggleCustomKeyboard,
+                    onToggleControl: toggleControlModifier,
+                    onQuickAction: performQuickAction,
+                    sendText: sendTerminalText,
+                    sendKey: sendTerminalKeyEvent
+                )
+                .padding(.horizontal, chrome.surfaceHorizontalPadding)
+                .padding(.top, keyboardMode.showsInputControls ? 6 : 4)
+                .padding(.bottom, max(screenProxy.safeAreaInsets.bottom, chrome.bottomPadding))
+                .frame(maxWidth: .infinity, alignment: .bottom)
+                .background(GhosttyPhoneChromePalette.screenBackground)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
                 updateKeyboardVisibility(with: $0)
@@ -348,7 +334,7 @@ struct GhosttyPhoneChromeLayout: Equatable {
     }
 
     var bottomPadding: CGFloat {
-        isCompact ? 8 : 12
+        isCompact ? 6 : 10
     }
 }
 
@@ -407,7 +393,7 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
             height: max(size.height, 600)
         )
         let view = GhosttyKitSurfaceView(frame: CGRect(origin: .zero, size: initialSize))
-        view.backgroundColor = .black
+        view.backgroundColor = GhosttyPhoneChromePalette.uiBackground
         view.isOpaque = true
         return view
     }

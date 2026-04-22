@@ -70,7 +70,7 @@ struct GhosttyKeyboardChrome: View {
     )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: keyboardMode.showsInputControls ? 8 : 0) {
+        VStack(alignment: .leading, spacing: keyboardMode.showsInputControls ? 6 : 0) {
             selectorRow
 
             switch keyboardMode {
@@ -94,7 +94,7 @@ struct GhosttyKeyboardChrome: View {
                     )
             }
         }
-        .padding(.vertical, keyboardMode.showsInputControls ? 8 : 0)
+        .padding(.top, keyboardMode.showsInputControls ? 4 : 0)
         .animation(Self.transitionAnimation, value: keyboardMode)
         .animation(.easeInOut(duration: 0.18), value: isCompact)
     }
@@ -178,11 +178,11 @@ struct GhosttyKeyboardChrome: View {
                 action: onToggleKeyboard
             )
         }
-        .padding(8)
-        .background(GhosttyKeyboardChromePalette.tray)
-        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 16 : 18, style: .continuous))
+        .padding(6)
+        .background(GhosttyPhoneChromePalette.tray)
+        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: isCompact ? 16 : 18, style: .continuous)
+            RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         }
     }
@@ -214,11 +214,11 @@ struct GhosttyKeyboardChrome: View {
                 customGrid(keys: Self.rightCustomKeys)
             }
         }
-        .padding(10)
-        .background(GhosttyKeyboardChromePalette.tray)
-        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 16 : 18, style: .continuous))
+        .padding(8)
+        .background(GhosttyPhoneChromePalette.tray)
+        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: isCompact ? 16 : 18, style: .continuous)
+            RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         }
     }
@@ -354,9 +354,9 @@ private struct GhosttyKeyboardChromeSelector: View {
             .font(.system(size: 13, weight: .semibold, design: .rounded))
             .foregroundStyle(Color.white.opacity(isEnabled ? 0.9 : 0.62))
             .padding(.horizontal, 12)
-            .padding(.vertical, detail == nil ? 11 : 8)
+            .padding(.vertical, detail == nil ? 10 : 7)
             .frame(minWidth: 104, maxWidth: 190, alignment: .leading)
-            .background(GhosttyKeyboardChromePalette.pill)
+            .background(GhosttyPhoneChromePalette.pill)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -380,18 +380,18 @@ private struct GhosttyKeyboardChromeIconButton: View {
             Group {
                 if let systemName {
                     Image(systemName: systemName)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                 } else if let title {
                     Text(title)
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                 }
             }
             .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.86))
-            .frame(width: 44, height: 44)
-            .background(isActive ? GhosttyKeyboardChromePalette.accent : GhosttyKeyboardChromePalette.pill)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(width: 40, height: 40)
+            .background(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.pill)
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .stroke(Color.white.opacity(isActive ? 0 : 0.08), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.4)
@@ -413,10 +413,10 @@ private struct GhosttyKeyboardKeyButton: View {
             Text(title)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))
-                .frame(minWidth: 48)
+                .frame(minWidth: 44, minHeight: 38)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 10)
-                .background(isActive ? GhosttyKeyboardChromePalette.accent : Color.white.opacity(0.075))
+                .padding(.vertical, 7)
+                .background(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.keySurface)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .opacity(isEnabled ? 1 : 0.42)
         }
@@ -445,8 +445,17 @@ private enum GhosttyCustomKeyboardAction: Equatable {
     case hideKeyboard
 }
 
-private enum GhosttyKeyboardChromePalette {
-    static let tray = Color(red: 0.10, green: 0.13, blue: 0.21).opacity(0.96)
-    static let pill = Color.white.opacity(0.07)
+enum GhosttyPhoneChromePalette {
+    static let screenBackground = Color(red: 0.18, green: 0.20, blue: 0.24)
+    static let tray = screenBackground
+    static let pill = Color(red: 0.23, green: 0.25, blue: 0.30)
+    static let keySurface = Color(red: 0.25, green: 0.27, blue: 0.33)
     static let accent = Color(red: 0.43, green: 1.0, blue: 0.78)
+
+    static let uiBackground = UIColor(
+        red: 0.18,
+        green: 0.20,
+        blue: 0.24,
+        alpha: 1
+    )
 }
