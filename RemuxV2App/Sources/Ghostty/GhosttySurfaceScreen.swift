@@ -2,13 +2,9 @@ import SwiftUI
 import UIKit
 
 struct GhosttySurfaceScreen: View {
-    @FocusState private var focusedField: GhosttyTerminalFocusState.Field?
     @StateObject private var model: GhosttySurfaceScreenModel
-    @State private var inputFocus = GhosttyTerminalFocusState()
+    @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
-    @State private var keyboardMode: GhosttyKeyboardChromeMode = .hidden
-    @State private var isKeyboardDismissalRequested = false
-    @State private var isSoftwareKeyboardVisible = false
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
 
     private let target: TmuxConnectionTarget
@@ -39,7 +35,7 @@ struct GhosttySurfaceScreen: View {
         GeometryReader { screenProxy in
             let chrome = GhosttyPhoneChromeLayout(
                 screenSize: screenProxy.size,
-                isSoftwareKeyboardVisible: isSoftwareKeyboardVisible || keyboardMode.showsInputControls
+                isSoftwareKeyboardVisible: inputCoordinator.isSoftwareKeyboardVisible || inputCoordinator.keyboardMode.showsInputControls
             )
 
             ZStack {
@@ -60,8 +56,8 @@ struct GhosttySurfaceScreen: View {
                             .background(GhosttyPhoneChromePalette.screenBackground)
 
                         GhosttyTerminalResponderRepresentable(
-                            isEnabled: keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
-                            activationToken: inputFocus.terminalActivationToken,
+                            isEnabled: inputCoordinator.keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
+                            activationToken: inputCoordinator.terminalActivationToken,
                             sendText: sendTerminalText,
                             sendKeyEvent: sendTerminalKeyEvent
                         )
@@ -77,13 +73,10 @@ struct GhosttySurfaceScreen: View {
                         .id(model.surfaceRegistryRevision)
                     }
                 }
-                .onChange(of: focusedField) { _, newValue in
-                    inputFocus.syncSystemFocus(newValue)
-                }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 GhosttyKeyboardChrome(
-                    keyboardMode: keyboardMode,
+                    keyboardMode: inputCoordinator.keyboardMode,
                     isEnabled: isTerminalInputAvailable,
                     isCompact: chrome.isCompact,
                     isControlArmed: modifierState.isControlArmed,
@@ -101,7 +94,7 @@ struct GhosttySurfaceScreen: View {
                     sendKey: sendTerminalKeyEvent
                 )
                 .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                .padding(.top, keyboardMode.showsInputControls ? 6 : 4)
+                .padding(.top, inputCoordinator.keyboardMode.showsInputControls ? 6 : 4)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .background(GhosttyPhoneChromePalette.screenBackground)
@@ -111,13 +104,7 @@ struct GhosttySurfaceScreen: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 withAnimation(Self.keyboardAnimation) {
-                    isSoftwareKeyboardVisible = false
-                }
-                if isKeyboardDismissalRequested {
-                    withAnimation(Self.keyboardAnimation) {
-                        keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
-                    }
-                    isKeyboardDismissalRequested = false
+                    inputCoordinator.updateSoftwareKeyboardVisibility(false)
                 }
             }
             .sheet(item: $selectionSheet) { sheet in
@@ -164,65 +151,30 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showSystemKeyboard() {
-        guard isTerminalInputAvailable else { return }
-        isKeyboardDismissalRequested = false
         withAnimation(Self.keyboardAnimation) {
-            keyboardMode = .system
+            inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
         }
-        inputFocus.activateTerminal()
-        focusedField = inputFocus.preferredField
     }
 
     private func toggleKeyboardChrome() {
-        let nextMode = keyboardMode.toggledKeyboard()
-        switch nextMode {
-        case .system:
-            showSystemKeyboard()
-        case .hidden:
-            isKeyboardDismissalRequested = true
-            withAnimation(Self.keyboardAnimation) {
-                keyboardMode = .hidden
-            }
-            focusedField = nil
-        case .custom:
-            isKeyboardDismissalRequested = false
-            withAnimation(Self.keyboardAnimation) {
-                keyboardMode = .custom
-            }
-            focusedField = nil
+        withAnimation(Self.keyboardAnimation) {
+            inputCoordinator.toggleKeyboard(isInputAvailable: isTerminalInputAvailable)
         }
     }
 
     private func toggleCustomKeyboard() {
-        guard isTerminalInputAvailable else { return }
-
-        let nextMode = keyboardMode.toggledCustomKeyboard()
-        switch nextMode {
-        case .system:
-            showSystemKeyboard()
-        case .custom:
-            isKeyboardDismissalRequested = false
-            withAnimation(Self.keyboardAnimation) {
-                keyboardMode = .custom
-            }
-            focusedField = nil
-        case .hidden:
-            isKeyboardDismissalRequested = true
-            withAnimation(Self.keyboardAnimation) {
-                keyboardMode = .hidden
-            }
-            focusedField = nil
+        withAnimation(Self.keyboardAnimation) {
+            inputCoordinator.toggleCustomKeyboard(isInputAvailable: isTerminalInputAvailable)
         }
     }
 
     private func refocusSystemKeyboardIfActive() {
-        guard keyboardMode == .system else { return }
-        showSystemKeyboard()
+        inputCoordinator.refocusSystemKeyboardIfActive(isInputAvailable: isTerminalInputAvailable)
     }
 
     private func toggleControlModifier() {
         modifierState.toggleControl()
-        if modifierState.isControlArmed, keyboardMode == .hidden {
+        if modifierState.isControlArmed, inputCoordinator.keyboardMode == .hidden {
             showSystemKeyboard()
         }
     }
@@ -267,19 +219,7 @@ struct GhosttySurfaceScreen: View {
         let isVisible = keyboardFrame.minY < screenBounds.height - 1
 
         withAnimation(Self.keyboardAnimation) {
-            isSoftwareKeyboardVisible = isVisible
-        }
-
-        if isVisible {
-            isKeyboardDismissalRequested = false
-            withAnimation(Self.keyboardAnimation) {
-                keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(true)
-            }
-        } else if isKeyboardDismissalRequested {
-            withAnimation(Self.keyboardAnimation) {
-                keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
-            }
-            isKeyboardDismissalRequested = false
+            inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
         }
     }
 
@@ -310,24 +250,6 @@ struct GhosttySurfaceScreen: View {
                 }
             )
         }
-    }
-}
-
-struct GhosttyTerminalFocusState: Equatable {
-    enum Field: Hashable {
-        case sendBar
-    }
-
-    private(set) var terminalActivationToken = 0
-    private(set) var preferredField: Field?
-
-    mutating func activateTerminal() {
-        preferredField = nil
-        terminalActivationToken += 1
-    }
-
-    mutating func syncSystemFocus(_ field: Field?) {
-        preferredField = field
     }
 }
 
