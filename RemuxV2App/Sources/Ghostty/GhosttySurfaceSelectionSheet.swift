@@ -497,6 +497,13 @@ struct GhosttyPanePreviewView: View {
             )
         }
 
+        // SGR 8 (invisible). Preserve the run's cell footprint and background
+        // so layout is intact, but skip foreground glyphs — otherwise a
+        // password prompt using SGR 8 would leak into the preview.
+        if run.attributes.contains(.invisible) {
+            return
+        }
+
         var attributed = AttributedString(run.text)
         let weight: Font.Weight = run.attributes.contains(.bold) ? .bold : .regular
         var font = Font.system(size: PanePreviewGeometry.fontSize, weight: weight, design: .monospaced)
