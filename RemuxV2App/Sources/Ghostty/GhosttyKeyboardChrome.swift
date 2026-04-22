@@ -63,6 +63,12 @@ struct GhosttyKeyboardChrome: View {
     let sendText: (String) -> Bool
     let sendKey: (GhosttySurfaceKeyEvent) -> Bool
 
+    private static let transitionAnimation = Animation.spring(
+        response: 0.28,
+        dampingFraction: 0.9,
+        blendDuration: 0.12
+    )
+
     var body: some View {
         VStack(alignment: .leading, spacing: keyboardMode.showsInputControls ? 8 : 0) {
             selectorRow
@@ -72,11 +78,25 @@ struct GhosttyKeyboardChrome: View {
                 EmptyView()
             case .system:
                 systemAccessoryRow
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
             case .custom:
                 customKeyboard
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
             }
         }
         .padding(.vertical, keyboardMode.showsInputControls ? 8 : 0)
+        .animation(Self.transitionAnimation, value: keyboardMode)
+        .animation(.easeInOut(duration: 0.18), value: isCompact)
     }
 
     private var selectorRow: some View {

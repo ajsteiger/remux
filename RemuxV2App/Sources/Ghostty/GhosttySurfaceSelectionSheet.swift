@@ -24,7 +24,7 @@ struct GhosttyWindowSelectionSheet: View {
     let onSelect: (UUID) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("WINDOWS")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -36,30 +36,35 @@ struct GhosttyWindowSelectionSheet: View {
                     .foregroundStyle(Color.black)
             }
 
-            GhosttySheetActionButton(
-                title: "Create Window",
-                subtitle: "Requires Ghostty tmux action API",
-                systemName: "plus",
-                action: onCreateWindow
-            )
-
-            VStack(spacing: 8) {
-                ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
-                    Button {
-                        onSelect(topLevel.id)
-                    } label: {
-                        GhosttyWindowSelectionRow(
-                            index: index,
-                            topLevel: topLevel,
-                            isSelected: topLevel.id == registry.selectedTopLevel?.id
-                        )
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 8) {
+                    ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
+                        Button {
+                            onSelect(topLevel.id)
+                        } label: {
+                            GhosttyWindowSelectionRow(
+                                index: index,
+                                topLevel: topLevel,
+                                isSelected: topLevel.id == registry.selectedTopLevel?.id
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
             Spacer(minLength: 0)
+
+            GhosttySheetBottomActionBar {
+                GhosttySheetActionButton(
+                    title: "Create Window",
+                    subtitle: "Requires Ghostty tmux action API",
+                    systemName: "plus",
+                    action: onCreateWindow
+                )
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.horizontal, 18)
         .padding(.top, 18)
         .padding(.bottom, 12)
@@ -82,7 +87,7 @@ struct GhosttyPaneSelectionSheet: View {
         let leafIDs = registry.selectedTopLevel?.leafIDs ?? []
         let selectedLeafID = registry.selectedTopLevel?.resolvedFocusedLeafID
 
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("PANES IN WINDOW")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -94,33 +99,19 @@ struct GhosttyPaneSelectionSheet: View {
                     .foregroundStyle(Color.black)
             }
 
-            HStack(spacing: 10) {
-                GhosttySheetActionButton(
-                    title: "Split",
-                    subtitle: "Horizontal tmux split",
-                    systemName: "square.split.2x1",
-                    action: onSplitPane
-                )
-
-                GhosttySheetActionButton(
-                    title: "Stack",
-                    subtitle: "Vertical tmux split",
-                    systemName: "square.split.1x2",
-                    action: onStackPane
-                )
-            }
-
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
-                    Button {
-                        onSelect(paneID)
-                    } label: {
-                        GhosttyPaneSelectionTile(
-                            index: index,
-                            isSelected: paneID == selectedLeafID
-                        )
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                    ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
+                        Button {
+                            onSelect(paneID)
+                        } label: {
+                            GhosttyPaneSelectionTile(
+                                index: index,
+                                isSelected: paneID == selectedLeafID
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
@@ -129,10 +120,44 @@ struct GhosttyPaneSelectionSheet: View {
                 .foregroundStyle(Color.black.opacity(0.48))
 
             Spacer(minLength: 0)
+
+            GhosttySheetBottomActionBar {
+                HStack(spacing: 10) {
+                    GhosttySheetActionButton(
+                        title: "Split",
+                        subtitle: "Horizontal tmux split",
+                        systemName: "square.split.2x1",
+                        action: onSplitPane
+                    )
+
+                    GhosttySheetActionButton(
+                        title: "Stack",
+                        subtitle: "Vertical tmux split",
+                        systemName: "square.split.1x2",
+                        action: onStackPane
+                    )
+                }
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.horizontal, 18)
         .padding(.top, 18)
         .padding(.bottom, 12)
+    }
+}
+
+private struct GhosttySheetBottomActionBar<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+                .overlay(Color.black.opacity(0.08))
+                .padding(.bottom, 12)
+
+            content
+        }
+        .padding(.top, 4)
     }
 }
 

@@ -14,6 +14,12 @@ struct GhosttySurfaceScreen: View {
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
 
+    private static let keyboardAnimation = Animation.spring(
+        response: 0.28,
+        dampingFraction: 0.9,
+        blendDuration: 0.12
+    )
+
     init(
         target: TmuxConnectionTarget,
         transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
@@ -37,7 +43,7 @@ struct GhosttySurfaceScreen: View {
             )
 
             ZStack {
-                Color(red: 0.03, green: 0.04, blue: 0.07)
+                Color.black
                     .ignoresSafeArea()
 
                 GeometryReader { proxy in
@@ -99,15 +105,32 @@ struct GhosttySurfaceScreen: View {
                     )
                     .padding(.horizontal, chrome.surfaceHorizontalPadding)
                     .padding(.bottom, max(screenProxy.safeAreaInsets.bottom, chrome.bottomPadding))
+                    .background(alignment: .bottom) {
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0),
+                                Color.black.opacity(0.78),
+                                Color.black.opacity(0.96),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea(edges: .bottom)
+                        .allowsHitTesting(false)
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
                 updateKeyboardVisibility(with: $0)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-                isSoftwareKeyboardVisible = false
+                withAnimation(Self.keyboardAnimation) {
+                    isSoftwareKeyboardVisible = false
+                }
                 if isKeyboardDismissalRequested {
-                    keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+                    withAnimation(Self.keyboardAnimation) {
+                        keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+                    }
                     isKeyboardDismissalRequested = false
                 }
             }
@@ -117,6 +140,7 @@ struct GhosttySurfaceScreen: View {
                     .presentationDragIndicator(.visible)
                     .presentationBackground(Color(red: 0.97, green: 0.96, blue: 0.93))
             }
+            .preferredColorScheme(.dark)
         }
     }
 
@@ -142,7 +166,9 @@ struct GhosttySurfaceScreen: View {
     private func showSystemKeyboard() {
         guard isTerminalInputAvailable else { return }
         isKeyboardDismissalRequested = false
-        keyboardMode = .system
+        withAnimation(Self.keyboardAnimation) {
+            keyboardMode = .system
+        }
         inputFocus.activateTerminal()
         focusedField = inputFocus.preferredField
     }
@@ -154,11 +180,15 @@ struct GhosttySurfaceScreen: View {
             showSystemKeyboard()
         case .hidden:
             isKeyboardDismissalRequested = true
-            keyboardMode = .hidden
+            withAnimation(Self.keyboardAnimation) {
+                keyboardMode = .hidden
+            }
             focusedField = nil
         case .custom:
             isKeyboardDismissalRequested = false
-            keyboardMode = .custom
+            withAnimation(Self.keyboardAnimation) {
+                keyboardMode = .custom
+            }
             focusedField = nil
         }
     }
@@ -172,11 +202,15 @@ struct GhosttySurfaceScreen: View {
             showSystemKeyboard()
         case .custom:
             isKeyboardDismissalRequested = false
-            keyboardMode = .custom
+            withAnimation(Self.keyboardAnimation) {
+                keyboardMode = .custom
+            }
             focusedField = nil
         case .hidden:
             isKeyboardDismissalRequested = true
-            keyboardMode = .hidden
+            withAnimation(Self.keyboardAnimation) {
+                keyboardMode = .hidden
+            }
             focusedField = nil
         }
     }
@@ -230,13 +264,21 @@ struct GhosttySurfaceScreen: View {
 
         let keyboardFrame = frameValue.cgRectValue
         let screenBounds = UIScreen.main.bounds
-        isSoftwareKeyboardVisible = keyboardFrame.minY < screenBounds.height - 1
+        let isVisible = keyboardFrame.minY < screenBounds.height - 1
 
-        if isSoftwareKeyboardVisible {
+        withAnimation(Self.keyboardAnimation) {
+            isSoftwareKeyboardVisible = isVisible
+        }
+
+        if isVisible {
             isKeyboardDismissalRequested = false
-            keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(true)
+            withAnimation(Self.keyboardAnimation) {
+                keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(true)
+            }
         } else if isKeyboardDismissalRequested {
-            keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+            withAnimation(Self.keyboardAnimation) {
+                keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+            }
             isKeyboardDismissalRequested = false
         }
     }
