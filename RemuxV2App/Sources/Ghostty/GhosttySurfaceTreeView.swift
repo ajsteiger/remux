@@ -2,13 +2,15 @@ import SwiftUI
 
 struct GhosttyRuntimePaneTreeView: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
-    let onSurfaceInteraction: (() -> Void)?
+    let onSurfaceTap: (() -> Void)?
+    let onSelectionChange: (() -> Void)?
 
     var body: some View {
         GhosttySurfaceTreeContainerRepresentable(
             registry: registry,
             topLevel: registry.selectedTopLevel,
-            onSurfaceInteraction: onSurfaceInteraction
+            onSurfaceTap: onSurfaceTap,
+            onSelectionChange: onSelectionChange
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -17,7 +19,8 @@ struct GhosttyRuntimePaneTreeView: View {
 private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     let topLevel: GhosttyTopLevelSurface?
-    let onSurfaceInteraction: (() -> Void)?
+    let onSurfaceTap: (() -> Void)?
+    let onSelectionChange: (() -> Void)?
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
@@ -30,7 +33,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
         uiView.update(
             topLevel: topLevel,
             registry: registry,
-            onSurfaceInteraction: onSurfaceInteraction
+            onSurfaceTap: onSurfaceTap,
+            onSelectionChange: onSelectionChange
         )
     }
 }
@@ -38,7 +42,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate {
     private weak var registry: GhosttyRuntimeSurfaceRegistry?
     private var topLevel: GhosttyTopLevelSurface?
-    private var onSurfaceInteraction: (() -> Void)?
+    private var onSurfaceTap: (() -> Void)?
+    private var onSelectionChange: (() -> Void)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
@@ -76,11 +81,13 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     func update(
         topLevel: GhosttyTopLevelSurface?,
         registry: GhosttyRuntimeSurfaceRegistry,
-        onSurfaceInteraction: (() -> Void)?
+        onSurfaceTap: (() -> Void)?,
+        onSelectionChange: (() -> Void)?
     ) {
         self.topLevel = topLevel
         self.registry = registry
-        self.onSurfaceInteraction = onSurfaceInteraction
+        self.onSurfaceTap = onSurfaceTap
+        self.onSelectionChange = onSelectionChange
         syncAttachedViews()
         setNeedsLayout()
     }
@@ -217,7 +224,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             }
         }
 
-        onSurfaceInteraction?()
+        onSurfaceTap?()
         setNeedsLayout()
     }
 
@@ -228,7 +235,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         let direction: GhosttyRuntimeSelectionDirection = recognizer.direction == .left ? .next : .previous
         guard registry.selectAdjacentTopLevel(direction) else { return }
 
-        onSurfaceInteraction?()
+        onSelectionChange?()
         setNeedsLayout()
     }
 

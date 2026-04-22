@@ -50,7 +50,8 @@ struct GhosttySurfaceScreen: View {
 
                         GhosttyRuntimePaneTreeView(
                             registry: registry,
-                            onSurfaceInteraction: showSystemKeyboard
+                            onSurfaceTap: handleSurfaceTap,
+                            onSelectionChange: handleSelectionChange
                         )
                             .id(model.surfaceRegistryRevision)
                             .background(GhosttyPhoneChromePalette.screenBackground)
@@ -153,6 +154,18 @@ struct GhosttySurfaceScreen: View {
     private func showSystemKeyboard() {
         withAnimation(Self.keyboardAnimation) {
             inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
+        }
+    }
+
+    private func handleSurfaceTap() {
+        withAnimation(Self.keyboardAnimation) {
+            inputCoordinator.handleSurfaceTap(isInputAvailable: isTerminalInputAvailable)
+        }
+    }
+
+    private func handleSelectionChange() {
+        withAnimation(Self.keyboardAnimation) {
+            inputCoordinator.handleSelectionChange(isInputAvailable: isTerminalInputAvailable)
         }
     }
 

@@ -13,6 +13,17 @@ struct GhosttyTerminalInputCoordinator: Equatable {
         terminalActivationToken += 1
     }
 
+    mutating func handleSurfaceTap(isInputAvailable: Bool) {
+        guard isInputAvailable else { return }
+
+        switch keyboardMode {
+        case .hidden, .system:
+            showSystemKeyboard(isInputAvailable: true)
+        case .custom:
+            isDismissSystemKeyboardRequested = false
+        }
+    }
+
     mutating func toggleKeyboard(isInputAvailable: Bool) {
         switch keyboardMode.toggledKeyboard() {
         case .system:
@@ -40,6 +51,15 @@ struct GhosttyTerminalInputCoordinator: Equatable {
     mutating func refocusSystemKeyboardIfActive(isInputAvailable: Bool) {
         guard keyboardMode == .system else { return }
         showSystemKeyboard(isInputAvailable: isInputAvailable)
+    }
+
+    mutating func handleSelectionChange(isInputAvailable: Bool) {
+        switch keyboardMode {
+        case .system:
+            showSystemKeyboard(isInputAvailable: isInputAvailable)
+        case .hidden, .custom:
+            isDismissSystemKeyboardRequested = false
+        }
     }
 
     mutating func updateSoftwareKeyboardVisibility(_ isVisible: Bool) {
