@@ -212,6 +212,20 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
 
         guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
         registry.selectSurface(surfaceID)
+
+        for action in GhosttySurfaceTapGesture.actions(
+            forLocalPoint: recognizer.location(in: view),
+            mouseCaptured: registry.focusedSurfaceMouseCaptured()
+        ) {
+            switch action {
+            case .mousePosition(let position):
+                _ = registry.sendMousePositionToFocusedSurface(position)
+
+            case .mouseButton(let event):
+                _ = registry.sendMouseButtonToFocusedSurface(event)
+            }
+        }
+
         onSurfaceInteraction?()
         setNeedsLayout()
     }

@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 import GhosttyKit
 @testable import RemuxV2
 
@@ -33,5 +34,31 @@ final class GhosttySurfaceMouseEventTests: XCTestCase {
 
         XCTAssertTrue(mods.precision)
         XCTAssertEqual(mods.momentum, .ended)
+    }
+
+    func testTapGestureIsFocusOnlyWhenMouseIsNotCaptured() {
+        XCTAssertEqual(
+            GhosttySurfaceTapGesture.actions(
+                forLocalPoint: CGPoint(x: 10, y: 20),
+                mouseCaptured: false
+            ),
+            []
+        )
+    }
+
+    func testTapGestureEmitsMouseClickWhenMouseIsCaptured() {
+        let point = CGPoint(x: 10, y: 20)
+
+        XCTAssertEqual(
+            GhosttySurfaceTapGesture.actions(
+                forLocalPoint: point,
+                mouseCaptured: true
+            ),
+            [
+                .mousePosition(point),
+                .mouseButton(.init(state: .press, button: .left)),
+                .mouseButton(.init(state: .release, button: .left)),
+            ]
+        )
     }
 }

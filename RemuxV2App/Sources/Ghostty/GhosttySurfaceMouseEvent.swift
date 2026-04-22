@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import GhosttyKit
 
@@ -138,5 +139,25 @@ struct GhosttySurfaceMouseScrollEvent: Equatable {
         self.deltaX = deltaX
         self.deltaY = deltaY
         self.mods = mods
+    }
+}
+
+struct GhosttySurfaceTapGesture {
+    enum Action: Equatable {
+        case mousePosition(CGPoint)
+        case mouseButton(GhosttySurfaceMouseButtonEvent)
+    }
+
+    static func actions(
+        forLocalPoint point: CGPoint,
+        mouseCaptured: Bool
+    ) -> [Action] {
+        guard mouseCaptured else { return [] }
+
+        return [
+            .mousePosition(point),
+            .mouseButton(.init(state: .press, button: .left)),
+            .mouseButton(.init(state: .release, button: .left)),
+        ]
     }
 }
