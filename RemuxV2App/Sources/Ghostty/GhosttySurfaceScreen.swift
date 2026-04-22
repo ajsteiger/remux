@@ -127,6 +127,20 @@ struct GhosttySurfaceScreen: View {
                     .presentationBackground(GhosttyPhoneChromePalette.screenBackground)
             }
             .preferredColorScheme(.dark)
+#if DEBUG
+            .task {
+                if CommandLine.arguments.contains("--open-panes-after-warmup") {
+                    for _ in 0..<60 {
+                        if !(registry.selectedTopLevel?.leafIDs.isEmpty ?? true) {
+                            try? await Task.sleep(nanoseconds: 3_000_000_000)
+                            selectionSheet = .panes
+                            return
+                        }
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                    }
+                }
+            }
+#endif
         }
     }
 
