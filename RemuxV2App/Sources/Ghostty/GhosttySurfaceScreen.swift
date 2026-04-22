@@ -124,7 +124,7 @@ struct GhosttySurfaceScreen: View {
                 selectionSheetContent(sheet)
                     .presentationDetents([.height(sheet.preferredHeight)])
                     .presentationDragIndicator(.visible)
-                    .presentationBackground(Color(red: 0.97, green: 0.96, blue: 0.93))
+                    .presentationBackground(GhosttyPhoneChromePalette.screenBackground)
             }
             .preferredColorScheme(.dark)
         }

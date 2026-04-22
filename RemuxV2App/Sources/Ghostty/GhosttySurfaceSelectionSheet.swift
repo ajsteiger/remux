@@ -9,11 +9,25 @@ enum GhosttySurfaceSelectionSheet: String, Identifiable {
     var preferredHeight: CGFloat {
         switch self {
         case .windows:
-            370
+            310
         case .panes:
-            430
+            340
         }
     }
+}
+
+private enum GhosttySheetPalette {
+    static let background = GhosttyPhoneChromePalette.screenBackground
+    static let row = Color(red: 0.23, green: 0.25, blue: 0.30)
+    static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.14)
+    static let stroke = Color.white.opacity(0.08)
+    static let strokeSelected = GhosttyPhoneChromePalette.accent.opacity(0.65)
+    static let primary = Color.white.opacity(0.92)
+    static let secondary = Color.white.opacity(0.52)
+    static let tertiary = Color.white.opacity(0.38)
+    static let accent = GhosttyPhoneChromePalette.accent
+    static let indexSurface = Color.white.opacity(0.12)
+    static let indexSelectedSurface = GhosttyPhoneChromePalette.accent
 }
 
 struct GhosttyWindowSelectionSheet: View {
@@ -24,17 +38,8 @@ struct GhosttyWindowSelectionSheet: View {
     let onSelect: (UUID) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("WINDOWS")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.black.opacity(0.48))
-
-                Text(sessionName)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.black)
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            sheetHeader(caption: "SESSION", title: sessionName)
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 8) {
@@ -58,16 +63,15 @@ struct GhosttyWindowSelectionSheet: View {
             GhosttySheetBottomActionBar {
                 GhosttySheetActionButton(
                     title: "Create Window",
-                    subtitle: "Requires Ghostty tmux action API",
                     systemName: "plus",
                     action: onCreateWindow
                 )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
     }
 }
 
@@ -87,37 +91,22 @@ struct GhosttyPaneSelectionSheet: View {
         let leafIDs = registry.selectedTopLevel?.leafIDs ?? []
         let selectedLeafID = registry.selectedTopLevel?.resolvedFocusedLeafID
 
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("PANES IN WINDOW")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.black.opacity(0.48))
-
-                Text("\(leafIDs.count) \(leafIDs.count == 1 ? "pane" : "panes")")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.black)
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            sheetHeader(
+                caption: "PANES",
+                title: "\(leafIDs.count) \(leafIDs.count == 1 ? "pane" : "panes")"
+            )
 
             ScrollView(showsIndicators: false) {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                    ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
-                        Button {
-                            onSelect(paneID)
-                        } label: {
-                            GhosttyPaneSelectionTile(
-                                index: index,
-                                isSelected: paneID == selectedLeafID
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                paneLayout(leafIDs: leafIDs, selectedLeafID: selectedLeafID)
             }
 
-            Text("Phone mode shows one pane at a time; selecting a pane makes it the full active surface.")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.black.opacity(0.48))
+            if leafIDs.count > 1 {
+                Text("Phone view shows one pane at a time. Tap to bring one forward.")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(GhosttySheetPalette.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Spacer(minLength: 0)
 
@@ -125,14 +114,12 @@ struct GhosttyPaneSelectionSheet: View {
                 HStack(spacing: 10) {
                     GhosttySheetActionButton(
                         title: "Split",
-                        subtitle: "Horizontal tmux split",
                         systemName: "square.split.2x1",
                         action: onSplitPane
                     )
 
                     GhosttySheetActionButton(
                         title: "Stack",
-                        subtitle: "Vertical tmux split",
                         systemName: "square.split.1x2",
                         action: onStackPane
                     )
@@ -140,9 +127,55 @@ struct GhosttyPaneSelectionSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
+    }
+
+    @ViewBuilder
+    private func paneLayout(leafIDs: [UUID], selectedLeafID: UUID?) -> some View {
+        if leafIDs.count == 1, let paneID = leafIDs.first {
+            Button {
+                onSelect(paneID)
+            } label: {
+                GhosttyPaneSelectionTile(
+                    index: 0,
+                    isSelected: paneID == selectedLeafID,
+                    fillsWidth: true
+                )
+            }
+            .buttonStyle(.plain)
+        } else {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
+                    Button {
+                        onSelect(paneID)
+                    } label: {
+                        GhosttyPaneSelectionTile(
+                            index: index,
+                            isSelected: paneID == selectedLeafID
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+@ViewBuilder
+private func sheetHeader(caption: String, title: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+        Text(caption)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .tracking(1.0)
+            .foregroundStyle(GhosttySheetPalette.tertiary)
+
+        Text(title)
+            .font(.system(size: 18, weight: .semibold, design: .rounded))
+            .foregroundStyle(GhosttySheetPalette.primary)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 }
 
@@ -151,8 +184,9 @@ private struct GhosttySheetBottomActionBar<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
-                .overlay(Color.black.opacity(0.08))
+            Rectangle()
+                .fill(GhosttySheetPalette.stroke)
+                .frame(height: 1)
                 .padding(.bottom, 12)
 
             content
@@ -163,7 +197,6 @@ private struct GhosttySheetBottomActionBar<Content: View>: View {
 
 private struct GhosttySheetActionButton: View {
     let title: String
-    let subtitle: String
     let systemName: String
     let action: (() -> Void)?
 
@@ -171,37 +204,26 @@ private struct GhosttySheetActionButton: View {
         Button {
             action?()
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: systemName)
                     .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .background(Color.black.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .foregroundStyle(GhosttySheetPalette.primary)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.black)
-
-                    Text(action == nil ? "Not wired yet" : subtitle)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(Color.black.opacity(0.48))
-                }
-
-                Spacer(minLength: 0)
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(GhosttySheetPalette.primary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(action == nil ? Color.black.opacity(0.04) : Color.white.opacity(0.76))
-            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .padding(.horizontal, 14)
+            .background(GhosttySheetPalette.row)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(GhosttySheetPalette.stroke, lineWidth: 1)
             }
-            .opacity(action == nil ? 0.62 : 1)
         }
         .buttonStyle(.plain)
-        .disabled(action == nil)
     }
 }
 
@@ -212,55 +234,39 @@ private struct GhosttyWindowSelectionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isSelected ? Color(red: 0.18, green: 0.42, blue: 1.0) : Color.black.opacity(0.08))
-                .frame(width: 28, height: 28)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isSelected ? GhosttySheetPalette.indexSelectedSurface : GhosttySheetPalette.indexSurface)
+                .frame(width: 30, height: 30)
                 .overlay {
                     Text("\(index + 1)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(isSelected ? Color.white : Color.black.opacity(0.55))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(isSelected ? Color.black.opacity(0.78) : GhosttySheetPalette.primary)
                 }
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text("Window \(index + 1)")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.black)
-
-                    if isSelected {
-                        Text("Current")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(red: 0.18, green: 0.42, blue: 1.0))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color(red: 0.18, green: 0.42, blue: 1.0).opacity(0.1))
-                            .clipShape(Capsule())
-                    }
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Window \(index + 1)")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(GhosttySheetPalette.primary)
 
                 Text("\(topLevel.leafIDs.count) \(topLevel.leafIDs.count == 1 ? "pane" : "panes")")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.black.opacity(0.48))
+                    .foregroundStyle(GhosttySheetPalette.secondary)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
             if isSelected {
-                Text("Selected")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color(red: 0.18, green: 0.42, blue: 1.0))
-            } else {
-                Text("Open")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.black.opacity(0.42))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(GhosttySheetPalette.accent)
             }
         }
         .padding(12)
-        .background(isSelected ? Color(red: 0.18, green: 0.42, blue: 1.0).opacity(0.08) : Color.white.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(isSelected ? Color(red: 0.18, green: 0.42, blue: 1.0) : Color.black.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(isSelected ? GhosttySheetPalette.strokeSelected : GhosttySheetPalette.stroke, lineWidth: 1)
         }
     }
 }
@@ -268,44 +274,39 @@ private struct GhosttyWindowSelectionRow: View {
 private struct GhosttyPaneSelectionTile: View {
     let index: Int
     let isSelected: Bool
+    var fillsWidth: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
                 Text("\(index + 1)")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(isSelected ? Color.white : Color.black.opacity(0.55))
+                    .foregroundStyle(isSelected ? Color.black.opacity(0.78) : GhosttySheetPalette.primary)
                     .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(isSelected ? Color(red: 0.18, green: 0.42, blue: 1.0) : Color.black.opacity(0.08))
+                    .padding(.vertical, 3)
+                    .background(isSelected ? GhosttySheetPalette.indexSelectedSurface : GhosttySheetPalette.indexSurface)
                     .clipShape(Capsule())
 
-                Spacer()
+                Spacer(minLength: 0)
 
                 if isSelected {
-                    Text("Active")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color(red: 0.18, green: 0.42, blue: 1.0))
+                    Circle()
+                        .fill(GhosttySheetPalette.accent)
+                        .frame(width: 8, height: 8)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Pane \(index + 1)")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.black)
-
-                Text(isSelected ? "visible on phone" : "tap to focus")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.black.opacity(0.48))
-            }
+            Text("Pane \(index + 1)")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(GhosttySheetPalette.primary)
         }
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: fillsWidth ? 68 : 82, alignment: .topLeading)
         .padding(12)
-        .background(isSelected ? Color(red: 0.18, green: 0.42, blue: 1.0).opacity(0.08) : Color.white.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(isSelected ? Color(red: 0.18, green: 0.42, blue: 1.0) : Color.black.opacity(0.06), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(isSelected ? GhosttySheetPalette.strokeSelected : GhosttySheetPalette.stroke, lineWidth: 1)
         }
     }
 }
