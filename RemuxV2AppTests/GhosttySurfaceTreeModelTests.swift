@@ -101,4 +101,76 @@ final class GhosttySurfaceTreeModelTests: XCTestCase {
 
         XCTAssertEqual(topLevel.focusedLeafID, first)
     }
+
+    func testTopLevelSurfacePhoneProjectionPresentsOnlyFocusedLeaf() {
+        let first = UUID()
+        let second = UUID()
+        let topLevel = GhosttyTopLevelSurface(
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first),
+                    right: .leaf(second)
+                )
+            ),
+            focusedLeafID: second
+        )
+
+        XCTAssertEqual(topLevel.phonePresentedLeafIDs, [second])
+        XCTAssertEqual(
+            topLevel.phonePresentedTree,
+            GhosttySurfaceTree(root: .leaf(second))
+        )
+    }
+
+    func testTopLevelSurfacePhoneProjectionFallsBackToFirstLeafWhenFocusIsInvalid() {
+        let first = UUID()
+        let second = UUID()
+        let missing = UUID()
+        let topLevel = GhosttyTopLevelSurface(
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .vertical,
+                    ratio: 0.5,
+                    left: .leaf(first),
+                    right: .leaf(second)
+                )
+            ),
+            focusedLeafID: missing
+        )
+
+        XCTAssertEqual(topLevel.resolvedFocusedLeafID, first)
+        XCTAssertEqual(topLevel.phonePresentedLeafIDs, [first])
+        XCTAssertEqual(
+            topLevel.phonePresentedTree,
+            GhosttySurfaceTree(root: .leaf(first))
+        )
+    }
+
+    func testTopLevelSurfacePhoneProjectionTracksFocusedLeafAcrossNestedTree() {
+        let first = UUID()
+        let second = UUID()
+        let third = UUID()
+        let topLevel = GhosttyTopLevelSurface(
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.4,
+                    left: .leaf(first),
+                    right: .split(
+                        axis: .vertical,
+                        ratio: 0.6,
+                        left: .leaf(second),
+                        right: .leaf(third)
+                    )
+                )
+            ),
+            focusedLeafID: third
+        )
+
+        XCTAssertEqual(topLevel.leafIDs, [first, second, third])
+        XCTAssertEqual(topLevel.phonePresentedLeafIDs, [third])
+        XCTAssertEqual(topLevel.phonePresentedTree.leafIDs(), [third])
+    }
 }

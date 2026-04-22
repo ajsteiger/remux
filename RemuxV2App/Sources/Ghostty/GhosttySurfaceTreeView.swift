@@ -104,7 +104,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
     private func syncAttachedViews() {
         guard let registry else { return }
 
-        let visibleIDs = Set(topLevel?.leafIDs ?? [])
+        let visibleIDs = Set(topLevel?.phonePresentedLeafIDs ?? [])
         surfaceIDsByView = [:]
         for surface in registry.allManagedSurfaces() {
             if visibleIDs.contains(surface.id) {
@@ -128,7 +128,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView {
         guard let registry, let topLevel else { return }
         let focusedSurfaceID = topLevel.resolvedFocusedLeafID
         layout(
-            node: topLevel.tree.root,
+            node: topLevel.phonePresentedTree.root,
             in: bounds,
             focusedSurfaceID: focusedSurfaceID,
             registry: registry

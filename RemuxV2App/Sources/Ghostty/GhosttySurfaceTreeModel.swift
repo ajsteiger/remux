@@ -28,6 +28,16 @@ struct GhosttyTopLevelSurface: Identifiable, Equatable {
         return leafIDs.first
     }
 
+    var phonePresentedLeafIDs: [UUID] {
+        guard let focusedLeafID = resolvedFocusedLeafID else { return [] }
+        return [focusedLeafID]
+    }
+
+    var phonePresentedTree: GhosttySurfaceTree {
+        guard let focusedLeafID = resolvedFocusedLeafID else { return tree }
+        return GhosttySurfaceTree(root: .leaf(focusedLeafID))
+    }
+
     mutating func normalizeFocus() {
         focusedLeafID = resolvedFocusedLeafID
     }
