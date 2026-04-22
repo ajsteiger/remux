@@ -134,76 +134,17 @@ struct GhosttyKeyboardChrome: View {
         HStack(spacing: 6) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    GhosttyKeyboardKeyButton(
-                        title: "Esc",
-                        fontSize: 11,
-                        minWidth: 32,
-                        minHeight: 30,
-                        horizontalPadding: 5,
-                        verticalPadding: 4,
-                        isEnabled: isEnabled,
-                        action: { sendKey(.init(keyCode: .escape)) }
-                    )
-
-                    GhosttyKeyboardKeyButton(
-                        title: "Tab",
-                        fontSize: 11,
-                        minWidth: 32,
-                        minHeight: 30,
-                        horizontalPadding: 5,
-                        verticalPadding: 4,
-                        isEnabled: isEnabled,
-                        action: { sendKey(.init(keyCode: .tab)) }
-                    )
-
-                    GhosttyKeyboardKeyButton(
-                        title: "Ctrl",
-                        fontSize: 11,
-                        minWidth: 34,
-                        minHeight: 30,
-                        horizontalPadding: 5,
-                        verticalPadding: 4,
-                        isActive: isControlArmed,
-                        isEnabled: isEnabled,
-                        action: {
-                            onToggleControl()
-                            return true
-                        }
-                    )
-
-                    GhosttyKeyboardKeyButton(
-                        title: "Paste",
-                        fontSize: 11,
-                        minWidth: 38,
-                        minHeight: 30,
-                        horizontalPadding: 5,
-                        verticalPadding: 4,
-                        isEnabled: isEnabled,
-                        action: sendPaste
-                    )
-
-                    GhosttyKeyboardKeyButton(
-                        title: "Enter",
-                        fontSize: 11,
-                        minWidth: 36,
-                        minHeight: 30,
-                        horizontalPadding: 5,
-                        verticalPadding: 4,
-                        isEnabled: isEnabled,
-                        action: { sendKey(.init(keyCode: .enter)) }
-                    )
+                    accessoryKey(title: "esc") { sendKey(.init(keyCode: .escape)) }
+                    accessoryKey(title: "tab") { sendKey(.init(keyCode: .tab)) }
+                    accessoryKey(title: "ctrl", isActive: isControlArmed) {
+                        onToggleControl()
+                        return true
+                    }
+                    accessoryKey(title: "paste", action: sendPaste)
+                    accessoryKey(title: "enter") { sendKey(.init(keyCode: .enter)) }
 
                     ForEach(Self.systemTextKeys, id: \.self) { text in
-                        GhosttyKeyboardKeyButton(
-                            title: text,
-                            fontSize: 11,
-                            minWidth: 28,
-                            minHeight: 30,
-                            horizontalPadding: 4,
-                            verticalPadding: 4,
-                            isEnabled: isEnabled,
-                            action: { sendText(text) }
-                        )
+                        accessoryKey(title: text) { sendText(text) }
                     }
                 }
             }
@@ -226,12 +167,12 @@ struct GhosttyKeyboardChrome: View {
     }
 
     private var customKeyboard: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
 
                 GhosttyKeyboardChromeIconButton(
-                    title: "ABC",
+                    title: "abc",
                     systemName: nil,
                     isActive: false,
                     isEnabled: isEnabled,
@@ -239,10 +180,14 @@ struct GhosttyKeyboardChrome: View {
                 )
             }
 
-            HStack(alignment: .top, spacing: 12) {
-                customGrid(keys: Self.leftCustomKeys)
-                customGrid(keys: Self.rightCustomKeys)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: Self.customRowSpacing) {
+                    ForEach(Self.customKeyRows) { row in
+                        keyRow(row)
+                    }
+                }
             }
+            .frame(maxHeight: Self.customKeyboardScrollMaxHeight)
         }
         .padding(10)
         .background(GhosttyPhoneChromePalette.tray)
@@ -253,25 +198,47 @@ struct GhosttyKeyboardChrome: View {
         }
     }
 
-    private func customGrid(keys: [GhosttyCustomKeyboardKey]) -> some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
-            spacing: 10
-        ) {
+    private func accessoryKey(
+        title: String,
+        isActive: Bool = false,
+        action: @escaping () -> Bool
+    ) -> some View {
+        GhosttyKeyboardKeyButton(
+            title: title,
+            fontSize: 12,
+            minWidth: 32,
+            minHeight: Self.customKeyHeight,
+            horizontalPadding: 4,
+            verticalPadding: 3,
+            isActive: isActive,
+            isEnabled: isEnabled,
+            action: action
+        )
+    }
+
+    private func keyRow(_ row: GhosttyCustomKeyboardRow) -> some View {
+        HStack(spacing: 16) {
+            keyCluster(row.left)
+            keyCluster(row.right)
+        }
+    }
+
+    private func keyCluster(_ keys: [GhosttyCustomKeyboardKey]) -> some View {
+        HStack(spacing: 6) {
             ForEach(keys) { key in
                 GhosttyKeyboardKeyButton(
                     title: key.title,
-                    fontSize: 10,
+                    fontSize: 12,
                     minWidth: 0,
-                    minHeight: 30,
-                    horizontalPadding: 0,
-                    verticalPadding: 0,
-                    hugsContent: true,
+                    minHeight: Self.customKeyHeight,
+                    horizontalPadding: 4,
+                    verticalPadding: 3,
+                    fillsWidth: true,
                     isActive: key.action == .toggleControl && isControlArmed,
                     isEnabled: isEnabled,
                     action: { perform(key.action) }
                 )
-                .padding(1)
+                .frame(maxWidth: .infinity)
             }
         }
     }
@@ -322,43 +289,96 @@ struct GhosttyKeyboardChrome: View {
 
     private static let systemTextKeys = ["{", "}", "[", "]", "<", ">", "=", ";", ":", "/", "-"]
 
-    private static let leftCustomKeys: [GhosttyCustomKeyboardKey] = [
-        .init("esc", .key(.escape)),
-        .init("^A", .text("\u{01}")),
-        .init(":", .text(":")),
-        .init("!", .text("!")),
-        .init("=", .text("=")),
-        .init(";", .text(";")),
-        .init("%", .text("%")),
-        .init("#", .text("#")),
-        .init("left", .key(.arrowLeft)),
-        .init("up", .key(.arrowUp)),
-        .init("down", .key(.arrowDown)),
-        .init("right", .key(.arrowRight)),
-        .init("{", .text("{")),
-        .init("}", .text("}")),
-        .init("(", .text("(")),
-        .init(")", .text(")")),
-    ]
+    private static let customKeyHeight: CGFloat = 34
+    private static let customRowSpacing: CGFloat = 6
+    private static let customVisibleRowCount: CGFloat = 5
+    private static let customKeyboardScrollMaxHeight: CGFloat =
+        customVisibleRowCount * (customKeyHeight + 6)
+        + (customVisibleRowCount - 1) * customRowSpacing
 
-    private static let rightCustomKeys: [GhosttyCustomKeyboardKey] = [
-        .init("tab", .key(.tab)),
-        .init("ctrl", .toggleControl),
-        .init("paste", .paste),
-        .init("C-c", .quick(.interrupt)),
-        .init("pgup", .key(.pageUp)),
-        .init("pgdn", .key(.pageDown)),
-        .init("home", .key(.home)),
-        .init("end", .key(.end)),
-        .init("del", .key(.delete)),
-        .init("@", .text("@")),
-        .init("$", .text("$")),
-        .init("^", .text("^")),
-        .init("[", .text("[")),
-        .init("]", .text("]")),
-        .init("*", .text("*")),
-        .init("&", .text("&")),
+    private static let customKeyRows: [GhosttyCustomKeyboardRow] = [
+        .init(
+            id: 0,
+            left: [
+                .init("esc", .key(.escape)),
+                .init("^A", .text("\u{01}")),
+                .init("tab", .key(.tab)),
+                .init("ctrl", .toggleControl),
+            ],
+            right: [
+                .init("paste", .paste),
+                .init("C-c", .quick(.interrupt)),
+                .init("pgup", .key(.pageUp)),
+                .init("pgdn", .key(.pageDown)),
+            ]
+        ),
+        .init(
+            id: 1,
+            left: [
+                .init("left", .key(.arrowLeft)),
+                .init("up", .key(.arrowUp)),
+                .init("down", .key(.arrowDown)),
+                .init("right", .key(.arrowRight)),
+            ],
+            right: [
+                .init("home", .key(.home)),
+                .init("end", .key(.end)),
+                .init("del", .key(.delete)),
+                .init("@", .text("@")),
+            ]
+        ),
+        .init(
+            id: 2,
+            left: [
+                .init(":", .text(":")),
+                .init(";", .text(";")),
+                .init("=", .text("=")),
+                .init("#", .text("#")),
+            ],
+            right: [
+                .init("!", .text("!")),
+                .init("$", .text("$")),
+                .init("%", .text("%")),
+                .init("^", .text("^")),
+            ]
+        ),
+        .init(
+            id: 3,
+            left: [
+                .init("{", .text("{")),
+                .init("}", .text("}")),
+                .init("(", .text("(")),
+                .init(")", .text(")")),
+            ],
+            right: [
+                .init("[", .text("[")),
+                .init("]", .text("]")),
+                .init("*", .text("*")),
+                .init("&", .text("&")),
+            ]
+        ),
+        .init(
+            id: 4,
+            left: [
+                .init("^B", .text("\u{02}")),
+                .init("^D", .text("\u{04}")),
+                .init("^L", .text("\u{0C}")),
+                .init("^R", .text("\u{12}")),
+            ],
+            right: [
+                .init("~", .text("~")),
+                .init("`", .text("`")),
+                .init("|", .text("|")),
+                .init("\\", .text("\\")),
+            ]
+        ),
     ]
+}
+
+private struct GhosttyCustomKeyboardRow: Identifiable {
+    let id: Int
+    let left: [GhosttyCustomKeyboardKey]
+    let right: [GhosttyCustomKeyboardKey]
 }
 
 private struct GhosttyKeyboardChromeSelector: View {
@@ -441,7 +461,7 @@ private struct GhosttyKeyboardKeyButton: View {
     var minHeight: CGFloat = 36
     var horizontalPadding: CGFloat = 6
     var verticalPadding: CGFloat = 6
-    var hugsContent = false
+    var fillsWidth = false
     var isActive = false
     let isEnabled: Bool
     let action: () -> Bool
@@ -455,14 +475,18 @@ private struct GhosttyKeyboardKeyButton: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))
-                .frame(minWidth: minWidth, minHeight: minHeight)
-                .fixedSize(horizontal: hugsContent, vertical: false)
+                .frame(
+                    minWidth: minWidth,
+                    maxWidth: fillsWidth ? .infinity : nil,
+                    minHeight: minHeight
+                )
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, verticalPadding)
                 .background(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.keySurface)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .opacity(isEnabled ? 1 : 0.42)
         }
+        .frame(maxWidth: fillsWidth ? .infinity : nil)
         .disabled(!isEnabled)
     }
 }
