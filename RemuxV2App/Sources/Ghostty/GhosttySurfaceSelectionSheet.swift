@@ -278,38 +278,20 @@ private struct GhosttyPaneSelectionTile: View {
     let snapshot: PanePreviewSnapshot?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Text("\(index + 1)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(isSelected ? Color.black.opacity(0.78) : GhosttySheetPalette.primary)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(isSelected ? GhosttySheetPalette.indexSelectedSurface : GhosttySheetPalette.indexSurface)
-                    .clipShape(Capsule())
-
-                Spacer(minLength: 0)
-
-                if isSelected {
-                    Circle()
-                        .fill(GhosttySheetPalette.accent)
-                        .frame(width: 8, height: 8)
-                }
-            }
-
+        VStack(alignment: .leading, spacing: 6) {
             previewSurface
-
-            Text("Pane \(index + 1)")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(GhosttySheetPalette.primary)
+            captionRow
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(12)
-        .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(8)
+        .background(GhosttySheetPalette.row)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(isSelected ? GhosttySheetPalette.strokeSelected : GhosttySheetPalette.stroke, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(
+                    isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.stroke,
+                    lineWidth: isSelected ? 1.5 : 1
+                )
         }
     }
 
@@ -318,10 +300,6 @@ private struct GhosttyPaneSelectionTile: View {
         if let snapshot {
             GhosttyPanePreviewView(snapshot: snapshot)
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.white.opacity(0.05), lineWidth: 1)
-                }
         } else {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.black.opacity(0.30))
@@ -330,6 +308,30 @@ private struct GhosttyPaneSelectionTile: View {
                     height: PanePreviewGeometry.defaultHeight
                 )
         }
+    }
+
+    private var captionRow: some View {
+        HStack(spacing: 6) {
+            Text("\(index + 1)")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.tertiary)
+
+            Spacer(minLength: 0)
+
+            if isSelected {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(GhosttySheetPalette.accent)
+                        .frame(width: 6, height: 6)
+
+                    Text("active")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(GhosttySheetPalette.accent)
+                }
+            }
+        }
+        .padding(.horizontal, 2)
     }
 }
 
