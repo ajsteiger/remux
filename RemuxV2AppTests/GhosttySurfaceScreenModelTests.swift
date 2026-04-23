@@ -361,6 +361,31 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("mouse scroll dropped"))
     }
 
+    func testMousePressureRoutesToFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var received: [GhosttySurfaceMousePressureEvent] = []
+        let surface = Self.managedSurface(sendMousePressure: {
+            received.append($0)
+        })
+
+        registry.registerManagedSurfaceForTesting(surface)
+
+        let event = GhosttySurfaceMousePressureEvent(stage: .deep, pressure: 1)
+        XCTAssertTrue(registry.sendMousePressureToFocusedSurface(event))
+        XCTAssertEqual(received, [event])
+    }
+
+    func testMousePressureWithoutFocusedSurfaceIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertFalse(
+            registry.sendMousePressureToFocusedSurface(
+                GhosttySurfaceMousePressureEvent(stage: .deep, pressure: 1)
+            )
+        )
+        XCTAssertTrue(registry.debugSummary.contains("mouse pressure dropped"))
+    }
+
     func testModelMousePositionWithoutFocusedSurfaceUpdatesDebugStatus() {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
@@ -577,6 +602,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
         sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
+        sendMousePressure: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
@@ -597,6 +623,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             sendMouseButton: sendMouseButton,
             sendMousePosition: sendMousePosition,
             sendMouseScroll: sendMouseScroll,
+            sendMousePressure: sendMousePressure,
             isMouseCaptured: isMouseCaptured,
             tmuxFocus: tmuxFocus ?? { false },
             tmuxSplit: tmuxSplit ?? { _ in false },

@@ -170,6 +170,13 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     }
 
     @MainActor
+    func sendMousePressure(_ event: GhosttySurfaceMousePressureEvent) {
+        event.withCValues {
+            ghostty_surface_mouse_pressure(storage.surface, $0, $1)
+        }
+    }
+
+    @MainActor
     func hasSelection() -> Bool {
         ghostty_surface_has_selection(storage.surface)
     }

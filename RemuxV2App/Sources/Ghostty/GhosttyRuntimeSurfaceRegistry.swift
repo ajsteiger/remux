@@ -263,6 +263,22 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     @MainActor
+    @discardableResult
+    func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> Bool {
+        guard
+            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = managedSurfaces[surfaceID]
+        else {
+            updateDebugSummary("mouse pressure dropped: no focused surface")
+            return false
+        }
+
+        surface.sendMousePressure(event)
+        updateDebugSummary("sent mouse pressure")
+        return true
+    }
+
+    @MainActor
     func focusedSurfaceMouseCaptured() -> Bool {
         guard
             let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
@@ -623,6 +639,7 @@ final class GhosttyManagedSurface {
     private let sendMouseButtonHandler: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)?
     private let sendMousePositionHandler: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)?
     private let sendMouseScrollHandler: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)?
+    private let sendMousePressureHandler: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)?
     private let isMouseCapturedHandler: (@MainActor () -> Bool)?
     private let tmuxFocusHandler: (@MainActor () -> Bool)?
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
@@ -640,6 +657,7 @@ final class GhosttyManagedSurface {
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
         sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
+        sendMousePressure: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
@@ -656,6 +674,7 @@ final class GhosttyManagedSurface {
         self.sendMouseButtonHandler = sendMouseButton
         self.sendMousePositionHandler = sendMousePosition
         self.sendMouseScrollHandler = sendMouseScroll
+        self.sendMousePressureHandler = sendMousePressure
         self.isMouseCapturedHandler = isMouseCaptured
         self.tmuxFocusHandler = tmuxFocus
         self.tmuxSplitHandler = tmuxSplit
@@ -733,6 +752,16 @@ final class GhosttyManagedSurface {
         }
 
         controlSurface.sendMouseScroll(event)
+    }
+
+    @MainActor
+    func sendMousePressure(_ event: GhosttySurfaceMousePressureEvent) {
+        if let sendMousePressureHandler {
+            sendMousePressureHandler(event)
+            return
+        }
+
+        controlSurface.sendMousePressure(event)
     }
 
     @MainActor

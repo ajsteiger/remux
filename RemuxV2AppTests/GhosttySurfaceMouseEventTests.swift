@@ -36,6 +36,15 @@ final class GhosttySurfaceMouseEventTests: XCTestCase {
         XCTAssertEqual(mods.momentum, .ended)
     }
 
+    func testMousePressureEventPreservesCValues() {
+        let event = GhosttySurfaceMousePressureEvent(stage: .deep, pressure: 1)
+
+        event.withCValues { stage, pressure in
+            XCTAssertEqual(stage, 2)
+            XCTAssertEqual(pressure, 1)
+        }
+    }
+
     func testTapGestureActivatesInputOnlyWhenMouseIsNotCaptured() {
         XCTAssertEqual(
             GhosttySurfaceTapGesture.actions(
@@ -59,6 +68,21 @@ final class GhosttySurfaceMouseEventTests: XCTestCase {
                 .mousePosition(point),
                 .mouseButton(.init(state: .press, button: .left)),
                 .mouseButton(.init(state: .release, button: .left)),
+            ]
+        )
+    }
+
+    func testLongPressSelectionGestureSelectsWordUsingGhosttyPressurePath() {
+        let point = CGPoint(x: 10, y: 20)
+
+        XCTAssertEqual(
+            GhosttySurfaceLongPressSelectionGesture.actionsForWordSelection(atLocalPoint: point),
+            [
+                .mousePosition(point),
+                .mouseButton(.init(state: .press, button: .left)),
+                .mousePressure(.init(stage: .deep, pressure: 1)),
+                .mouseButton(.init(state: .release, button: .left)),
+                .mousePressure(.init(stage: .none, pressure: 0)),
             ]
         )
     }

@@ -107,7 +107,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         for surface in registry.allManagedSurfaces() {
             if visibleIDs.contains(surface.id) {
                 surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
-                ensureTapRecognizer(for: surface.view)
+                ensureInteractionRecognizers(for: surface.view)
                 if surface.view.superview !== self {
                     surface.view.removeFromSuperview()
                     addSubview(surface.view)
@@ -190,13 +190,64 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         }
     }
 
-    private func ensureTapRecognizer(for view: UIView) {
-        let hasRecognizer = view.gestureRecognizers?.contains(where: { $0 is UITapGestureRecognizer }) ?? false
+    private func ensureInteractionRecognizers(for view: UIView) {
+        let existingRecognizers = view.gestureRecognizers ?? []
+        let existingLongPress = existingRecognizers.compactMap { $0 as? UILongPressGestureRecognizer }.first
+        let existingTap = existingRecognizers.compactMap { $0 as? UITapGestureRecognizer }.first
+        let longPress = existingLongPress ?? makeSelectionLongPressRecognizer(for: view)
+        let tap = existingTap ?? makeTapRecognizer(for: view)
 
-        if hasRecognizer { return }
+        if existingLongPress == nil || existingTap == nil {
+            tap.require(toFail: longPress)
+        }
+    }
 
+    private func makeTapRecognizer(for view: UIView) -> UITapGestureRecognizer {
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleSurfaceTap(_:)))
         view.addGestureRecognizer(recognizer)
+        return recognizer
+    }
+
+    private func makeSelectionLongPressRecognizer(for view: UIView) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleSelectionLongPress(_:)))
+        recognizer.minimumPressDuration = 0.45
+        recognizer.cancelsTouchesInView = false
+        view.addGestureRecognizer(recognizer)
+        return recognizer
+    }
+
+    @objc
+    private func handleSelectionLongPress(_ recognizer: UILongPressGestureRecognizer) {
+        guard recognizer.state == .began else { return }
+        guard
+            let registry,
+            let view = recognizer.view,
+            let surfaceID = surfaceIDsByView[ObjectIdentifier(view)]
+        else {
+            return
+        }
+
+        registry.selectSurface(surfaceID)
+        guard !registry.focusedSurfaceMouseCaptured() else {
+            return
+        }
+
+        for action in GhosttySurfaceLongPressSelectionGesture.actionsForWordSelection(
+            atLocalPoint: recognizer.location(in: view)
+        ) {
+            switch action {
+            case .mousePosition(let position):
+                _ = registry.sendMousePositionToFocusedSurface(position)
+
+            case .mouseButton(let event):
+                _ = registry.sendMouseButtonToFocusedSurface(event)
+
+            case .mousePressure(let event):
+                _ = registry.sendMousePressureToFocusedSurface(event)
+            }
+        }
+
+        setNeedsLayout()
     }
 
     @objc
