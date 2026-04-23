@@ -539,6 +539,20 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.focusedSurfaceMouseCaptured())
     }
 
+    func testMouseCapturedLookupUsesRequestedSurfaceNotFocusedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let uncaptured = Self.managedSurface(isMouseCaptured: { false })
+        let captured = Self.managedSurface(isMouseCaptured: { true })
+
+        registry.registerManagedSurfaceForTesting(uncaptured)
+        registry.registerManagedSurfaceForTesting(captured)
+        registry.selectSurface(uncaptured.id)
+
+        XCTAssertFalse(registry.focusedSurfaceMouseCaptured())
+        XCTAssertFalse(registry.isMouseCaptured(for: uncaptured.id))
+        XCTAssertTrue(registry.isMouseCaptured(for: captured.id))
+    }
+
     func testRuntimeSurfaceLifecycleBindsSurfaceHandleForCallbacks() {
         let lifecycle = GhosttyRuntimeSurfaceLifecycle(
             registry: GhosttyRuntimeSurfaceRegistry(),

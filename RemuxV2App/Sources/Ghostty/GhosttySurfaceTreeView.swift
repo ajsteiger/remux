@@ -269,7 +269,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         }
 
         guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
-        let mouseCaptured = registry.focusedSurfaceMouseCaptured()
+        let mouseCaptured = registry.isMouseCaptured(for: surfaceID)
         registry.selectSurface(surfaceID)
 
         for action in GhosttySurfaceTapGesture.actions(

@@ -298,6 +298,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         return surface.isMouseCaptured()
     }
 
+    @MainActor
+    func isMouseCaptured(for surfaceID: UUID) -> Bool {
+        guard let surface = managedSurfaces[surfaceID] else {
+            return false
+        }
+
+        return surface.isMouseCaptured()
+    }
+
     func runtimeCreateSurface(
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_s
