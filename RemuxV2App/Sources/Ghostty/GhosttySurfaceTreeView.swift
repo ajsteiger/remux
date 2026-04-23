@@ -145,7 +145,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
             surface.view.frame = rect.integral
             surface.view.alignGhosttyRendererSublayers()
-            surface.controlSurface.updateDisplay(size: surface.view.bounds.size, scale: effectiveScale)
+            surface.updateDisplay(size: surface.view.bounds.size, scale: effectiveScale)
             surface.controlSurface.setVisible(true)
             surface.controlSurface.setFocused(surfaceID == focusedSurfaceID)
 

@@ -645,6 +645,7 @@ final class GhosttyManagedSurface {
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
     private let tmuxClosePaneHandler: (@MainActor () -> Bool)?
     private let tmuxCloseWindowHandler: (@MainActor () -> Bool)?
+    private var displayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
         id: UUID,
@@ -690,6 +691,15 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.sendInput(text)
+    }
+
+    @MainActor
+    func updateDisplay(size: CGSize, scale: CGFloat) {
+        guard let metrics = displayUpdateTracker.nextMetrics(size: size, scale: scale) else {
+            return
+        }
+
+        controlSurface.updateDisplay(metrics: metrics)
     }
 
     @MainActor

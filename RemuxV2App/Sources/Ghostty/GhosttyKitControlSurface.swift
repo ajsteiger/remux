@@ -36,6 +36,18 @@ struct GhosttySurfaceDisplayMetrics: Equatable {
     }
 }
 
+struct GhosttySurfaceDisplayUpdateTracker {
+    private var lastMetrics: GhosttySurfaceDisplayMetrics?
+
+    mutating func nextMetrics(size: CGSize, scale: CGFloat) -> GhosttySurfaceDisplayMetrics? {
+        let metrics = GhosttySurfaceDisplayMetrics(size: size, scale: scale)
+        guard metrics != lastMetrics else { return nil }
+
+        lastMetrics = metrics
+        return metrics
+    }
+}
+
 final class GhosttyKitControlSurface: GhosttyControlSurface {
     private let storage: GhosttyKitControlSurfaceStorage
 
@@ -194,7 +206,11 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     func updateDisplay(size: CGSize, scale: CGFloat) {
         let metrics = GhosttySurfaceDisplayMetrics(size: size, scale: scale)
+        updateDisplay(metrics: metrics)
+    }
 
+    @MainActor
+    func updateDisplay(metrics: GhosttySurfaceDisplayMetrics) {
         ghostty_surface_set_content_scale(storage.surface, metrics.contentScale, metrics.contentScale)
         ghostty_surface_set_size(storage.surface, metrics.pixelWidth, metrics.pixelHeight)
     }
