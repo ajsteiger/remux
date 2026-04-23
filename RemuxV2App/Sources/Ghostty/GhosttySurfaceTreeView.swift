@@ -339,6 +339,14 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         true
     }
 
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === panRecognizer else { return true }
+
+        return GhosttySurfaceScrollGesture.shouldBegin(
+            forVelocity: panRecognizer.velocity(in: self)
+        )
+    }
+
     private var effectiveScale: CGFloat {
         max(window?.screen.scale ?? UIScreen.main.scale, 1)
     }

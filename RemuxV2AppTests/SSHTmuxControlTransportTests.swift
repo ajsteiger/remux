@@ -2,6 +2,60 @@ import XCTest
 @testable import RemuxV2
 
 final class SSHTmuxControlTransportTests: XCTestCase {
+    func testResizeStateBeginsApplyingOnlyWhenViewportChanges() {
+        let initial = TmuxControlViewport(columns: 80, rows: 24, pixelWidth: 800, pixelHeight: 600)
+        var state = TmuxViewportResizeState(initialViewport: initial)
+
+        XCTAssertNil(state.beginApplyingIfNeeded())
+
+        state.markApplied(initial)
+        XCTAssertNil(state.beginApplyingIfNeeded())
+
+        state.request(.init(columns: 90, rows: 30, pixelWidth: 900, pixelHeight: 700))
+        XCTAssertEqual(
+            state.beginApplyingIfNeeded(),
+            .init(columns: 90, rows: 30, pixelWidth: 900, pixelHeight: 700)
+        )
+        XCTAssertTrue(state.isApplying)
+        XCTAssertNil(state.beginApplyingIfNeeded())
+    }
+
+    func testResizeStateCoalescesToLatestViewportAfterApply() {
+        let initial = TmuxControlViewport(columns: 80, rows: 24, pixelWidth: 800, pixelHeight: 600)
+        var state = TmuxViewportResizeState(initialViewport: initial)
+        state.markApplied(initial)
+
+        let first = TmuxControlViewport(columns: 90, rows: 30, pixelWidth: 900, pixelHeight: 700)
+        let second = TmuxControlViewport(columns: 100, rows: 32, pixelWidth: 1000, pixelHeight: 720)
+        state.request(first)
+
+        XCTAssertEqual(state.beginApplyingIfNeeded(), first)
+
+        state.request(second)
+        XCTAssertEqual(state.completeApplied(first), second)
+        XCTAssertTrue(state.isApplying)
+        XCTAssertNil(state.completeApplied(second))
+        XCTAssertFalse(state.isApplying)
+    }
+
+    func testResizeStateResetsApplyingFlagOnFailure() {
+        let initial = TmuxControlViewport(columns: 80, rows: 24, pixelWidth: 800, pixelHeight: 600)
+        var state = TmuxViewportResizeState(initialViewport: initial)
+        state.markApplied(initial)
+        state.request(.init(columns: 90, rows: 30, pixelWidth: 900, pixelHeight: 700))
+
+        XCTAssertNotNil(state.beginApplyingIfNeeded())
+        XCTAssertTrue(state.isApplying)
+
+        state.failApplying()
+
+        XCTAssertFalse(state.isApplying)
+        XCTAssertEqual(
+            state.beginApplyingIfNeeded(),
+            .init(columns: 90, rows: 30, pixelWidth: 900, pixelHeight: 700)
+        )
+    }
+
     func testControlSessionCommandAttachesOrCreatesNamedSession() {
         let command = SSHTmuxControlCommandBuilder.attachOrCreateControlSessionCommand(
             tmuxExecutable: "tmux",

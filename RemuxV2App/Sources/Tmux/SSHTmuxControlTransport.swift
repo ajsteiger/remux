@@ -49,6 +49,47 @@ struct TmuxControlViewport: Equatable, Sendable {
     let pixelHeight: UInt32
 }
 
+struct TmuxViewportResizeState: Equatable, Sendable {
+    private(set) var latestViewport: TmuxControlViewport
+    private(set) var appliedViewport: TmuxControlViewport?
+    private(set) var isApplying = false
+
+    init(initialViewport: TmuxControlViewport) {
+        self.latestViewport = initialViewport
+        self.appliedViewport = initialViewport
+    }
+
+    mutating func request(_ viewport: TmuxControlViewport) {
+        latestViewport = viewport
+    }
+
+    mutating func markApplied(_ viewport: TmuxControlViewport) {
+        appliedViewport = viewport
+    }
+
+    mutating func beginApplyingIfNeeded() -> TmuxControlViewport? {
+        guard !isApplying else { return nil }
+        guard appliedViewport != latestViewport else { return nil }
+
+        isApplying = true
+        return latestViewport
+    }
+
+    mutating func completeApplied(_ viewport: TmuxControlViewport) -> TmuxControlViewport? {
+        appliedViewport = viewport
+        guard appliedViewport != latestViewport else {
+            isApplying = false
+            return nil
+        }
+
+        return latestViewport
+    }
+
+    mutating func failApplying() {
+        isApplying = false
+    }
+}
+
 enum SSHTmuxControlTransportError: LocalizedError, Equatable {
     case remoteExit(Int)
     case unsupportedInboundChannel
@@ -72,7 +113,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
     private let configuration: SSHTmuxControlConfiguration
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
 
-    private var latestViewport: TmuxControlViewport
+    private var resizeState: TmuxViewportResizeState
     private var pendingWrites: [Data] = []
     private var connection: SSHTmuxControlConnection?
     private var hasStarted = false
@@ -80,7 +121,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
     init(configuration: SSHTmuxControlConfiguration) {
         self.configuration = configuration
-        self.latestViewport = configuration.initialViewport
+        self.resizeState = TmuxViewportResizeState(initialViewport: configuration.initialViewport)
 
         var streamContinuation: AsyncThrowingStream<Data, Error>.Continuation?
         self.receivedBytes = AsyncThrowingStream { continuation in
@@ -95,7 +136,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
         let establishedConnection = try await SSHTmuxControlBootstrap.connect(
             using: configuration,
-            viewport: latestViewport,
+            viewport: resizeState.latestViewport,
             command: tmuxAttachCommand(),
             onOutput: { [transport = self] data in
                 Task {
@@ -110,6 +151,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         )
 
         connection = establishedConnection
+        resizeState.markApplied(resizeState.latestViewport)
 
         let queuedWrites = pendingWrites
         pendingWrites.removeAll(keepingCapacity: true)
@@ -130,15 +172,17 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
     }
 
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
-        latestViewport = TmuxControlViewport(
-            columns: columns,
-            rows: rows,
-            pixelWidth: width,
-            pixelHeight: height
+        resizeState.request(
+            TmuxControlViewport(
+                columns: columns,
+                rows: rows,
+                pixelWidth: width,
+                pixelHeight: height
+            )
         )
 
         guard let connection else { return }
-        try await connection.resize(latestViewport)
+        try await drainResizeQueueIfNeeded(using: connection)
     }
 
     func close() async {
@@ -161,6 +205,25 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
             continuation.finish(throwing: error)
         } else {
             continuation.finish()
+        }
+    }
+
+    private func drainResizeQueueIfNeeded(
+        using connection: SSHTmuxControlConnection
+    ) async throws {
+        guard var viewport = resizeState.beginApplyingIfNeeded() else { return }
+
+        do {
+            while true {
+                try await connection.resize(viewport)
+                guard let nextViewport = resizeState.completeApplied(viewport) else {
+                    return
+                }
+                viewport = nextViewport
+            }
+        } catch {
+            resizeState.failApplying()
+            throw error
         }
     }
 

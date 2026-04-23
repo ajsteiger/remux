@@ -3,6 +3,28 @@ import XCTest
 @testable import RemuxV2
 
 final class GhosttySurfaceScrollGestureTests: XCTestCase {
+    func testVerticalDominantVelocityBeginsScrollGesture() {
+        XCTAssertTrue(
+            GhosttySurfaceScrollGesture.shouldBegin(
+                forVelocity: CGPoint(x: 30, y: 80)
+            )
+        )
+    }
+
+    func testHorizontalDominantVelocityRejectsScrollGesture() {
+        XCTAssertFalse(
+            GhosttySurfaceScrollGesture.shouldBegin(
+                forVelocity: CGPoint(x: 120, y: 40)
+            )
+        )
+    }
+
+    func testZeroVelocityRejectsScrollGesture() {
+        XCTAssertFalse(
+            GhosttySurfaceScrollGesture.shouldBegin(forVelocity: .zero)
+        )
+    }
+
     func testZeroTranslationProducesNoScrollEvent() {
         XCTAssertNil(GhosttySurfaceScrollGesture.event(forTranslation: .zero))
     }

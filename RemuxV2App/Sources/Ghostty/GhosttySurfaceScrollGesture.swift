@@ -22,6 +22,15 @@ struct GhosttySurfaceScrollGesture {
     }
 
     private static let preciseScale: CGFloat = 2
+    private static let dominantAxisTolerance: CGFloat = 1.2
+
+    static func shouldBegin(forVelocity velocity: CGPoint) -> Bool {
+        let absX = abs(velocity.x)
+        let absY = abs(velocity.y)
+
+        guard absX > 0 || absY > 0 else { return false }
+        return absY >= absX * dominantAxisTolerance
+    }
 
     static func event(
         forTranslation translation: CGPoint,
