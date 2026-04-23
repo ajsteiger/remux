@@ -70,6 +70,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         sendPaste: @escaping (String) -> Bool,
         sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool
     ) {
+        let wasInputEnabled = self.isInputEnabled
         self.isInputEnabled = isEnabled
         self.sendTextHandler = sendText
         self.sendPasteHandler = sendPaste
@@ -84,7 +85,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             return
         }
 
-        guard activationToken != self.activationToken else { return }
+        guard activationToken != self.activationToken || !wasInputEnabled else { return }
         self.activationToken = activationToken
         pendingFirstResponderRequest = true
         requestFirstResponderIfNeeded()

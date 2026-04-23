@@ -419,6 +419,29 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux focus queued")
     }
 
+    func testModelFocusTmuxPaneSelectsLocallyWhenRemoteFocusIsRejected() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        let first = Self.managedSurface()
+        var focusCallCount = 0
+        let second = Self.managedSurface(tmuxFocus: {
+            focusCallCount += 1
+            return false
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        model.surfaceRegistry.selectSurface(first.id)
+
+        XCTAssertTrue(model.focusTmuxPane(second.id))
+        XCTAssertEqual(focusCallCount, 1)
+        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(model.debugStatus, "tmux focus selected locally; remote sync rejected")
+    }
+
     func testModelFocusAdjacentTmuxTopLevelRoutesThroughTargetPane() {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),

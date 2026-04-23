@@ -234,13 +234,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return false
         }
 
-        guard surface.tmuxFocus() else {
-            debugStatus = "tmux focus rejected"
-            return false
-        }
-
         surfaceRegistry.selectSurface(id)
-        debugStatus = "tmux focus queued"
+        if surface.tmuxFocus() {
+            debugStatus = "tmux focus queued"
+        } else {
+            debugStatus = "tmux focus selected locally; remote sync rejected"
+        }
         return true
     }
 

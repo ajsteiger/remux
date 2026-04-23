@@ -240,4 +240,50 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
             "echo hello\r"
         )
     }
+
+    @MainActor
+    func testResponderRequestsFirstResponderWhenInputBecomesEnabledWithSameActivationToken() async {
+        let view = GhosttyTerminalResponderUIView()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        window.rootViewController = UIViewController()
+        window.rootViewController?.view.addSubview(view)
+        window.makeKeyAndVisible()
+        defer {
+            view.resignFirstResponder()
+            view.removeFromSuperview()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        view.update(
+            isEnabled: false,
+            activationToken: 7,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+        view.update(
+            isEnabled: true,
+            activationToken: 7,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+
+        let becameFirstResponder = await waitUntil { view.isFirstResponder }
+        XCTAssertTrue(becameFirstResponder)
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
 }

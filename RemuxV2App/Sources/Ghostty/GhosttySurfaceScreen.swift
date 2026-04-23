@@ -161,9 +161,9 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func handleSurfaceTap(_ surfaceID: UUID) {
-        _ = model.focusTmuxPane(surfaceID)
+        let didActivatePane = model.focusTmuxPane(surfaceID)
         withAnimation(Self.keyboardAnimation) {
-            inputCoordinator.handleSurfaceTap(isInputAvailable: isTerminalInputAvailable)
+            inputCoordinator.handleSurfaceTap(isInputAvailable: didActivatePane)
         }
     }
 
