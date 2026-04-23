@@ -293,13 +293,16 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func handleSurfacePan(_ recognizer: UIPanGestureRecognizer) {
         guard
             let registry,
-            recognizer.state == .changed
+            let phase = GhosttySurfaceScrollGesture.Phase(recognizer.state)
         else {
             return
         }
 
         let translation = recognizer.translation(in: self)
-        guard let event = GhosttySurfaceScrollGesture.event(forTranslation: translation) else {
+        guard let event = GhosttySurfaceScrollGesture.event(
+            forTranslation: translation,
+            phase: phase
+        ) else {
             return
         }
 
@@ -316,5 +319,24 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     private var effectiveScale: CGFloat {
         max(window?.screen.scale ?? UIScreen.main.scale, 1)
+    }
+}
+
+private extension GhosttySurfaceScrollGesture.Phase {
+    init?(_ state: UIGestureRecognizer.State) {
+        switch state {
+        case .began:
+            self = .began
+        case .changed:
+            self = .changed
+        case .ended:
+            self = .ended
+        case .cancelled, .failed:
+            self = .cancelled
+        case .possible:
+            return nil
+        @unknown default:
+            return nil
+        }
     }
 }
