@@ -30,6 +30,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var controlSurface: GhosttyKitControlSurface?
     private var hostSurface: GhosttyControlHostSurface?
     private var transport: (any TmuxControlTransport)?
+    private var hostDisplayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
         target: TmuxConnectionTarget,
@@ -58,7 +59,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         if let controlSurface {
             view.alignGhosttyRendererSublayers()
-            controlSurface.updateDisplay(size: size, scale: view.contentScaleFactor)
+            updateHostDisplay(controlSurface, size: size, scale: view.contentScaleFactor)
             controlSurface.setVisible(false)
             controlSurface.setFocused(false)
             return
@@ -66,6 +67,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         state = .starting
         debugStatus = "creating Ghostty runtime"
+        hostDisplayUpdateTracker.reset()
 
         do {
             surfaceRegistry.reset()
@@ -110,7 +112,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 }
             )
             view.alignGhosttyRendererSublayers()
-            surface.updateDisplay(size: size, scale: view.contentScaleFactor)
+            updateHostDisplay(surface, size: size, scale: view.contentScaleFactor)
             surface.setVisible(false)
             surface.setFocused(false)
 
@@ -143,6 +145,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         controlSurface = nil
         transport = nil
         runtime = nil
+        hostDisplayUpdateTracker.reset()
         surfaceRegistry.reset()
         state = .idle
         debugStatus = "stopped"
@@ -362,6 +365,18 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
             await startTransport(transport, surface: surface)
         }
+    }
+
+    private func updateHostDisplay(
+        _ surface: GhosttyKitControlSurface,
+        size: CGSize,
+        scale: CGFloat
+    ) {
+        guard let metrics = hostDisplayUpdateTracker.nextMetrics(size: size, scale: scale) else {
+            return
+        }
+
+        surface.updateDisplay(metrics: metrics)
     }
 
     private func startTransport(

@@ -81,6 +81,18 @@ final class GhosttyKitControlSurfaceTests: XCTestCase {
         )
     }
 
+    func testDisplayUpdateTrackerResetAllowsSameMetricsAgain() {
+        var tracker = GhosttySurfaceDisplayUpdateTracker()
+        let size = CGSize(width: 390, height: 641)
+
+        XCTAssertNotNil(tracker.nextMetrics(size: size, scale: 3))
+        XCTAssertNil(tracker.nextMetrics(size: size, scale: 3))
+
+        tracker.reset()
+
+        XCTAssertNotNil(tracker.nextMetrics(size: size, scale: 3))
+    }
+
     func testDecodeGhosttyTextReturnsEmptyStringForMissingBuffer() {
         XCTAssertEqual(
             GhosttyKitControlSurface.decodeGhosttyText(

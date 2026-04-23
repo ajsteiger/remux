@@ -46,6 +46,10 @@ struct GhosttySurfaceDisplayUpdateTracker {
         lastMetrics = metrics
         return metrics
     }
+
+    mutating func reset() {
+        lastMetrics = nil
+    }
 }
 
 final class GhosttyKitControlSurface: GhosttyControlSurface {
