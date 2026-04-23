@@ -93,6 +93,7 @@ struct GhosttySurfaceScreen: View {
                     onToggleCustomKeyboard: toggleCustomKeyboard,
                     onToggleControl: toggleControlModifier,
                     onQuickAction: performQuickAction,
+                    copySelection: copyTerminalSelection,
                     sendText: sendTerminalText,
                     sendPaste: sendTerminalPaste,
                     sendKey: sendTerminalKeyEvent
@@ -214,6 +215,15 @@ struct GhosttySurfaceScreen: View {
 
     private func sendTerminalPaste(_ text: String) -> Bool {
         model.sendPasteToFocusedSurface(text)
+    }
+
+    private func copyTerminalSelection() -> Bool {
+        guard let selection = model.readSelectionFromFocusedSurface() else {
+            return false
+        }
+
+        UIPasteboard.general.string = selection
+        return true
     }
 
     private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {

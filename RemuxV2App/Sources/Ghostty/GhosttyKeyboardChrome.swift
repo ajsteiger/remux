@@ -60,6 +60,7 @@ struct GhosttyKeyboardChrome: View {
     let onToggleCustomKeyboard: () -> Void
     let onToggleControl: () -> Void
     let onQuickAction: (GhosttyTerminalQuickAction) -> Void
+    let copySelection: () -> Bool
     let sendText: (String) -> Bool
     let sendPaste: (String) -> Bool
     let sendKey: (GhosttySurfaceKeyEvent) -> Bool
@@ -141,6 +142,7 @@ struct GhosttyKeyboardChrome: View {
                         onToggleControl()
                         return true
                     }
+                    accessoryKey(title: "copy", action: copySelection)
                     accessoryKey(title: "paste", action: sendClipboardPaste)
                     accessoryKey(title: "enter") { sendKey(.init(keyCode: .enter)) }
 
@@ -255,6 +257,8 @@ struct GhosttyKeyboardChrome: View {
             return sendText(text)
         case .paste:
             return sendClipboardPaste()
+        case .copy:
+            return copySelection()
         case .toggleControl:
             onToggleControl()
             return true
@@ -307,10 +311,10 @@ struct GhosttyKeyboardChrome: View {
                 .init("ctrl", .toggleControl),
             ],
             right: [
+                .init("copy", .copy),
                 .init("paste", .paste),
                 .init("C-c", .quick(.interrupt)),
                 .init("pgup", .key(.pageUp)),
-                .init("pgdn", .key(.pageDown)),
             ]
         ),
         .init(
@@ -322,10 +326,10 @@ struct GhosttyKeyboardChrome: View {
                 .init("right", .key(.arrowRight)),
             ],
             right: [
+                .init("pgdn", .key(.pageDown)),
                 .init("home", .key(.home)),
                 .init("end", .key(.end)),
                 .init("del", .key(.delete)),
-                .init("@", .text("@")),
             ]
         ),
         .init(
@@ -509,6 +513,7 @@ private enum GhosttyCustomKeyboardAction: Equatable {
     case key(GhosttySurfaceKeyEvent.KeyCode)
     case text(String)
     case paste
+    case copy
     case toggleControl
 }
 

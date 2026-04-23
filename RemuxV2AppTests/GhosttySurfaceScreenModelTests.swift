@@ -215,6 +215,36 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("paste rejected"))
     }
 
+    func testReadSelectionRoutesToFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(readSelection: { "first" })
+        let second = Self.managedSurface(readSelection: { "second" })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(second.id)
+
+        XCTAssertEqual(registry.readSelectionFromFocusedSurface(), "second")
+        XCTAssertTrue(registry.debugSummary.contains("read selection"))
+    }
+
+    func testReadSelectionWithoutFocusedSurfaceIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertNil(registry.readSelectionFromFocusedSurface())
+        XCTAssertTrue(registry.debugSummary.contains("copy dropped"))
+    }
+
+    func testReadSelectionRejectsEmptySelection() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface(readSelection: { "" })
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertNil(registry.readSelectionFromFocusedSurface())
+        XCTAssertTrue(registry.debugSummary.contains("empty selection"))
+    }
+
     func testKeyEventRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var firstEvents: [GhosttySurfaceKeyEvent] = []
@@ -279,6 +309,30 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertFalse(model.sendPasteToFocusedSurface("dropped"))
         XCTAssertEqual(model.debugStatus, "paste dropped: no focused tmux pane")
+    }
+
+    func testModelReadSelectionRoutesThroughRegistry() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        let managed = Self.managedSurface(readSelection: { "selected text" })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(model.readSelectionFromFocusedSurface(), "selected text")
+    }
+
+    func testModelReadSelectionWithoutFocusedSurfaceUpdatesDebugStatus() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+
+        XCTAssertNil(model.readSelectionFromFocusedSurface())
+        XCTAssertEqual(model.debugStatus, "copy dropped: no focused selection")
     }
 
     func testMouseButtonRoutesToFocusedManagedSurface() {
@@ -518,6 +572,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         handle: ghostty_surface_t = UnsafeMutableRawPointer(bitPattern: 0x1)!,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendPaste: (@MainActor (String) -> Bool)? = nil,
+        readSelection: (@MainActor () -> String?)? = nil,
         sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
         sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
@@ -537,6 +592,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             ),
             sendInput: sendInput,
             sendPaste: sendPaste,
+            readSelection: readSelection,
             sendKeyEvent: sendKeyEvent,
             sendMouseButton: sendMouseButton,
             sendMousePosition: sendMousePosition,

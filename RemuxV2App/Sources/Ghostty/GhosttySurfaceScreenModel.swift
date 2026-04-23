@@ -168,6 +168,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return accepted
     }
 
+    func readSelectionFromFocusedSurface() -> String? {
+        let selection = surfaceRegistry.readSelectionFromFocusedSurface()
+        if selection == nil {
+            debugStatus = "copy dropped: no focused selection"
+        }
+
+        return selection
+    }
+
     @discardableResult
     func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
         let accepted = surfaceRegistry.sendKeyEventToFocusedSurface(event)

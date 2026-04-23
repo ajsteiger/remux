@@ -169,6 +169,25 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     @MainActor
+    func readSelectionFromFocusedSurface() -> String? {
+        guard
+            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = managedSurfaces[surfaceID]
+        else {
+            updateDebugSummary("copy dropped: no focused surface")
+            return nil
+        }
+
+        guard let selection = surface.readSelection(), !selection.isEmpty else {
+            updateDebugSummary("copy dropped: empty selection")
+            return nil
+        }
+
+        updateDebugSummary("read selection bytes=\(selection.lengthOfBytes(using: .utf8))")
+        return selection
+    }
+
+    @MainActor
     @discardableResult
     func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
         guard
@@ -599,6 +618,7 @@ final class GhosttyManagedSurface {
     let controlSurface: GhosttyKitControlSurface
     private let sendInputHandler: (@MainActor (String) -> Bool)?
     private let sendPasteHandler: (@MainActor (String) -> Bool)?
+    private let readSelectionHandler: (@MainActor () -> String?)?
     private let sendKeyEventHandler: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)?
     private let sendMouseButtonHandler: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)?
     private let sendMousePositionHandler: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)?
@@ -615,6 +635,7 @@ final class GhosttyManagedSurface {
         controlSurface: GhosttyKitControlSurface,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendPaste: (@MainActor (String) -> Bool)? = nil,
+        readSelection: (@MainActor () -> String?)? = nil,
         sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
         sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
@@ -630,6 +651,7 @@ final class GhosttyManagedSurface {
         self.controlSurface = controlSurface
         self.sendInputHandler = sendInput
         self.sendPasteHandler = sendPaste
+        self.readSelectionHandler = readSelection
         self.sendKeyEventHandler = sendKeyEvent
         self.sendMouseButtonHandler = sendMouseButton
         self.sendMousePositionHandler = sendMousePosition
@@ -659,6 +681,15 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.sendPaste(text)
+    }
+
+    @MainActor
+    func readSelection() -> String? {
+        if let readSelectionHandler {
+            return readSelectionHandler()
+        }
+
+        return controlSurface.readSelection()
     }
 
     @MainActor
