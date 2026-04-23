@@ -35,6 +35,7 @@ struct GhosttyWindowSelectionSheet: View {
 
     let sessionName: String
     let onCreateWindow: (() -> Void)?
+    let onCloseWindow: (() -> Void)?
     let onSelect: (UUID) -> Void
 
     var body: some View {
@@ -61,11 +62,20 @@ struct GhosttyWindowSelectionSheet: View {
             Spacer(minLength: 0)
 
             GhosttySheetBottomActionBar {
-                GhosttySheetActionButton(
-                    title: "Create Window",
-                    systemName: "plus",
-                    action: onCreateWindow
-                )
+                HStack(spacing: 10) {
+                    GhosttySheetActionButton(
+                        title: "Close",
+                        systemName: "xmark",
+                        action: onCloseWindow,
+                        isDestructive: true
+                    )
+
+                    GhosttySheetActionButton(
+                        title: "Create Window",
+                        systemName: "plus",
+                        action: onCreateWindow
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -80,6 +90,7 @@ struct GhosttyPaneSelectionSheet: View {
 
     let onSplitPane: (() -> Void)?
     let onStackPane: (() -> Void)?
+    let onClosePane: (() -> Void)?
     let onSelect: (UUID) -> Void
 
     @State private var previewsByID: [UUID: PanePreviewSnapshot] = [:]
@@ -117,6 +128,13 @@ struct GhosttyPaneSelectionSheet: View {
                         title: "Stack",
                         systemName: "square.split.1x2",
                         action: onStackPane
+                    )
+
+                    GhosttySheetActionButton(
+                        title: "Close",
+                        systemName: "xmark",
+                        action: onClosePane,
+                        isDestructive: true
                     )
                 }
             }
@@ -200,6 +218,7 @@ private struct GhosttySheetActionButton: View {
     let title: String
     let systemName: String
     let action: (() -> Void)?
+    var isDestructive = false
 
     var body: some View {
         Button {
@@ -208,16 +227,16 @@ private struct GhosttySheetActionButton: View {
             HStack(spacing: 8) {
                 Image(systemName: systemName)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(GhosttySheetPalette.primary)
+                    .foregroundStyle(foreground)
 
                 Text(title)
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(GhosttySheetPalette.primary)
+                    .foregroundStyle(foreground)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
             .padding(.horizontal, 14)
-            .background(GhosttySheetPalette.row)
+            .background(background)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -225,6 +244,16 @@ private struct GhosttySheetActionButton: View {
             }
         }
         .buttonStyle(.plain)
+        .disabled(action == nil)
+        .opacity(action == nil ? 0.5 : 1.0)
+    }
+
+    private var foreground: Color {
+        isDestructive ? Color(red: 1.0, green: 0.55, blue: 0.55) : GhosttySheetPalette.primary
+    }
+
+    private var background: Color {
+        isDestructive ? Color(red: 0.36, green: 0.18, blue: 0.20) : GhosttySheetPalette.row
     }
 }
 

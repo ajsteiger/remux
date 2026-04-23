@@ -335,6 +335,44 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux split queued")
     }
 
+    func testModelCloseFocusedTmuxPaneRoutesToManagedSurface() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        var closeCallCount = 0
+        let managed = Self.managedSurface(tmuxClosePane: {
+            closeCallCount += 1
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertTrue(model.closeFocusedTmuxPane())
+        XCTAssertEqual(closeCallCount, 1)
+        XCTAssertEqual(model.debugStatus, "tmux close-pane queued")
+    }
+
+    func testModelCloseSelectedTmuxWindowRoutesThroughFocusedPane() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        var closeCallCount = 0
+        let managed = Self.managedSurface(tmuxCloseWindow: {
+            closeCallCount += 1
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertTrue(model.closeSelectedTmuxWindow())
+        XCTAssertEqual(closeCallCount, 1)
+        XCTAssertEqual(model.debugStatus, "tmux close-window queued")
+    }
+
     func testFocusedSurfaceMouseCapturedReflectsManagedSurfaceState() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let uncaptured = Self.managedSurface(isMouseCaptured: { false })
@@ -435,7 +473,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         tmuxFocus: (@MainActor () -> Bool)? = nil,
-        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil
+        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
+        tmuxClosePane: (@MainActor () -> Bool)? = nil,
+        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: UUID(),
@@ -451,7 +491,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             sendMouseScroll: sendMouseScroll,
             isMouseCaptured: isMouseCaptured,
             tmuxFocus: tmuxFocus ?? { false },
-            tmuxSplit: tmuxSplit ?? { _ in false }
+            tmuxSplit: tmuxSplit ?? { _ in false },
+            tmuxClosePane: tmuxClosePane ?? { false },
+            tmuxCloseWindow: tmuxCloseWindow ?? { false }
         )
     }
 }

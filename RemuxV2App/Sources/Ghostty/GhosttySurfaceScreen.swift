@@ -251,6 +251,11 @@ struct GhosttySurfaceScreen: View {
                     selectionSheet = nil
                     refocusSystemKeyboardIfActive()
                 },
+                onCloseWindow: {
+                    guard model.closeSelectedTmuxWindow() else { return }
+                    selectionSheet = nil
+                    refocusSystemKeyboardIfActive()
+                },
                 onSelect: { id in
                     guard model.focusTmuxTopLevel(id) else { return }
                     selectionSheet = nil
@@ -268,6 +273,11 @@ struct GhosttySurfaceScreen: View {
                 },
                 onStackPane: {
                     guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) else { return }
+                    selectionSheet = nil
+                    refocusSystemKeyboardIfActive()
+                },
+                onClosePane: {
+                    guard model.closeFocusedTmuxPane() else { return }
                     selectionSheet = nil
                     refocusSystemKeyboardIfActive()
                 },

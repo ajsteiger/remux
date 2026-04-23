@@ -41,6 +41,14 @@ protocol GhosttyControlSurface: AnyObject {
     /// Queue a tmux split for the pane bound to this surface.
     @MainActor
     func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool
+
+    /// Queue close for the pane bound to this surface.
+    @MainActor
+    func tmuxClosePane() -> Bool
+
+    /// Queue close for the tmux window containing the pane bound to this surface.
+    @MainActor
+    func tmuxCloseWindow() -> Bool
 }
 
 @MainActor

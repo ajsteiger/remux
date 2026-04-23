@@ -79,6 +79,18 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     @discardableResult
+    func tmuxClosePane() -> Bool {
+        ghostty_surface_tmux_close_pane(storage.surface)
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxCloseWindow() -> Bool {
+        ghostty_surface_tmux_close_window(storage.surface)
+    }
+
+    @MainActor
+    @discardableResult
     func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
         event.withCValue { ghostty_surface_key(storage.surface, $0) }
     }

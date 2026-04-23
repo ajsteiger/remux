@@ -584,6 +584,8 @@ final class GhosttyManagedSurface {
     private let isMouseCapturedHandler: (@MainActor () -> Bool)?
     private let tmuxFocusHandler: (@MainActor () -> Bool)?
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
+    private let tmuxClosePaneHandler: (@MainActor () -> Bool)?
+    private let tmuxCloseWindowHandler: (@MainActor () -> Bool)?
 
     init(
         id: UUID,
@@ -596,7 +598,9 @@ final class GhosttyManagedSurface {
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         tmuxFocus: (@MainActor () -> Bool)? = nil,
-        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil
+        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
+        tmuxClosePane: (@MainActor () -> Bool)? = nil,
+        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
     ) {
         self.id = id
         self.view = view
@@ -609,6 +613,8 @@ final class GhosttyManagedSurface {
         self.isMouseCapturedHandler = isMouseCaptured
         self.tmuxFocusHandler = tmuxFocus
         self.tmuxSplitHandler = tmuxSplit
+        self.tmuxClosePaneHandler = tmuxClosePane
+        self.tmuxCloseWindowHandler = tmuxCloseWindow
     }
 
     @MainActor
@@ -691,6 +697,26 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.tmuxSplit(direction)
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxClosePane() -> Bool {
+        if let tmuxClosePaneHandler {
+            return tmuxClosePaneHandler()
+        }
+
+        return controlSurface.tmuxClosePane()
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxCloseWindow() -> Bool {
+        if let tmuxCloseWindowHandler {
+            return tmuxCloseWindowHandler()
+        }
+
+        return controlSurface.tmuxCloseWindow()
     }
 }
 

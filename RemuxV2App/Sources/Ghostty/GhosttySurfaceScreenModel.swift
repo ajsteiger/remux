@@ -287,6 +287,45 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return true
     }
 
+    @discardableResult
+    func closeFocusedTmuxPane() -> Bool {
+        guard
+            let surfaceID = surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID,
+            let surface = surfaceRegistry.managedSurface(for: surfaceID)
+        else {
+            debugStatus = "tmux close-pane dropped: no focused pane"
+            return false
+        }
+
+        guard surface.tmuxClosePane() else {
+            debugStatus = "tmux close-pane rejected"
+            return false
+        }
+
+        debugStatus = "tmux close-pane queued"
+        return true
+    }
+
+    @discardableResult
+    func closeSelectedTmuxWindow() -> Bool {
+        guard
+            let topLevel = surfaceRegistry.selectedTopLevel,
+            let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first,
+            let surface = surfaceRegistry.managedSurface(for: surfaceID)
+        else {
+            debugStatus = "tmux close-window dropped: no selected window"
+            return false
+        }
+
+        guard surface.tmuxCloseWindow() else {
+            debugStatus = "tmux close-window rejected"
+            return false
+        }
+
+        debugStatus = "tmux close-window queued"
+        return true
+    }
+
     private func startTransportWhenSurfaceIsSized(
         _ transport: any TmuxControlTransport,
         surface: GhosttyKitControlSurface

@@ -237,4 +237,12 @@ private final class RecordingGhosttyControlSurface: GhosttyControlSurface {
         _ = direction
         return true
     }
+
+    func tmuxClosePane() -> Bool {
+        true
+    }
+
+    func tmuxCloseWindow() -> Bool {
+        true
+    }
 }
