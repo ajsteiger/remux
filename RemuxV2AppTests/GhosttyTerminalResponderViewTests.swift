@@ -11,6 +11,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
             isEnabled: true,
             activationToken: 1,
             sendText: { _ in true },
+            sendPaste: { _ in true },
             sendKeyEvent: { _ in true }
         )
 
@@ -26,6 +27,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
             isEnabled: true,
             activationToken: 1,
             sendText: { _ in true },
+            sendPaste: { _ in true },
             sendKeyEvent: {
                 receivedEvent = $0
                 return true
@@ -35,6 +37,33 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         view.deleteBackward()
 
         XCTAssertEqual(receivedEvent, .init(keyCode: .backspace))
+    }
+
+    @MainActor
+    func testPasteUsesPasteHandlerInsteadOfRawTextHandler() {
+        let view = GhosttyTerminalResponderUIView()
+        var rawText: [String] = []
+        var pastedText: [String] = []
+
+        view.update(
+            isEnabled: true,
+            activationToken: 1,
+            sendText: {
+                rawText.append($0)
+                return true
+            },
+            sendPaste: {
+                pastedText.append($0)
+                return true
+            },
+            sendKeyEvent: { _ in true }
+        )
+
+        UIPasteboard.general.string = "first\nsecond"
+        view.paste(nil)
+
+        XCTAssertTrue(rawText.isEmpty)
+        XCTAssertEqual(pastedText, ["first\nsecond"])
     }
 
     func testHardwareCommandMappingResolvesArrowUpToKeyEvent() {

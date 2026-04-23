@@ -176,6 +176,45 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("input rejected"))
     }
 
+    func testPasteRoutesToFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var firstPaste: [String] = []
+        var secondPaste: [String] = []
+        let first = Self.managedSurface(sendPaste: {
+            firstPaste.append($0)
+            return true
+        })
+        let second = Self.managedSurface(sendPaste: {
+            secondPaste.append($0)
+            return true
+        })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(second.id)
+
+        XCTAssertTrue(registry.sendPasteToFocusedSurface("first\nsecond"))
+        XCTAssertTrue(firstPaste.isEmpty)
+        XCTAssertEqual(secondPaste, ["first\nsecond"])
+    }
+
+    func testPasteWithoutFocusedSurfaceIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertFalse(registry.sendPasteToFocusedSurface("dropped"))
+        XCTAssertTrue(registry.debugSummary.contains("paste dropped"))
+    }
+
+    func testPasteRejectedByFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface(sendPaste: { _ in false })
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertFalse(registry.sendPasteToFocusedSurface("rejected"))
+        XCTAssertTrue(registry.debugSummary.contains("paste rejected"))
+    }
+
     func testKeyEventRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var firstEvents: [GhosttySurfaceKeyEvent] = []
@@ -229,6 +268,17 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertFalse(model.sendKeyEventToFocusedSurface(.init(keyCode: .escape)))
         XCTAssertEqual(model.debugStatus, "key dropped: no focused tmux pane")
+    }
+
+    func testModelPasteWithoutFocusedSurfaceUpdatesDebugStatus() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+
+        XCTAssertFalse(model.sendPasteToFocusedSurface("dropped"))
+        XCTAssertEqual(model.debugStatus, "paste dropped: no focused tmux pane")
     }
 
     func testMouseButtonRoutesToFocusedManagedSurface() {
@@ -467,6 +517,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     private static func managedSurface(
         handle: ghostty_surface_t = UnsafeMutableRawPointer(bitPattern: 0x1)!,
         sendInput: (@MainActor (String) -> Bool)? = nil,
+        sendPaste: (@MainActor (String) -> Bool)? = nil,
         sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
         sendMousePosition: (@MainActor (CGPoint, GhosttySurfaceKeyEvent.Mods) -> Void)? = nil,
@@ -485,6 +536,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 ownsSurface: false
             ),
             sendInput: sendInput,
+            sendPaste: sendPaste,
             sendKeyEvent: sendKeyEvent,
             sendMouseButton: sendMouseButton,
             sendMousePosition: sendMousePosition,

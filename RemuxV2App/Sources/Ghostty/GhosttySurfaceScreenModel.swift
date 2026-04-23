@@ -159,6 +159,16 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     @discardableResult
+    func sendPasteToFocusedSurface(_ text: String) -> Bool {
+        let accepted = surfaceRegistry.sendPasteToFocusedSurface(text)
+        if !accepted {
+            debugStatus = "paste dropped: no focused tmux pane"
+        }
+
+        return accepted
+    }
+
+    @discardableResult
     func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
         let accepted = surfaceRegistry.sendKeyEventToFocusedSurface(event)
         if !accepted {

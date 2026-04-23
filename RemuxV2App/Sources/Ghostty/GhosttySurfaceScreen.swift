@@ -61,6 +61,7 @@ struct GhosttySurfaceScreen: View {
                             isEnabled: inputCoordinator.keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
                             activationToken: inputCoordinator.terminalActivationToken,
                             sendText: sendTerminalText,
+                            sendPaste: sendTerminalPaste,
                             sendKeyEvent: sendTerminalKeyEvent
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,6 +94,7 @@ struct GhosttySurfaceScreen: View {
                     onToggleControl: toggleControlModifier,
                     onQuickAction: performQuickAction,
                     sendText: sendTerminalText,
+                    sendPaste: sendTerminalPaste,
                     sendKey: sendTerminalKeyEvent
                 )
                 .padding(.horizontal, chrome.surfaceHorizontalPadding)
@@ -208,6 +210,10 @@ struct GhosttySurfaceScreen: View {
     private func sendTerminalText(_ text: String) -> Bool {
         let outbound = modifierState.apply(to: text)
         return model.sendInputToFocusedSurface(outbound)
+    }
+
+    private func sendTerminalPaste(_ text: String) -> Bool {
+        model.sendPasteToFocusedSurface(text)
     }
 
     private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {

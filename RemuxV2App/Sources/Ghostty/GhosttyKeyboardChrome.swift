@@ -61,6 +61,7 @@ struct GhosttyKeyboardChrome: View {
     let onToggleControl: () -> Void
     let onQuickAction: (GhosttyTerminalQuickAction) -> Void
     let sendText: (String) -> Bool
+    let sendPaste: (String) -> Bool
     let sendKey: (GhosttySurfaceKeyEvent) -> Bool
 
     private static let transitionAnimation = Animation.spring(
@@ -140,7 +141,7 @@ struct GhosttyKeyboardChrome: View {
                         onToggleControl()
                         return true
                     }
-                    accessoryKey(title: "paste", action: sendPaste)
+                    accessoryKey(title: "paste", action: sendClipboardPaste)
                     accessoryKey(title: "enter") { sendKey(.init(keyCode: .enter)) }
 
                     ForEach(Self.systemTextKeys, id: \.self) { text in
@@ -253,16 +254,16 @@ struct GhosttyKeyboardChrome: View {
         case .text(let text):
             return sendText(text)
         case .paste:
-            return sendPaste()
+            return sendClipboardPaste()
         case .toggleControl:
             onToggleControl()
             return true
         }
     }
 
-    private func sendPaste() -> Bool {
+    private func sendClipboardPaste() -> Bool {
         guard let text = UIPasteboard.general.string, !text.isEmpty else { return false }
-        return sendText(text)
+        return sendPaste(text)
     }
 
     private var windowTitle: String {

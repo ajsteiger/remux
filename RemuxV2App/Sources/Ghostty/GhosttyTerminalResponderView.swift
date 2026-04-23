@@ -5,6 +5,7 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
     let isEnabled: Bool
     let activationToken: Int
     let sendText: (String) -> Bool
+    let sendPaste: (String) -> Bool
     let sendKeyEvent: (GhosttySurfaceKeyEvent) -> Bool
 
     func makeUIView(context: Context) -> GhosttyTerminalResponderUIView {
@@ -19,6 +20,7 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
             isEnabled: isEnabled,
             activationToken: activationToken,
             sendText: { sendText(Self.normalizeTerminalInput($0)) },
+            sendPaste: sendPaste,
             sendKeyEvent: sendKeyEvent
         )
     }
@@ -56,16 +58,19 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     private var activationToken = -1
     private var pendingFirstResponderRequest = false
     private var sendTextHandler: ((String) -> Bool)?
+    private var sendPasteHandler: ((String) -> Bool)?
     private var sendKeyEventHandler: ((GhosttySurfaceKeyEvent) -> Bool)?
 
     func update(
         isEnabled: Bool,
         activationToken: Int,
         sendText: @escaping (String) -> Bool,
+        sendPaste: @escaping (String) -> Bool,
         sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool
     ) {
         self.isInputEnabled = isEnabled
         self.sendTextHandler = sendText
+        self.sendPasteHandler = sendPaste
         self.sendKeyEventHandler = sendKeyEvent
 
         if !isEnabled {
@@ -106,7 +111,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             return
         }
 
-        _ = sendTextHandler?(text)
+        _ = sendPasteHandler?(text)
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {

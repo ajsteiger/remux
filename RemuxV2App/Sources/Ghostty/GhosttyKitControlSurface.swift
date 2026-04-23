@@ -61,6 +61,13 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     @discardableResult
+    func sendPaste(_ text: String) -> Bool {
+        sendText(text)
+        return true
+    }
+
+    @MainActor
+    @discardableResult
     func tmuxFocus() -> Bool {
         ghostty_surface_tmux_focus(storage.surface)
     }
