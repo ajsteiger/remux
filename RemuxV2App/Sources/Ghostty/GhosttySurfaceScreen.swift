@@ -34,9 +34,12 @@ struct GhosttySurfaceScreen: View {
 
     var body: some View {
         GeometryReader { screenProxy in
+            let showsAuxiliaryControls = inputCoordinator.keyboardMode.showsAuxiliaryControls(
+                isSoftwareKeyboardVisible: inputCoordinator.isSoftwareKeyboardVisible
+            )
             let chrome = GhosttyPhoneChromeLayout(
                 screenSize: screenProxy.size,
-                isSoftwareKeyboardVisible: inputCoordinator.isSoftwareKeyboardVisible || inputCoordinator.keyboardMode.showsInputControls
+                isSoftwareKeyboardVisible: showsAuxiliaryControls
             )
 
             ZStack {
@@ -79,6 +82,7 @@ struct GhosttySurfaceScreen: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 GhosttyKeyboardChrome(
                     keyboardMode: inputCoordinator.keyboardMode,
+                    isSoftwareKeyboardVisible: inputCoordinator.isSoftwareKeyboardVisible,
                     isEnabled: isTerminalInputAvailable,
                     isCompact: chrome.isCompact,
                     isControlArmed: modifierState.isControlArmed,
@@ -98,7 +102,7 @@ struct GhosttySurfaceScreen: View {
                     sendKey: sendTerminalKeyEvent
                 )
                 .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                .padding(.top, inputCoordinator.keyboardMode.showsInputControls ? 6 : 4)
+                .padding(.top, showsAuxiliaryControls ? 6 : 4)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .background(GhosttyPhoneChromePalette.screenBackground)

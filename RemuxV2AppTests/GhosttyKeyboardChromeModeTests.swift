@@ -34,4 +34,25 @@ final class GhosttyKeyboardChromeModeTests: XCTestCase {
             .hidden
         )
     }
+
+    func testAuxiliaryControlsFollowVisibleSoftwareKeyboardInSystemMode() {
+        XCTAssertFalse(
+            GhosttyKeyboardChromeMode.system.showsAuxiliaryControls(
+                isSoftwareKeyboardVisible: false
+            )
+        )
+        XCTAssertTrue(
+            GhosttyKeyboardChromeMode.system.showsAuxiliaryControls(
+                isSoftwareKeyboardVisible: true
+            )
+        )
+    }
+
+    func testAuxiliaryControlsRemainVisibleForCustomKeyboard() {
+        XCTAssertTrue(
+            GhosttyKeyboardChromeMode.custom.showsAuxiliaryControls(
+                isSoftwareKeyboardVisible: false
+            )
+        )
+    }
 }

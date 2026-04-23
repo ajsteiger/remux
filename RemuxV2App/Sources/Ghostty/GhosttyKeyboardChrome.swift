@@ -14,6 +14,17 @@ enum GhosttyKeyboardChromeMode: Equatable {
         self != .hidden
     }
 
+    func showsAuxiliaryControls(isSoftwareKeyboardVisible: Bool) -> Bool {
+        switch self {
+        case .hidden:
+            false
+        case .system:
+            isSoftwareKeyboardVisible
+        case .custom:
+            true
+        }
+    }
+
     func toggledKeyboard() -> Self {
         switch self {
         case .hidden:
@@ -47,6 +58,7 @@ enum GhosttyKeyboardChromeMode: Equatable {
 
 struct GhosttyKeyboardChrome: View {
     let keyboardMode: GhosttyKeyboardChromeMode
+    let isSoftwareKeyboardVisible: Bool
     let isEnabled: Bool
     let isCompact: Bool
     let isControlArmed: Bool
@@ -71,21 +83,27 @@ struct GhosttyKeyboardChrome: View {
         blendDuration: 0.12
     )
 
+    private var showsAuxiliaryControls: Bool {
+        keyboardMode.showsAuxiliaryControls(isSoftwareKeyboardVisible: isSoftwareKeyboardVisible)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: keyboardMode.showsInputControls ? 6 : 0) {
+        VStack(alignment: .leading, spacing: showsAuxiliaryControls ? 6 : 0) {
             selectorRow
 
             switch keyboardMode {
             case .hidden:
                 EmptyView()
             case .system:
-                systemAccessoryRow
-                    .transition(
-                        .asymmetric(
-                            insertion: .move(edge: .bottom).combined(with: .opacity),
-                            removal: .opacity
+                if showsAuxiliaryControls {
+                    systemAccessoryRow
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity),
+                                removal: .opacity
+                            )
                         )
-                    )
+                }
             case .custom:
                 customKeyboard
                     .transition(
