@@ -45,6 +45,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
+    private var activeScrollAxis: GhosttySurfaceScrollGesture.Axis?
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
         recognizer.maximumNumberOfTouches = 1
@@ -321,15 +322,31 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         }
 
         let translation = recognizer.translation(in: self)
-        guard let event = GhosttySurfaceScrollGesture.event(
+        activeScrollAxis = GhosttySurfaceScrollGesture.axis(
             forTranslation: translation,
-            phase: phase
-        ) else {
+            currentAxis: activeScrollAxis
+        )
+
+        guard
+            let axis = activeScrollAxis,
+            let event = GhosttySurfaceScrollGesture.event(
+                forTranslation: translation,
+                phase: phase,
+                axis: axis
+            )
+        else {
+            if phase == .ended || phase == .cancelled {
+                activeScrollAxis = nil
+            }
             return
         }
 
         _ = registry.sendMouseScrollToFocusedSurface(event)
         recognizer.setTranslation(.zero, in: self)
+
+        if phase == .ended || phase == .cancelled {
+            activeScrollAxis = nil
+        }
     }
 
     func gestureRecognizer(
