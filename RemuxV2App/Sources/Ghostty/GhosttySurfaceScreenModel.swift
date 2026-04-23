@@ -383,6 +383,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surface: GhosttyKitControlSurface
     ) async {
         do {
+            if let viewport = TmuxControlViewport(ghosttySurfaceSize: surface.currentSize()) {
+                try await transport.resize(
+                    columns: viewport.columns,
+                    rows: viewport.rows,
+                    width: viewport.pixelWidth,
+                    height: viewport.pixelHeight
+                )
+            }
             try await transport.start()
             state = .running
             debugStatus = "transport started"

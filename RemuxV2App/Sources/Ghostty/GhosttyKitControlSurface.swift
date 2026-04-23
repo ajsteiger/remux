@@ -52,6 +52,19 @@ struct GhosttySurfaceDisplayUpdateTracker {
     }
 }
 
+extension TmuxControlViewport {
+    init?(ghosttySurfaceSize size: ghostty_surface_size_s) {
+        guard size.columns > 0, size.rows > 0 else { return nil }
+
+        self.init(
+            columns: size.columns,
+            rows: size.rows,
+            pixelWidth: size.width_px,
+            pixelHeight: size.height_px
+        )
+    }
+}
+
 final class GhosttyKitControlSurface: GhosttyControlSurface {
     private let storage: GhosttyKitControlSurfaceStorage
 

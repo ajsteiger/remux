@@ -21,6 +21,49 @@ final class GhosttyKitControlSurfaceTests: XCTestCase {
                 pixelHeight: 1923
             )
         )
+
+        XCTAssertEqual(
+            TmuxControlViewport(
+                ghosttySurfaceSize: ghostty_surface_size_s(
+                    columns: 41,
+                    rows: 28,
+                    width_px: 1170,
+                    height_px: 1923,
+                    cell_width_px: 28,
+                    cell_height_px: 68
+                )
+            ),
+            TmuxControlViewport(
+                columns: 41,
+                rows: 28,
+                pixelWidth: 1170,
+                pixelHeight: 1923
+            )
+        )
+        XCTAssertNil(
+            TmuxControlViewport(
+                ghosttySurfaceSize: ghostty_surface_size_s(
+                    columns: 0,
+                    rows: 28,
+                    width_px: 1170,
+                    height_px: 1923,
+                    cell_width_px: 28,
+                    cell_height_px: 68
+                )
+            )
+        )
+        XCTAssertNil(
+            TmuxControlViewport(
+                ghosttySurfaceSize: ghostty_surface_size_s(
+                    columns: 41,
+                    rows: 0,
+                    width_px: 1170,
+                    height_px: 1923,
+                    cell_width_px: 28,
+                    cell_height_px: 68
+                )
+            )
+        )
     }
 
     func testDisplayMetricsClampTransientInvalidScale() {
