@@ -50,6 +50,12 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         recognizer.maximumNumberOfTouches = 1
         return recognizer
     }()
+    private lazy var inputActivationTapRecognizer: UITapGestureRecognizer = {
+        let recognizer = UITapGestureRecognizer(target: self, action: #selector(handleInputActivationTap(_:)))
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = self
+        return recognizer
+    }()
     private lazy var previousWindowRecognizer: UISwipeGestureRecognizer = {
         let recognizer = UISwipeGestureRecognizer(target: self, action: #selector(handleWindowSwipe(_:)))
         recognizer.direction = .right
@@ -69,6 +75,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         super.init(frame: frame)
         panRecognizer.delegate = self
         addGestureRecognizer(panRecognizer)
+        addGestureRecognizer(inputActivationTapRecognizer)
         addGestureRecognizer(previousWindowRecognizer)
         addGestureRecognizer(nextWindowRecognizer)
     }
@@ -95,6 +102,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     override func layoutSubviews() {
         super.layoutSubviews()
 
+        registry?.updatePreferredSurfaceSize(bounds.size)
         syncAttachedViews()
         layoutVisibleTree()
     }
@@ -102,6 +110,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func syncAttachedViews() {
         guard let registry else { return }
 
+        registry.updatePreferredSurfaceSize(bounds.size)
         let visibleIDs = Set(topLevel?.phonePresentedLeafIDs ?? [])
         surfaceIDsByView = [:]
         for surface in registry.allManagedSurfaces() {
@@ -287,6 +296,19 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         let direction: GhosttyRuntimeSelectionDirection = recognizer.direction == .left ? .next : .previous
         onWindowSwipe?(direction)
         setNeedsLayout()
+    }
+
+    @objc
+    private func handleInputActivationTap(_ recognizer: UITapGestureRecognizer) {
+        guard
+            recognizer.state == .ended,
+            let topLevel,
+            let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first
+        else {
+            return
+        }
+
+        onSurfaceTap?(surfaceID)
     }
 
     @objc

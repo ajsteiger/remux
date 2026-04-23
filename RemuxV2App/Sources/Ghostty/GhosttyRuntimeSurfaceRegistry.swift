@@ -46,6 +46,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var surfaceIDsByHandle: [ghostty_surface_t: UUID] = [:]
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
+    private var preferredSurfaceSize = CGSize(width: 1, height: 1)
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
         guard let selectedTopLevelID else { return topLevels.first }
@@ -66,7 +67,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surfaceIDsByHandle = [:]
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
+        preferredSurfaceSize = CGSize(width: 1, height: 1)
         notifyChanged()
+    }
+
+    func updatePreferredSurfaceSize(_ size: CGSize) {
+        guard size.width.isFinite, size.height.isFinite else { return }
+        guard size.width > 1, size.height > 1 else { return }
+        preferredSurfaceSize = size
     }
 
     func selectTopLevel(_ id: UUID) {
@@ -546,7 +554,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             registry: self,
             surfaceID: surfaceID
         )
-        let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let view = GhosttyKitSurfaceView(frame: CGRect(origin: .zero, size: preferredSurfaceSize))
 
         var config = baseConfig
         config.platform_tag = GHOSTTY_PLATFORM_IOS

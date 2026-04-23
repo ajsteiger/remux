@@ -8,6 +8,13 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         _ = try GhosttyKitRuntime()
     }
 
+    func testSurfaceViewDoesNotDefaultToDesktopSizedFrame() {
+        let view = GhosttyKitSurfaceView(frame: .zero)
+
+        XCTAssertEqual(view.frame.size.width, 1)
+        XCTAssertEqual(view.frame.size.height, 1)
+    }
+
     func testRuntimeCreatesManualHostSurfaceThatAcceptsOutput() throws {
         let runtime = try GhosttyKitRuntime()
         let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))

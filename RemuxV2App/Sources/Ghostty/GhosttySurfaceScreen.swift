@@ -54,7 +54,6 @@ struct GhosttySurfaceScreen: View {
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe
                         )
-                            .id(model.surfaceRegistryRevision)
                             .background(GhosttyPhoneChromePalette.screenBackground)
 
                         GhosttyTerminalResponderRepresentable(
@@ -379,8 +378,8 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> GhosttyKitSurfaceView {
         let initialSize = CGSize(
-            width: max(size.width, 800),
-            height: max(size.height, 600)
+            width: max(size.width, 1),
+            height: max(size.height, 1)
         )
         let view = GhosttyKitSurfaceView(frame: CGRect(origin: .zero, size: initialSize))
         view.backgroundColor = GhosttyPhoneChromePalette.uiBackground

@@ -16,7 +16,7 @@ enum GhosttyKitRuntimeError: Error, Equatable {
 final class GhosttyKitSurfaceView: UIView {
     override init(frame: CGRect) {
         let initialFrame = frame.isEmpty
-            ? CGRect(x: 0, y: 0, width: 800, height: 600)
+            ? CGRect(x: 0, y: 0, width: 1, height: 1)
             : frame
         super.init(frame: initialFrame)
         configure()
