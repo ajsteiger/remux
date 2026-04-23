@@ -144,6 +144,7 @@ struct GhosttySurfaceMouseScrollEvent: Equatable {
 
 struct GhosttySurfaceTapGesture {
     enum Action: Equatable {
+        case activateInput
         case mousePosition(CGPoint)
         case mouseButton(GhosttySurfaceMouseButtonEvent)
     }
@@ -152,12 +153,14 @@ struct GhosttySurfaceTapGesture {
         forLocalPoint point: CGPoint,
         mouseCaptured: Bool
     ) -> [Action] {
-        guard mouseCaptured else { return [] }
+        var actions: [Action] = [.activateInput]
+        guard mouseCaptured else { return actions }
 
-        return [
+        actions.append(contentsOf: [
             .mousePosition(point),
             .mouseButton(.init(state: .press, button: .left)),
             .mouseButton(.init(state: .release, button: .left)),
-        ]
+        ])
+        return actions
     }
 }

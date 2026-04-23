@@ -145,7 +145,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
             surface.view.frame = rect.integral
             surface.view.alignGhosttyRendererSublayers()
-            surface.controlSurface.updateDisplay(size: rect.size, scale: effectiveScale)
+            surface.controlSurface.updateDisplay(size: surface.view.bounds.size, scale: effectiveScale)
             surface.controlSurface.setVisible(true)
             surface.controlSurface.setFocused(surfaceID == focusedSurfaceID)
 
@@ -217,6 +217,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             mouseCaptured: mouseCaptured
         ) {
             switch action {
+            case .activateInput:
+                onSurfaceTap?(surfaceID)
+
             case .mousePosition(let position):
                 _ = registry.sendMousePositionToFocusedSurface(position)
 
@@ -225,9 +228,6 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             }
         }
 
-        if !mouseCaptured {
-            onSurfaceTap?(surfaceID)
-        }
         setNeedsLayout()
     }
 

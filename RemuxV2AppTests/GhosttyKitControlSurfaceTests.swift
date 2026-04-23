@@ -1,3 +1,4 @@
+import CoreGraphics
 import GhosttyKit
 import XCTest
 @testable import RemuxV2
@@ -6,6 +7,48 @@ import XCTest
 final class GhosttyKitControlSurfaceTests: XCTestCase {
     func testAdapterTypeIsAvailableToRemuxAppTarget() {
         XCTAssertTrue(GhosttyKitControlSurface.self is AnyClass)
+    }
+
+    func testDisplayMetricsUseScaleForPixelDimensions() {
+        XCTAssertEqual(
+            GhosttySurfaceDisplayMetrics(
+                size: CGSize(width: 390, height: 641),
+                scale: 3
+            ),
+            GhosttySurfaceDisplayMetrics(
+                contentScale: 3,
+                pixelWidth: 1170,
+                pixelHeight: 1923
+            )
+        )
+    }
+
+    func testDisplayMetricsClampTransientInvalidScale() {
+        XCTAssertEqual(
+            GhosttySurfaceDisplayMetrics(
+                size: CGSize(width: 390, height: 641),
+                scale: 0
+            ),
+            GhosttySurfaceDisplayMetrics(
+                contentScale: 1,
+                pixelWidth: 390,
+                pixelHeight: 641
+            )
+        )
+    }
+
+    func testDisplayMetricsClampInvalidSizeToOnePixel() {
+        XCTAssertEqual(
+            GhosttySurfaceDisplayMetrics(
+                size: CGSize(width: 0, height: CGFloat.nan),
+                scale: 3
+            ),
+            GhosttySurfaceDisplayMetrics(
+                contentScale: 3,
+                pixelWidth: 1,
+                pixelHeight: 1
+            )
+        )
     }
 
     func testDecodeGhosttyTextReturnsEmptyStringForMissingBuffer() {

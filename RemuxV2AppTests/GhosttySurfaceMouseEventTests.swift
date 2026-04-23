@@ -36,17 +36,17 @@ final class GhosttySurfaceMouseEventTests: XCTestCase {
         XCTAssertEqual(mods.momentum, .ended)
     }
 
-    func testTapGestureIsFocusOnlyWhenMouseIsNotCaptured() {
+    func testTapGestureActivatesInputOnlyWhenMouseIsNotCaptured() {
         XCTAssertEqual(
             GhosttySurfaceTapGesture.actions(
                 forLocalPoint: CGPoint(x: 10, y: 20),
                 mouseCaptured: false
             ),
-            []
+            [.activateInput]
         )
     }
 
-    func testTapGestureEmitsMouseClickWhenMouseIsCaptured() {
+    func testTapGestureActivatesInputAndEmitsMouseClickWhenMouseIsCaptured() {
         let point = CGPoint(x: 10, y: 20)
 
         XCTAssertEqual(
@@ -55,6 +55,7 @@ final class GhosttySurfaceMouseEventTests: XCTestCase {
                 mouseCaptured: true
             ),
             [
+                .activateInput,
                 .mousePosition(point),
                 .mouseButton(.init(state: .press, button: .left)),
                 .mouseButton(.init(state: .release, button: .left)),

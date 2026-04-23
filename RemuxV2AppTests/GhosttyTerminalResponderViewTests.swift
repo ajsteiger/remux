@@ -40,6 +40,48 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
     }
 
     @MainActor
+    func testInsertTextSendsRawTerminalInputWhenEnabled() {
+        let view = GhosttyTerminalResponderUIView()
+        var receivedText: [String] = []
+
+        view.update(
+            isEnabled: true,
+            activationToken: 1,
+            sendText: {
+                receivedText.append($0)
+                return true
+            },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+
+        view.insertText("hello")
+
+        XCTAssertEqual(receivedText, ["hello"])
+    }
+
+    @MainActor
+    func testInsertTextIsIgnoredWhenDisabled() {
+        let view = GhosttyTerminalResponderUIView()
+        var receivedText: [String] = []
+
+        view.update(
+            isEnabled: false,
+            activationToken: 1,
+            sendText: {
+                receivedText.append($0)
+                return true
+            },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+
+        view.insertText("ignored")
+
+        XCTAssertTrue(receivedText.isEmpty)
+    }
+
+    @MainActor
     func testPasteUsesPasteHandlerInsteadOfRawTextHandler() {
         let view = GhosttyTerminalResponderUIView()
         var rawText: [String] = []
@@ -182,6 +224,20 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
                 input: "x",
                 modifiers: []
             )
+        )
+    }
+
+    func testTerminalInputNormalizerMapsLinefeedToCarriageReturn() {
+        XCTAssertEqual(
+            GhosttyTerminalInputNormalizer.normalize("echo hello\n"),
+            "echo hello\r"
+        )
+    }
+
+    func testTerminalInputNormalizerPreservesExistingCarriageReturn() {
+        XCTAssertEqual(
+            GhosttyTerminalInputNormalizer.normalize("echo hello\r"),
+            "echo hello\r"
         )
     }
 }

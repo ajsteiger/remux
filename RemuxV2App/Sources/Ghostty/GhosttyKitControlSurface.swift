@@ -2,6 +2,40 @@ import CoreGraphics
 import Foundation
 import GhosttyKit
 
+struct GhosttySurfaceDisplayMetrics: Equatable {
+    let contentScale: Double
+    let pixelWidth: UInt32
+    let pixelHeight: UInt32
+
+    init(
+        contentScale: Double,
+        pixelWidth: UInt32,
+        pixelHeight: UInt32
+    ) {
+        self.contentScale = contentScale
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+    }
+
+    init(size: CGSize, scale: CGFloat) {
+        let safeScale = max(Double(scale), 1)
+
+        self.contentScale = safeScale
+        self.pixelWidth = Self.pixelDimension(points: size.width, scale: safeScale)
+        self.pixelHeight = Self.pixelDimension(points: size.height, scale: safeScale)
+    }
+
+    private static func pixelDimension(points: CGFloat, scale: Double) -> UInt32 {
+        let value = Double(points)
+        guard value.isFinite, value > 0 else { return 1 }
+
+        return max(
+            UInt32((value * scale).rounded(.toNearestOrAwayFromZero)),
+            1
+        )
+    }
+}
+
 final class GhosttyKitControlSurface: GhosttyControlSurface {
     private let storage: GhosttyKitControlSurfaceStorage
 
@@ -152,12 +186,10 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func updateDisplay(size: CGSize, scale: CGFloat) {
-        let safeScale = max(Double(scale), 1)
-        let width = max(UInt32(size.width * scale), 1)
-        let height = max(UInt32(size.height * scale), 1)
+        let metrics = GhosttySurfaceDisplayMetrics(size: size, scale: scale)
 
-        ghostty_surface_set_content_scale(storage.surface, safeScale, safeScale)
-        ghostty_surface_set_size(storage.surface, width, height)
+        ghostty_surface_set_content_scale(storage.surface, metrics.contentScale, metrics.contentScale)
+        ghostty_surface_set_size(storage.surface, metrics.pixelWidth, metrics.pixelHeight)
     }
 
     // Read-only, snapshot-on-open styled viewport capture. Under the hood this

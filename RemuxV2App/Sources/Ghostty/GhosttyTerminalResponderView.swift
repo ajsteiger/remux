@@ -19,13 +19,15 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
         uiView.update(
             isEnabled: isEnabled,
             activationToken: activationToken,
-            sendText: { sendText(Self.normalizeTerminalInput($0)) },
+            sendText: { sendText(GhosttyTerminalInputNormalizer.normalize($0)) },
             sendPaste: sendPaste,
             sendKeyEvent: sendKeyEvent
         )
     }
+}
 
-    private static func normalizeTerminalInput(_ text: String) -> String {
+enum GhosttyTerminalInputNormalizer {
+    static func normalize(_ text: String) -> String {
         text.replacingOccurrences(of: "\n", with: "\r")
     }
 }
