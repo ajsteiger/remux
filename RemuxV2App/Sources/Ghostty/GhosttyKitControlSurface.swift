@@ -52,6 +52,64 @@ struct GhosttySurfaceDisplayUpdateTracker {
     }
 }
 
+struct GhosttySurfaceScrollState: Equatable {
+    static let empty = GhosttySurfaceScrollState(
+        total: 0,
+        offset: 0,
+        len: 0,
+        cellOffset: 0
+    )
+
+    let total: UInt64
+    let offset: UInt64
+    let len: UInt64
+    let cellOffset: Double
+
+    init(
+        total: UInt64,
+        offset: UInt64,
+        len: UInt64,
+        cellOffset: Double
+    ) {
+        self.total = total
+        self.offset = offset
+        self.len = len
+        self.cellOffset = cellOffset
+    }
+
+    init(cValue: ghostty_surface_scrollbar_s) {
+        self.init(
+            total: cValue.total,
+            offset: cValue.offset,
+            len: cValue.len,
+            cellOffset: cValue.cell_offset
+        )
+    }
+
+    var maxRow: UInt64 {
+        total > len ? total - len : 0
+    }
+}
+
+enum GhosttySurfaceScrollRoute: Equatable {
+    case viewport
+    case altScreenCursor
+    case mouseReport
+
+    init(cValue: ghostty_surface_scroll_route_e) {
+        switch cValue {
+        case GHOSTTY_SURFACE_SCROLL_ROUTE_VIEWPORT:
+            self = .viewport
+        case GHOSTTY_SURFACE_SCROLL_ROUTE_ALT_SCREEN_CURSOR:
+            self = .altScreenCursor
+        case GHOSTTY_SURFACE_SCROLL_ROUTE_MOUSE_REPORT:
+            self = .mouseReport
+        default:
+            self = .viewport
+        }
+    }
+}
+
 extension TmuxControlViewport {
     init?(ghosttySurfaceSize size: ghostty_surface_size_s) {
         guard size.columns > 0, size.rows > 0 else { return nil }
@@ -196,6 +254,41 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
             event.deltaY,
             ghostty_input_scroll_mods_t(event.mods.rawValue)
         )
+    }
+
+    @MainActor
+    func scrollState() -> GhosttySurfaceScrollState {
+        GhosttySurfaceScrollState(cValue: ghostty_surface_scrollbar(storage.surface))
+    }
+
+    @MainActor
+    func scrollRoute() -> GhosttySurfaceScrollRoute {
+        GhosttySurfaceScrollRoute(cValue: ghostty_surface_scroll_route(storage.surface))
+    }
+
+    @MainActor
+    func scrollToPosition(row: UInt64, cellOffset: Double) {
+        ghostty_surface_scroll_to_position(storage.surface, row, cellOffset)
+    }
+
+    @MainActor
+    func scrollToRow(_ row: UInt64) {
+        ghostty_surface_scroll_to_row(storage.surface, row)
+    }
+
+    @MainActor
+    func scrollByLines(_ delta: Int64) {
+        ghostty_surface_scroll_by_lines(storage.surface, delta)
+    }
+
+    @MainActor
+    func scrollToTop() {
+        ghostty_surface_scroll_to_top(storage.surface)
+    }
+
+    @MainActor
+    func scrollToBottom() {
+        ghostty_surface_scroll_to_bottom(storage.surface)
     }
 
     @MainActor

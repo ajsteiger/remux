@@ -18,6 +18,7 @@ enum GhosttyRuntimeSelectionDirection {
     }
 }
 
+@MainActor
 protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     func runtimeCreateSurface(
         app: ghostty_app_t?,
@@ -33,8 +34,15 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
         app: ghostty_app_t?,
         surface: ghostty_surface_t?
     )
+
+    func runtimeAction(
+        app: ghostty_app_t?,
+        target: ghostty_target_s,
+        action: ghostty_action_s
+    ) -> Bool
 }
 
+@MainActor
 final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
     @Published private(set) var selectedTopLevelID: UUID?
@@ -480,6 +488,36 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         updateDebugSummary("selected surface=\(id.uuidString)")
     }
 
+    func runtimeAction(
+        app: ghostty_app_t?,
+        target: ghostty_target_s,
+        action: ghostty_action_s
+    ) -> Bool {
+        _ = app
+        guard target.tag == GHOSTTY_TARGET_SURFACE else {
+            return true
+        }
+        guard let id = surfaceIDsByHandle[target.target.surface],
+              let surface = managedSurfaces[id] else {
+            return true
+        }
+
+        switch action.tag {
+        case GHOSTTY_ACTION_SCROLLBAR:
+            let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
+            surface.updateScrollState(state)
+
+        case GHOSTTY_ACTION_SCROLL_ROUTE:
+            let route = GhosttySurfaceScrollRoute(cValue: action.action.scroll_route)
+            surface.updateScrollRoute(route)
+
+        default:
+            break
+        }
+
+        return true
+    }
+
 #if DEBUG
     func registerManagedSurfaceForTesting(_ managed: GhosttyManagedSurface) {
         register([managed])
@@ -611,10 +649,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             ownsSurface: false,
             retainedObjects: [lifecycle]
         )
+        let initialScrollState = controlSurface.scrollState()
+        let initialScrollRoute = controlSurface.scrollRoute()
+
         return GhosttyManagedSurface(
             id: surfaceID,
             view: view,
-            controlSurface: controlSurface
+            controlSurface: controlSurface,
+            scrollState: initialScrollState,
+            scrollRoute: initialScrollRoute
         )
     }
 
@@ -672,6 +715,10 @@ final class GhosttyManagedSurface {
     let id: UUID
     let view: GhosttyKitSurfaceView
     let controlSurface: GhosttyKitControlSurface
+    private(set) var scrollState: GhosttySurfaceScrollState
+    private(set) var scrollRoute: GhosttySurfaceScrollRoute
+    var onScrollStateChange: (@MainActor () -> Void)?
+
     private let sendInputHandler: (@MainActor (String) -> Bool)?
     private let sendPasteHandler: (@MainActor (String) -> Bool)?
     private let readSelectionHandler: (@MainActor () -> String?)?
@@ -691,6 +738,8 @@ final class GhosttyManagedSurface {
         id: UUID,
         view: GhosttyKitSurfaceView,
         controlSurface: GhosttyKitControlSurface,
+        scrollState: GhosttySurfaceScrollState = .empty,
+        scrollRoute: GhosttySurfaceScrollRoute = .viewport,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendPaste: (@MainActor (String) -> Bool)? = nil,
         readSelection: (@MainActor () -> String?)? = nil,
@@ -708,6 +757,8 @@ final class GhosttyManagedSurface {
         self.id = id
         self.view = view
         self.controlSurface = controlSurface
+        self.scrollState = scrollState
+        self.scrollRoute = scrollRoute
         self.sendInputHandler = sendInput
         self.sendPasteHandler = sendPaste
         self.readSelectionHandler = readSelection
@@ -802,6 +853,28 @@ final class GhosttyManagedSurface {
         }
 
         controlSurface.sendMouseScroll(event)
+    }
+
+    @MainActor
+    func updateScrollState(_ state: GhosttySurfaceScrollState) {
+        guard state != scrollState else { return }
+        scrollState = state
+        onScrollStateChange?()
+    }
+
+    @MainActor
+    func updateScrollRoute(_ route: GhosttySurfaceScrollRoute) {
+        guard route != scrollRoute else { return }
+        scrollRoute = route
+        onScrollStateChange?()
+    }
+
+    @MainActor
+    @discardableResult
+    func scrollToPosition(row: UInt64, cellOffset: Double) -> GhosttySurfaceScrollState {
+        controlSurface.scrollToPosition(row: row, cellOffset: cellOffset)
+        scrollState = controlSurface.scrollState()
+        return scrollState
     }
 
     @MainActor

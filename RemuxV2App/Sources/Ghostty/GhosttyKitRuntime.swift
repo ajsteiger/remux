@@ -301,10 +301,29 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         target: ghostty_target_s,
         action: ghostty_action_s
     ) -> Bool {
-        _ = app
-        _ = target
-        _ = action
-        return true
+        guard let callbacks = from(app: app) else { return true }
+        let appBox = UnsafeSendable(app)
+        let targetBox = UnsafeSendable(target)
+        let actionBox = UnsafeSendable(action)
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                callbacks.surfaceDelegate?.runtimeAction(
+                    app: appBox.value,
+                    target: targetBox.value,
+                    action: actionBox.value
+                ) ?? true
+            }
+        } else {
+            return DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    callbacks.surfaceDelegate?.runtimeAction(
+                        app: appBox.value,
+                        target: targetBox.value,
+                        action: actionBox.value
+                    ) ?? true
+                }
+            }
+        }
     }
 
     static func readClipboard(
@@ -420,17 +439,24 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         request: ghostty_runtime_create_surface_s
     ) -> ghostty_surface_t? {
         guard let callbacks = from(app: app) else { return nil }
+        let appBox = UnsafeSendable(app)
+        let requestBox = UnsafeSendable(request)
         if Thread.isMainThread {
-            return callbacks.surfaceDelegate?.runtimeCreateSurface(app: app, request: request)
-        } else {
-            let appBox = UnsafeSendable(app)
-            let requestBox = UnsafeSendable(request)
-            return DispatchQueue.main.sync {
-                callbacks.surfaceDelegate?.runtimeCreateSurface(
+            return MainActor.assumeIsolated {
+                UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
                     app: appBox.value,
                     request: requestBox.value
-                )
-            }
+                ))
+            }.value
+        } else {
+            return DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
+                        app: appBox.value,
+                        request: requestBox.value
+                    ))
+                }
+            }.value
         }
     }
 
@@ -439,16 +465,23 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         request: ghostty_runtime_create_surface_tree_s
     ) -> Bool {
         guard let callbacks = from(app: app) else { return false }
+        let appBox = UnsafeSendable(app)
+        let requestBox = UnsafeSendable(request)
         if Thread.isMainThread {
-            return callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(app: app, request: request) ?? false
-        } else {
-            let appBox = UnsafeSendable(app)
-            let requestBox = UnsafeSendable(request)
-            return DispatchQueue.main.sync {
+            return MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
                     app: appBox.value,
                     request: requestBox.value
                 ) ?? false
+            }
+        } else {
+            return DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
+                        app: appBox.value,
+                        request: requestBox.value
+                    ) ?? false
+                }
             }
         }
     }
@@ -458,16 +491,23 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         surface: ghostty_surface_t?
     ) {
         guard let callbacks = from(app: app) else { return }
+        let appBox = UnsafeSendable(app)
+        let surfaceBox = UnsafeSendable(surface)
         if Thread.isMainThread {
-            callbacks.surfaceDelegate?.runtimeSelectSurface(app: app, surface: surface)
-        } else {
-            let appBox = UnsafeSendable(app)
-            let surfaceBox = UnsafeSendable(surface)
-            DispatchQueue.main.sync {
+            MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeSelectSurface(
                     app: appBox.value,
                     surface: surfaceBox.value
                 )
+            }
+        } else {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    callbacks.surfaceDelegate?.runtimeSelectSurface(
+                        app: appBox.value,
+                        surface: surfaceBox.value
+                    )
+                }
             }
         }
     }

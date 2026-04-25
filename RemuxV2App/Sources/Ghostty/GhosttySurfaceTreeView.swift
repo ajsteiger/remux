@@ -45,7 +45,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
-    private var activeScrollAxis: GhosttySurfaceScrollGesture.Axis?
+    private var scrollContainersBySurfaceID: [UUID: GhosttyPaneScrollContainerView] = [:]
+    private var visibleSurfaceIDs: Set<UUID> = []
+    private var activePanAxis: GhosttySurfacePanGesture.Axis?
+    private var didNavigateForActivePan = false
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
         recognizer.maximumNumberOfTouches = 1
@@ -57,28 +60,12 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         recognizer.delegate = self
         return recognizer
     }()
-    private lazy var previousWindowRecognizer: UISwipeGestureRecognizer = {
-        let recognizer = UISwipeGestureRecognizer(target: self, action: #selector(handleWindowSwipe(_:)))
-        recognizer.direction = .right
-        recognizer.cancelsTouchesInView = false
-        recognizer.delegate = self
-        return recognizer
-    }()
-    private lazy var nextWindowRecognizer: UISwipeGestureRecognizer = {
-        let recognizer = UISwipeGestureRecognizer(target: self, action: #selector(handleWindowSwipe(_:)))
-        recognizer.direction = .left
-        recognizer.cancelsTouchesInView = false
-        recognizer.delegate = self
-        return recognizer
-    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         panRecognizer.delegate = self
         addGestureRecognizer(panRecognizer)
         addGestureRecognizer(inputActivationTapRecognizer)
-        addGestureRecognizer(previousWindowRecognizer)
-        addGestureRecognizer(nextWindowRecognizer)
     }
 
     @available(*, unavailable)
@@ -113,19 +100,29 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         registry.updatePreferredSurfaceSize(bounds.size)
         let visibleIDs = Set(topLevel?.phonePresentedLeafIDs ?? [])
+        if visibleIDs != visibleSurfaceIDs, activePanAxis == .vertical {
+            resetActivePanState()
+        }
+        visibleSurfaceIDs = visibleIDs
         surfaceIDsByView = [:]
+        let managedIDs = Set(registry.allManagedSurfaces().map(\.id))
+        for (surfaceID, container) in scrollContainersBySurfaceID where !managedIDs.contains(surfaceID) {
+            container.removeFromSuperview()
+            scrollContainersBySurfaceID[surfaceID] = nil
+        }
+
         for surface in registry.allManagedSurfaces() {
             if visibleIDs.contains(surface.id) {
                 surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
                 ensureInteractionRecognizers(for: surface.view)
-                if surface.view.superview !== self {
-                    surface.view.removeFromSuperview()
-                    addSubview(surface.view)
+                let container = scrollContainer(for: surface)
+                container.update(surface: surface, displayScale: effectiveScale)
+                if container.superview !== self {
+                    container.removeFromSuperview()
+                    addSubview(container)
                 }
             } else {
-                if surface.view.superview === self {
-                    surface.view.removeFromSuperview()
-                }
+                scrollContainersBySurfaceID[surface.id]?.removeFromSuperview()
                 surface.controlSurface.setFocused(false)
                 surface.controlSurface.setVisible(false)
             }
@@ -153,9 +150,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         case .leaf(let surfaceID):
             guard let surface = registry.managedSurface(for: surfaceID) else { return }
 
-            surface.view.frame = rect.integral
-            surface.view.alignGhosttyRendererSublayers()
-            surface.updateDisplay(size: surface.view.bounds.size, scale: effectiveScale)
+            let container = scrollContainer(for: surface)
+            container.frame = rect.integral
+            container.update(surface: surface, displayScale: effectiveScale)
             surface.controlSurface.setVisible(true)
             surface.controlSurface.setFocused(surfaceID == focusedSurfaceID)
 
@@ -198,6 +195,17 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 layout(node: right, in: bottomRect, focusedSurfaceID: focusedSurfaceID, registry: registry)
             }
         }
+    }
+
+    private func scrollContainer(for surface: GhosttyManagedSurface) -> GhosttyPaneScrollContainerView {
+        if let container = scrollContainersBySurfaceID[surface.id] {
+            return container
+        }
+
+        let container = GhosttyPaneScrollContainerView()
+        container.backgroundColor = .clear
+        scrollContainersBySurfaceID[surface.id] = container
+        return container
     }
 
     private func ensureInteractionRecognizers(for view: UIView) {
@@ -293,13 +301,6 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     @objc
-    private func handleWindowSwipe(_ recognizer: UISwipeGestureRecognizer) {
-        let direction: GhosttyRuntimeSelectionDirection = recognizer.direction == .left ? .next : .previous
-        onWindowSwipe?(direction)
-        setNeedsLayout()
-    }
-
-    @objc
     private func handleInputActivationTap(_ recognizer: UITapGestureRecognizer) {
         guard
             recognizer.state == .ended,
@@ -316,50 +317,87 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func handleSurfacePan(_ recognizer: UIPanGestureRecognizer) {
         guard
             let registry,
-            let phase = GhosttySurfaceScrollGesture.Phase(recognizer.state)
+            let phase = GhosttySurfacePanGesture.Phase(recognizer.state)
         else {
             return
+        }
+
+        if phase == .began {
+            resetActivePanState()
         }
 
         let translation = recognizer.translation(in: self)
-        activeScrollAxis = GhosttySurfaceScrollGesture.axis(
+        activePanAxis = GhosttySurfacePanGesture.axis(
             forTranslation: translation,
-            currentAxis: activeScrollAxis
+            currentAxis: activePanAxis
         )
 
-        guard
-            let axis = activeScrollAxis,
-            let event = GhosttySurfaceScrollGesture.event(
-                forTranslation: translation,
-                phase: phase,
-                axis: axis
-            )
-        else {
-            if phase == .ended || phase == .cancelled {
-                activeScrollAxis = nil
-            }
+        guard let axis = activePanAxis else {
+            resetActivePanStateIfEnded(phase)
             return
         }
 
-        _ = registry.sendMouseScrollToFocusedSurface(event)
-        recognizer.setTranslation(.zero, in: self)
+        switch axis {
+        case .vertical:
+            break
 
-        if phase == .ended || phase == .cancelled {
-            activeScrollAxis = nil
+        case .horizontal:
+            routeHorizontalNavigation(
+                registry: registry,
+                translation: translation,
+                velocity: recognizer.velocity(in: self)
+            )
         }
+
+        resetActivePanStateIfEnded(phase)
+    }
+
+    private func routeHorizontalNavigation(
+        registry: GhosttyRuntimeSurfaceRegistry,
+        translation: CGPoint,
+        velocity: CGPoint
+    ) {
+        guard registry.topLevels.count > 1 else { return }
+        guard let direction = GhosttySurfacePanGesture.windowNavigationDirection(
+            forTranslation: translation,
+            velocity: velocity,
+            axis: .horizontal,
+            didNavigate: didNavigateForActivePan
+        ) else {
+            return
+        }
+
+        didNavigateForActivePan = true
+        onWindowSwipe?(direction.runtimeSelectionDirection)
+        setNeedsLayout()
+    }
+
+    private func resetActivePanStateIfEnded(_ phase: GhosttySurfacePanGesture.Phase) {
+        if phase == .ended || phase == .cancelled {
+            resetActivePanState()
+        }
+    }
+
+    private func resetActivePanState() {
+        activePanAxis = nil
+        didNavigateForActivePan = false
     }
 
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        true
+        _ = gestureRecognizer
+        _ = otherGestureRecognizer
+        return false
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === panRecognizer else { return true }
 
-        return GhosttySurfaceScrollGesture.shouldBegin(
+        guard registry?.topLevels.count ?? 0 > 1 else { return false }
+
+        return GhosttySurfacePanGesture.horizontalNavigationShouldBegin(
             forVelocity: panRecognizer.velocity(in: self)
         )
     }
@@ -369,21 +407,13 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 }
 
-private extension GhosttySurfaceScrollGesture.Phase {
-    init?(_ state: UIGestureRecognizer.State) {
-        switch state {
-        case .began:
-            self = .began
-        case .changed:
-            self = .changed
-        case .ended:
-            self = .ended
-        case .cancelled, .failed:
-            self = .cancelled
-        case .possible:
-            return nil
-        @unknown default:
-            return nil
+private extension GhosttySurfacePanGesture.WindowNavigationDirection {
+    var runtimeSelectionDirection: GhosttyRuntimeSelectionDirection {
+        switch self {
+        case .previous:
+            .previous
+        case .next:
+            .next
         }
     }
 }
