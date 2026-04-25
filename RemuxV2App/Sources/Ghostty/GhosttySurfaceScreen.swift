@@ -7,6 +7,7 @@ struct GhosttySurfaceScreen: View {
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
+    @State private var pendingPaneSheetTopologyResolution: Task<Void, Never>?
 
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
@@ -115,11 +116,26 @@ struct GhosttySurfaceScreen: View {
                     inputCoordinator.updateSoftwareKeyboardVisibility(false)
                 }
             }
-            .sheet(item: $selectionSheet) { sheet in
+            .sheet(item: selectionSheetBinding) { sheet in
                 selectionSheetContent(sheet)
-                    .presentationDetents([.height(sheet.preferredHeight)])
+                    .presentationDetents(selectionSheetDetents(for: sheet))
                     .presentationDragIndicator(.visible)
                     .presentationBackground(GhosttyPhoneChromePalette.screenBackground)
+            }
+            .onChange(of: registry.topLevels.map(\.id)) { _, topLevelIDs in
+                guard case .panes(let session, let openingTopLevelCount) = selectionSheet else {
+                    return
+                }
+                guard !topLevelIDs.contains(session.topLevelID) else {
+                    cancelPendingPaneSheetTopologyResolution()
+                    return
+                }
+
+                schedulePaneSheetTopologyResolution(
+                    sessionID: session.id,
+                    missingTopLevelID: session.topLevelID,
+                    openingTopLevelCount: openingTopLevelCount
+                )
             }
             .preferredColorScheme(.dark)
 #if DEBUG
@@ -128,7 +144,7 @@ struct GhosttySurfaceScreen: View {
                     for _ in 0..<60 {
                         if !(registry.selectedTopLevel?.leafIDs.isEmpty ?? true) {
                             try? await Task.sleep(nanoseconds: 3_000_000_000)
-                            selectionSheet = .panes
+                            showPanes()
                             return
                         }
                         try? await Task.sleep(nanoseconds: 500_000_000)
@@ -141,6 +157,19 @@ struct GhosttySurfaceScreen: View {
 
     private var registry: GhosttyRuntimeSurfaceRegistry {
         model.surfaceRegistry
+    }
+
+    private var selectionSheetBinding: Binding<GhosttySurfaceSelectionSheet?> {
+        Binding(
+            get: { selectionSheet },
+            set: { newValue in
+                if newValue == nil, case .panes(let session, _) = selectionSheet {
+                    session.cancelAll()
+                    cancelPendingPaneSheetTopologyResolution()
+                }
+                selectionSheet = newValue
+            }
+        )
     }
 
     private var isTerminalInputAvailable: Bool {
@@ -206,9 +235,101 @@ struct GhosttySurfaceScreen: View {
         selectionSheet = .windows
     }
 
+    private func dismissSelectionSheet() {
+        cancelPendingPaneSheetTopologyResolution()
+        if case .panes(let session, _) = selectionSheet {
+            session.cancelAll()
+        }
+        selectionSheet = nil
+    }
+
+    private func selectionSheetDetents(
+        for sheet: GhosttySurfaceSelectionSheet
+    ) -> Set<PresentationDetent> {
+        switch sheet {
+        case .windows:
+            return [.height(310)]
+
+        case .panes(let session, _):
+            let paneCount = registry.topLevels.first(where: { $0.id == session.topLevelID })?.leafIDs.count ?? 0
+            switch PanePreviewLayout.metrics(for: paneCount).sheetDetent {
+            case .fixed(let height):
+                return [.height(height)]
+            case .large:
+                return [.large]
+            }
+        }
+    }
+
     private func showPanes() {
-        guard registry.selectedTopLevel != nil else { return }
-        selectionSheet = .panes
+        guard let topLevel = registry.selectedTopLevel else { return }
+
+        // Carry the preview session in the sheet payload itself so the pane
+        // sheet never renders against a separate optional state that may lag
+        // the presentation transaction.
+        selectionSheet = .panes(
+            GhosttyPanePreviewSession(
+                topLevelID: topLevel.id,
+                leafIDs: topLevel.leafIDs,
+                registry: registry
+            ),
+            openingTopLevelCount: registry.topLevels.count
+        )
+    }
+
+    private func replacementTopLevelForOpenPaneSheet(
+        openingTopLevelCount: Int
+    ) -> GhosttyTopLevelSurface? {
+        guard registry.topLevels.count >= openingTopLevelCount else {
+            return nil
+        }
+        return registry.selectedTopLevel
+    }
+
+    private func schedulePaneSheetTopologyResolution(
+        sessionID: UUID,
+        missingTopLevelID: UUID,
+        openingTopLevelCount: Int
+    ) {
+        pendingPaneSheetTopologyResolution?.cancel()
+        pendingPaneSheetTopologyResolution = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            resolveMissingPaneSheetTopLevel(
+                sessionID: sessionID,
+                missingTopLevelID: missingTopLevelID,
+                openingTopLevelCount: openingTopLevelCount
+            )
+        }
+    }
+
+    private func resolveMissingPaneSheetTopLevel(
+        sessionID: UUID,
+        missingTopLevelID: UUID,
+        openingTopLevelCount: Int
+    ) {
+        pendingPaneSheetTopologyResolution = nil
+        guard case .panes(let session, _) = selectionSheet else { return }
+        guard session.id == sessionID else { return }
+        guard session.topLevelID == missingTopLevelID else { return }
+        guard !registry.topLevels.contains(where: { $0.id == missingTopLevelID }) else { return }
+
+        if let replacement = replacementTopLevelForOpenPaneSheet(
+            openingTopLevelCount: openingTopLevelCount
+        ) {
+            session.retarget(
+                topLevelID: replacement.id,
+                leafIDs: replacement.leafIDs
+            )
+            return
+        }
+
+        dismissSelectionSheet()
+    }
+
+    private func cancelPendingPaneSheetTopologyResolution() {
+        pendingPaneSheetTopologyResolution?.cancel()
+        pendingPaneSheetTopologyResolution = nil
     }
 
     private func sendTerminalText(_ text: String) -> Bool {
@@ -267,42 +388,33 @@ struct GhosttySurfaceScreen: View {
                 sessionName: target.workspace.sessionName,
                 onCreateWindow: {
                     guard model.createTmuxWindow() else { return }
-                    selectionSheet = nil
-                    refocusSystemKeyboardIfActive()
-                },
-                onCloseWindow: {
-                    guard model.closeSelectedTmuxWindow() else { return }
-                    selectionSheet = nil
+                    dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 },
                 onSelect: { id in
                     guard model.focusTmuxTopLevel(id) else { return }
-                    selectionSheet = nil
+                    dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 }
             )
 
-        case .panes:
+        case .panes(let session, _):
             GhosttyPaneSelectionSheet(
                 registry: registry,
+                session: session,
                 onSplitPane: {
                     guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT) else { return }
-                    selectionSheet = nil
+                    dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 },
                 onStackPane: {
                     guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) else { return }
-                    selectionSheet = nil
-                    refocusSystemKeyboardIfActive()
-                },
-                onClosePane: {
-                    guard model.closeFocusedTmuxPane() else { return }
-                    selectionSheet = nil
+                    dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 },
                 onSelect: { id in
                     guard model.focusTmuxPane(id) else { return }
-                    selectionSheet = nil
+                    dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 }
             )

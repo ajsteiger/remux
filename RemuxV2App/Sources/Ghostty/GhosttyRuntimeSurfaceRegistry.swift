@@ -424,15 +424,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return false
         }
 
-        register(leafSurfaces)
-
-        let topLevel = GhosttyTopLevelSurface(
+        installSurfaceTree(
+            leafSurfaces: leafSurfaces,
             tree: .init(root: root),
-            focusedLeafID: leafSurfaces.first?.id
+            focusedLeafID: leafSurfaces.first?.id,
+            replacingTopLevelContaining: request.parent.flatMap { surfaceIDsByHandle[$0] }
         )
-        topLevels.append(topLevel)
-        selectedTopLevelID = topLevel.id
-        updateDebugSummary("created surface tree")
         NSLog(
             "Remux create_surface_tree registered managed=%d top=%d selected=%@",
             managedSurfaces.count,
@@ -498,18 +495,44 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     func registerManagedSurfaceTreeForTesting(
         _ surfaces: [GhosttyManagedSurface],
         tree: GhosttySurfaceTree,
-        focusedLeafID: UUID? = nil
+        focusedLeafID: UUID? = nil,
+        replacingTopLevelContaining parentSurfaceID: UUID? = nil
     ) {
-        register(surfaces)
+        installSurfaceTree(
+            leafSurfaces: surfaces,
+            tree: tree,
+            focusedLeafID: focusedLeafID,
+            replacingTopLevelContaining: parentSurfaceID
+        )
+    }
+#endif
+
+    private func installSurfaceTree(
+        leafSurfaces: [GhosttyManagedSurface],
+        tree: GhosttySurfaceTree,
+        focusedLeafID: UUID?,
+        replacingTopLevelContaining parentSurfaceID: UUID?
+    ) {
+        register(leafSurfaces)
+
+        if let parentSurfaceID,
+           let index = topLevels.firstIndex(where: { $0.tree.contains(parentSurfaceID) }) {
+            topLevels[index].tree = tree
+            topLevels[index].focusedLeafID = focusedLeafID
+            topLevels[index].normalizeFocus()
+            selectedTopLevelID = topLevels[index].id
+            updateDebugSummary("replaced surface tree")
+            return
+        }
+
         let topLevel = GhosttyTopLevelSurface(
             tree: tree,
             focusedLeafID: focusedLeafID
         )
         topLevels.append(topLevel)
         selectedTopLevelID = topLevel.id
-        updateDebugSummary("test surface tree registered")
+        updateDebugSummary("created surface tree")
     }
-#endif
 
     private func insertSplitSurface(
         _ managed: GhosttyManagedSurface,
