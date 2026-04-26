@@ -7,15 +7,16 @@ import GhosttyKit
 ///
 /// Owned by the parent (`GhosttySurfaceScreen`), created at the moment of
 /// `showPanes()` tap, and explicitly torn down via `cancelAll()` from the
-/// sheet's `onDismiss`.
+/// sheet's dismissal path. Accepted request handles are also carried by the
+/// callback userdata so the Ghostty callback can release them if the Swift
+/// session disappears before completion.
 ///
 /// Architecture invariants for preview request ownership:
 ///
 /// - The session is frozen to the **opening logical top-level**. Pane
 ///   membership within that top-level may update via `reconcile(leafIDs:)`
-///   from the sheet. If Ghostty rebuilds that logical top-level with new
-///   surface IDs, the parent may call `retarget(topLevelID:leafIDs:)` to keep
-///   the sheet attached to the replacement tree.
+///   from the sheet. If that top-level disappears, the parent dismisses the
+///   sheet rather than retargeting it by timing or selection.
 /// - The C preview request handle is held by the session for each pane in
 ///   `.pending` state. Every transition out of `.pending` (deliver / cancel /
 ///   reconcile-removal) releases that handle exactly once via
@@ -75,7 +76,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
     private let displayScale: CGFloat
     private let previewRequestClient: PreviewRequestClient?
     private let retryDelay: Duration
-    private var pendingRequests: [UUID: ghostty_surface_preview_request_t] = [:]
+    private var pendingRequests: [UUID: PreviewRequestLease] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
     private var generation: UInt64 = 0
 
@@ -118,13 +119,12 @@ final class GhosttyPanePreviewSession: ObservableObject {
         }
     }
 
-    // No `deinit` cleanup: under Swift 6 isolation, deinit runs on whatever
-    // thread releases the last reference and cannot touch @MainActor state.
-    // The parent contract is to call `cancelAll()` from the sheet's
-    // `onDismiss` before dropping this object. The userdata box's weak self
-    // ensures any callback that fires after deinit no-ops cleanly; what we'd
-    // lose if a parent forgets `cancelAll()` is the Ghostty-side request
-    // handle release — small leak, fixable in caller.
+    deinit {
+        // Request handles are not released from deinit. Under Swift isolation,
+        // deinit is the wrong ownership boundary for MainActor state. The
+        // callback userdata carries an idempotent lease and releases accepted
+        // handles on completion even when the session is already gone.
+    }
 
     // MARK: - Public API
 
@@ -155,13 +155,6 @@ final class GhosttyPanePreviewSession: ObservableObject {
                 remainingRetryAttempts: Self.transientRetryAttempts
             )
         }
-    }
-
-    /// Rebind this session to a replacement runtime tree for the same logical
-    /// top-level, then reconcile previews against the replacement leaves.
-    func retarget(topLevelID: UUID, leafIDs: [UUID]) {
-        self.topLevelID = topLevelID
-        reconcile(leafIDs: leafIDs)
     }
 
     /// Cancel every in-flight request and release each handle. Bumps
@@ -201,10 +194,16 @@ final class GhosttyPanePreviewSession: ObservableObject {
             include_cursor: true
         )
 
+        let requestLease = PreviewRequestLease(
+            actions: PreviewRequestActions(client: previewRequestClient)
+        )
         let box = PreviewCallbackBox(
             session: self,
             paneID: paneID,
-            generation: generation
+            generation: generation,
+            paneCount: paneCount,
+            remainingRetryAttempts: remainingRetryAttempts,
+            requestLease: requestLease
         )
         let userdata = Unmanaged.passRetained(box).toOpaque()
 
@@ -214,8 +213,9 @@ final class GhosttyPanePreviewSession: ObservableObject {
             userdata: userdata
         ) {
         case .started(let request):
-            pendingRequests[paneID] = request
+            pendingRequests[paneID] = requestLease
             imagesByPaneID[paneID] = .pending
+            requestLease.install(request)
 
         case .surfaceUnavailable:
             Unmanaged<PreviewCallbackBox>.fromOpaque(userdata).release()
@@ -244,11 +244,10 @@ final class GhosttyPanePreviewSession: ObservableObject {
     /// this method to release the handle exactly once.
     private func dropRequest(for paneID: UUID) {
         cancelRetry(for: paneID)
-        guard let request = pendingRequests.removeValue(forKey: paneID) else {
+        guard let requestLease = pendingRequests.removeValue(forKey: paneID) else {
             return
         }
-        cancelPreviewRequest(request)
-        releasePreviewRequest(request)
+        requestLease.cancelAndRelease()
     }
 
     /// Called from the C callback after main-actor hop. The callback has
@@ -258,20 +257,26 @@ final class GhosttyPanePreviewSession: ObservableObject {
         paneID: UUID,
         generation: UInt64,
         status: ghostty_surface_preview_status_e,
-        image: CGImage?
+        image: CGImage?,
+        paneCount: Int,
+        remainingRetryAttempts: Int,
+        requestLease: PreviewRequestLease
     ) {
         guard generation == self.generation else { return }
-        guard pendingRequests[paneID] != nil else { return }
-
-        // Release the handle exactly once on transition out of `.pending`.
-        if let request = pendingRequests.removeValue(forKey: paneID) {
-            releasePreviewRequest(request)
-        }
+        guard pendingRequests[paneID] === requestLease else { return }
+        pendingRequests.removeValue(forKey: paneID)
 
         if status == GHOSTTY_SURFACE_PREVIEW_STATUS_OK, let image = image {
             imagesByPaneID[paneID] = .ready(image)
         } else {
-            imagesByPaneID[paneID] = .failed(status)
+            let failureStatus = normalizedFailureStatus(status: status, image: image)
+            imagesByPaneID[paneID] = .failed(failureStatus)
+            guard isTransientPreviewFailure(failureStatus) else { return }
+            scheduleRetry(
+                for: paneID,
+                paneCount: paneCount,
+                remainingRetryAttempts: remainingRetryAttempts
+            )
         }
     }
 
@@ -282,8 +287,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
         switch imagesByPaneID[paneID] {
         case .failed(let status):
-            return status == GHOSTTY_SURFACE_PREVIEW_STATUS_SURFACE_CLOSED ||
-                status == GHOSTTY_SURFACE_PREVIEW_STATUS_RENDER_FAILED
+            return isTransientPreviewFailure(status)
 
         default:
             return false
@@ -347,21 +351,77 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
         return .started(request)
     }
+}
 
-    private func cancelPreviewRequest(_ request: ghostty_surface_preview_request_t) {
-        if let previewRequestClient {
-            previewRequestClient.cancel(request)
+@MainActor
+private func isTransientPreviewFailure(_ status: ghostty_surface_preview_status_e) -> Bool {
+    status == GHOSTTY_SURFACE_PREVIEW_STATUS_SURFACE_CLOSED ||
+        status == GHOSTTY_SURFACE_PREVIEW_STATUS_RENDER_FAILED
+}
+
+@MainActor
+private func normalizedFailureStatus(
+    status: ghostty_surface_preview_status_e,
+    image: CGImage?
+) -> ghostty_surface_preview_status_e {
+    if status == GHOSTTY_SURFACE_PREVIEW_STATUS_OK, image == nil {
+        return GHOSTTY_SURFACE_PREVIEW_STATUS_RENDER_FAILED
+    }
+    return status
+}
+
+private struct PreviewRequestActions {
+    let cancel: @MainActor (ghostty_surface_preview_request_t) -> Void
+    let release: @MainActor (ghostty_surface_preview_request_t) -> Void
+
+    init(client: GhosttyPanePreviewSession.PreviewRequestClient?) {
+        if let client {
+            self.cancel = client.cancel
+            self.release = client.release
         } else {
-            GhosttyKitControlSurface.cancelPreviewRequest(request)
+            self.cancel = { GhosttyKitControlSurface.cancelPreviewRequest($0) }
+            self.release = { GhosttyKitControlSurface.releasePreviewRequest($0) }
         }
     }
+}
 
-    private func releasePreviewRequest(_ request: ghostty_surface_preview_request_t) {
-        if let previewRequestClient {
-            previewRequestClient.release(request)
-        } else {
-            GhosttyKitControlSurface.releasePreviewRequest(request)
+@MainActor
+private final class PreviewRequestLease {
+    private let actions: PreviewRequestActions
+    private var request: ghostty_surface_preview_request_t?
+    private var cancelWhenInstalled = false
+    private var releaseWhenInstalled = false
+
+    init(actions: PreviewRequestActions) {
+        self.actions = actions
+    }
+
+    func install(_ request: ghostty_surface_preview_request_t) {
+        guard self.request == nil else { return }
+        guard !releaseWhenInstalled else {
+            if cancelWhenInstalled {
+                actions.cancel(request)
+            }
+            actions.release(request)
+            return
         }
+        self.request = request
+    }
+
+    func cancelAndRelease() {
+        cancelWhenInstalled = true
+        releaseWhenInstalled = true
+        guard let request else { return }
+        self.request = nil
+        actions.cancel(request)
+        actions.release(request)
+    }
+
+    func release() {
+        releaseWhenInstalled = true
+        guard let request else { return }
+        self.request = nil
+        actions.release(request)
     }
 }
 
@@ -390,11 +450,24 @@ private final class PreviewCallbackBox: @unchecked Sendable {
     weak var session: GhosttyPanePreviewSession?
     let paneID: UUID
     let generation: UInt64
+    let paneCount: Int
+    let remainingRetryAttempts: Int
+    let requestLease: PreviewRequestLease
 
-    init(session: GhosttyPanePreviewSession, paneID: UUID, generation: UInt64) {
+    init(
+        session: GhosttyPanePreviewSession,
+        paneID: UUID,
+        generation: UInt64,
+        paneCount: Int,
+        remainingRetryAttempts: Int,
+        requestLease: PreviewRequestLease
+    ) {
         self.session = session
         self.paneID = paneID
         self.generation = generation
+        self.paneCount = paneCount
+        self.remainingRetryAttempts = remainingRetryAttempts
+        self.requestLease = requestLease
     }
 }
 
@@ -420,20 +493,9 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
     let width = image.width
     let height = image.height
     let stride = image.stride
-    let pixelStatus = status
-
-    var pixelCopy: UnsafeMutableRawPointer?
-    var byteCount = 0
-
-    if pixelStatus == GHOSTTY_SURFACE_PREVIEW_STATUS_OK,
-       let sourcePixels = image.pixels,
-       height > 0,
-       stride > 0 {
-        byteCount = Int(stride) * Int(height)
-        let copy = UnsafeMutableRawPointer.allocate(byteCount: byteCount, alignment: 1)
-        copy.copyMemory(from: sourcePixels, byteCount: byteCount)
-        pixelCopy = copy
-    }
+    let pixelResult = copyPreviewPixels(status: status, image: image)
+    let pixelStatus = pixelResult.status
+    let pixelCopy = pixelResult.pixelCopy
 
     // Always free the Ghostty-owned image regardless of status. Safe on a
     // zeroed image.
@@ -447,11 +509,15 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
     let capturedPixelBuffer = SendablePixelBuffer(pointer: pixelCopy)
     let capturedPaneID = box.paneID
     let capturedGeneration = box.generation
+    let capturedPaneCount = box.paneCount
+    let capturedRetryAttempts = box.remainingRetryAttempts
+    let capturedRequestLease = box.requestLease
 
     Task { @MainActor in
         // Local mutable copy so makeCGImage can null it out on ownership
         // transfer to a CGDataProvider.
         var localPixelCopy = capturedPixelBuffer.pointer
+        capturedRequestLease.release()
 
         // Stale check: session gone, or generation mismatch, or pane already
         // removed via reconcile.
@@ -483,9 +549,39 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
             paneID: capturedPaneID,
             generation: capturedGeneration,
             status: pixelStatus,
-            image: cgImage
+            image: cgImage,
+            paneCount: capturedPaneCount,
+            remainingRetryAttempts: capturedRetryAttempts,
+            requestLease: capturedRequestLease
         )
     }
+}
+
+private let maxPreviewImageByteCount = 64 * 1024 * 1024
+
+private func copyPreviewPixels(
+    status: ghostty_surface_preview_status_e,
+    image: ghostty_surface_preview_image_s
+) -> (
+    pixelCopy: UnsafeMutableRawPointer?,
+    status: ghostty_surface_preview_status_e
+) {
+    guard status == GHOSTTY_SURFACE_PREVIEW_STATUS_OK else {
+        return (nil, status)
+    }
+    guard let sourcePixels = image.pixels,
+          let byteCount = previewImageByteCount(
+            width: image.width,
+            height: image.height,
+            stride: image.stride
+          )
+    else {
+        return (nil, GHOSTTY_SURFACE_PREVIEW_STATUS_RENDER_FAILED)
+    }
+
+    let copy = UnsafeMutableRawPointer.allocate(byteCount: byteCount, alignment: 16)
+    copy.copyMemory(from: sourcePixels, byteCount: byteCount)
+    return (copy, status)
 }
 
 /// Build a CGImage from a Swift-owned BGRA8 sRGB pixel buffer.
@@ -500,10 +596,11 @@ private func makeCGImage(
     height: UInt32,
     stride: UInt32
 ) -> CGImage? {
-    guard let copy = pixelCopy, width > 0, height > 0, stride > 0 else {
+    guard let copy = pixelCopy,
+          let byteCount = previewImageByteCount(width: width, height: height, stride: stride)
+    else {
         return nil
     }
-    let byteCount = Int(stride) * Int(height)
 
     guard let provider = CGDataProvider(
         dataInfo: copy,
@@ -540,4 +637,25 @@ private func makeCGImage(
         shouldInterpolate: false,
         intent: .defaultIntent
     )
+}
+
+private func previewImageByteCount(
+    width: UInt32,
+    height: UInt32,
+    stride: UInt32
+) -> Int? {
+    guard width > 0, height > 0, stride > 0 else { return nil }
+
+    let widthBytes = UInt64(width) * 4
+    let rowBytes = UInt64(stride)
+    guard rowBytes >= widthBytes else { return nil }
+
+    let byteCount = rowBytes * UInt64(height)
+    guard byteCount > 0,
+          byteCount <= UInt64(maxPreviewImageByteCount),
+          byteCount <= UInt64(Int.max)
+    else {
+        return nil
+    }
+    return Int(byteCount)
 }

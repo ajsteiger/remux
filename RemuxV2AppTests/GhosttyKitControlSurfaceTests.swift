@@ -80,6 +80,31 @@ final class GhosttyKitControlSurfaceTests: XCTestCase {
         )
     }
 
+    func testDisplayMetricsClampNonFiniteScale() {
+        XCTAssertEqual(
+            GhosttySurfaceDisplayMetrics(
+                size: CGSize(width: 390, height: 641),
+                scale: .nan
+            ),
+            GhosttySurfaceDisplayMetrics(
+                contentScale: 1,
+                pixelWidth: 390,
+                pixelHeight: 641
+            )
+        )
+        XCTAssertEqual(
+            GhosttySurfaceDisplayMetrics(
+                size: CGSize(width: 390, height: 641),
+                scale: .infinity
+            ),
+            GhosttySurfaceDisplayMetrics(
+                contentScale: 1,
+                pixelWidth: 390,
+                pixelHeight: 641
+            )
+        )
+    }
+
     func testDisplayMetricsClampInvalidSizeToOnePixel() {
         XCTAssertEqual(
             GhosttySurfaceDisplayMetrics(
@@ -90,6 +115,20 @@ final class GhosttyKitControlSurfaceTests: XCTestCase {
                 contentScale: 3,
                 pixelWidth: 1,
                 pixelHeight: 1
+            )
+        )
+    }
+
+    func testDisplayMetricsClampOversizedPixelDimensions() {
+        XCTAssertEqual(
+            GhosttySurfaceDisplayMetrics(
+                size: CGSize(width: CGFloat(UInt32.max), height: 10),
+                scale: 3
+            ),
+            GhosttySurfaceDisplayMetrics(
+                contentScale: 3,
+                pixelWidth: UInt32.max,
+                pixelHeight: 30
             )
         )
     }

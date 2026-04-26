@@ -4,35 +4,49 @@ import XCTest
 
 final class PanePreviewLayoutTests: XCTestCase {
     func testSinglePaneUsesFeaturedLayout() {
-        let single = PanePreviewLayout.metrics(for: 1)
-        let grid = PanePreviewLayout.metrics(for: 2)
+        let single = PanePreviewLayout.metrics(for: 1, availableWidth: 361)
+        let grid = PanePreviewLayout.metrics(for: 2, availableWidth: 361)
 
         XCTAssertEqual(single.columnCount, 1)
+        XCTAssertEqual(single.tilePointSize.width, 361)
+        XCTAssertEqual(single.previewPointSize, CGSize(width: 345, height: 259))
         XCTAssertGreaterThan(single.previewPointSize.width, grid.previewPointSize.width)
-        XCTAssertEqual(single.sheetDetent, .fixed(500))
+        XCTAssertEqual(single.sheetDetent, .fixed(457))
     }
 
     func testTwoPaneUsesTwoColumnGridLayout() {
-        let metrics = PanePreviewLayout.metrics(for: 2)
+        let metrics = PanePreviewLayout.metrics(for: 2, availableWidth: 361)
 
         XCTAssertEqual(metrics.columnCount, 2)
-        XCTAssertEqual(metrics.previewPointSize, CGSize(width: 220, height: 165))
-        XCTAssertEqual(metrics.sheetDetent, .fixed(540))
+        XCTAssertEqual(metrics.tilePointSize, CGSize(width: 175, height: 156))
+        XCTAssertEqual(metrics.previewPointSize, CGSize(width: 159, height: 120))
+        XCTAssertEqual(metrics.sheetDetent, .fixed(318))
     }
 
-    func testThreePaneUsesTallerDenseGridLayout() {
-        let twoPane = PanePreviewLayout.metrics(for: 2)
-        let threePane = PanePreviewLayout.metrics(for: 3)
+    func testThreePaneUsesTwoRowsWithoutLargeDetentWaste() {
+        let twoPane = PanePreviewLayout.metrics(for: 2, availableWidth: 361)
+        let threePane = PanePreviewLayout.metrics(for: 3, availableWidth: 361)
 
         XCTAssertEqual(threePane.columnCount, 2)
-        XCTAssertLessThan(threePane.previewPointSize.width, twoPane.previewPointSize.width)
-        XCTAssertEqual(threePane.sheetDetent, .large)
+        XCTAssertEqual(threePane.previewPointSize, twoPane.previewPointSize)
+        XCTAssertEqual(threePane.sheetDetent, .fixed(484))
+    }
+
+    func testFivePaneUsesLargeDetent() {
+        let metrics = PanePreviewLayout.metrics(for: 5, availableWidth: 361)
+
+        XCTAssertEqual(metrics.columnCount, 2)
+        XCTAssertEqual(metrics.sheetDetent, .large)
     }
 
     func testPhysicalPixelBudgetTracksLayoutMetrics() {
-        let budget = PanePreviewLayout.physicalPixelBudget(paneCount: 1, scale: 3)
+        let budget = PanePreviewLayout.physicalPixelBudget(
+            paneCount: 1,
+            availableWidth: 361,
+            scale: 3
+        )
 
-        XCTAssertEqual(budget.width, 972)
-        XCTAssertEqual(budget.height, 729)
+        XCTAssertEqual(budget.width, 1035)
+        XCTAssertEqual(budget.height, 777)
     }
 }

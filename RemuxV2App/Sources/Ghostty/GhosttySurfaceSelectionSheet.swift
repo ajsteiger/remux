@@ -2,13 +2,13 @@ import SwiftUI
 
 enum GhosttySurfaceSelectionSheet: Identifiable {
     case windows
-    case panes(GhosttyPanePreviewSession, openingTopLevelCount: Int)
+    case panes(GhosttyPanePreviewSession)
 
     var id: String {
         switch self {
         case .windows:
             "windows"
-        case .panes(let session, _):
+        case .panes(let session):
             "panes-\(session.id.uuidString)"
         }
     }
@@ -94,7 +94,7 @@ struct GhosttyPaneSelectionSheet: View {
     var body: some View {
         let leafIDs = frozenTopLevel?.leafIDs ?? []
         let selectedLeafID = frozenTopLevel?.resolvedFocusedLeafID
-        let layout = PanePreviewLayout.metrics(for: leafIDs.count)
+        let layout = PanePreviewLayout.metricsForCurrentScreen(for: leafIDs.count)
 
         VStack(alignment: .leading, spacing: 14) {
             sheetHeader(
@@ -150,10 +150,10 @@ struct GhosttyPaneSelectionSheet: View {
     ) -> some View {
         LazyVGrid(
             columns: Array(
-                repeating: GridItem(.flexible(), spacing: layout.gridSpacing),
+                repeating: GridItem(.fixed(layout.tilePointSize.width), spacing: layout.gridSpacing),
                 count: layout.columnCount
             ),
-            alignment: .leading,
+            alignment: .center,
             spacing: layout.gridSpacing
         ) {
             ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
@@ -170,6 +170,7 @@ struct GhosttyPaneSelectionSheet: View {
                 .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 
@@ -228,9 +229,9 @@ private struct GhosttySheetActionButton: View {
             .padding(.vertical, 13)
             .padding(.horizontal, 14)
             .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(GhosttySheetPalette.stroke, lineWidth: 1)
             }
         }
@@ -284,9 +285,9 @@ private struct GhosttyWindowSelectionRow: View {
         }
         .padding(12)
         .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(isSelected ? GhosttySheetPalette.strokeSelected : GhosttySheetPalette.stroke, lineWidth: 1)
         }
     }
@@ -303,13 +304,17 @@ private struct GhosttyPaneSelectionTile: View {
             previewSurface
             captionRow
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(8)
-        .background(GhosttySheetPalette.row)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(layout.tilePadding)
+        .frame(
+            width: layout.tilePointSize.width,
+            height: layout.tilePointSize.height,
+            alignment: .topLeading
+        )
+        .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(
                     isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.stroke,
                     lineWidth: isSelected ? 1.5 : 1
                 )
@@ -322,21 +327,33 @@ private struct GhosttyPaneSelectionTile: View {
         case .ready(let cgImage):
             Image(decorative: cgImage, scale: PanePreviewLayout.currentScale())
                 .resizable()
-                .aspectRatio(contentMode: .fill)
-                .aspectRatio(layout.aspectRatio, contentMode: .fit)
+                .scaledToFill()
+                .frame(
+                    width: layout.previewPointSize.width,
+                    height: layout.previewPointSize.height,
+                    alignment: .topLeading
+                )
+                .background(Color.black.opacity(0.30))
+                .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
         case .pending, .none:
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.black.opacity(0.30))
-                .aspectRatio(layout.aspectRatio, contentMode: .fit)
+                .frame(
+                    width: layout.previewPointSize.width,
+                    height: layout.previewPointSize.height
+                )
 
         case .failed:
             // Failed state still shows a neutral placeholder; we don't
             // surface different copy per status reason in v1.
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.black.opacity(0.30))
-                .aspectRatio(layout.aspectRatio, contentMode: .fit)
+                .frame(
+                    width: layout.previewPointSize.width,
+                    height: layout.previewPointSize.height
+                )
         }
     }
 

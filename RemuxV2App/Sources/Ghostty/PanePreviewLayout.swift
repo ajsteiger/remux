@@ -19,53 +19,58 @@ enum PanePreviewLayout {
 
     struct Metrics: Equatable {
         let columnCount: Int
+        let tilePointSize: CGSize
         let previewPointSize: CGSize
         let sheetDetent: SheetDetent
         let gridSpacing: CGFloat
-
-        var aspectRatio: CGFloat {
-            previewPointSize.width / previewPointSize.height
-        }
+        let tilePadding: CGFloat
     }
 
-    private static let featuredPreviewSize = CGSize(width: 324, height: 243)
-    private static let gridPreviewSize = CGSize(width: 220, height: 165)
-    private static let denseGridPreviewSize = CGSize(width: 204, height: 153)
+    private static let defaultSheetContentWidth: CGFloat = 361
+    private static let sheetHorizontalPadding: CGFloat = 32
+    private static let defaultPreviewAspectRatio: CGFloat = 4.0 / 3.0
+    private static let tilePadding: CGFloat = 8
+    private static let captionHeight: CGFloat = 14
+    private static let tileCaptionSpacing: CGFloat = 6
+    private static let sheetChromeHeight: CGFloat = 162
+    private static let maxSingleTileWidth: CGFloat = 390
 
     static func metrics(for paneCount: Int) -> Metrics {
-        switch max(paneCount, 1) {
-        case 1:
-            .init(
-                columnCount: 1,
-                previewPointSize: featuredPreviewSize,
-                sheetDetent: .fixed(500),
-                gridSpacing: 12
-            )
+        metrics(for: paneCount, availableWidth: defaultSheetContentWidth)
+    }
 
-        case 2:
-            .init(
-                columnCount: 2,
-                previewPointSize: gridPreviewSize,
-                sheetDetent: .fixed(540),
-                gridSpacing: 10
-            )
+    static func metrics(
+        for paneCount: Int,
+        availableWidth: CGFloat
+    ) -> Metrics {
+        let paneCount = max(paneCount, 1)
+        let columnCount = paneCount == 1 ? 1 : 2
+        let gridSpacing: CGFloat = paneCount == 1 ? 12 : 10
+        let safeAvailableWidth = max(availableWidth, 1)
+        let contentWidth = paneCount == 1
+            ? min(safeAvailableWidth, maxSingleTileWidth)
+            : safeAvailableWidth
+        let totalGridSpacing = CGFloat(columnCount - 1) * gridSpacing
+        let tileWidth = max(
+            1,
+            floor((contentWidth - totalGridSpacing) / CGFloat(columnCount))
+        )
+        let previewWidth = max(1, tileWidth - tilePadding * 2)
+        let previewHeight = ceil(previewWidth / defaultPreviewAspectRatio)
+        let tileHeight = previewHeight + tileCaptionSpacing + captionHeight + tilePadding * 2
+        let rowCount = Int(ceil(Double(paneCount) / Double(columnCount)))
+        let gridHeight = CGFloat(rowCount) * tileHeight +
+            CGFloat(max(rowCount - 1, 0)) * gridSpacing
+        let fixedHeight = ceil(sheetChromeHeight + gridHeight)
 
-        case 3, 4:
-            .init(
-                columnCount: 2,
-                previewPointSize: denseGridPreviewSize,
-                sheetDetent: .large,
-                gridSpacing: 10
-            )
-
-        default:
-            .init(
-                columnCount: 2,
-                previewPointSize: denseGridPreviewSize,
-                sheetDetent: .large,
-                gridSpacing: 10
-            )
-        }
+        return .init(
+            columnCount: columnCount,
+            tilePointSize: CGSize(width: tileWidth, height: tileHeight),
+            previewPointSize: CGSize(width: previewWidth, height: previewHeight),
+            sheetDetent: paneCount >= 5 ? .large : .fixed(fixedHeight),
+            gridSpacing: gridSpacing,
+            tilePadding: tilePadding
+        )
     }
 
     /// Display scale captured once at session init. Avoids touching
@@ -76,14 +81,38 @@ enum PanePreviewLayout {
         return scale.isFinite && scale > 0 ? scale : 1
     }
 
+    @MainActor
+    static func currentSheetContentWidth() -> CGFloat {
+        let width = UIScreen.main.bounds.width - sheetHorizontalPadding
+        return width.isFinite && width > 0 ? width : defaultSheetContentWidth
+    }
+
+    @MainActor
+    static func metricsForCurrentScreen(for paneCount: Int) -> Metrics {
+        metrics(for: paneCount, availableWidth: currentSheetContentWidth())
+    }
+
     /// Physical pixel budget for the C preview API at the given display scale.
     /// Returns clamped UInt32s ready to drop into
     /// `ghostty_surface_preview_image_options_s`.
+    @MainActor
     static func physicalPixelBudget(
         paneCount: Int,
         scale: CGFloat
     ) -> (width: UInt32, height: UInt32) {
-        let metrics = metrics(for: paneCount)
+        physicalPixelBudget(
+            paneCount: paneCount,
+            availableWidth: currentSheetContentWidth(),
+            scale: scale
+        )
+    }
+
+    static func physicalPixelBudget(
+        paneCount: Int,
+        availableWidth: CGFloat,
+        scale: CGFloat
+    ) -> (width: UInt32, height: UInt32) {
+        let metrics = metrics(for: paneCount, availableWidth: availableWidth)
         let safeScale = max(scale, 1)
         let widthPx = (metrics.previewPointSize.width * safeScale).rounded(.up)
         let heightPx = (metrics.previewPointSize.height * safeScale).rounded(.up)

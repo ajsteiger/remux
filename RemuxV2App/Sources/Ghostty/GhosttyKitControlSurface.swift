@@ -18,7 +18,8 @@ struct GhosttySurfaceDisplayMetrics: Equatable {
     }
 
     init(size: CGSize, scale: CGFloat) {
-        let safeScale = max(Double(scale), 1)
+        let rawScale = Double(scale)
+        let safeScale = rawScale.isFinite && rawScale > 0 ? rawScale : 1
 
         self.contentScale = safeScale
         self.pixelWidth = Self.pixelDimension(points: size.width, scale: safeScale)
@@ -28,9 +29,11 @@ struct GhosttySurfaceDisplayMetrics: Equatable {
     private static func pixelDimension(points: CGFloat, scale: Double) -> UInt32 {
         let value = Double(points)
         guard value.isFinite, value > 0 else { return 1 }
+        let pixels = (value * scale).rounded(.toNearestOrAwayFromZero)
+        guard pixels.isFinite, pixels > 0 else { return 1 }
 
         return max(
-            UInt32((value * scale).rounded(.toNearestOrAwayFromZero)),
+            UInt32(min(pixels, Double(UInt32.max))),
             1
         )
     }
@@ -164,6 +167,9 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     func sendInput(_ text: String) -> Bool {
         guard !text.isEmpty else { return true }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "control.sendInput handle=\(String(describing: storage.surface)) bytes=\(text.lengthOfBytes(using: .utf8)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
         return text.withCString { pointer in
             let byteCount = text.lengthOfBytes(using: .utf8)
             return ghostty_surface_input(storage.surface, pointer, UInt(byteCount))
@@ -190,7 +196,10 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     @discardableResult
     func tmuxFocus() -> Bool {
-        ghostty_surface_tmux_focus(storage.surface)
+        GhosttyRuntimeTrace.diagnostics(
+            "control.tmuxFocus handle=\(String(describing: storage.surface)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
+        return ghostty_surface_tmux_focus(storage.surface)
     }
 
     @MainActor
@@ -321,36 +330,72 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func updateDisplay(metrics: GhosttySurfaceDisplayMetrics) {
+        let before = currentSize()
+        GhosttyRuntimeTrace.diagnostics(
+            "control.updateDisplay handle=\(String(describing: storage.surface)) before=\(ghosttyDiagnosticSurfaceSize(before)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(metrics.contentScale)"
+        )
         ghostty_surface_set_content_scale(storage.surface, metrics.contentScale, metrics.contentScale)
         ghostty_surface_set_size(storage.surface, metrics.pixelWidth, metrics.pixelHeight)
+        GhosttyRuntimeTrace.diagnostics(
+            "control.updateDisplay applied handle=\(String(describing: storage.surface)) after=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
     }
 
-    // Read-only, snapshot-on-open styled viewport capture. Under the hood this
-    // locks the surface renderer mutex briefly, walks the active screen's
-    // pages, and returns resolved RGB runs without disturbing dirty tracking.
-    // A `nil` return signals the surface is not ready to be sampled yet (no
-    // active screen, pre-attach, etc).
+    // Submits an async raster preview request. The Ghostty preview thread
+    // invokes `callback` exactly once on its own queue. `userdata` is passed
+    // through verbatim and must outlive the request from the caller's side
+    // until the callback fires. Returns the opaque request handle, or nil if
+    // Ghostty rejected the request synchronously (null surface, immediate
+    // allocation failure, etc).
     @MainActor
-    func snapshotPreview(maxCols: Int = 0, maxRows: Int = 0) -> PanePreviewSnapshot? {
-        let options = ghostty_surface_preview_options_s(
-            max_cols: UInt16(clamping: max(maxCols, 0)),
-            max_rows: UInt16(clamping: max(maxRows, 0))
+    func renderPreviewImageAsync(
+        options: ghostty_surface_preview_image_options_s,
+        userdata: UnsafeMutableRawPointer?,
+        callback: ghostty_surface_preview_image_callback_f
+    ) -> ghostty_surface_preview_request_t? {
+        ghostty_surface_render_preview_image_async(
+            storage.surface,
+            options,
+            userdata,
+            callback
         )
-        var out = ghostty_surface_preview_snapshot_s()
-        guard ghostty_surface_preview_snapshot(storage.surface, options, &out) else {
-            return nil
-        }
-        defer { ghostty_surface_free_preview_snapshot(storage.surface, &out) }
-        return PanePreviewSnapshot(cSnapshot: out)
+    }
+
+    // Cancels an in-flight preview request. Safe before or after completion;
+    // a no-op after the callback has fired. Does not release the caller's
+    // handle and does not suppress the callback (which still fires once with
+    // GHOSTTY_SURFACE_PREVIEW_STATUS_CANCELLED).
+    static func cancelPreviewRequest(_ request: ghostty_surface_preview_request_t) {
+        ghostty_surface_cancel_preview_image(request)
+    }
+
+    // Releases the caller's reference to a preview request. Must be called
+    // exactly once per request. Releasing before completion does not suppress
+    // the callback. After this returns the handle is invalid.
+    static func releasePreviewRequest(_ request: ghostty_surface_preview_request_t) {
+        ghostty_surface_release_preview_request(request)
+    }
+
+    // Frees pixels owned by a successful preview image and zeroes the struct.
+    // Safe to call on a zeroed image. Does not require a surface or request
+    // handle.
+    static func freePreviewImage(_ image: inout ghostty_surface_preview_image_s) {
+        ghostty_surface_free_preview_image(&image)
     }
 
     @MainActor
     func setFocused(_ focused: Bool) {
+        GhosttyRuntimeTrace.diagnostics(
+            "control.setFocused handle=\(String(describing: storage.surface)) focused=\(focused) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
         ghostty_surface_set_focus(storage.surface, focused)
     }
 
     @MainActor
     func setVisible(_ visible: Bool) {
+        GhosttyRuntimeTrace.diagnostics(
+            "control.setVisible handle=\(String(describing: storage.surface)) visible=\(visible) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
         ghostty_surface_set_occlusion(storage.surface, visible)
     }
 
@@ -372,100 +417,6 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
             count: Int(text.text_len)
         )
         return String(decoding: buffer, as: UTF8.self)
-    }
-}
-
-// MARK: - Pane preview C→Swift conversion
-
-private extension PanePreviewColor {
-    init(_ rgb: ghostty_rgb_s) {
-        self.init(red: rgb.r, green: rgb.g, blue: rgb.b)
-    }
-}
-
-private extension PanePreviewCursor.Style {
-    init(_ cStyle: ghostty_surface_preview_cursor_style_e) {
-        switch cStyle {
-        case GHOSTTY_SURFACE_PREVIEW_CURSOR_BLOCK:
-            self = .block
-        case GHOSTTY_SURFACE_PREVIEW_CURSOR_UNDERLINE:
-            self = .underline
-        case GHOSTTY_SURFACE_PREVIEW_CURSOR_BLOCK_HOLLOW:
-            self = .blockHollow
-        default:
-            self = .bar
-        }
-    }
-}
-
-extension PanePreviewSnapshot {
-    fileprivate init(cSnapshot: ghostty_surface_preview_snapshot_s) {
-        let cursor: PanePreviewCursor? = cSnapshot.cursor.visible
-            ? PanePreviewCursor(
-                row: Int(cSnapshot.cursor.row),
-                col: Int(cSnapshot.cursor.col),
-                style: PanePreviewCursor.Style(cSnapshot.cursor.style),
-                color: cSnapshot.cursor.has_color ? PanePreviewColor(cSnapshot.cursor.color) : nil,
-                visible: true
-            )
-            : nil
-
-        let runs = Self.decodeRuns(cSnapshot)
-
-        self.init(
-            cols: Int(cSnapshot.cols),
-            rows: Int(cSnapshot.rows),
-            defaultForeground: PanePreviewColor(cSnapshot.default_fg),
-            defaultBackground: PanePreviewColor(cSnapshot.default_bg),
-            cursor: cursor,
-            runs: runs
-        )
-    }
-
-    private static func decodeRuns(
-        _ cSnapshot: ghostty_surface_preview_snapshot_s
-    ) -> [PanePreviewRun] {
-        guard
-            let runsPtr = cSnapshot.runs,
-            let textPtr = cSnapshot.text,
-            cSnapshot.run_count > 0
-        else {
-            return []
-        }
-
-        let runCount = Int(cSnapshot.run_count)
-        let textLen = Int(cSnapshot.text_len)
-        let textBase = UnsafeRawPointer(textPtr)
-        let runsBuffer = UnsafeBufferPointer(start: runsPtr, count: runCount)
-
-        var runs: [PanePreviewRun] = []
-        runs.reserveCapacity(runCount)
-
-        for cRun in runsBuffer {
-            let offset = Int(cRun.text_offset)
-            let length = Int(cRun.text_len)
-            let text: String
-            if length > 0, offset >= 0, offset + length <= textLen {
-                text = String(
-                    data: Data(bytes: textBase.advanced(by: offset), count: length),
-                    encoding: .utf8
-                ) ?? ""
-            } else {
-                text = ""
-            }
-
-            runs.append(PanePreviewRun(
-                row: Int(cRun.row),
-                col: Int(cRun.col),
-                cellWidth: Int(cRun.cell_width),
-                text: text,
-                foreground: cRun.has_fg ? PanePreviewColor(cRun.fg) : nil,
-                background: cRun.has_bg ? PanePreviewColor(cRun.bg) : nil,
-                attributes: PanePreviewAttributes(rawValue: cRun.attrs)
-            ))
-        }
-
-        return runs
     }
 }
 

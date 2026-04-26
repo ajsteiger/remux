@@ -7,7 +7,6 @@ struct GhosttySurfaceScreen: View {
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
-    @State private var pendingPaneSheetTopologyResolution: Task<Void, Never>?
 
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
@@ -123,19 +122,13 @@ struct GhosttySurfaceScreen: View {
                     .presentationBackground(GhosttyPhoneChromePalette.screenBackground)
             }
             .onChange(of: registry.topLevels.map(\.id)) { _, topLevelIDs in
-                guard case .panes(let session, let openingTopLevelCount) = selectionSheet else {
+                guard case .panes(let session) = selectionSheet else {
                     return
                 }
                 guard !topLevelIDs.contains(session.topLevelID) else {
-                    cancelPendingPaneSheetTopologyResolution()
                     return
                 }
-
-                schedulePaneSheetTopologyResolution(
-                    sessionID: session.id,
-                    missingTopLevelID: session.topLevelID,
-                    openingTopLevelCount: openingTopLevelCount
-                )
+                dismissSelectionSheet()
             }
             .preferredColorScheme(.dark)
 #if DEBUG
@@ -163,9 +156,8 @@ struct GhosttySurfaceScreen: View {
         Binding(
             get: { selectionSheet },
             set: { newValue in
-                if newValue == nil, case .panes(let session, _) = selectionSheet {
+                if newValue == nil, case .panes(let session) = selectionSheet {
                     session.cancelAll()
-                    cancelPendingPaneSheetTopologyResolution()
                 }
                 selectionSheet = newValue
             }
@@ -236,8 +228,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func dismissSelectionSheet() {
-        cancelPendingPaneSheetTopologyResolution()
-        if case .panes(let session, _) = selectionSheet {
+        if case .panes(let session) = selectionSheet {
             session.cancelAll()
         }
         selectionSheet = nil
@@ -250,9 +241,9 @@ struct GhosttySurfaceScreen: View {
         case .windows:
             return [.height(310)]
 
-        case .panes(let session, _):
+        case .panes(let session):
             let paneCount = registry.topLevels.first(where: { $0.id == session.topLevelID })?.leafIDs.count ?? 0
-            switch PanePreviewLayout.metrics(for: paneCount).sheetDetent {
+            switch PanePreviewLayout.metricsForCurrentScreen(for: paneCount).sheetDetent {
             case .fixed(let height):
                 return [.height(height)]
             case .large:
@@ -272,64 +263,8 @@ struct GhosttySurfaceScreen: View {
                 topLevelID: topLevel.id,
                 leafIDs: topLevel.leafIDs,
                 registry: registry
-            ),
-            openingTopLevelCount: registry.topLevels.count
+            )
         )
-    }
-
-    private func replacementTopLevelForOpenPaneSheet(
-        openingTopLevelCount: Int
-    ) -> GhosttyTopLevelSurface? {
-        guard registry.topLevels.count >= openingTopLevelCount else {
-            return nil
-        }
-        return registry.selectedTopLevel
-    }
-
-    private func schedulePaneSheetTopologyResolution(
-        sessionID: UUID,
-        missingTopLevelID: UUID,
-        openingTopLevelCount: Int
-    ) {
-        pendingPaneSheetTopologyResolution?.cancel()
-        pendingPaneSheetTopologyResolution = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(150))
-            guard !Task.isCancelled else { return }
-            resolveMissingPaneSheetTopLevel(
-                sessionID: sessionID,
-                missingTopLevelID: missingTopLevelID,
-                openingTopLevelCount: openingTopLevelCount
-            )
-        }
-    }
-
-    private func resolveMissingPaneSheetTopLevel(
-        sessionID: UUID,
-        missingTopLevelID: UUID,
-        openingTopLevelCount: Int
-    ) {
-        pendingPaneSheetTopologyResolution = nil
-        guard case .panes(let session, _) = selectionSheet else { return }
-        guard session.id == sessionID else { return }
-        guard session.topLevelID == missingTopLevelID else { return }
-        guard !registry.topLevels.contains(where: { $0.id == missingTopLevelID }) else { return }
-
-        if let replacement = replacementTopLevelForOpenPaneSheet(
-            openingTopLevelCount: openingTopLevelCount
-        ) {
-            session.retarget(
-                topLevelID: replacement.id,
-                leafIDs: replacement.leafIDs
-            )
-            return
-        }
-
-        dismissSelectionSheet()
-    }
-
-    private func cancelPendingPaneSheetTopologyResolution() {
-        pendingPaneSheetTopologyResolution?.cancel()
-        pendingPaneSheetTopologyResolution = nil
     }
 
     private func sendTerminalText(_ text: String) -> Bool {
@@ -398,7 +333,7 @@ struct GhosttySurfaceScreen: View {
                 }
             )
 
-        case .panes(let session, _):
+        case .panes(let session):
             GhosttyPaneSelectionSheet(
                 registry: registry,
                 session: session,
