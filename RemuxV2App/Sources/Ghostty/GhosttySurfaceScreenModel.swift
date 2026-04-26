@@ -422,11 +422,20 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func closeFocusedTmuxPane() -> Bool {
-        guard
-            let surfaceID = surfaceRegistry.selectedActiveLeafID,
-            let surface = surfaceRegistry.managedSurface(for: surfaceID)
-        else {
+        guard let surfaceID = surfaceRegistry.selectedActiveLeafID else {
             debugStatus = "tmux close-pane dropped: no focused pane"
+            return false
+        }
+
+        return closeTmuxPane(surfaceID)
+    }
+
+    @discardableResult
+    func closeTmuxPane(_ id: UUID) -> Bool {
+        guard
+            let surface = surfaceRegistry.managedSurface(for: id)
+        else {
+            debugStatus = "tmux close-pane dropped: pane missing"
             return false
         }
 
@@ -441,12 +450,22 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func closeSelectedTmuxWindow() -> Bool {
+        guard let topLevel = surfaceRegistry.selectedTopLevel else {
+            debugStatus = "tmux close-window dropped: no selected window"
+            return false
+        }
+
+        return closeTmuxWindow(topLevel.id)
+    }
+
+    @discardableResult
+    func closeTmuxWindow(_ id: UUID) -> Bool {
         guard
-            let topLevel = surfaceRegistry.selectedTopLevel,
+            let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == id }),
             let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first,
             let surface = surfaceRegistry.managedSurface(for: surfaceID)
         else {
-            debugStatus = "tmux close-window dropped: no selected window"
+            debugStatus = "tmux close-window dropped: window missing"
             return false
         }
 

@@ -397,6 +397,11 @@ struct GhosttySurfaceScreen: View {
                     guard model.focusTmuxTopLevel(id) else { return }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
+                },
+                onRemoveWindow: { id in
+                    guard model.closeTmuxWindow(id) else { return }
+                    dismissSelectionSheet()
+                    refocusSystemKeyboardIfActive()
                 }
             )
 
@@ -416,6 +421,11 @@ struct GhosttySurfaceScreen: View {
                 },
                 onSelect: { id in
                     guard model.focusTmuxPane(id) else { return }
+                    dismissSelectionSheet()
+                    refocusSystemKeyboardIfActive()
+                },
+                onRemovePane: { id in
+                    guard model.closeTmuxPane(id) else { return }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 }

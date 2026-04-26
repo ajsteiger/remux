@@ -30,10 +30,12 @@ private enum GhosttySheetPalette {
 
 struct GhosttyWindowSelectionSheet: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
+    @State private var pendingRemoval: GhosttyWindowRemovalRequest?
 
     let sessionName: String
     let onCreateWindow: (() -> Void)?
     let onSelect: (UUID) -> Void
+    let onRemoveWindow: (UUID) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -42,16 +44,32 @@ struct GhosttyWindowSelectionSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 8) {
                     ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
-                        Button {
-                            onSelect(topLevel.id)
-                        } label: {
-                            GhosttyWindowSelectionRow(
-                                index: index,
-                                topLevel: topLevel,
-                                isSelected: topLevel.id == registry.selectedTopLevel?.id
-                            )
+                        HStack(spacing: 8) {
+                            Button {
+                                onSelect(topLevel.id)
+                            } label: {
+                                GhosttyWindowSelectionRow(
+                                    index: index,
+                                    topLevel: topLevel,
+                                    isSelected: topLevel.id == registry.selectedTopLevel?.id
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .layoutPriority(1)
+
+                            GhosttySheetIconActionButton(
+                                title: "Remove Window \(index + 1)",
+                                systemName: "trash",
+                                isDestructive: true
+                            ) {
+                                pendingRemoval = GhosttyWindowRemovalRequest(
+                                    id: topLevel.id,
+                                    displayIndex: index + 1,
+                                    paneCount: topLevel.leafIDs.count
+                                )
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -71,16 +89,46 @@ struct GhosttyWindowSelectionSheet: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
+        .confirmationDialog(
+            "Remove Window?",
+            isPresented: pendingRemovalBinding,
+            titleVisibility: .visible,
+            presenting: pendingRemoval
+        ) { request in
+            Button("Remove Window \(request.displayIndex)", role: .destructive) {
+                onRemoveWindow(request.id)
+                pendingRemoval = nil
+            }
+        } message: { request in
+            Text(windowRemovalMessage(for: request))
+        }
+    }
+
+    private var pendingRemovalBinding: Binding<Bool> {
+        Binding(
+            get: { pendingRemoval != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingRemoval = nil
+                }
+            }
+        )
+    }
+
+    private func windowRemovalMessage(for request: GhosttyWindowRemovalRequest) -> String {
+        "This will close Window \(request.displayIndex) and \(request.paneCount) \(request.paneCount == 1 ? "pane" : "panes")."
     }
 }
 
 struct GhosttyPaneSelectionSheet: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     @ObservedObject var session: GhosttyPanePreviewSession
+    @State private var pendingRemoval: GhosttyPaneRemovalRequest?
 
     let onSplitPane: (() -> Void)?
     let onStackPane: (() -> Void)?
     let onSelect: (UUID) -> Void
+    let onRemovePane: (UUID) -> Void
 
     /// Frozen top-level the session was opened against. The sheet never
     /// jumps to another top-level even if `registry.selectedTopLevel`
@@ -106,7 +154,14 @@ struct GhosttyPaneSelectionSheet: View {
                 paneLayout(
                     leafIDs: leafIDs,
                     selectedLeafID: selectedLeafID,
-                    layout: layout
+                    layout: layout,
+                    onRemove: { paneID, index in
+                        pendingRemoval = GhosttyPaneRemovalRequest(
+                            id: paneID,
+                            displayIndex: index + 1,
+                            isOnlyPane: leafIDs.count == 1
+                        )
+                    }
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -141,12 +196,26 @@ struct GhosttyPaneSelectionSheet: View {
         .onChange(of: leafIDs) { _, newValue in
             session.reconcile(leafIDs: newValue)
         }
+        .confirmationDialog(
+            "Remove Pane?",
+            isPresented: pendingRemovalBinding,
+            titleVisibility: .visible,
+            presenting: pendingRemoval
+        ) { request in
+            Button("Remove Pane \(request.displayIndex)", role: .destructive) {
+                onRemovePane(request.id)
+                pendingRemoval = nil
+            }
+        } message: { request in
+            Text(paneRemovalMessage(for: request))
+        }
     }
 
     private func paneLayout(
         leafIDs: [UUID],
         selectedLeafID: UUID?,
-        layout: PanePreviewLayout.Metrics
+        layout: PanePreviewLayout.Metrics,
+        onRemove: @escaping (UUID, Int) -> Void
     ) -> some View {
         LazyVGrid(
             columns: Array(
@@ -157,21 +226,62 @@ struct GhosttyPaneSelectionSheet: View {
             spacing: layout.gridSpacing
         ) {
             ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
-                Button {
-                    onSelect(paneID)
-                } label: {
-                    GhosttyPaneSelectionTile(
-                        index: index,
-                        isSelected: paneID == selectedLeafID,
-                        state: session.imagesByPaneID[paneID],
-                        layout: layout
-                    )
+                ZStack(alignment: .topTrailing) {
+                    Button {
+                        onSelect(paneID)
+                    } label: {
+                        GhosttyPaneSelectionTile(
+                            index: index,
+                            isSelected: paneID == selectedLeafID,
+                            state: session.imagesByPaneID[paneID],
+                            layout: layout
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    GhosttySheetIconActionButton(
+                        title: "Remove Pane \(index + 1)",
+                        systemName: "trash",
+                        isDestructive: true
+                    ) {
+                        onRemove(paneID, index)
+                    }
+                    .padding(6)
                 }
-                .buttonStyle(.plain)
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
+
+    private var pendingRemovalBinding: Binding<Bool> {
+        Binding(
+            get: { pendingRemoval != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingRemoval = nil
+                }
+            }
+        )
+    }
+
+    private func paneRemovalMessage(for request: GhosttyPaneRemovalRequest) -> String {
+        if request.isOnlyPane {
+            return "This is the only pane in the window, so removing it can close the window too."
+        }
+        return "This will close Pane \(request.displayIndex)."
+    }
+}
+
+private struct GhosttyWindowRemovalRequest: Identifiable {
+    let id: UUID
+    let displayIndex: Int
+    let paneCount: Int
+}
+
+private struct GhosttyPaneRemovalRequest: Identifiable {
+    let id: UUID
+    let displayIndex: Int
+    let isOnlyPane: Bool
 }
 
 @ViewBuilder
@@ -238,6 +348,38 @@ private struct GhosttySheetActionButton: View {
         .buttonStyle(.plain)
         .disabled(action == nil)
         .opacity(action == nil ? 0.5 : 1.0)
+    }
+
+    private var foreground: Color {
+        isDestructive ? Color(red: 1.0, green: 0.55, blue: 0.55) : GhosttySheetPalette.primary
+    }
+
+    private var background: Color {
+        isDestructive ? Color(red: 0.36, green: 0.18, blue: 0.20) : GhosttySheetPalette.row
+    }
+}
+
+private struct GhosttySheetIconActionButton: View {
+    let title: String
+    let systemName: String
+    var isDestructive = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(foreground)
+                .frame(width: 34, height: 34)
+                .background(background)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(GhosttySheetPalette.stroke, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 
     private var foreground: Color {

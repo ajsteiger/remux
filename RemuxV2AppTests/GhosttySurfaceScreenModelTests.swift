@@ -967,6 +967,33 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux close-pane queued")
     }
 
+    func testModelCloseTmuxPaneRoutesToRequestedPane() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        var firstCloseCallCount = 0
+        var secondCloseCallCount = 0
+        let first = Self.managedSurface(tmuxClosePane: {
+            firstCloseCallCount += 1
+            return true
+        })
+        let second = Self.managedSurface(tmuxClosePane: {
+            secondCloseCallCount += 1
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        model.surfaceRegistry.selectSurface(first.id)
+
+        XCTAssertTrue(model.closeTmuxPane(second.id))
+        XCTAssertEqual(firstCloseCallCount, 0)
+        XCTAssertEqual(secondCloseCallCount, 1)
+        XCTAssertEqual(model.debugStatus, "tmux close-pane queued")
+    }
+
     func testModelCloseSelectedTmuxWindowRoutesThroughFocusedPane() {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
@@ -983,6 +1010,34 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertTrue(model.closeSelectedTmuxWindow())
         XCTAssertEqual(closeCallCount, 1)
+        XCTAssertEqual(model.debugStatus, "tmux close-window queued")
+    }
+
+    func testModelCloseTmuxWindowRoutesToRequestedTopLevel() throws {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        var firstCloseCallCount = 0
+        var secondCloseCallCount = 0
+        let first = Self.managedSurface(tmuxCloseWindow: {
+            firstCloseCallCount += 1
+            return true
+        })
+        let second = Self.managedSurface(tmuxCloseWindow: {
+            secondCloseCallCount += 1
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.last?.id)
+        model.surfaceRegistry.selectSurface(first.id)
+
+        XCTAssertTrue(model.closeTmuxWindow(secondTopLevelID))
+        XCTAssertEqual(firstCloseCallCount, 0)
+        XCTAssertEqual(secondCloseCallCount, 1)
         XCTAssertEqual(model.debugStatus, "tmux close-window queued")
     }
 
