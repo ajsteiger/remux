@@ -86,4 +86,66 @@ final class GhosttySurfaceMouseEventTests: XCTestCase {
             ]
         )
     }
+
+    func testLongPressSelectionDragBeginsWithHeldLeftButton() {
+        let point = CGPoint(x: 10, y: 20)
+
+        XCTAssertEqual(
+            GhosttySurfaceLongPressSelectionGesture.actions(
+                forLocalPoint: point,
+                phase: .began
+            ),
+            [
+                .mousePosition(point),
+                .mouseButton(.init(state: .press, button: .left)),
+                .mousePressure(.init(stage: .deep, pressure: 1)),
+            ]
+        )
+    }
+
+    func testLongPressSelectionDragUpdatesPositionWhileHeld() {
+        let point = CGPoint(x: 18, y: 24)
+
+        XCTAssertEqual(
+            GhosttySurfaceLongPressSelectionGesture.actions(
+                forLocalPoint: point,
+                phase: .changed
+            ),
+            [
+                .mousePosition(point),
+            ]
+        )
+    }
+
+    func testLongPressSelectionDragEndsWithReleaseAndPressureReset() {
+        let point = CGPoint(x: 28, y: 34)
+
+        XCTAssertEqual(
+            GhosttySurfaceLongPressSelectionGesture.actions(
+                forLocalPoint: point,
+                phase: .ended
+            ),
+            [
+                .mousePosition(point),
+                .mouseButton(.init(state: .release, button: .left)),
+                .mousePressure(.init(stage: .none, pressure: 0)),
+            ]
+        )
+    }
+
+    func testLongPressSelectionDragCancellationReleasesButton() {
+        let point = CGPoint(x: 30, y: 40)
+
+        XCTAssertEqual(
+            GhosttySurfaceLongPressSelectionGesture.actions(
+                forLocalPoint: point,
+                phase: .cancelled
+            ),
+            [
+                .mousePosition(point),
+                .mouseButton(.init(state: .release, button: .left)),
+                .mousePressure(.init(stage: .none, pressure: 0)),
+            ]
+        )
+    }
 }

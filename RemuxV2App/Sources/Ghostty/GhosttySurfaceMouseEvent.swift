@@ -189,10 +189,43 @@ struct GhosttySurfaceTapGesture {
 }
 
 struct GhosttySurfaceLongPressSelectionGesture {
+    enum Phase: Equatable {
+        case began
+        case changed
+        case ended
+        case cancelled
+    }
+
     enum Action: Equatable {
         case mousePosition(CGPoint)
         case mouseButton(GhosttySurfaceMouseButtonEvent)
         case mousePressure(GhosttySurfaceMousePressureEvent)
+    }
+
+    static func actions(
+        forLocalPoint point: CGPoint,
+        phase: Phase
+    ) -> [Action] {
+        switch phase {
+        case .began:
+            [
+                .mousePosition(point),
+                .mouseButton(.init(state: .press, button: .left)),
+                .mousePressure(.init(stage: .deep, pressure: 1)),
+            ]
+
+        case .changed:
+            [
+                .mousePosition(point),
+            ]
+
+        case .ended, .cancelled:
+            [
+                .mousePosition(point),
+                .mouseButton(.init(state: .release, button: .left)),
+                .mousePressure(.init(stage: .none, pressure: 0)),
+            ]
+        }
     }
 
     static func actionsForWordSelection(atLocalPoint point: CGPoint) -> [Action] {

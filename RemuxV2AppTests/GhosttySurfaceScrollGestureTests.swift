@@ -13,6 +13,33 @@ final class GhosttySurfaceScrollGestureTests: XCTestCase {
         XCTAssertFalse(GhosttySurfacePanGesture.verticalScrollShouldBegin(forVelocity: CGPoint(x: 120, y: 40)))
     }
 
+    func testSurfaceContainerPanRejectsSingleWindow() {
+        XCTAssertFalse(
+            GhosttySurfacePanGesture.surfaceContainerPanShouldBegin(
+                topLevelCount: 1,
+                velocity: CGPoint(x: 120, y: 0)
+            )
+        )
+    }
+
+    func testSurfaceContainerPanAllowsZeroVelocityForTranslationDrivenNavigation() {
+        XCTAssertTrue(
+            GhosttySurfacePanGesture.surfaceContainerPanShouldBegin(
+                topLevelCount: 2,
+                velocity: .zero
+            )
+        )
+    }
+
+    func testSurfaceContainerPanRejectsVerticalIntent() {
+        XCTAssertFalse(
+            GhosttySurfacePanGesture.surfaceContainerPanShouldBegin(
+                topLevelCount: 2,
+                velocity: CGPoint(x: 30, y: 120)
+            )
+        )
+    }
+
     func testZeroVelocityDoesNotCommitPanAxis() {
         XCTAssertFalse(GhosttySurfacePanGesture.horizontalNavigationShouldBegin(forVelocity: .zero))
         XCTAssertFalse(GhosttySurfacePanGesture.verticalScrollShouldBegin(forVelocity: .zero))

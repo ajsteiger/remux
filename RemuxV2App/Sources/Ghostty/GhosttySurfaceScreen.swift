@@ -55,7 +55,8 @@ struct GhosttySurfaceScreen: View {
                         GhosttyRuntimePaneTreeView(
                             registry: registry,
                             onSurfaceTap: handleSurfaceTap,
-                            onWindowSwipe: handleWindowSwipe
+                            onWindowSwipe: handleWindowSwipe,
+                            onCopySelection: copyTerminalSelection
                         )
                             .background(GhosttyPhoneChromePalette.screenBackground)
 
@@ -165,7 +166,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private var isTerminalInputAvailable: Bool {
-        model.state == .running && registry.selectedTopLevel?.resolvedFocusedLeafID != nil
+        model.state == .running && registry.selectedActiveLeafID != nil
     }
 
     private var selectedPaneIndex: Int? {
@@ -447,10 +448,12 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
         let view = GhosttyKitSurfaceView(frame: CGRect(origin: .zero, size: initialSize))
         view.backgroundColor = GhosttyPhoneChromePalette.uiBackground
         view.isOpaque = true
+        view.isHidden = true
         return view
     }
 
     func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
+        uiView.isHidden = true
         uiView.alignGhosttyRendererSublayers()
         Task { @MainActor in
             model.attach(view: uiView, size: size)

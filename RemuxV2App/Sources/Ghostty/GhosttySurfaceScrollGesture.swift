@@ -41,6 +41,14 @@ struct GhosttySurfacePanGesture {
         dominantAxis(forVelocity: velocity) == .horizontal
     }
 
+    static func surfaceContainerPanShouldBegin(
+        topLevelCount: Int,
+        velocity: CGPoint
+    ) -> Bool {
+        guard topLevelCount > 1 else { return false }
+        return dominantAxis(forVelocity: velocity) != .vertical
+    }
+
     static func verticalScrollShouldBegin(forVelocity velocity: CGPoint) -> Bool {
         dominantAxis(forVelocity: velocity) == .vertical
     }

@@ -1,16 +1,23 @@
 import SwiftUI
+import UIKit
+
+private func diagnosticRect(_ rect: CGRect) -> String {
+    ghosttyDiagnosticRect(rect)
+}
 
 struct GhosttyRuntimePaneTreeView: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
+    let onCopySelection: (() -> Bool)?
 
     var body: some View {
         GhosttySurfaceTreeContainerRepresentable(
             registry: registry,
             topLevel: registry.selectedTopLevel,
             onSurfaceTap: onSurfaceTap,
-            onWindowSwipe: onWindowSwipe
+            onWindowSwipe: onWindowSwipe,
+            onCopySelection: onCopySelection
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -21,6 +28,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     let topLevel: GhosttyTopLevelSurface?
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
+    let onCopySelection: (() -> Bool)?
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
@@ -34,24 +42,30 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
             topLevel: topLevel,
             registry: registry,
             onSurfaceTap: onSurfaceTap,
-            onWindowSwipe: onWindowSwipe
+            onWindowSwipe: onWindowSwipe,
+            onCopySelection: onCopySelection
         )
     }
 }
 
-private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate {
+private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate, @preconcurrency UIEditMenuInteractionDelegate {
     private weak var registry: GhosttyRuntimeSurfaceRegistry?
     private var topLevel: GhosttyTopLevelSurface?
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
+    private var onCopySelection: (() -> Bool)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
     private var scrollContainersBySurfaceID: [UUID: GhosttyPaneScrollContainerView] = [:]
     private var visibleSurfaceIDs: Set<UUID> = []
     private var activePanAxis: GhosttySurfacePanGesture.Axis?
+    private var isPanGestureActive = false
     private var didNavigateForActivePan = false
+    private var activeSelectionSurfaceID: UUID?
+    private var selectionCopyMenuSourcePoint = CGPoint.zero
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
         recognizer.maximumNumberOfTouches = 1
+        recognizer.cancelsTouchesInView = false
         return recognizer
     }()
     private lazy var inputActivationTapRecognizer: UITapGestureRecognizer = {
@@ -60,12 +74,14 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         recognizer.delegate = self
         return recognizer
     }()
+    private lazy var selectionEditMenuInteraction = UIEditMenuInteraction(delegate: self)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         panRecognizer.delegate = self
         addGestureRecognizer(panRecognizer)
         addGestureRecognizer(inputActivationTapRecognizer)
+        addInteraction(selectionEditMenuInteraction)
     }
 
     @available(*, unavailable)
@@ -77,12 +93,17 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         topLevel: GhosttyTopLevelSurface?,
         registry: GhosttyRuntimeSurfaceRegistry,
         onSurfaceTap: ((UUID) -> Void)?,
-        onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
+        onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
+        onCopySelection: (() -> Bool)?
     ) {
         self.topLevel = topLevel
         self.registry = registry
         self.onSurfaceTap = onSurfaceTap
         self.onWindowSwipe = onWindowSwipe
+        self.onCopySelection = onCopySelection
+        GhosttyRuntimeTrace.diagnostics(
+            "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(topLevel?.id)) \(registry.diagnosticSelectionSummary())"
+        )
         syncAttachedViews()
         setNeedsLayout()
     }
@@ -90,7 +111,6 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     override func layoutSubviews() {
         super.layoutSubviews()
 
-        registry?.updatePreferredSurfaceSize(bounds.size)
         syncAttachedViews()
         layoutVisibleTree()
     }
@@ -98,12 +118,28 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func syncAttachedViews() {
         guard let registry else { return }
 
-        registry.updatePreferredSurfaceSize(bounds.size)
         let visibleIDs = Set(topLevel?.phonePresentedLeafIDs ?? [])
+        let visibleSummary = visibleIDs
+            .map(ghosttyDiagnosticShortID)
+            .sorted()
+            .joined(separator: ",")
+        let previousVisibleSummary = visibleSurfaceIDs
+            .map(ghosttyDiagnosticShortID)
+            .sorted()
+            .joined(separator: ",")
+        GhosttyRuntimeTrace.diagnostics(
+            "tree.sync visible=[\(visibleSummary)] previous=[\(previousVisibleSummary)] bounds=\(diagnosticRect(bounds)) \(registry.diagnosticSelectionSummary())"
+        )
         if visibleIDs != visibleSurfaceIDs, activePanAxis == .vertical {
             resetActivePanState()
         }
         visibleSurfaceIDs = visibleIDs
+        if let activeSelectionSurfaceID, !visibleIDs.contains(activeSelectionSurfaceID) {
+            self.activeSelectionSurfaceID = nil
+        }
+        if activePanAxis == .horizontal, registry.topLevels.count <= 1 {
+            resetActivePanState()
+        }
         surfaceIDsByView = [:]
         let managedIDs = Set(registry.allManagedSurfaces().map(\.id))
         for (surfaceID, container) in scrollContainersBySurfaceID where !managedIDs.contains(surfaceID) {
@@ -122,9 +158,15 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                     addSubview(container)
                 }
             } else {
-                scrollContainersBySurfaceID[surface.id]?.removeFromSuperview()
-                surface.controlSurface.setFocused(false)
-                surface.controlSurface.setVisible(false)
+                if let container = scrollContainersBySurfaceID[surface.id] {
+                    container.detachSurfaceIfNeeded(surface)
+                    container.removeFromSuperview()
+                }
+                GhosttyRuntimeTrace.diagnostics(
+                    "tree.detach surface={\(surface.diagnosticSummary())}"
+                )
+                surface.setFocused(false)
+                surface.setVisible(false)
             }
         }
     }
@@ -153,8 +195,15 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             let container = scrollContainer(for: surface)
             container.frame = rect.integral
             container.update(surface: surface, displayScale: effectiveScale)
-            surface.controlSurface.setVisible(true)
-            surface.controlSurface.setFocused(surfaceID == focusedSurfaceID)
+            container.layoutIfNeeded()
+            GhosttyRuntimeTrace.diagnostics(
+                "tree.layout leaf=\(ghosttyDiagnosticShortID(surfaceID)) rect=\(diagnosticRect(rect)) container=\(diagnosticRect(container.frame)) focused=\(surfaceID == focusedSurfaceID) beforeSurface={\(surface.diagnosticSummary())}"
+            )
+            surface.setVisible(true)
+            surface.setFocused(surfaceID == focusedSurfaceID)
+            GhosttyRuntimeTrace.diagnostics(
+                "tree.layout applied leaf=\(ghosttyDiagnosticShortID(surfaceID)) afterSurface={\(surface.diagnosticSummary())}"
+            )
 
         case .split(let axis, let ratio, let left, let right):
             switch axis {
@@ -214,6 +263,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         let existingTap = existingRecognizers.compactMap { $0 as? UITapGestureRecognizer }.first
         let longPress = existingLongPress ?? makeSelectionLongPressRecognizer(for: view)
         let tap = existingTap ?? makeTapRecognizer(for: view)
+        longPress.delegate = self
+        tap.delegate = self
 
         if existingLongPress == nil || existingTap == nil {
             tap.require(toFail: longPress)
@@ -236,22 +287,39 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     @objc
     private func handleSelectionLongPress(_ recognizer: UILongPressGestureRecognizer) {
-        guard recognizer.state == .began else { return }
         guard
             let registry,
             let view = recognizer.view,
-            let surfaceID = surfaceIDsByView[ObjectIdentifier(view)]
+            let phase = GhosttySurfaceLongPressSelectionGesture.Phase(recognizer.state)
         else {
             return
         }
 
-        registry.selectSurface(surfaceID)
-        guard !registry.focusedSurfaceMouseCaptured() else {
-            return
+        if phase == .began {
+            guard !isPanGestureActive else {
+                activeSelectionSurfaceID = nil
+                return
+            }
+
+            guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
+            selectSurfaceIfNeeded(surfaceID, registry: registry)
+
+            guard !registry.focusedSurfaceMouseCaptured() else {
+                activeSelectionSurfaceID = nil
+                return
+            }
+
+            activeSelectionSurfaceID = surfaceID
         }
 
-        for action in GhosttySurfaceLongPressSelectionGesture.actionsForWordSelection(
-            atLocalPoint: recognizer.location(in: view)
+        guard let surfaceID = activeSelectionSurfaceID else {
+            return
+        }
+        selectSurfaceIfNeeded(surfaceID, registry: registry)
+
+        for action in GhosttySurfaceLongPressSelectionGesture.actions(
+            forLocalPoint: recognizer.location(in: view),
+            phase: phase
         ) {
             switch action {
             case .mousePosition(let position):
@@ -265,7 +333,42 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             }
         }
 
+        if phase == .ended {
+            presentSelectionCopyMenuIfAvailable(
+                registry: registry,
+                sourcePoint: recognizer.location(in: self)
+            )
+        }
+
+        if phase == .ended || phase == .cancelled {
+            activeSelectionSurfaceID = nil
+        }
+
         setNeedsLayout()
+    }
+
+    private func presentSelectionCopyMenuIfAvailable(
+        registry: GhosttyRuntimeSurfaceRegistry,
+        sourcePoint: CGPoint
+    ) {
+        guard onCopySelection != nil else { return }
+        guard registry.hasSelectionInFocusedSurface() else { return }
+
+        selectionCopyMenuSourcePoint = sourcePoint
+        selectionEditMenuInteraction.presentEditMenu(
+            with: UIEditMenuConfiguration(
+                identifier: nil,
+                sourcePoint: sourcePoint
+            )
+        )
+    }
+
+    private func selectSurfaceIfNeeded(
+        _ surfaceID: UUID,
+        registry: GhosttyRuntimeSurfaceRegistry
+    ) {
+        guard registry.selectedActiveLeafID != surfaceID else { return }
+        registry.selectSurface(surfaceID, reason: "tree.selectSurfaceIfNeeded")
     }
 
     @objc
@@ -279,7 +382,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
         let mouseCaptured = registry.isMouseCaptured(for: surfaceID)
-        registry.selectSurface(surfaceID)
+        registry.selectSurface(surfaceID, reason: "tree.handleSurfaceTap")
 
         for action in GhosttySurfaceTapGesture.actions(
             forLocalPoint: recognizer.location(in: view),
@@ -324,12 +427,23 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         if phase == .began {
             resetActivePanState()
+            isPanGestureActive = true
+        }
+
+        if activeSelectionSurfaceID != nil {
+            if phase == .ended || phase == .cancelled {
+                resetActivePanState()
+            }
+            return
         }
 
         let translation = recognizer.translation(in: self)
         activePanAxis = GhosttySurfacePanGesture.axis(
             forTranslation: translation,
             currentAxis: activePanAxis
+        )
+        GhosttyRuntimeTrace.diagnostics(
+            "tree.pan phase=\(phase) translation=\(translation.x),\(translation.y) velocity=\(recognizer.velocity(in: self).x),\(recognizer.velocity(in: self).y) axis=\(String(describing: activePanAxis)) didNavigate=\(didNavigateForActivePan) \(registry.diagnosticSelectionSummary())"
         )
 
         guard let axis = activePanAxis else {
@@ -368,6 +482,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         }
 
         didNavigateForActivePan = true
+        GhosttyRuntimeTrace.diagnostics(
+            "tree.horizontalNavigation direction=\(direction.runtimeSelectionDirection) translation=\(translation.x),\(translation.y) velocity=\(velocity.x),\(velocity.y) \(registry.diagnosticSelectionSummary())"
+        )
         onWindowSwipe?(direction.runtimeSelectionDirection)
         setNeedsLayout()
     }
@@ -380,6 +497,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     private func resetActivePanState() {
         activePanAxis = nil
+        isPanGestureActive = false
         didNavigateForActivePan = false
     }
 
@@ -387,23 +505,61 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        _ = gestureRecognizer
-        _ = otherGestureRecognizer
-        return false
+        guard gestureRecognizer === panRecognizer || otherGestureRecognizer === panRecognizer else {
+            return false
+        }
+
+        return gestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer is UIPanGestureRecognizer
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer is UILongPressGestureRecognizer {
+            return !isPanGestureActive
+        }
+
         guard gestureRecognizer === panRecognizer else { return true }
 
-        guard registry?.topLevels.count ?? 0 > 1 else { return false }
-
-        return GhosttySurfacePanGesture.horizontalNavigationShouldBegin(
-            forVelocity: panRecognizer.velocity(in: self)
+        let velocity = panRecognizer.velocity(in: self)
+        return GhosttySurfacePanGesture.surfaceContainerPanShouldBegin(
+            topLevelCount: registry?.topLevels.count ?? 0,
+            velocity: velocity
         )
     }
 
     private var effectiveScale: CGFloat {
         max(window?.screen.scale ?? UIScreen.main.scale, 1)
+    }
+
+    func editMenuInteraction(
+        _ interaction: UIEditMenuInteraction,
+        menuFor configuration: UIEditMenuConfiguration,
+        suggestedActions: [UIMenuElement]
+    ) -> UIMenu? {
+        _ = interaction
+        _ = configuration
+        _ = suggestedActions
+
+        let copyAction = UIAction(
+            title: "Copy",
+            image: UIImage(systemName: "doc.on.doc")
+        ) { [weak self] _ in
+            _ = self?.onCopySelection?()
+        }
+        return UIMenu(children: [copyAction])
+    }
+
+    func editMenuInteraction(
+        _ interaction: UIEditMenuInteraction,
+        targetRectFor configuration: UIEditMenuConfiguration
+    ) -> CGRect {
+        _ = interaction
+        _ = configuration
+        return CGRect(
+            x: selectionCopyMenuSourcePoint.x - 1,
+            y: selectionCopyMenuSourcePoint.y - 1,
+            width: 2,
+            height: 2
+        )
     }
 }
 
@@ -414,6 +570,25 @@ private extension GhosttySurfacePanGesture.WindowNavigationDirection {
             .previous
         case .next:
             .next
+        }
+    }
+}
+
+private extension GhosttySurfaceLongPressSelectionGesture.Phase {
+    init?(_ state: UIGestureRecognizer.State) {
+        switch state {
+        case .began:
+            self = .began
+        case .changed:
+            self = .changed
+        case .ended:
+            self = .ended
+        case .cancelled, .failed:
+            self = .cancelled
+        case .possible:
+            return nil
+        @unknown default:
+            return nil
         }
     }
 }

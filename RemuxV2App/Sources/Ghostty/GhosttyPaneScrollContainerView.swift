@@ -100,6 +100,9 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         self.displayScale = max(displayScale, 1)
 
         if self.surface !== surface {
+            GhosttyRuntimeTrace.diagnostics(
+                "scroll.update attach old=\(ghosttyDiagnosticShortID(self.surface?.id)) new=\(ghosttyDiagnosticShortID(surface.id)) bounds=\(ghosttyDiagnosticRect(bounds)) surface={\(surface.diagnosticSummary())}"
+            )
             self.surface?.onScrollStateChange = nil
             self.surface = surface
 
@@ -154,9 +157,11 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        _ = gestureRecognizer
-        _ = otherGestureRecognizer
-        return false
+        guard gestureRecognizer === routeForwardingPanRecognizer || otherGestureRecognizer === routeForwardingPanRecognizer else {
+            return false
+        }
+
+        return gestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer is UIPanGestureRecognizer
     }
 
     private func configure() {
@@ -228,7 +233,13 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         let origin = CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y)
         surface.view.frame = CGRect(origin: origin, size: viewportSize)
         surface.view.alignGhosttyRendererSublayers()
+        GhosttyRuntimeTrace.diagnostics(
+            "scroll.surfaceFrame surface=\(ghosttyDiagnosticShortID(surface.id)) viewport=\(viewportSize.width)x\(viewportSize.height) offset=\(origin.x),\(origin.y) scale=\(displayScale) before={\(surface.diagnosticSummary())}"
+        )
         surface.updateDisplay(size: viewportSize, scale: displayScale)
+        GhosttyRuntimeTrace.diagnostics(
+            "scroll.surfaceFrame applied surface={\(surface.diagnosticSummary())}"
+        )
     }
 
     private func applyProgrammaticContentOffset(_ offset: CGPoint) {
