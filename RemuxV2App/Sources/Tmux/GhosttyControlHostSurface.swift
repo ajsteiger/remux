@@ -1,6 +1,17 @@
 import Foundation
 import GhosttyKit
 
+enum GhosttyRuntimeTrace {
+    static let isEnabled = ProcessInfo.processInfo.environment["REMUX_TRACE_GHOSTTY_IO"] == "1"
+    static let diagnosticsEnabled = isEnabled ||
+        ProcessInfo.processInfo.environment["REMUX_TRACE_GHOSTTY_DIAGNOSTICS"] == "1"
+
+    static func diagnostics(_ message: @autoclosure () -> String) {
+        guard diagnosticsEnabled else { return }
+        NSLog("Remux diag %@", message())
+    }
+}
+
 protocol TmuxControlTransport: Sendable {
     var receivedBytes: AsyncThrowingStream<Data, Error> { get }
 
@@ -51,6 +62,87 @@ protocol GhosttyControlSurface: AnyObject {
     func tmuxCloseWindow() -> Bool
 }
 
+final class TmuxControlWriteSequencer: @unchecked Sendable {
+    typealias FailureHandler = @Sendable (_ error: any Error) -> Void
+
+    private let transport: any TmuxControlTransport
+    private let onFailure: FailureHandler?
+    private let lock = NSLock()
+
+    private var pendingWrites: [Data] = []
+    private var isDraining = false
+    private var isClosed = false
+
+    init(
+        transport: any TmuxControlTransport,
+        onFailure: FailureHandler? = nil
+    ) {
+        self.transport = transport
+        self.onFailure = onFailure
+    }
+
+    @discardableResult
+    func enqueue(_ data: Data) -> Bool {
+        guard !data.isEmpty else { return true }
+
+        let shouldStartDrain: Bool = withLockedState {
+            guard !isClosed else { return false }
+
+            pendingWrites.append(data)
+            guard !isDraining else { return false }
+
+            isDraining = true
+            return true
+        }
+
+        if shouldStartDrain {
+            Task { [weak self] in
+                await self?.drain()
+            }
+        }
+
+        return true
+    }
+
+    func close() {
+        withLockedState {
+            isClosed = true
+            pendingWrites.removeAll(keepingCapacity: false)
+            isDraining = false
+        }
+    }
+
+    private func drain() async {
+        while let data = nextPendingWrite() {
+            do {
+                try await transport.send(data)
+            } catch {
+                close()
+                onFailure?(error)
+                await transport.close()
+                return
+            }
+        }
+    }
+
+    private func nextPendingWrite() -> Data? {
+        withLockedState {
+            guard !pendingWrites.isEmpty else {
+                isDraining = false
+                return nil
+            }
+
+            return pendingWrites.removeFirst()
+        }
+    }
+
+    private func withLockedState<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+}
+
 @MainActor
 final class GhosttyControlHostSurface {
     enum Failure: Error, Equatable {
@@ -88,19 +180,21 @@ final class GhosttyControlHostSurface {
             do {
                 for try await bytes in transport.receivedBytes {
                     receivedByteCount += bytes.count
-                    NSLog(
-                        "Remux tmux rx total %d bytes; chunk %d: %@",
-                        receivedByteCount,
-                        bytes.count,
-                        Self.preview(bytes, limit: 512)
-                    )
-                    if !capturedFirstChunk {
-                        capturedFirstChunk = true
-                        onDebugEvent?("tmux rx \(bytes.count) bytes: \(Self.preview(bytes))")
-                    } else {
-                        onDebugEvent?(
-                            "tmux rx total \(receivedByteCount) bytes; last \(bytes.count): \(Self.preview(bytes))"
+                    if GhosttyRuntimeTrace.isEnabled {
+                        NSLog(
+                            "Remux tmux rx total %d bytes; chunk %d: %@",
+                            receivedByteCount,
+                            bytes.count,
+                            Self.preview(bytes, limit: 512)
                         )
+                        if !capturedFirstChunk {
+                            capturedFirstChunk = true
+                            onDebugEvent?("tmux rx \(bytes.count) bytes: \(Self.preview(bytes))")
+                        } else {
+                            onDebugEvent?(
+                                "tmux rx total \(receivedByteCount) bytes; last \(bytes.count): \(Self.preview(bytes))"
+                            )
+                        }
                     }
 
                     guard let surface else {

@@ -30,6 +30,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var controlSurface: GhosttyKitControlSurface?
     private var hostSurface: GhosttyControlHostSurface?
     private var transport: (any TmuxControlTransport)?
+    private var transportWriteSequencer: TmuxControlWriteSequencer?
     private var hostDisplayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
@@ -48,7 +49,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 surfaceRegistryRevision += 1
-                NSLog("Remux surface registry revision=%d", surfaceRegistryRevision)
+                if GhosttyRuntimeTrace.isEnabled {
+                    NSLog("Remux surface registry revision=%d", surfaceRegistryRevision)
+                }
                 submitDebugPaneInputSmokeIfReady()
             }
         }
@@ -73,28 +76,34 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             surfaceRegistry.reset()
             let runtime = try runtimeFactory(surfaceRegistry)
             let transport = transportFactory(target)
+            let writeSequencer = TmuxControlWriteSequencer(
+                transport: transport,
+                onFailure: { [weak self] error in
+                    NSLog("Remux Ghostty transport write failed: %@", String(describing: error))
+                    Task { @MainActor [weak self] in
+                        self?.debugStatus = "tmux transport write failed: \(String(describing: error))"
+                    }
+                }
+            )
             let surface = try runtime.makeManualHostSurface(
                 view: view,
-                onWrite: { [weak self] data, _ in
-                    NSLog(
-                        "Remux ghostty tx %d bytes: %@",
-                        data.count,
-                        GhosttyControlHostSurface.preview(data, limit: 512)
-                    )
-                    Task { @MainActor in
-                        self?.debugStatus = "ghostty tx \(data.count) bytes: \(GhosttyControlHostSurface.preview(data))"
-                    }
-                    Task {
-                        do {
-                            try await transport.send(data)
-                        } catch {
-                            NSLog("Remux Ghostty transport write failed: %@", String(describing: error))
-                            await transport.close()
+                onWrite: { [weak self, writeSequencer] data, _ in
+                    if GhosttyRuntimeTrace.isEnabled {
+                        NSLog(
+                            "Remux ghostty tx %d bytes: %@",
+                            data.count,
+                            GhosttyControlHostSurface.preview(data, limit: 512)
+                        )
+                        Task { @MainActor in
+                            self?.debugStatus = "ghostty tx \(data.count) bytes: \(GhosttyControlHostSurface.preview(data))"
                         }
                     }
-                    return true
+                    return writeSequencer.enqueue(data)
                 },
                 onResize: { columns, rows, width, height in
+                    GhosttyRuntimeTrace.diagnostics(
+                        "hostResize callback columns=\(columns) rows=\(rows) px=\(width)x\(height)"
+                    )
                     Task {
                         do {
                             try await transport.resize(
@@ -127,6 +136,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             self.runtime = runtime
             self.controlSurface = surface
             self.transport = transport
+            self.transportWriteSequencer = writeSequencer
             self.hostSurface = hostSurface
 
             hostSurface.start()
@@ -140,6 +150,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     func stop() {
+        transportWriteSequencer?.close()
+        transportWriteSequencer = nil
         hostSurface?.stop()
         hostSurface = nil
         controlSurface = nil
@@ -153,6 +165,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func sendInputToFocusedSurface(_ text: String) -> Bool {
+        GhosttyRuntimeTrace.diagnostics(
+            "model.sendInput bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         let accepted = surfaceRegistry.sendInputToFocusedSurface(text)
         if !accepted {
             debugStatus = "input dropped: no focused tmux pane"
@@ -163,6 +178,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func sendPasteToFocusedSurface(_ text: String) -> Bool {
+        GhosttyRuntimeTrace.diagnostics(
+            "model.sendPaste bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         let accepted = surfaceRegistry.sendPasteToFocusedSurface(text)
         if !accepted {
             debugStatus = "paste dropped: no focused tmux pane"
@@ -180,8 +198,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return selection
     }
 
+    func hasSelectionInFocusedSurface() -> Bool {
+        surfaceRegistry.hasSelectionInFocusedSurface()
+    }
+
     @discardableResult
     func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        GhosttyRuntimeTrace.diagnostics(
+            "model.sendKey event=\(event) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         let accepted = surfaceRegistry.sendKeyEventToFocusedSurface(event)
         if !accepted {
             debugStatus = "key dropped: no focused tmux pane"
@@ -229,29 +254,48 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func focusTmuxPane(_ id: UUID) -> Bool {
+        GhosttyRuntimeTrace.diagnostics(
+            "model.focusTmuxPane begin target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         guard let surface = surfaceRegistry.managedSurface(for: id) else {
             debugStatus = "tmux focus dropped: pane missing"
+            GhosttyRuntimeTrace.diagnostics(
+                "model.focusTmuxPane missing target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
+            )
             return false
         }
 
-        surfaceRegistry.selectSurface(id)
-        if surface.tmuxFocus() {
+        surfaceRegistry.selectSurface(id, reason: "model.focusTmuxPane")
+        let queued = surface.tmuxFocus()
+        if queued {
             debugStatus = "tmux focus queued"
         } else {
             debugStatus = "tmux focus selected locally; remote sync rejected"
         }
+        GhosttyRuntimeTrace.diagnostics(
+            "model.focusTmuxPane end target=\(ghosttyDiagnosticShortID(id)) queued=\(queued) targetSurface={\(surface.diagnosticSummary())} \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         return true
     }
 
     @discardableResult
     func focusTmuxTopLevel(_ id: UUID) -> Bool {
+        GhosttyRuntimeTrace.diagnostics(
+            "model.focusTmuxTopLevel begin target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         guard let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == id }) else {
             debugStatus = "tmux focus dropped: window missing"
+            GhosttyRuntimeTrace.diagnostics(
+                "model.focusTmuxTopLevel missing target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
+            )
             return false
         }
 
         guard let paneID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first else {
             debugStatus = "tmux focus dropped: window has no pane"
+            GhosttyRuntimeTrace.diagnostics(
+                "model.focusTmuxTopLevel no-pane target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
+            )
             return false
         }
 
@@ -260,8 +304,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func focusAdjacentTmuxTopLevel(_ direction: GhosttyRuntimeSelectionDirection) -> Bool {
+        GhosttyRuntimeTrace.diagnostics(
+            "model.focusAdjacentTmuxTopLevel begin direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         guard surfaceRegistry.topLevels.count > 1 else {
             debugStatus = "tmux focus dropped: no adjacent window"
+            GhosttyRuntimeTrace.diagnostics(
+                "model.focusAdjacentTmuxTopLevel no-adjacent direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
+            )
             return false
         }
 
@@ -269,6 +319,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         let nextIndex = direction.advancedIndex(
             from: currentIndex,
             count: surfaceRegistry.topLevels.count
+        )
+        GhosttyRuntimeTrace.diagnostics(
+            "model.focusAdjacentTmuxTopLevel target current=\(currentIndex) next=\(nextIndex) direction=\(direction)"
         )
         return focusTmuxTopLevel(surfaceRegistry.topLevels[nextIndex].id)
     }
@@ -292,7 +345,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @discardableResult
     func splitFocusedTmuxPane(_ direction: ghostty_action_split_direction_e) -> Bool {
         guard
-            let surfaceID = surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID,
+            let surfaceID = surfaceRegistry.selectedActiveLeafID,
             let surface = surfaceRegistry.managedSurface(for: surfaceID)
         else {
             debugStatus = "tmux split dropped: no focused pane"
@@ -311,7 +364,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @discardableResult
     func closeFocusedTmuxPane() -> Bool {
         guard
-            let surfaceID = surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID,
+            let surfaceID = surfaceRegistry.selectedActiveLeafID,
             let surface = surfaceRegistry.managedSurface(for: surfaceID)
         else {
             debugStatus = "tmux close-pane dropped: no focused pane"
@@ -375,6 +428,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return
         }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "model.hostDisplay size=\(size.width)x\(size.height) scale=\(scale) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight)"
+        )
         surface.updateDisplay(metrics: metrics)
     }
 
@@ -407,7 +463,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         guard var smoke = debugPaneInputSmoke else { return }
         guard let text = smoke.nextSubmission(
             isRunning: state == .running,
-            hasFocusedSurface: surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID != nil
+            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
         ) else {
             debugPaneInputSmoke = smoke
             return

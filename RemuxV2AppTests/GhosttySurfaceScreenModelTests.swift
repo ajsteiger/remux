@@ -86,6 +86,57 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(secondInput, ["echo focused\r"])
     }
 
+    func testInputRoutesToDisplayedFallbackPaneBeforeExplicitFocus() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var firstInput: [String] = []
+        let first = Self.managedSurface(sendInput: {
+            firstInput.append($0)
+            return true
+        })
+        let second = Self.managedSurface()
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [first, second],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .leaf(second.id)
+                )
+            )
+        )
+
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+        XCTAssertEqual(registry.selectedActiveLeafID, first.id)
+        XCTAssertTrue(registry.sendInputToFocusedSurface("echo fallback\r"))
+        XCTAssertEqual(firstInput, ["echo fallback\r"])
+    }
+
+    func testInputDoesNotFallbackToFirstWindowWhenSelectedTopLevelIsInvalid() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var firstInput: [String] = []
+        var secondInput: [String] = []
+        let first = Self.managedSurface(sendInput: {
+            firstInput.append($0)
+            return true
+        })
+        let second = Self.managedSurface(sendInput: {
+            secondInput.append($0)
+            return true
+        })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.forceSelectedTopLevelIDForTesting(UUID())
+
+        XCTAssertNil(registry.selectedTopLevel)
+        XCTAssertNil(registry.selectedActiveLeafID)
+        XCTAssertFalse(registry.sendInputToFocusedSurface("echo nowhere\r"))
+        XCTAssertTrue(firstInput.isEmpty)
+        XCTAssertTrue(secondInput.isEmpty)
+    }
+
     func testAdjacentTopLevelSelectionWrapsAcrossWindows() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let first = Self.managedSurface()
@@ -214,6 +265,281 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
     }
 
+    func testSurfaceTreeReplacementCanTargetSingleOpenTopLevel() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let oldFirst = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x2101)!)
+        let oldSecond = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x2102)!)
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [oldFirst, oldSecond],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(oldFirst.id),
+                    right: .leaf(oldSecond.id)
+                )
+            ),
+            focusedLeafID: oldSecond.id
+        )
+
+        let originalTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let newFirst = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3101)!)
+        let newSecond = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3102)!)
+        let newThird = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3103)!)
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [newFirst, newSecond, newThird],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.4,
+                    left: .leaf(newFirst.id),
+                    right: .split(
+                        axis: .vertical,
+                        ratio: 0.5,
+                        left: .leaf(newSecond.id),
+                        right: .leaf(newThird.id)
+                    )
+                )
+            ),
+            focusedLeafID: newThird.id,
+            replacingTopLevelID: originalTopLevelID
+        )
+
+        XCTAssertEqual(registry.topLevels.count, 1)
+        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, newThird.id)
+
+        registry.runtimeCloseSurface(id: oldFirst.id, processAlive: false)
+        registry.runtimeCloseSurface(id: oldSecond.id, processAlive: false)
+
+        XCTAssertEqual(registry.topLevels.count, 1)
+        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
+    }
+
+    func testSurfaceTreeInstallAppendsUnrelatedManualTrees() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2201)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xAA01)!
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [first],
+            tree: GhosttySurfaceTree(root: .leaf(first.id)),
+            focusedLeafID: first.id,
+            replaceByManualIdentity: true
+        )
+
+        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let second = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2202)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xBB01)!
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [second],
+            tree: GhosttySurfaceTree(root: .leaf(second.id)),
+            focusedLeafID: second.id,
+            replaceByManualIdentity: true
+        )
+
+        XCTAssertEqual(registry.topLevels.count, 2)
+        XCTAssertEqual(registry.topLevels[0].id, firstTopLevelID)
+        XCTAssertEqual(registry.topLevels[0].leafIDs, [first.id])
+        XCTAssertEqual(registry.topLevels[1].leafIDs, [second.id])
+        XCTAssertEqual(registry.selectedTopLevel?.id, firstTopLevelID)
+    }
+
+    func testClosingSelectedTopLevelNormalizesToAdjacentWindow() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        let third = Self.managedSurface()
+
+        registry.registerManagedSurfaceForTesting(first)
+        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        registry.registerManagedSurfaceForTesting(second)
+        let secondTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+        registry.registerManagedSurfaceForTesting(third)
+        let thirdTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+
+        registry.selectTopLevel(secondTopLevelID)
+        registry.runtimeCloseSurface(id: second.id, processAlive: false)
+
+        XCTAssertEqual(registry.selectedTopLevel?.id, thirdTopLevelID)
+
+        registry.runtimeCloseSurface(id: third.id, processAlive: false)
+
+        XCTAssertEqual(registry.selectedTopLevel?.id, firstTopLevelID)
+    }
+
+    func testSurfaceTreeReplacementDoesNotStealSelectionFromOtherWindow() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let firstWindowPane = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2401)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xDA01)!
+        )
+        let secondWindowPane = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2402)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xDB01)!
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [firstWindowPane],
+            tree: GhosttySurfaceTree(root: .leaf(firstWindowPane.id)),
+            focusedLeafID: firstWindowPane.id,
+            replaceByManualIdentity: true
+        )
+        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [secondWindowPane],
+            tree: GhosttySurfaceTree(root: .leaf(secondWindowPane.id)),
+            focusedLeafID: secondWindowPane.id,
+            replaceByManualIdentity: true
+        )
+
+        registry.selectTopLevel(firstTopLevelID)
+
+        let replacementForSecondWindow = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x3402)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xDB01)!
+        )
+        registry.registerManagedSurfaceTreeForTesting(
+            [replacementForSecondWindow],
+            tree: GhosttySurfaceTree(root: .leaf(replacementForSecondWindow.id)),
+            focusedLeafID: replacementForSecondWindow.id,
+            replaceByManualIdentity: true
+        )
+
+        XCTAssertEqual(registry.selectedTopLevel?.id, firstTopLevelID)
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, firstWindowPane.id)
+    }
+
+    func testSurfaceTreeInstallReplacesOverlappingManualTree() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let oldFirst = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2301)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xCA01)!
+        )
+        let oldSecond = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2302)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xCA02)!
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [oldFirst, oldSecond],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(oldFirst.id),
+                    right: .leaf(oldSecond.id)
+                )
+            ),
+            focusedLeafID: oldSecond.id,
+            replaceByManualIdentity: true
+        )
+
+        let originalTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let newFirst = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x3301)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xCA01)!
+        )
+        let newSecond = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x3302)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xCA03)!
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [newFirst, newSecond],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .vertical,
+                    ratio: 0.6,
+                    left: .leaf(newFirst.id),
+                    right: .leaf(newSecond.id)
+                )
+            ),
+            focusedLeafID: newFirst.id,
+            replaceByManualIdentity: true
+        )
+
+        XCTAssertEqual(registry.topLevels.count, 1)
+        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id])
+
+        registry.runtimeCloseSurface(id: oldFirst.id, processAlive: false)
+        registry.runtimeCloseSurface(id: oldSecond.id, processAlive: false)
+
+        XCTAssertEqual(registry.topLevels.count, 1)
+        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id])
+    }
+
+    func testSurfaceTreeReplacementPreservesFocusedPaneByManualIdentity() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let oldFirst = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2501)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xEA01)!
+        )
+        let oldSecond = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x2502)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xEA02)!
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [oldFirst, oldSecond],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(oldFirst.id),
+                    right: .leaf(oldSecond.id)
+                )
+            ),
+            focusedLeafID: oldSecond.id,
+            replaceByManualIdentity: true
+        )
+        let originalTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+
+        var routedInput: [String] = []
+        let newFirst = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x3501)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xEA01)!
+        )
+        let newSecond = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x3502)!,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xEA02)!,
+            sendInput: {
+                routedInput.append($0)
+                return true
+            }
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [newFirst, newSecond],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(newFirst.id),
+                    right: .leaf(newSecond.id)
+                )
+            ),
+            replaceByManualIdentity: true
+        )
+
+        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, newSecond.id)
+        XCTAssertTrue(registry.sendInputToFocusedSurface("echo preserved\r"))
+        XCTAssertEqual(routedInput, ["echo preserved\r"])
+    }
+
     func testInputWithoutFocusedSurfaceIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
@@ -281,6 +607,26 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(registry.readSelectionFromFocusedSurface(), "second")
         XCTAssertTrue(registry.debugSummary.contains("read selection"))
+    }
+
+    func testHasSelectionRoutesToFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(hasSelection: { false })
+        let second = Self.managedSurface(hasSelection: { true })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(second.id)
+
+        XCTAssertTrue(registry.hasSelectionInFocusedSurface())
+        XCTAssertTrue(registry.debugSummary.contains("selection available"))
+    }
+
+    func testHasSelectionWithoutFocusedSurfaceIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertFalse(registry.hasSelectionInFocusedSurface())
+        XCTAssertTrue(registry.debugSummary.contains("selection check dropped"))
     }
 
     func testReadSelectionWithoutFocusedSurfaceIsRejected() {
@@ -390,6 +736,19 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "copy dropped: no focused selection")
     }
 
+    func testModelHasSelectionRoutesThroughRegistry() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        let managed = Self.managedSurface(hasSelection: { true })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertTrue(model.hasSelectionInFocusedSurface())
+    }
+
     func testMouseButtonRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var received: [GhosttySurfaceMouseButtonEvent] = []
@@ -467,10 +826,30 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
         model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        model.surfaceRegistry.selectSurface(first.id)
 
         XCTAssertTrue(model.focusTmuxPane(second.id))
         XCTAssertEqual(focusCallCount, 1)
         XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(model.debugStatus, "tmux focus queued")
+    }
+
+    func testModelFocusTmuxPaneRequeuesAlreadyFocusedPaneForRemoteResync() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        var focusCallCount = 0
+        let managed = Self.managedSurface(tmuxFocus: {
+            focusCallCount += 1
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertTrue(model.focusTmuxPane(managed.id))
+        XCTAssertEqual(focusCallCount, 1)
         XCTAssertEqual(model.debugStatus, "tmux focus queued")
     }
 
@@ -687,8 +1066,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     private static func managedSurface(
         handle: ghostty_surface_t = UnsafeMutableRawPointer(bitPattern: 0x1)!,
+        manualUserdata: UnsafeMutableRawPointer? = nil,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendPaste: (@MainActor (String) -> Bool)? = nil,
+        hasSelection: (@MainActor () -> Bool)? = nil,
         readSelection: (@MainActor () -> String?)? = nil,
         sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
@@ -708,8 +1089,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 surface: handle,
                 ownsSurface: false
             ),
+            manualUserdata: manualUserdata,
             sendInput: sendInput,
             sendPaste: sendPaste,
+            hasSelection: hasSelection,
             readSelection: readSelection,
             sendKeyEvent: sendKeyEvent,
             sendMouseButton: sendMouseButton,

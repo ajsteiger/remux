@@ -42,6 +42,30 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     ) -> Bool
 }
 
+func ghosttyDiagnosticShortID(_ id: UUID?) -> String {
+    guard let id else { return "nil" }
+    return String(id.uuidString.prefix(8))
+}
+
+func ghosttyDiagnosticPointer(_ pointer: UnsafeMutableRawPointer?) -> String {
+    guard let pointer else { return "nil" }
+    return String(format: "0x%llx", UInt64(UInt(bitPattern: pointer)))
+}
+
+func ghosttyDiagnosticRect(_ rect: CGRect) -> String {
+    String(
+        format: "%.1fx%.1f@%.1f,%.1f",
+        rect.width,
+        rect.height,
+        rect.minX,
+        rect.minY
+    )
+}
+
+func ghosttyDiagnosticSurfaceSize(_ size: ghostty_surface_size_s) -> String {
+    "\(size.columns)x\(size.rows) cells \(size.width_px)x\(size.height_px)px cell=\(size.cell_width_px)x\(size.cell_height_px)"
+}
+
 @MainActor
 final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
@@ -54,17 +78,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var surfaceIDsByHandle: [ghostty_surface_t: UUID] = [:]
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
-    private var preferredSurfaceSize = CGSize(width: 1, height: 1)
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
-        guard let selectedTopLevelID else { return topLevels.first }
-        return topLevels.first(where: { $0.id == selectedTopLevelID }) ?? topLevels.first
+        guard let selectedTopLevelID else { return nil }
+        return topLevels.first(where: { $0.id == selectedTopLevelID })
     }
 
     var selectedTopLevelIndex: Int? {
-        guard !topLevels.isEmpty else { return nil }
-        guard let selectedTopLevelID else { return 0 }
-        return topLevels.firstIndex(where: { $0.id == selectedTopLevelID }) ?? 0
+        guard let selectedTopLevelID else { return nil }
+        return topLevels.firstIndex(where: { $0.id == selectedTopLevelID })
     }
 
     func reset() {
@@ -75,44 +97,65 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surfaceIDsByHandle = [:]
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
-        preferredSurfaceSize = CGSize(width: 1, height: 1)
         notifyChanged()
     }
 
-    func updatePreferredSurfaceSize(_ size: CGSize) {
-        guard size.width.isFinite, size.height.isFinite else { return }
-        guard size.width > 1, size.height > 1 else { return }
-        preferredSurfaceSize = size
-    }
-
-    func selectTopLevel(_ id: UUID) {
-        guard topLevels.contains(where: { $0.id == id }) else { return }
+    func selectTopLevel(_ id: UUID, reason: String = "selectTopLevel") {
+        GhosttyRuntimeTrace.diagnostics(
+            "selectTopLevel begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
+        )
+        guard topLevels.contains(where: { $0.id == id }) else {
+            GhosttyRuntimeTrace.diagnostics(
+                "selectTopLevel missing reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
+            )
+            return
+        }
         selectedTopLevelID = id
+        GhosttyRuntimeTrace.diagnostics(
+            "selectTopLevel end reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
+        )
         notifyChanged()
     }
 
     @discardableResult
-    func selectAdjacentTopLevel(_ direction: GhosttyRuntimeSelectionDirection) -> Bool {
+    func selectAdjacentTopLevel(
+        _ direction: GhosttyRuntimeSelectionDirection,
+        reason: String = "selectAdjacentTopLevel"
+    ) -> Bool {
+        GhosttyRuntimeTrace.diagnostics(
+            "selectAdjacentTopLevel begin reason=\(reason) direction=\(direction) \(diagnosticSelectionSummary())"
+        )
         guard topLevels.count > 1 else { return false }
-
-        let currentIndex = selectedTopLevelIndex ?? 0
+        guard let currentIndex = selectedTopLevelIndex else { return false }
         let nextIndex = direction.advancedIndex(
             from: currentIndex,
             count: topLevels.count
         )
         selectedTopLevelID = topLevels[nextIndex].id
+        GhosttyRuntimeTrace.diagnostics(
+            "selectAdjacentTopLevel end reason=\(reason) current=\(currentIndex) next=\(nextIndex) \(diagnosticSelectionSummary())"
+        )
         notifyChanged()
         return true
     }
 
-    func selectSurface(_ id: UUID) {
+    func selectSurface(_ id: UUID, reason: String = "selectSurface") {
+        GhosttyRuntimeTrace.diagnostics(
+            "selectSurface begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
+        )
         for index in topLevels.indices {
             guard topLevels[index].tree.contains(id) else { continue }
             topLevels[index].focusedLeafID = id
             selectedTopLevelID = topLevels[index].id
+            GhosttyRuntimeTrace.diagnostics(
+                "selectSurface end reason=\(reason) target=\(shortID(id)) topIndex=\(index) \(diagnosticSelectionSummary())"
+            )
             notifyChanged()
             return
         }
+        GhosttyRuntimeTrace.diagnostics(
+            "selectSurface missing reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
+        )
     }
 
     @discardableResult
@@ -142,24 +185,56 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         Array(managedSurfaces.values)
     }
 
+    var selectedActiveLeafID: UUID? {
+        selectedTopLevel?.resolvedFocusedLeafID
+    }
+
+    func diagnosticSelectionSummary() -> String {
+        let selectedIndex = selectedTopLevelIndex.map(String.init) ?? "nil"
+        let topLevelSummary = topLevels.enumerated().map { index, topLevel in
+            let selectedMarker = topLevel.id == selectedTopLevelID ? "*" : ""
+            let leafSummary = topLevel.leafIDs.map { leafID in
+                if let surface = managedSurfaces[leafID] {
+                    return surface.diagnosticSummary()
+                }
+                return "surface=\(ghosttyDiagnosticShortID(leafID)) missing"
+            }.joined(separator: ",")
+            return "\(selectedMarker)#\(index):\(ghosttyDiagnosticShortID(topLevel.id)) focus=\(ghosttyDiagnosticShortID(topLevel.focusedLeafID)) resolved=\(ghosttyDiagnosticShortID(topLevel.resolvedFocusedLeafID)) leaves=[\(leafSummary)]"
+        }.joined(separator: " | ")
+
+        return "selectedIndex=\(selectedIndex) selectedTop=\(ghosttyDiagnosticShortID(selectedTopLevelID)) activeLeaf=\(ghosttyDiagnosticShortID(selectedActiveLeafID)) topCount=\(topLevels.count) {\(topLevelSummary)}"
+    }
+
+    private func shortID(_ id: UUID?) -> String {
+        ghosttyDiagnosticShortID(id)
+    }
+
     @MainActor
     @discardableResult
     func sendInputToFocusedSurface(_ text: String) -> Bool {
         guard !text.isEmpty else { return true }
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendInput drop-no-surface bytes=\(text.lengthOfBytes(using: .utf8)) \(diagnosticSelectionSummary())"
+            )
             updateDebugSummary("input dropped: no focused surface")
             return false
         }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
         guard surface.sendInput(text) else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendInput rejected bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            )
             updateDebugSummary("input rejected by focused surface")
             return false
         }
 
-        updateDebugSummary("sent input bytes=\(text.lengthOfBytes(using: .utf8))")
+        GhosttyRuntimeTrace.diagnostics(
+            "sendInput accepted bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
         return true
     }
 
@@ -167,29 +242,34 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @discardableResult
     func sendPasteToFocusedSurface(_ text: String) -> Bool {
         guard !text.isEmpty else { return true }
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendPaste drop-no-surface bytes=\(text.lengthOfBytes(using: .utf8)) \(diagnosticSelectionSummary())"
+            )
             updateDebugSummary("paste dropped: no focused surface")
             return false
         }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
         guard surface.sendPaste(text) else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendPaste rejected bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            )
             updateDebugSummary("paste rejected by focused surface")
             return false
         }
 
-        updateDebugSummary("sent paste bytes=\(text.lengthOfBytes(using: .utf8))")
+        GhosttyRuntimeTrace.diagnostics(
+            "sendPaste accepted bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
         return true
     }
 
     @MainActor
     func readSelectionFromFocusedSurface() -> String? {
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
             updateDebugSummary("copy dropped: no focused surface")
             return nil
         }
@@ -204,32 +284,49 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     @MainActor
+    func hasSelectionInFocusedSurface() -> Bool {
+        guard let surface = selectedActiveSurface else {
+            updateDebugSummary("selection check dropped: no focused surface")
+            return false
+        }
+
+        let hasSelection = surface.hasSelection()
+        updateDebugSummary(hasSelection ? "selection available" : "selection unavailable")
+        return hasSelection
+    }
+
+    @MainActor
     @discardableResult
     func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendKey drop-no-surface event=\(event) \(diagnosticSelectionSummary())"
+            )
             updateDebugSummary("key dropped: no focused surface")
             return false
         }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "sendKey begin event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
         guard surface.sendKeyEvent(event) else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendKey rejected event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            )
             updateDebugSummary("key rejected by focused surface")
             return false
         }
 
-        updateDebugSummary("sent key code=\(event.keyCode.rawValue)")
+        GhosttyRuntimeTrace.diagnostics(
+            "sendKey accepted event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
         return true
     }
 
     @MainActor
     @discardableResult
     func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse button dropped: no focused surface")
             return false
         }
@@ -239,7 +336,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return false
         }
 
-        updateDebugSummary("sent mouse button")
         return true
     }
 
@@ -249,57 +345,42 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> Bool {
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse position dropped: no focused surface")
             return false
         }
 
         surface.sendMousePosition(position, mods: mods)
-        updateDebugSummary("sent mouse position")
         return true
     }
 
     @MainActor
     @discardableResult
     func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> Bool {
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse scroll dropped: no focused surface")
             return false
         }
 
         surface.sendMouseScroll(event)
-        updateDebugSummary("sent mouse scroll")
         return true
     }
 
     @MainActor
     @discardableResult
     func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> Bool {
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse pressure dropped: no focused surface")
             return false
         }
 
         surface.sendMousePressure(event)
-        updateDebugSummary("sent mouse pressure")
         return true
     }
 
     @MainActor
     func focusedSurfaceMouseCaptured() -> Bool {
-        guard
-            let surfaceID = selectedTopLevel?.resolvedFocusedLeafID,
-            let surface = managedSurfaces[surfaceID]
-        else {
+        guard let surface = selectedActiveSurface else {
             return false
         }
 
@@ -362,21 +443,35 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         request: ghostty_runtime_create_surface_tree_s
     ) -> Bool {
         createSurfaceTreeCount += 1
-        NSLog(
-            "Remux create_surface_tree nodes=%d root=%d leaves=%d parent=%@",
-            request.nodes_len,
-            request.root_index,
-            request.leaf_surfaces_len,
-            String(describing: request.parent)
-        )
+        if GhosttyRuntimeTrace.isEnabled {
+            NSLog(
+                "Remux create_surface_tree nodes=%d root=%d leaves=%d parent=%@",
+                request.nodes_len,
+                request.root_index,
+                request.leaf_surfaces_len,
+                String(describing: request.parent)
+            )
+        }
         updateDebugSummary("create_surface_tree nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len)")
 
         guard let nodePtr = request.nodes else { return false }
         guard let leafSurfacePtr = request.leaf_surfaces else { return false }
 
+        guard let nodeCount = Int(exactly: request.nodes_len),
+              let expectedLeafCount = Int(exactly: request.leaf_surfaces_len)
+        else {
+            updateDebugSummary("create_surface_tree count overflow")
+            return false
+        }
+        if request.focused_leaf_index_valid,
+           request.focused_leaf_index >= request.leaf_surfaces_len {
+            updateDebugSummary("create_surface_tree focused leaf index out of range")
+            return false
+        }
+
         let nodes = UnsafeBufferPointer(
             start: nodePtr,
-            count: Int(request.nodes_len)
+            count: nodeCount
         )
 
         var leafSurfaces: [GhosttyManagedSurface] = []
@@ -385,14 +480,16 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             guard nodes.indices.contains(index) else { return nil }
 
             let node = nodes[index]
-            NSLog(
-                "Remux tree node[%d] key=%d left=%d right=%d config=%@",
-                index,
-                node.key.rawValue,
-                node.left_index,
-                node.right_index,
-                String(describing: node.config)
-            )
+            if GhosttyRuntimeTrace.isEnabled {
+                NSLog(
+                    "Remux tree node[%d] key=%d left=%d right=%d config=%@",
+                    index,
+                    node.key.rawValue,
+                    node.left_index,
+                    node.right_index,
+                    String(describing: node.config)
+                )
+            }
             switch node.key {
             case GHOSTTY_SURFACE_TREE_NODE_LEAF:
                 guard let configPtr = node.config else { return nil }
@@ -426,24 +523,48 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             updateDebugSummary("create_surface_tree build failed")
             return false
         }
-        NSLog("Remux create_surface_tree built leaves=%d expected=%d", leafSurfaces.count, request.leaf_surfaces_len)
-        guard leafSurfaces.count == Int(request.leaf_surfaces_len) else {
+        if GhosttyRuntimeTrace.isEnabled {
+            NSLog("Remux create_surface_tree built leaves=%d expected=%d", leafSurfaces.count, request.leaf_surfaces_len)
+        }
+        guard leafSurfaces.count == expectedLeafCount else {
             updateDebugSummary("create_surface_tree leaf count mismatch")
             return false
         }
+        let focusedLeafID: UUID?
+        if request.focused_leaf_index_valid {
+            guard let focusedLeafIndex = Int(exactly: request.focused_leaf_index) else {
+                updateDebugSummary("create_surface_tree focused leaf index overflow")
+                return false
+            }
+            guard leafSurfaces.indices.contains(focusedLeafIndex) else {
+                updateDebugSummary("create_surface_tree focused leaf index out of range")
+                return false
+            }
+            focusedLeafID = leafSurfaces[focusedLeafIndex].id
+        } else {
+            focusedLeafID = nil
+        }
+
+        let replacingParentSurfaceID = request.parent.flatMap { surfaceIDsByHandle[$0] }
+        let replacingTopLevelID = replacingParentSurfaceID == nil
+            ? topLevelID(overlappingManualIdentityFrom: leafSurfaces)
+            : nil
 
         installSurfaceTree(
             leafSurfaces: leafSurfaces,
             tree: .init(root: root),
-            focusedLeafID: leafSurfaces.first?.id,
-            replacingTopLevelContaining: request.parent.flatMap { surfaceIDsByHandle[$0] }
+            focusedLeafID: focusedLeafID,
+            replacingTopLevelContaining: replacingParentSurfaceID,
+            replacingTopLevelID: replacingTopLevelID
         )
-        NSLog(
-            "Remux create_surface_tree registered managed=%d top=%d selected=%@",
-            managedSurfaces.count,
-            topLevels.count,
-            String(describing: selectedTopLevelID)
-        )
+        if GhosttyRuntimeTrace.isEnabled {
+            NSLog(
+                "Remux create_surface_tree registered managed=%d top=%d selected=%@",
+                managedSurfaces.count,
+                topLevels.count,
+                String(describing: selectedTopLevelID)
+            )
+        }
 
         for (index, surface) in leafSurfaces.enumerated() {
             leafSurfacePtr[index] = surface.controlSurface.handle
@@ -484,7 +605,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return
         }
 
-        selectSurface(id)
+        selectSurface(id, reason: "runtimeSelectSurface")
         updateDebugSummary("selected surface=\(id.uuidString)")
     }
 
@@ -534,14 +655,29 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         _ surfaces: [GhosttyManagedSurface],
         tree: GhosttySurfaceTree,
         focusedLeafID: UUID? = nil,
-        replacingTopLevelContaining parentSurfaceID: UUID? = nil
+        replacingTopLevelContaining parentSurfaceID: UUID? = nil,
+        replacingTopLevelID: UUID? = nil,
+        replaceByManualIdentity: Bool = false
     ) {
+        let inferredTopLevelID = replaceByManualIdentity
+            ? topLevelID(overlappingManualIdentityFrom: surfaces)
+            : nil
         installSurfaceTree(
             leafSurfaces: surfaces,
             tree: tree,
             focusedLeafID: focusedLeafID,
-            replacingTopLevelContaining: parentSurfaceID
+            replacingTopLevelContaining: parentSurfaceID,
+            replacingTopLevelID: replacingTopLevelID ?? inferredTopLevelID
         )
+    }
+
+    func forceSelectedTopLevelIDForTesting(_ id: UUID?) {
+        selectedTopLevelID = id
+    }
+
+    func managedSurfaceIDForTesting(handle: ghostty_surface_t?) -> UUID? {
+        guard let handle else { return nil }
+        return surfaceIDsByHandle[handle]
     }
 #endif
 
@@ -549,16 +685,48 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         leafSurfaces: [GhosttyManagedSurface],
         tree: GhosttySurfaceTree,
         focusedLeafID: UUID?,
-        replacingTopLevelContaining parentSurfaceID: UUID?
+        replacingTopLevelContaining parentSurfaceID: UUID?,
+        replacingTopLevelID: UUID?
     ) {
+        let previousSelectedTopLevelID = selectedTopLevelID
         register(leafSurfaces)
 
         if let parentSurfaceID,
            let index = topLevels.firstIndex(where: { $0.tree.contains(parentSurfaceID) }) {
-            topLevels[index].tree = tree
-            topLevels[index].focusedLeafID = focusedLeafID
-            topLevels[index].normalizeFocus()
-            selectedTopLevelID = topLevels[index].id
+            var updatedTopLevels = topLevels
+            let replacementFocusedLeafID = focusedLeafIDForReplacement(
+                explicitFocusedLeafID: focusedLeafID,
+                previousTopLevel: updatedTopLevels[index],
+                incomingLeafSurfaces: leafSurfaces
+            )
+            updatedTopLevels[index].tree = tree
+            updatedTopLevels[index].focusedLeafID = replacementFocusedLeafID
+            updatedTopLevels[index].normalizeFocus()
+            topLevels = updatedTopLevels
+            selectedTopLevelID = replacementSelection(
+                replacedTopLevelID: updatedTopLevels[index].id,
+                previousSelectedTopLevelID: previousSelectedTopLevelID
+            )
+            updateDebugSummary("replaced surface tree")
+            return
+        }
+
+        if let replacingTopLevelID,
+           let index = topLevels.firstIndex(where: { $0.id == replacingTopLevelID }) {
+            var updatedTopLevels = topLevels
+            let replacementFocusedLeafID = focusedLeafIDForReplacement(
+                explicitFocusedLeafID: focusedLeafID,
+                previousTopLevel: updatedTopLevels[index],
+                incomingLeafSurfaces: leafSurfaces
+            )
+            updatedTopLevels[index].tree = tree
+            updatedTopLevels[index].focusedLeafID = replacementFocusedLeafID
+            updatedTopLevels[index].normalizeFocus()
+            topLevels = updatedTopLevels
+            selectedTopLevelID = replacementSelection(
+                replacedTopLevelID: updatedTopLevels[index].id,
+                previousSelectedTopLevelID: previousSelectedTopLevelID
+            )
             updateDebugSummary("replaced surface tree")
             return
         }
@@ -568,8 +736,76 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             focusedLeafID: focusedLeafID
         )
         topLevels.append(topLevel)
-        selectedTopLevelID = topLevel.id
+        selectedTopLevelID = normalizedSelectionID(
+            preferredID: previousSelectedTopLevelID,
+            fallbackID: topLevel.id
+        )
         updateDebugSummary("created surface tree")
+    }
+
+    private func focusedLeafIDForReplacement(
+        explicitFocusedLeafID: UUID?,
+        previousTopLevel: GhosttyTopLevelSurface,
+        incomingLeafSurfaces: [GhosttyManagedSurface]
+    ) -> UUID? {
+        if let explicitFocusedLeafID {
+            return explicitFocusedLeafID
+        }
+
+        guard
+            let previousFocusedLeafID = previousTopLevel.resolvedFocusedLeafID,
+            let previousManualUserdata = managedSurfaces[previousFocusedLeafID]?.manualUserdata
+        else {
+            return nil
+        }
+
+        return incomingLeafSurfaces.first {
+            $0.manualUserdata == previousManualUserdata
+        }?.id
+    }
+
+    private func replacementSelection(
+        replacedTopLevelID: UUID,
+        previousSelectedTopLevelID: UUID?
+    ) -> UUID {
+        normalizedSelectionID(
+            preferredID: previousSelectedTopLevelID,
+            fallbackID: replacedTopLevelID
+        ) ?? replacedTopLevelID
+    }
+
+    private func normalizedSelectionID(
+        preferredID: UUID?,
+        fallbackID: UUID?
+    ) -> UUID? {
+        if let preferredID, topLevels.contains(where: { $0.id == preferredID }) {
+            return preferredID
+        }
+        if let fallbackID, topLevels.contains(where: { $0.id == fallbackID }) {
+            return fallbackID
+        }
+        return topLevels.first?.id
+    }
+
+    private func topLevelID(
+        overlappingManualIdentityFrom leafSurfaces: [GhosttyManagedSurface]
+    ) -> UUID? {
+        let incomingIdentities = leafSurfaces.compactMap(\.manualUserdata)
+        guard !incomingIdentities.isEmpty else { return nil }
+
+        for topLevel in topLevels {
+            let existingIdentities = topLevel.leafIDs.compactMap { leafID in
+                managedSurfaces[leafID]?.manualUserdata
+            }
+            guard existingIdentities.contains(where: { existing in
+                incomingIdentities.contains(existing)
+            }) else {
+                continue
+            }
+            return topLevel.id
+        }
+
+        return nil
     }
 
     private func insertSplitSurface(
@@ -595,9 +831,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             register([managed])
             topLevels[index].tree = tree
             topLevels[index].focusedLeafID = managed.id
-            if selectedTopLevelID == nil {
-                selectedTopLevelID = topLevels[index].id
-            }
+            selectedTopLevelID = normalizedSelectionID(
+                preferredID: selectedTopLevelID,
+                fallbackID: topLevels[index].id
+            )
             notifyChanged()
             return true
         }
@@ -624,7 +861,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             registry: self,
             surfaceID: surfaceID
         )
-        let view = GhosttyKitSurfaceView(frame: CGRect(origin: .zero, size: preferredSurfaceSize))
+        let view = GhosttyKitSurfaceView(frame: .zero)
 
         var config = baseConfig
         config.platform_tag = GHOSTTY_PLATFORM_IOS
@@ -639,7 +876,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return nil
         }
         lifecycle.bind(surfaceHandle: surface)
-        NSLog("Remux created managed Ghostty surface id=%@ handle=%@", surfaceID.uuidString, String(describing: surface))
+        if GhosttyRuntimeTrace.isEnabled {
+            NSLog("Remux created managed Ghostty surface id=%@ handle=%@", surfaceID.uuidString, String(describing: surface))
+        }
 
         let controlSurface = GhosttyKitControlSurface(
             surface: surface,
@@ -649,6 +888,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             ownsSurface: false,
             retainedObjects: [lifecycle]
         )
+        controlSurface.setVisible(false)
+        controlSurface.setFocused(false)
+
         let initialScrollState = controlSurface.scrollState()
         let initialScrollRoute = controlSurface.scrollRoute()
 
@@ -656,9 +898,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             id: surfaceID,
             view: view,
             controlSurface: controlSurface,
+            manualUserdata: baseConfig.manual_userdata,
             scrollState: initialScrollState,
             scrollRoute: initialScrollRoute
         )
+    }
+
+    private var selectedActiveSurface: GhosttyManagedSurface? {
+        guard let surfaceID = selectedActiveLeafID else { return nil }
+        return managedSurfaces[surfaceID]
     }
 
     private func removeManagedSurface(_ id: UUID) {
@@ -673,6 +921,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 #endif
         surfaceIDsByHandle.removeValue(forKey: removed.controlSurface.handle)
 
+        let previousSelectedTopLevelID = selectedTopLevelID
+        let previousSelectedIndex = selectedTopLevelIndex
         var remainingTopLevels: [GhosttyTopLevelSurface] = []
         remainingTopLevels.reserveCapacity(topLevels.count)
 
@@ -692,12 +942,27 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
 
         topLevels = remainingTopLevels
-        if let selectedTopLevelID, !topLevels.contains(where: { $0.id == selectedTopLevelID }) {
-            self.selectedTopLevelID = topLevels.first?.id
-        }
+        selectedTopLevelID = normalizedSelectionAfterRemoval(
+            previousSelectedTopLevelID: previousSelectedTopLevelID,
+            previousSelectedIndex: previousSelectedIndex
+        )
 
         _ = removed
         updateDebugSummary("managed surfaces=\(managedSurfaces.count)")
+    }
+
+    private func normalizedSelectionAfterRemoval(
+        previousSelectedTopLevelID: UUID?,
+        previousSelectedIndex: Int?
+    ) -> UUID? {
+        if let previousSelectedTopLevelID,
+           topLevels.contains(where: { $0.id == previousSelectedTopLevelID }) {
+            return previousSelectedTopLevelID
+        }
+        guard !topLevels.isEmpty else { return nil }
+        guard let previousSelectedIndex else { return topLevels[0].id }
+        let replacementIndex = min(previousSelectedIndex, topLevels.count - 1)
+        return topLevels[replacementIndex].id
     }
 
     private func updateDebugSummary(_ event: String) {
@@ -715,12 +980,16 @@ final class GhosttyManagedSurface {
     let id: UUID
     let view: GhosttyKitSurfaceView
     let controlSurface: GhosttyKitControlSurface
+    let manualUserdata: UnsafeMutableRawPointer?
+    private(set) var isFocused = false
+    private(set) var isVisible = false
     private(set) var scrollState: GhosttySurfaceScrollState
     private(set) var scrollRoute: GhosttySurfaceScrollRoute
     var onScrollStateChange: (@MainActor () -> Void)?
 
     private let sendInputHandler: (@MainActor (String) -> Bool)?
     private let sendPasteHandler: (@MainActor (String) -> Bool)?
+    private let hasSelectionHandler: (@MainActor () -> Bool)?
     private let readSelectionHandler: (@MainActor () -> String?)?
     private let sendKeyEventHandler: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)?
     private let sendMouseButtonHandler: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)?
@@ -738,10 +1007,12 @@ final class GhosttyManagedSurface {
         id: UUID,
         view: GhosttyKitSurfaceView,
         controlSurface: GhosttyKitControlSurface,
+        manualUserdata: UnsafeMutableRawPointer? = nil,
         scrollState: GhosttySurfaceScrollState = .empty,
         scrollRoute: GhosttySurfaceScrollRoute = .viewport,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendPaste: (@MainActor (String) -> Bool)? = nil,
+        hasSelection: (@MainActor () -> Bool)? = nil,
         readSelection: (@MainActor () -> String?)? = nil,
         sendKeyEvent: (@MainActor (GhosttySurfaceKeyEvent) -> Bool)? = nil,
         sendMouseButton: (@MainActor (GhosttySurfaceMouseButtonEvent) -> Bool)? = nil,
@@ -757,10 +1028,12 @@ final class GhosttyManagedSurface {
         self.id = id
         self.view = view
         self.controlSurface = controlSurface
+        self.manualUserdata = manualUserdata
         self.scrollState = scrollState
         self.scrollRoute = scrollRoute
         self.sendInputHandler = sendInput
         self.sendPasteHandler = sendPaste
+        self.hasSelectionHandler = hasSelection
         self.readSelectionHandler = readSelection
         self.sendKeyEventHandler = sendKeyEvent
         self.sendMouseButtonHandler = sendMouseButton
@@ -785,6 +1058,23 @@ final class GhosttyManagedSurface {
     }
 
     @MainActor
+    func setVisible(_ visible: Bool) {
+        guard visible != isVisible else { return }
+        isVisible = visible
+        controlSurface.setVisible(visible)
+    }
+
+    @MainActor
+    func setFocused(_ focused: Bool) {
+        guard focused != isFocused else { return }
+        isFocused = focused
+        controlSurface.setFocused(focused)
+        if focused {
+            displayUpdateTracker.reset()
+        }
+    }
+
+    @MainActor
     func updateDisplay(size: CGSize, scale: CGFloat) {
         guard let metrics = displayUpdateTracker.nextMetrics(size: size, scale: scale) else {
             return
@@ -801,6 +1091,15 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.sendPaste(text)
+    }
+
+    @MainActor
+    func hasSelection() -> Bool {
+        if let hasSelectionHandler {
+            return hasSelectionHandler()
+        }
+
+        return controlSurface.hasSelection()
     }
 
     @MainActor
@@ -934,6 +1233,11 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.tmuxCloseWindow()
+    }
+
+    @MainActor
+    func diagnosticSummary() -> String {
+        "surface=\(ghosttyDiagnosticShortID(id)) handle=\(String(describing: controlSurface.handle)) manual=\(ghosttyDiagnosticPointer(manualUserdata)) visible=\(isVisible) focused=\(isFocused) view=\(ghosttyDiagnosticRect(view.frame)) bounds=\(ghosttyDiagnosticRect(view.bounds)) size=\(ghosttyDiagnosticSurfaceSize(controlSurface.currentSize())) scroll=total:\(scrollState.total) offset:\(scrollState.offset) len:\(scrollState.len) route:\(scrollRoute)"
     }
 }
 

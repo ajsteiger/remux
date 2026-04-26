@@ -20,12 +20,13 @@ struct GhosttyTopLevelSurface: Identifiable, Equatable {
         tree.leafIDs()
     }
 
-    var resolvedFocusedLeafID: UUID? {
-        if let focusedLeafID, tree.contains(focusedLeafID) {
-            return focusedLeafID
-        }
+    var activeFocusedLeafID: UUID? {
+        guard let focusedLeafID, tree.contains(focusedLeafID) else { return nil }
+        return focusedLeafID
+    }
 
-        return leafIDs.first
+    var resolvedFocusedLeafID: UUID? {
+        activeFocusedLeafID ?? leafIDs.first
     }
 
     var phonePresentedLeafIDs: [UUID] {
@@ -39,7 +40,9 @@ struct GhosttyTopLevelSurface: Identifiable, Equatable {
     }
 
     mutating func normalizeFocus() {
-        focusedLeafID = resolvedFocusedLeafID
+        if let focusedLeafID, !tree.contains(focusedLeafID) {
+            self.focusedLeafID = nil
+        }
     }
 }
 

@@ -41,6 +41,29 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertNil(host.lastError)
     }
 
+    func testWriteSequencerPreservesCommandOrderAcrossAsyncTransportSends() async {
+        let transport = RecordingTmuxControlTransport(sendDelay: .milliseconds(5))
+        let sequencer = TmuxControlWriteSequencer(transport: transport)
+        let commands = [
+            Data("send-keys -H -t %271 72\n".utf8),
+            Data("send-keys -H -t %271 6f\n".utf8),
+            Data("send-keys -H -t %271 0d\n".utf8),
+        ]
+
+        for command in commands {
+            XCTAssertTrue(sequencer.enqueue(command))
+        }
+
+        let drained = await waitUntilAsync {
+            await transport.sentCommands() == commands
+        }
+
+        XCTAssertTrue(drained)
+        let sentCommands = await transport.sentCommands()
+        XCTAssertEqual(sentCommands, commands)
+        sequencer.close()
+    }
+
     func testTransportResizeContractCanRecordGhosttyViewportChanges() async throws {
         let transport = RecordingTmuxControlTransport()
 
@@ -133,6 +156,18 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         }
         return condition()
     }
+
+    private func waitUntilAsync(
+        timeout: TimeInterval = 1,
+        condition: @escaping () async -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return await condition()
+    }
 }
 
 private enum TestTransportError: Error, Equatable {
@@ -143,6 +178,7 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
     nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
 
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let sendDelay: Duration?
     private var commands: [Data] = []
     private var resizes: [ResizeEvent] = []
     private var closes = 0
@@ -154,7 +190,8 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
         let height: UInt32
     }
 
-    init() {
+    init(sendDelay: Duration? = nil) {
+        self.sendDelay = sendDelay
         var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
         receivedBytes = AsyncThrowingStream { continuation in
             capturedContinuation = continuation
@@ -165,6 +202,9 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
     func start() async throws {}
 
     func send(_ data: Data) async throws {
+        if let sendDelay {
+            try await Task.sleep(for: sendDelay)
+        }
         commands.append(data)
     }
 

@@ -78,6 +78,8 @@ final class GhosttySurfaceTreeModelTests: XCTestCase {
             )
         )
 
+        XCTAssertNil(topLevel.activeFocusedLeafID)
+        XCTAssertNil(topLevel.focusedLeafID)
         XCTAssertEqual(topLevel.resolvedFocusedLeafID, first)
     }
 
@@ -99,7 +101,9 @@ final class GhosttySurfaceTreeModelTests: XCTestCase {
         topLevel.tree = GhosttySurfaceTree(root: .leaf(first))
         topLevel.normalizeFocus()
 
-        XCTAssertEqual(topLevel.focusedLeafID, first)
+        XCTAssertNil(topLevel.focusedLeafID)
+        XCTAssertNil(topLevel.activeFocusedLeafID)
+        XCTAssertEqual(topLevel.resolvedFocusedLeafID, first)
     }
 
     func testTopLevelSurfacePhoneProjectionPresentsOnlyFocusedLeaf() {
@@ -140,6 +144,7 @@ final class GhosttySurfaceTreeModelTests: XCTestCase {
             focusedLeafID: missing
         )
 
+        XCTAssertNil(topLevel.activeFocusedLeafID)
         XCTAssertEqual(topLevel.resolvedFocusedLeafID, first)
         XCTAssertEqual(topLevel.phonePresentedLeafIDs, [first])
         XCTAssertEqual(

@@ -76,6 +76,12 @@ final class GhosttyKitRuntime {
         state = try GhosttyKitRuntimeState(surfaceDelegate: surfaceDelegate)
     }
 
+#if DEBUG
+    var appHandleForTesting: ghostty_app_t {
+        state.app
+    }
+#endif
+
     func makeManualHostSurface(
         view: UIView,
         onWrite: ManualWriteHandler? = nil,
