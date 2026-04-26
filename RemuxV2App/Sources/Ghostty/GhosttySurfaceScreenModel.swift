@@ -87,6 +87,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             )
             let surface = try runtime.makeManualHostSurface(
                 view: view,
+                initialSize: size,
                 onWrite: { [weak self, writeSequencer] data, _ in
                     if GhosttyRuntimeTrace.isEnabled {
                         NSLog(

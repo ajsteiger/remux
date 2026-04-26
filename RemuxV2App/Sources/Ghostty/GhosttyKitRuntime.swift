@@ -84,6 +84,7 @@ final class GhosttyKitRuntime {
 
     func makeManualHostSurface(
         view: UIView,
+        initialSize: CGSize? = nil,
         onWrite: ManualWriteHandler? = nil,
         onResize: ManualResizeHandler? = nil,
         onFocus: ManualFocusHandler? = nil
@@ -100,6 +101,13 @@ final class GhosttyKitRuntime {
             uiview: Unmanaged.passUnretained(view).toOpaque()
         ))
         surfaceConfig.scale_factor = max(Double(view.contentScaleFactor), 1)
+        let metrics = GhosttySurfaceDisplayMetrics(
+            size: initialSize ?? view.bounds.size,
+            scale: view.contentScaleFactor
+        )
+        surfaceConfig.initial_width_px = metrics.pixelWidth
+        surfaceConfig.initial_height_px = metrics.pixelHeight
+        surfaceConfig.initial_focused = false
         surfaceConfig.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
         surfaceConfig.backing = GHOSTTY_SURFACE_BACKING_MANUAL
         surfaceConfig.manual_userdata = callbacks.userdata

@@ -861,14 +861,22 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             registry: self,
             surfaceID: surfaceID
         )
-        let view = GhosttyKitSurfaceView(frame: .zero)
 
         var config = baseConfig
+        let scale = max(Double(UIScreen.main.scale), 1)
+        config.scale_factor = scale
+        config.initial_focused = false
+
+        let view = GhosttyKitSurfaceView(
+            frame: CGRect(
+                origin: .zero,
+                size: Self.initialViewSize(from: config, scale: scale)
+            )
+        )
         config.platform_tag = GHOSTTY_PLATFORM_IOS
         config.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
             uiview: Unmanaged.passUnretained(view).toOpaque()
         ))
-        config.scale_factor = max(Double(UIScreen.main.scale), 1)
         config.userdata = lifecycle.userdata
 
         guard let surface = ghostty_surface_new(app, &config) else {
@@ -901,6 +909,21 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             manualUserdata: baseConfig.manual_userdata,
             scrollState: initialScrollState,
             scrollRoute: initialScrollRoute
+        )
+    }
+
+    private static func initialViewSize(
+        from config: ghostty_surface_config_s,
+        scale: Double
+    ) -> CGSize {
+        guard config.initial_width_px > 0, config.initial_height_px > 0 else {
+            return .zero
+        }
+
+        let safeScale = CGFloat(scale.isFinite && scale > 0 ? scale : 1)
+        return CGSize(
+            width: CGFloat(config.initial_width_px) / safeScale,
+            height: CGFloat(config.initial_height_px) / safeScale
         )
     }
 
