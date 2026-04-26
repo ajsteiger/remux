@@ -8,17 +8,7 @@ struct RootView: View {
     }
 
     var body: some View {
-#if DEBUG
-        if CommandLine.arguments.contains("--pane-preview-harness") {
-            PanePreviewDebugHarness()
-                .preferredColorScheme(.dark)
-                .ignoresSafeArea(edges: .bottom)
-        } else {
-            liveBody
-        }
-#else
         liveBody
-#endif
     }
 
     @ViewBuilder
