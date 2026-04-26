@@ -108,6 +108,28 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         XCTAssertEqual(pastedText, ["first\nsecond"])
     }
 
+    @MainActor
+    func testPasteIgnoresEmptyPasteboardString() {
+        let view = GhosttyTerminalResponderUIView()
+        var pastedText: [String] = []
+
+        view.update(
+            isEnabled: true,
+            activationToken: 1,
+            sendText: { _ in true },
+            sendPaste: {
+                pastedText.append($0)
+                return true
+            },
+            sendKeyEvent: { _ in true }
+        )
+
+        UIPasteboard.general.string = ""
+        view.paste(nil)
+
+        XCTAssertTrue(pastedText.isEmpty)
+    }
+
     func testHardwareCommandMappingResolvesArrowUpToKeyEvent() {
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolve(
@@ -155,6 +177,37 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
                 modifiers: []
             ),
             .keyEvent(.init(keyCode: .delete))
+        )
+    }
+
+    func testHardwareCommandMappingResolvesCoreNavigationHIDUsages() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardReturnOrEnter,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .enter))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardTab,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .tab))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardEscape,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .escape))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardRightArrow,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .arrowRight))
         )
     }
 
@@ -215,6 +268,83 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
                 charactersIgnoringModifiers: "a"
             ),
             .text("\u{01}")
+        )
+    }
+
+    func testHardwareCommandMappingResolvesCommonControlCombosToText() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardC,
+                modifiers: .control,
+                charactersIgnoringModifiers: "c"
+            ),
+            .text("\u{03}")
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardD,
+                modifiers: .control,
+                charactersIgnoringModifiers: "d"
+            ),
+            .text("\u{04}")
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardL,
+                modifiers: .control,
+                charactersIgnoringModifiers: "l"
+            ),
+            .text("\u{0C}")
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardZ,
+                modifiers: .control,
+                charactersIgnoringModifiers: "z"
+            ),
+            .text("\u{1A}")
+        )
+    }
+
+    func testHardwareCommandMappingRejectsControlTextWhenCommandIsHeld() {
+        XCTAssertNil(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardC,
+                modifiers: [.command, .control],
+                charactersIgnoringModifiers: "c"
+            )
+        )
+    }
+
+    func testHardwareCommandMappingResolvesPrintableHardwareText() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
+                characters: "a",
+                modifiers: []
+            ),
+            "a"
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
+                characters: "A",
+                modifiers: .shift
+            ),
+            "A"
+        )
+    }
+
+    func testHardwareCommandMappingDoesNotTurnShortcutsIntoPrintableText() {
+        XCTAssertNil(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
+                characters: "c",
+                modifiers: .command
+            )
+        )
+        XCTAssertNil(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
+                characters: "c",
+                modifiers: .control
+            )
         )
     }
 

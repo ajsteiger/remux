@@ -71,8 +71,9 @@ struct GhosttyTerminalInputCoordinator: Equatable {
             return
         }
 
-        guard isDismissSystemKeyboardRequested else { return }
-        keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+        if isDismissSystemKeyboardRequested {
+            keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
+        }
         isDismissSystemKeyboardRequested = false
     }
 

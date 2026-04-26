@@ -19,7 +19,7 @@ enum GhosttyKeyboardChromeMode: Equatable {
         case .hidden:
             false
         case .system:
-            isSoftwareKeyboardVisible
+            true
         case .custom:
             true
         }
@@ -152,23 +152,20 @@ struct GhosttyKeyboardChrome: View {
 
     private var systemAccessoryRow: some View {
         HStack(spacing: 6) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    accessoryKey(title: "esc") { sendKey(.init(keyCode: .escape)) }
-                    accessoryKey(title: "tab") { sendKey(.init(keyCode: .tab)) }
-                    accessoryKey(title: "ctrl", isActive: isControlArmed) {
-                        onToggleControl()
-                        return true
-                    }
-                    accessoryKey(title: "copy", action: copySelection)
-                    accessoryKey(title: "paste", action: sendClipboardPaste)
-                    accessoryKey(title: "enter") { sendKey(.init(keyCode: .enter)) }
+            primaryAccessoryKeys
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(2)
 
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
                     ForEach(Self.systemTextKeys, id: \.self) { text in
-                        accessoryKey(title: text) { sendText(text) }
+                        accessorySymbolKey(title: text) { sendText(text) }
                     }
                 }
+                .padding(.trailing, 2)
             }
+            .frame(minWidth: 0)
+            .layoutPriority(1)
 
             GhosttyKeyboardChromeIconButton(
                 title: nil,
@@ -177,6 +174,7 @@ struct GhosttyKeyboardChrome: View {
                 isEnabled: isEnabled,
                 action: onToggleCustomKeyboard
             )
+            .layoutPriority(2)
         }
         .padding(4)
         .background(GhosttyPhoneChromePalette.tray)
@@ -184,6 +182,20 @@ struct GhosttyKeyboardChrome: View {
         .overlay {
             RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private var primaryAccessoryKeys: some View {
+        HStack(spacing: 6) {
+            accessoryKey(title: "esc") { sendKey(.init(keyCode: .escape)) }
+            accessoryKey(title: "tab") { sendKey(.init(keyCode: .tab)) }
+            accessoryKey(title: "ctrl", isActive: isControlArmed) {
+                onToggleControl()
+                return true
+            }
+            accessoryKey(title: "copy", action: copySelection)
+            accessoryKey(title: "paste", action: sendClipboardPaste)
+            accessoryKey(title: "enter") { sendKey(.init(keyCode: .enter)) }
         }
     }
 
@@ -232,6 +244,22 @@ struct GhosttyKeyboardChrome: View {
             horizontalPadding: 4,
             verticalPadding: 3,
             isActive: isActive,
+            isEnabled: isEnabled,
+            action: action
+        )
+    }
+
+    private func accessorySymbolKey(
+        title: String,
+        action: @escaping () -> Bool
+    ) -> some View {
+        GhosttyKeyboardKeyButton(
+            title: title,
+            fontSize: 12,
+            minWidth: 18,
+            minHeight: Self.customKeyHeight,
+            horizontalPadding: 3,
+            verticalPadding: 3,
             isEnabled: isEnabled,
             action: action
         )

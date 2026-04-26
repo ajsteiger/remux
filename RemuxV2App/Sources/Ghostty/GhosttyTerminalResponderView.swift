@@ -71,6 +71,10 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool
     ) {
         let wasInputEnabled = self.isInputEnabled
+        let previousActivationToken = self.activationToken
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.update enabled=\(isEnabled) wasEnabled=\(wasInputEnabled) token=\(activationToken) previousToken=\(previousActivationToken) firstResponder=\(isFirstResponder) hasWindow=\(window != nil)"
+        )
         self.isInputEnabled = isEnabled
         self.sendTextHandler = sendText
         self.sendPasteHandler = sendPaste
@@ -78,6 +82,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
 
         if !isEnabled {
             if isFirstResponder {
+                GhosttyRuntimeTrace.diagnostics("responder.update resign disabled token=\(activationToken)")
                 resignFirstResponder()
             }
             pendingFirstResponderRequest = false
@@ -93,38 +98,57 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
 
     func insertText(_ text: String) {
         guard isInputEnabled else { return }
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.insertText bytes=\(text.lengthOfBytes(using: .utf8)) firstResponder=\(isFirstResponder) token=\(activationToken)"
+        )
         _ = sendTextHandler?(text)
     }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.didMoveToWindow hasWindow=\(window != nil) enabled=\(isInputEnabled) pending=\(pendingFirstResponderRequest) firstResponder=\(isFirstResponder) token=\(activationToken)"
+        )
         requestFirstResponderIfNeeded()
     }
 
     func deleteBackward() {
         guard isInputEnabled else { return }
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.deleteBackward firstResponder=\(isFirstResponder) token=\(activationToken)"
+        )
         _ = sendKeyEventHandler?(.init(keyCode: .backspace))
     }
 
     override func paste(_ sender: Any?) {
         guard
             isInputEnabled,
-            let text = UIPasteboard.general.string
+            let text = UIPasteboard.general.string,
+            !text.isEmpty
         else {
             return
         }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.paste bytes=\(text.lengthOfBytes(using: .utf8)) firstResponder=\(isFirstResponder) token=\(activationToken)"
+        )
         _ = sendPasteHandler?(text)
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         guard isInputEnabled else {
+            GhosttyRuntimeTrace.diagnostics(
+                "responder.pressesBegan disabled count=\(presses.count) firstResponder=\(isFirstResponder) token=\(activationToken)"
+            )
             super.pressesBegan(presses, with: event)
             return
         }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.pressesBegan count=\(presses.count) firstResponder=\(isFirstResponder) token=\(activationToken)"
+        )
         var unhandledPresses = Set<UIPress>()
-        for press in presses {
+        for press in presses.sorted(by: Self.sortPressesByTimestamp) {
             guard
                 let key = press.key,
                 let action = GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
@@ -133,14 +157,34 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
                     charactersIgnoringModifiers: key.charactersIgnoringModifiers
                 )
             else {
+                if let key = press.key,
+                   let text = GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
+                    characters: key.characters,
+                    modifiers: key.modifierFlags
+                   ) {
+                    GhosttyRuntimeTrace.diagnostics(
+                        "responder.pressesBegan text keyCode=\(key.keyCode.rawValue) modifiers=\(key.modifierFlags.rawValue) bytes=\(text.lengthOfBytes(using: .utf8))"
+                    )
+                    _ = sendTextHandler?(text)
+                    continue
+                }
+
                 unhandledPresses.insert(press)
                 continue
             }
 
+            if let key = press.key {
+                GhosttyRuntimeTrace.diagnostics(
+                    "responder.pressesBegan action keyCode=\(key.keyCode.rawValue) modifiers=\(key.modifierFlags.rawValue)"
+                )
+            }
             handleHardwareCommandAction(action)
         }
 
         if !unhandledPresses.isEmpty {
+            GhosttyRuntimeTrace.diagnostics(
+                "responder.pressesBegan unhandled count=\(unhandledPresses.count)"
+            )
             super.pressesBegan(unhandledPresses, with: event)
         }
     }
@@ -158,6 +202,9 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             return
         }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.keyCommand inputBytes=\(input.lengthOfBytes(using: .utf8)) modifiers=\(command.modifierFlags.rawValue) token=\(activationToken)"
+        )
         handleHardwareCommandAction(action)
     }
 
@@ -172,18 +219,39 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
 
     private func requestFirstResponderIfNeeded() {
         guard pendingFirstResponderRequest else { return }
-        guard isInputEnabled else { return }
-        guard window != nil else { return }
+        guard isInputEnabled else {
+            GhosttyRuntimeTrace.diagnostics("responder.requestFirstResponder skip-disabled token=\(activationToken)")
+            return
+        }
+        guard window != nil else {
+            GhosttyRuntimeTrace.diagnostics("responder.requestFirstResponder skip-no-window token=\(activationToken)")
+            return
+        }
 
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.requestFirstResponder schedule token=\(activationToken) firstResponder=\(isFirstResponder)"
+        )
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             guard self.pendingFirstResponderRequest else { return }
             guard self.isInputEnabled else { return }
 
-            if self.becomeFirstResponder() {
+            let didBecomeFirstResponder = self.becomeFirstResponder()
+            GhosttyRuntimeTrace.diagnostics(
+                "responder.requestFirstResponder result=\(didBecomeFirstResponder) token=\(self.activationToken) firstResponder=\(self.isFirstResponder)"
+            )
+            if didBecomeFirstResponder {
                 self.pendingFirstResponderRequest = false
             }
         }
+    }
+
+    private static func sortPressesByTimestamp(_ lhs: UIPress, _ rhs: UIPress) -> Bool {
+        if lhs.timestamp != rhs.timestamp {
+            return lhs.timestamp < rhs.timestamp
+        }
+
+        return (lhs.key?.keyCode.rawValue ?? 0) < (rhs.key?.keyCode.rawValue ?? 0)
     }
 }
 
@@ -259,6 +327,16 @@ enum GhosttyTerminalHardwareCommandMapping {
         }
 
         return .text(translated)
+    }
+
+    static func resolveHardwareText(
+        characters: String,
+        modifiers: UIKeyModifierFlags
+    ) -> String? {
+        guard !characters.isEmpty else { return nil }
+        guard !modifiers.contains(.command) else { return nil }
+        guard !modifiers.contains(.control) else { return nil }
+        return characters
     }
 
     @MainActor

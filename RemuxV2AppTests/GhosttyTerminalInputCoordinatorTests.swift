@@ -73,6 +73,18 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.isSoftwareKeyboardVisible)
     }
 
+    func testKeyboardVisibilityHidePreservesSystemModeWithoutExplicitDismissal() {
+        var coordinator = GhosttyTerminalInputCoordinator()
+        coordinator.showSystemKeyboard(isInputAvailable: true)
+        coordinator.updateSoftwareKeyboardVisibility(true)
+
+        coordinator.updateSoftwareKeyboardVisibility(false)
+
+        XCTAssertEqual(coordinator.keyboardMode, .system)
+        XCTAssertFalse(coordinator.isDismissSystemKeyboardRequested)
+        XCTAssertFalse(coordinator.isSoftwareKeyboardVisible)
+    }
+
     func testKeyboardVisibilityHideDoesNotCollapseCustomKeyboard() {
         var coordinator = GhosttyTerminalInputCoordinator()
         coordinator.toggleCustomKeyboard(isInputAvailable: true)

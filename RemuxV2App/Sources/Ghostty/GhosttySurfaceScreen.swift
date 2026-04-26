@@ -305,9 +305,10 @@ struct GhosttySurfaceScreen: View {
             return
         }
 
-        let keyboardFrame = frameValue.cgRectValue
-        let screenBounds = UIScreen.main.bounds
-        let isVisible = keyboardFrame.minY < screenBounds.height - 1
+        let isVisible = GhosttySoftwareKeyboardVisibility.isVisible(
+            frameEnd: frameValue.cgRectValue,
+            screenBounds: UIScreen.main.bounds
+        )
 
         withAnimation(Self.keyboardAnimation) {
             inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
@@ -375,6 +376,17 @@ struct GhosttyPhoneChromeLayout: Equatable {
 
     var bottomPadding: CGFloat {
         isCompact ? 2 : 4
+    }
+}
+
+struct GhosttySoftwareKeyboardVisibility {
+    static func isVisible(
+        frameEnd: CGRect,
+        screenBounds: CGRect
+    ) -> Bool {
+        guard frameEnd.width > 0, frameEnd.height > 0 else { return false }
+        guard frameEnd.minY < screenBounds.maxY - 1 else { return false }
+        return frameEnd.intersects(screenBounds)
     }
 }
 
