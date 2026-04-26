@@ -213,9 +213,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @discardableResult
     func sendInputToFocusedSurface(_ text: String) -> Bool {
         guard !text.isEmpty else { return true }
+        let start = GhosttyRuntimeTrace.nowNanos()
         guard let surface = selectedActiveSurface else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendInput drop-no-surface bytes=\(text.lengthOfBytes(using: .utf8)) \(diagnosticSelectionSummary())"
+            )
+            GhosttyRuntimeTrace.latency(
+                "registry.sendInput dropped noSurface bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
             )
             updateDebugSummary("input dropped: no focused surface")
             return false
@@ -224,9 +228,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.diagnostics(
             "sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
+        GhosttyRuntimeTrace.latency(
+            "registry.sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())}"
+        )
         guard surface.sendInput(text) else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendInput rejected bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            )
+            GhosttyRuntimeTrace.latency(
+                "registry.sendInput rejected bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
             )
             updateDebugSummary("input rejected by focused surface")
             return false
@@ -234,6 +244,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         GhosttyRuntimeTrace.diagnostics(
             "sendInput accepted bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
+        GhosttyRuntimeTrace.latency(
+            "registry.sendInput accepted bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
         )
         return true
     }
@@ -400,6 +413,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_s
     ) -> ghostty_surface_t? {
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "registry.runtimeCreateSurface begin context=\(String(describing: request.config?.pointee.context))"
+        )
         createSurfaceCount += 1
         updateDebugSummary("create_surface context=\(String(describing: request.config?.pointee.context))")
 
@@ -418,6 +435,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
             topLevels.append(topLevel)
             selectedTopLevelID = topLevel.id
+            GhosttyRuntimeTrace.latency(
+                "registry.runtimeCreateSurface end topLevel=\(ghosttyDiagnosticShortID(topLevel.id)) surface=\(ghosttyDiagnosticShortID(managed.id)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
             return managed.controlSurface.handle
 
         case GHOSTTY_SURFACE_CONTEXT_SPLIT:
@@ -430,6 +450,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 return nil
             }
 
+            GhosttyRuntimeTrace.latency(
+                "registry.runtimeCreateSurface end split surface=\(ghosttyDiagnosticShortID(managed.id)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
             return managed.controlSurface.handle
 
         default:
@@ -442,6 +465,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_tree_s
     ) -> Bool {
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index)"
+        )
         createSurfaceTreeCount += 1
         if GhosttyRuntimeTrace.isEnabled {
             NSLog(
@@ -570,6 +597,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             leafSurfacePtr[index] = surface.controlSurface.handle
         }
 
+        GhosttyRuntimeTrace.latency(
+            "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
+        )
         return true
     }
 

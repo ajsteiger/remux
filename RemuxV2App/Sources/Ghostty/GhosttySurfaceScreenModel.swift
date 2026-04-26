@@ -25,6 +25,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private let transportFactory: TransportFactory
     private let runtimeFactory: RuntimeFactory
     private var debugPaneInputSmoke: DebugPaneInputSmokeCommand?
+    private var debugLatencyProbe: DebugLatencyProbeCommand?
+    private var debugLatencyProbeDelaySatisfied = false
+    private var debugLatencyProbeDelayTask: Task<Void, Never>?
 
     private var runtime: GhosttyKitRuntime?
     private var controlSurface: GhosttyKitControlSurface?
@@ -38,13 +41,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         transportFactory: @escaping TransportFactory,
         surfaceRegistry: GhosttyRuntimeSurfaceRegistry = GhosttyRuntimeSurfaceRegistry(),
         runtimeFactory: @escaping RuntimeFactory = { try GhosttyKitRuntime(surfaceDelegate: $0) },
-        debugPaneInputSmoke: DebugPaneInputSmokeCommand? = .fromEnvironment()
+        debugPaneInputSmoke: DebugPaneInputSmokeCommand? = .fromEnvironment(),
+        debugLatencyProbe: DebugLatencyProbeCommand? = .fromEnvironment()
     ) {
         self.target = target
         self.transportFactory = transportFactory
         self.surfaceRegistry = surfaceRegistry
         self.runtimeFactory = runtimeFactory
         self.debugPaneInputSmoke = debugPaneInputSmoke
+        self.debugLatencyProbe = debugLatencyProbe
         surfaceRegistry.onChange = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -53,6 +58,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     NSLog("Remux surface registry revision=%d", surfaceRegistryRevision)
                 }
                 submitDebugPaneInputSmokeIfReady()
+                scheduleDebugLatencyProbeIfNeeded()
+                submitDebugLatencyProbeIfReady()
             }
         }
     }
@@ -89,6 +96,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 view: view,
                 initialSize: size,
                 onWrite: { [weak self, writeSequencer] data, _ in
+                    GhosttyRuntimeTrace.latency(
+                        "hostSurface.onWrite bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+                    )
                     if GhosttyRuntimeTrace.isEnabled {
                         NSLog(
                             "Remux ghostty tx %d bytes: %@",
@@ -153,6 +163,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     func stop() {
         transportWriteSequencer?.close()
         transportWriteSequencer = nil
+        debugLatencyProbeDelayTask?.cancel()
+        debugLatencyProbeDelayTask = nil
+        debugLatencyProbeDelaySatisfied = false
         hostSurface?.stop()
         hostSurface = nil
         controlSurface = nil
@@ -166,26 +179,40 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func sendInputToFocusedSurface(_ text: String) -> Bool {
+        let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "model.sendInput bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
+        GhosttyRuntimeTrace.latency(
+            "model.sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
         let accepted = surfaceRegistry.sendInputToFocusedSurface(text)
         if !accepted {
             debugStatus = "input dropped: no focused tmux pane"
         }
+        GhosttyRuntimeTrace.latency(
+            "model.sendInput end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
 
         return accepted
     }
 
     @discardableResult
     func sendPasteToFocusedSurface(_ text: String) -> Bool {
+        let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "model.sendPaste bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
+        GhosttyRuntimeTrace.latency(
+            "model.sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
         let accepted = surfaceRegistry.sendPasteToFocusedSurface(text)
         if !accepted {
             debugStatus = "paste dropped: no focused tmux pane"
         }
+        GhosttyRuntimeTrace.latency(
+            "model.sendPaste end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
 
         return accepted
     }
@@ -205,13 +232,20 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "model.sendKey event=\(event) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
+        GhosttyRuntimeTrace.latency(
+            "model.sendKey begin event=\(event) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
         let accepted = surfaceRegistry.sendKeyEventToFocusedSurface(event)
         if !accepted {
             debugStatus = "key dropped: no focused tmux pane"
         }
+        GhosttyRuntimeTrace.latency(
+            "model.sendKey end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
 
         return accepted
     }
@@ -329,36 +363,60 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func createTmuxWindow() -> Bool {
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency("model.createTmuxWindow begin")
         guard let controlSurface else {
             debugStatus = "tmux new-window dropped: host missing"
+            GhosttyRuntimeTrace.latency(
+                "model.createTmuxWindow dropped hostMissing elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
             return false
         }
 
         guard controlSurface.tmuxNewWindow() else {
             debugStatus = "tmux new-window rejected"
+            GhosttyRuntimeTrace.latency(
+                "model.createTmuxWindow rejected elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
             return false
         }
 
         debugStatus = "tmux new-window queued"
+        GhosttyRuntimeTrace.latency(
+            "model.createTmuxWindow queued elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
         return true
     }
 
     @discardableResult
     func splitFocusedTmuxPane(_ direction: ghostty_action_split_direction_e) -> Bool {
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "model.splitFocusedTmuxPane begin direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
         guard
             let surfaceID = surfaceRegistry.selectedActiveLeafID,
             let surface = surfaceRegistry.managedSurface(for: surfaceID)
         else {
             debugStatus = "tmux split dropped: no focused pane"
+            GhosttyRuntimeTrace.latency(
+                "model.splitFocusedTmuxPane dropped noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
             return false
         }
 
         guard surface.tmuxSplit(direction) else {
             debugStatus = "tmux split rejected"
+            GhosttyRuntimeTrace.latency(
+                "model.splitFocusedTmuxPane rejected target=\(ghosttyDiagnosticShortID(surfaceID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
             return false
         }
 
         debugStatus = "tmux split queued"
+        GhosttyRuntimeTrace.latency(
+            "model.splitFocusedTmuxPane queued target=\(ghosttyDiagnosticShortID(surfaceID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
         return true
     }
 
@@ -452,6 +510,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             state = .running
             debugStatus = "transport started"
             submitDebugPaneInputSmokeIfReady()
+            scheduleDebugLatencyProbeIfNeeded()
+            submitDebugLatencyProbeIfReady()
         } catch {
             await transport.close()
             surface.setBackingExited(true)
@@ -481,6 +541,104 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             smoke.markRejected()
         }
         debugPaneInputSmoke = smoke
+    }
+
+    private func submitDebugLatencyProbeIfReady() {
+        guard var probe = debugLatencyProbe else { return }
+        guard debugLatencyProbeDelaySatisfied else { return }
+        guard let submission = probe.nextSubmission(
+            isRunning: state == .running,
+            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
+        ) else {
+            debugLatencyProbe = probe
+            return
+        }
+
+        switch submission.action {
+        case .input:
+            guard let marker = submission.marker, let text = submission.text else {
+                debugLatencyProbe = probe
+                return
+            }
+            let submittedAt = GhosttyRuntimeTrace.nowNanos()
+            GhosttyRuntimeTrace.registerLatencyProbe(
+                marker: marker,
+                label: "debug-input",
+                submittedAt: submittedAt
+            )
+            GhosttyRuntimeTrace.latency(
+                "debugLatencyProbe.input submit marker=\(marker) bytes=\(text.lengthOfBytes(using: .utf8))"
+            )
+            let accepted = sendInputToFocusedSurface(text)
+            if accepted {
+                debugStatus = "debug latency input probe sent"
+            } else {
+                probe.markRejected()
+            }
+
+        case .keyEcho:
+            guard let marker = submission.marker, let text = submission.text else {
+                debugLatencyProbe = probe
+                return
+            }
+            let submittedAt = GhosttyRuntimeTrace.nowNanos()
+            GhosttyRuntimeTrace.registerLatencyProbe(
+                marker: marker,
+                label: "debug-key-echo",
+                submittedAt: submittedAt
+            )
+            GhosttyRuntimeTrace.latency(
+                "debugLatencyProbe.keyEcho submit marker=\(marker) characters=\(text.count) bytes=\(text.lengthOfBytes(using: .utf8))"
+            )
+            let accepted = sendInputToFocusedSurface(text)
+            if accepted {
+                _ = sendInputToFocusedSurface("\u{15}")
+                debugStatus = "debug latency key echo probe sent"
+            } else {
+                probe.markRejected()
+            }
+
+        case .splitRight:
+            GhosttyRuntimeTrace.latency("debugLatencyProbe.splitRight submit")
+            if !splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT) {
+                probe.markRejected()
+            }
+
+        case .splitDown:
+            GhosttyRuntimeTrace.latency("debugLatencyProbe.splitDown submit")
+            if !splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) {
+                probe.markRejected()
+            }
+
+        case .newWindow:
+            GhosttyRuntimeTrace.latency("debugLatencyProbe.newWindow submit")
+            if !createTmuxWindow() {
+                probe.markRejected()
+            }
+        }
+
+        debugLatencyProbe = probe
+    }
+
+    private func scheduleDebugLatencyProbeIfNeeded() {
+        guard let probe = debugLatencyProbe else { return }
+        guard state == .running else { return }
+        guard !debugLatencyProbeDelaySatisfied else { return }
+        guard debugLatencyProbeDelayTask == nil else { return }
+
+        let delay = probe.delayMilliseconds
+        guard delay > 0 else {
+            debugLatencyProbeDelaySatisfied = true
+            return
+        }
+
+        debugLatencyProbeDelayTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(delay))
+            guard let self, !Task.isCancelled else { return }
+            debugLatencyProbeDelaySatisfied = true
+            debugLatencyProbeDelayTask = nil
+            submitDebugLatencyProbeIfReady()
+        }
     }
 }
 
@@ -526,5 +684,134 @@ struct DebugPaneInputSmokeCommand: Equatable {
         }
 
         return rawText + "\r"
+    }
+}
+
+struct DebugLatencyProbeCommand: Equatable {
+    enum Action: String, Equatable {
+        case input
+        case keyEcho
+        case splitRight
+        case splitDown
+        case newWindow
+    }
+
+    struct Submission: Equatable {
+        let action: Action
+        let marker: String?
+        let text: String?
+    }
+
+    private static let environmentKey = "REMUX_DEBUG_LATENCY_PROBE"
+    private static let delayEnvironmentKey = "REMUX_DEBUG_LATENCY_PROBE_DELAY_MS"
+
+    private let action: Action
+    private let probeID: String
+    let delayMilliseconds: Int64
+    private var didSubmit = false
+
+    init(
+        action: Action = .input,
+        probeID: String = UUID().uuidString,
+        delayMilliseconds: Int64 = 0
+    ) {
+        self.action = action
+        self.probeID = Self.normalizedProbeID(probeID)
+        self.delayMilliseconds = max(delayMilliseconds, 0)
+    }
+
+    init?(
+        _ rawValue: String?,
+        probeID: String = UUID().uuidString,
+        delayMilliseconds: Int64 = 0
+    ) {
+        guard let rawValue, !rawValue.isEmpty else { return nil }
+
+        let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "1", "true", "input":
+            self.init(action: .input, probeID: probeID, delayMilliseconds: delayMilliseconds)
+        case "key-echo", "key_echo", "key", "echo":
+            self.init(action: .keyEcho, probeID: probeID, delayMilliseconds: delayMilliseconds)
+        case "split-right", "split_right", "right":
+            self.init(action: .splitRight, probeID: probeID, delayMilliseconds: delayMilliseconds)
+        case "split-down", "split_down", "down":
+            self.init(action: .splitDown, probeID: probeID, delayMilliseconds: delayMilliseconds)
+        case "new-window", "new_window", "window":
+            self.init(action: .newWindow, probeID: probeID, delayMilliseconds: delayMilliseconds)
+        default:
+            return nil
+        }
+    }
+
+    static func fromEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> DebugLatencyProbeCommand? {
+#if DEBUG
+        DebugLatencyProbeCommand(
+            environment[environmentKey],
+            delayMilliseconds: Self.delayMilliseconds(from: environment)
+        )
+#else
+        _ = environment
+        return nil
+#endif
+    }
+
+    mutating func nextSubmission(
+        isRunning: Bool,
+        hasFocusedSurface: Bool
+    ) -> Submission? {
+        guard !didSubmit, isRunning, hasFocusedSurface else { return nil }
+
+        didSubmit = true
+        switch action {
+        case .input:
+            return Submission(
+                action: action,
+                marker: outputMarker,
+                text: inputText
+            )
+        case .keyEcho:
+            return Submission(
+                action: action,
+                marker: keyEchoMarker,
+                text: keyEchoMarker
+            )
+        case .splitRight, .splitDown, .newWindow:
+            return Submission(
+                action: action,
+                marker: nil,
+                text: nil
+            )
+        }
+    }
+
+    mutating func markRejected() {
+        didSubmit = false
+    }
+
+    var outputMarker: String {
+        "__REMUX_LATENCY_\(probeID)__"
+    }
+
+    var keyEchoMarker: String {
+        String(UnicodeScalar(0x00A7)!)
+    }
+
+    var inputText: String {
+        "printf __REMUX_%s__ LATENCY_\(probeID)\r"
+    }
+
+    private static func normalizedProbeID(_ value: String) -> String {
+        let allowed = value.filter { character in
+            character.isLetter || character.isNumber
+        }
+        return String(allowed.prefix(16)).isEmpty ? "probe" : String(allowed.prefix(16))
+    }
+
+    private static func delayMilliseconds(from environment: [String: String]) -> Int64 {
+        guard let rawValue = environment[delayEnvironmentKey] else { return 0 }
+        return Int64(rawValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
     }
 }

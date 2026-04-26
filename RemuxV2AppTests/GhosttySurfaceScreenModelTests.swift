@@ -1034,6 +1034,51 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
+    func testDebugLatencyProbeBuildsInputMarkerWithoutEchoingFullMarker() {
+        var probe = DebugLatencyProbeCommand(action: .input, probeID: "abc-123")
+        let submission = probe.nextSubmission(isRunning: true, hasFocusedSurface: true)
+
+        XCTAssertEqual(submission?.action, .input)
+        XCTAssertEqual(submission?.marker, "__REMUX_LATENCY_abc123__")
+        XCTAssertEqual(submission?.text, "printf __REMUX_%s__ LATENCY_abc123\r")
+        XCTAssertFalse(submission?.text?.contains("__REMUX_LATENCY_abc123__") ?? true)
+        XCTAssertNil(probe.nextSubmission(isRunning: true, hasFocusedSurface: true))
+    }
+
+    func testDebugLatencyProbeBuildsKeyEchoMarker() {
+        var probe = DebugLatencyProbeCommand(action: .keyEcho, probeID: "abc-123")
+        let submission = probe.nextSubmission(isRunning: true, hasFocusedSurface: true)
+
+        XCTAssertEqual(submission?.action, .keyEcho)
+        XCTAssertEqual(submission?.marker, String(UnicodeScalar(0x00A7)!))
+        XCTAssertEqual(submission?.text, String(UnicodeScalar(0x00A7)!))
+        XCTAssertNil(probe.nextSubmission(isRunning: true, hasFocusedSurface: true))
+    }
+
+    func testDebugLatencyProbeParsesActionAliases() {
+        var input = DebugLatencyProbeCommand("1", probeID: "a")
+        var keyEcho = DebugLatencyProbeCommand("key-echo", probeID: "a")
+        var splitRight = DebugLatencyProbeCommand("split-right", probeID: "a")
+        var splitDown = DebugLatencyProbeCommand("down", probeID: "a")
+        var newWindow = DebugLatencyProbeCommand("window", probeID: "a")
+
+        XCTAssertEqual(input?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .input)
+        XCTAssertEqual(keyEcho?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .keyEcho)
+        XCTAssertEqual(splitRight?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .splitRight)
+        XCTAssertEqual(splitDown?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .splitDown)
+        XCTAssertEqual(newWindow?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .newWindow)
+        XCTAssertNil(DebugLatencyProbeCommand("unknown", probeID: "a"))
+    }
+
+    func testDebugLatencyProbeReadsDelayFromEnvironment() {
+        let probe = DebugLatencyProbeCommand.fromEnvironment([
+            "REMUX_DEBUG_LATENCY_PROBE": "input",
+            "REMUX_DEBUG_LATENCY_PROBE_DELAY_MS": "2500",
+        ])
+
+        XCTAssertEqual(probe?.delayMilliseconds, 2500)
+    }
+
     private func waitUntil(
         timeout: TimeInterval = 1,
         condition: @escaping @MainActor () -> Bool
