@@ -7,15 +7,13 @@ struct GhosttySurfaceScreen: View {
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
+    @State private var bottomChromeHeight: CGFloat = 0
+    @State private var softwareKeyboardOverlapHeight: CGFloat = 0
+    @State private var selectionSheetBottomReplacementHeight: CGFloat = 0
+    @State private var terminalViewportStabilizer = GhosttyTerminalViewportStabilizer()
 
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
-
-    private static let keyboardAnimation = Animation.spring(
-        response: 0.28,
-        dampingFraction: 0.9,
-        blendDuration: 0.12
-    )
 
     init(
         target: TmuxConnectionTarget,
@@ -47,8 +45,18 @@ struct GhosttySurfaceScreen: View {
                     .ignoresSafeArea()
 
                 GeometryReader { proxy in
-                    ZStack {
-                        GhosttyHostSurfaceView(model: model, size: proxy.size)
+                    let liveTerminalViewportSize = GhosttyTerminalViewportStabilizer.normalized(proxy.size)
+                    let terminalViewportSize = terminalViewportStabilizer.effectiveSize(
+                        liveSize: liveTerminalViewportSize
+                    )
+
+                    ZStack(alignment: .topLeading) {
+                        GhosttyHostSurfaceView(model: model, size: terminalViewportSize)
+                            .frame(
+                                width: terminalViewportSize.width,
+                                height: terminalViewportSize.height,
+                                alignment: .topLeading
+                            )
                             .opacity(0.001)
                             .allowsHitTesting(false)
 
@@ -58,6 +66,11 @@ struct GhosttySurfaceScreen: View {
                             onWindowSwipe: handleWindowSwipe,
                             onCopySelection: copyTerminalSelection
                         )
+                            .frame(
+                                width: terminalViewportSize.width,
+                                height: terminalViewportSize.height,
+                                alignment: .topLeading
+                            )
                             .background(GhosttyPhoneChromePalette.screenBackground)
 
                         GhosttyTerminalResponderRepresentable(
@@ -67,16 +80,39 @@ struct GhosttySurfaceScreen: View {
                             sendPaste: sendTerminalPaste,
                             sendKeyEvent: sendTerminalKeyEvent
                         )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(
+                            width: terminalViewportSize.width,
+                            height: terminalViewportSize.height,
+                            alignment: .topLeading
+                        )
                         .opacity(0.01)
                         .allowsHitTesting(false)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .overlay(alignment: .topLeading) {
                         GhosttySurfaceStatusOverlay(
                             model: model,
                             registry: registry
                         )
                         .id(model.surfaceRegistryRevision)
+                    }
+                    .onAppear {
+                        terminalViewportStabilizer.updateLiveSize(
+                            liveTerminalViewportSize,
+                            isSheetPresented: selectionSheet != nil
+                        )
+                    }
+                    .onChange(of: liveTerminalViewportSize) { _, newValue in
+                        terminalViewportStabilizer.updateLiveSize(
+                            newValue,
+                            isSheetPresented: selectionSheet != nil
+                        )
+                    }
+                    .onChange(of: selectionSheet?.id) { _, newValue in
+                        terminalViewportStabilizer.sheetPresentationChanged(
+                            isPresented: newValue != nil,
+                            liveSize: liveTerminalViewportSize
+                        )
                     }
                 }
             }
@@ -107,14 +143,24 @@ struct GhosttySurfaceScreen: View {
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .background(GhosttyPhoneChromePalette.screenBackground)
+                .background {
+                    GeometryReader { chromeProxy in
+                        Color.clear.preference(
+                            key: GhosttyBottomChromeHeightPreferenceKey.self,
+                            value: chromeProxy.size.height
+                        )
+                    }
+                }
+            }
+            .onPreferenceChange(GhosttyBottomChromeHeightPreferenceKey.self) { newHeight in
+                bottomChromeHeight = GhosttySelectionSheetSizing.normalizedHeight(newHeight)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
                 updateKeyboardVisibility(with: $0)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-                withAnimation(Self.keyboardAnimation) {
-                    inputCoordinator.updateSoftwareKeyboardVisibility(false)
-                }
+                softwareKeyboardOverlapHeight = 0
+                inputCoordinator.updateSoftwareKeyboardVisibility(false)
             }
             .sheet(item: selectionSheetBinding) { sheet in
                 selectionSheetContent(sheet)
@@ -161,6 +207,9 @@ struct GhosttySurfaceScreen: View {
                     session.cancelAll()
                 }
                 selectionSheet = newValue
+                if newValue == nil {
+                    selectionSheetBottomReplacementHeight = 0
+                }
             }
         )
     }
@@ -181,35 +230,25 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showSystemKeyboard() {
-        withAnimation(Self.keyboardAnimation) {
-            inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
-        }
+        inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
     }
 
     private func handleSurfaceTap(_ surfaceID: UUID) {
         let didActivatePane = model.focusTmuxPane(surfaceID)
-        withAnimation(Self.keyboardAnimation) {
-            inputCoordinator.handleSurfaceTap(isInputAvailable: didActivatePane)
-        }
+        inputCoordinator.handleSurfaceTap(isInputAvailable: didActivatePane)
     }
 
     private func handleWindowSwipe(_ direction: GhosttyRuntimeSelectionDirection) {
         _ = model.focusAdjacentTmuxTopLevel(direction)
-        withAnimation(Self.keyboardAnimation) {
-            inputCoordinator.handleSelectionChange(isInputAvailable: isTerminalInputAvailable)
-        }
+        inputCoordinator.handleSelectionChange(isInputAvailable: isTerminalInputAvailable)
     }
 
     private func toggleKeyboardChrome() {
-        withAnimation(Self.keyboardAnimation) {
-            inputCoordinator.toggleKeyboard(isInputAvailable: isTerminalInputAvailable)
-        }
+        inputCoordinator.toggleKeyboard(isInputAvailable: isTerminalInputAvailable)
     }
 
     private func toggleCustomKeyboard() {
-        withAnimation(Self.keyboardAnimation) {
-            inputCoordinator.toggleCustomKeyboard(isInputAvailable: isTerminalInputAvailable)
-        }
+        inputCoordinator.toggleCustomKeyboard(isInputAvailable: isTerminalInputAvailable)
     }
 
     private func refocusSystemKeyboardIfActive() {
@@ -225,6 +264,7 @@ struct GhosttySurfaceScreen: View {
 
     private func showWindows() {
         guard !registry.topLevels.isEmpty else { return }
+        captureSelectionSheetBottomReplacementHeight()
         selectionSheet = .windows
     }
 
@@ -233,6 +273,7 @@ struct GhosttySurfaceScreen: View {
             session.cancelAll()
         }
         selectionSheet = nil
+        selectionSheetBottomReplacementHeight = 0
     }
 
     private func selectionSheetDetents(
@@ -240,13 +281,27 @@ struct GhosttySurfaceScreen: View {
     ) -> Set<PresentationDetent> {
         switch sheet {
         case .windows:
-            return [.height(310)]
+            return [
+                .height(
+                    GhosttySelectionSheetSizing.fixedDetentHeight(
+                        preferredHeight: GhosttySelectionSheetSizing.windowPreferredHeight,
+                        bottomReplacementHeight: selectionSheetBottomReplacementHeight
+                    )
+                ),
+            ]
 
         case .panes(let session):
             let paneCount = registry.topLevels.first(where: { $0.id == session.topLevelID })?.leafIDs.count ?? 0
             switch PanePreviewLayout.metricsForCurrentScreen(for: paneCount).sheetDetent {
             case .fixed(let height):
-                return [.height(height)]
+                return [
+                    .height(
+                        GhosttySelectionSheetSizing.fixedDetentHeight(
+                            preferredHeight: height,
+                            bottomReplacementHeight: selectionSheetBottomReplacementHeight
+                        )
+                    ),
+                ]
             case .large:
                 return [.large]
             }
@@ -259,6 +314,7 @@ struct GhosttySurfaceScreen: View {
         // Carry the preview session in the sheet payload itself so the pane
         // sheet never renders against a separate optional state that may lag
         // the presentation transaction.
+        captureSelectionSheetBottomReplacementHeight()
         selectionSheet = .panes(
             GhosttyPanePreviewSession(
                 topLevelID: topLevel.id,
@@ -310,10 +366,19 @@ struct GhosttySurfaceScreen: View {
             frameEnd: frameValue.cgRectValue,
             screenBounds: UIScreen.main.bounds
         )
+        softwareKeyboardOverlapHeight = GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
+            frameEnd: frameValue.cgRectValue,
+            screenBounds: UIScreen.main.bounds
+        )
 
-        withAnimation(Self.keyboardAnimation) {
-            inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
-        }
+        inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
+    }
+
+    private func captureSelectionSheetBottomReplacementHeight() {
+        selectionSheetBottomReplacementHeight = GhosttySelectionSheetSizing.bottomReplacementHeight(
+            bottomChromeHeight: bottomChromeHeight,
+            softwareKeyboardOverlapHeight: softwareKeyboardOverlapHeight
+        )
     }
 
     @ViewBuilder
@@ -359,6 +424,82 @@ struct GhosttySurfaceScreen: View {
     }
 }
 
+private struct GhosttyBottomChromeHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct GhosttySelectionSheetSizing {
+    static let windowPreferredHeight: CGFloat = 310
+
+    static func fixedDetentHeight(
+        preferredHeight: CGFloat,
+        bottomReplacementHeight: CGFloat
+    ) -> CGFloat {
+        max(normalizedHeight(preferredHeight), normalizedHeight(bottomReplacementHeight))
+    }
+
+    static func bottomReplacementHeight(
+        bottomChromeHeight: CGFloat,
+        softwareKeyboardOverlapHeight: CGFloat
+    ) -> CGFloat {
+        normalizedHeight(bottomChromeHeight) + normalizedHeight(softwareKeyboardOverlapHeight)
+    }
+
+    static func normalizedHeight(_ height: CGFloat) -> CGFloat {
+        guard height.isFinite, height > 0 else { return 0 }
+        return ceil(height)
+    }
+}
+
+struct GhosttyTerminalViewportStabilizer: Equatable {
+    private(set) var lastLiveSize = CGSize(width: 1, height: 1)
+    private(set) var frozenSize: CGSize?
+
+    mutating func updateLiveSize(_ size: CGSize, isSheetPresented: Bool) {
+        let normalizedSize = Self.normalized(size)
+        guard normalizedSize.width > 1, normalizedSize.height > 1 else { return }
+        guard !isSheetPresented else { return }
+
+        lastLiveSize = normalizedSize
+    }
+
+    mutating func sheetPresentationChanged(isPresented: Bool, liveSize: CGSize) {
+        let normalizedSize = Self.normalized(liveSize)
+        if isPresented {
+            frozenSize = isUsable(lastLiveSize) ? lastLiveSize : normalizedSize
+        } else {
+            frozenSize = nil
+            if isUsable(normalizedSize) {
+                lastLiveSize = normalizedSize
+            }
+        }
+    }
+
+    func effectiveSize(liveSize: CGSize) -> CGSize {
+        frozenSize ?? Self.normalized(liveSize)
+    }
+
+    static func normalized(_ size: CGSize) -> CGSize {
+        CGSize(
+            width: normalizedDimension(size.width),
+            height: normalizedDimension(size.height)
+        )
+    }
+
+    private static func normalizedDimension(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite, value > 1 else { return 1 }
+        return value
+    }
+
+    private func isUsable(_ size: CGSize) -> Bool {
+        size.width > 1 && size.height > 1
+    }
+}
+
 struct GhosttyPhoneChromeLayout: Equatable {
     let screenSize: CGSize
     let isSoftwareKeyboardVisible: Bool
@@ -385,9 +526,21 @@ struct GhosttySoftwareKeyboardVisibility {
         frameEnd: CGRect,
         screenBounds: CGRect
     ) -> Bool {
-        guard frameEnd.width > 0, frameEnd.height > 0 else { return false }
-        guard frameEnd.minY < screenBounds.maxY - 1 else { return false }
-        return frameEnd.intersects(screenBounds)
+        visibleOverlapHeight(frameEnd: frameEnd, screenBounds: screenBounds) > 0
+    }
+
+    static func visibleOverlapHeight(
+        frameEnd: CGRect,
+        screenBounds: CGRect
+    ) -> CGFloat {
+        guard frameEnd.width > 0, frameEnd.height > 0 else { return 0 }
+        guard frameEnd.minY < screenBounds.maxY - 1 else { return 0 }
+
+        let overlap = frameEnd.intersection(screenBounds)
+        guard !overlap.isNull, overlap.height.isFinite, overlap.height > 0 else {
+            return 0
+        }
+        return overlap.height
     }
 }
 

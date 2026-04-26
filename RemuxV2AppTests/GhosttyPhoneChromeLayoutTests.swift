@@ -46,12 +46,32 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
         )
     }
 
+    func testKeyboardFrameReportsVisibleOverlapHeight() {
+        XCTAssertEqual(
+            GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
+                frameEnd: CGRect(x: 0, y: 544, width: 390, height: 300),
+                screenBounds: CGRect(x: 0, y: 0, width: 390, height: 844)
+            ),
+            300
+        )
+    }
+
     func testKeyboardFrameAtBottomEdgeIsHidden() {
         XCTAssertFalse(
             GhosttySoftwareKeyboardVisibility.isVisible(
                 frameEnd: CGRect(x: 0, y: 844, width: 390, height: 300),
                 screenBounds: CGRect(x: 0, y: 0, width: 390, height: 844)
             )
+        )
+    }
+
+    func testKeyboardFrameAtBottomEdgeReportsNoOverlapHeight() {
+        XCTAssertEqual(
+            GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
+                frameEnd: CGRect(x: 0, y: 844, width: 390, height: 300),
+                screenBounds: CGRect(x: 0, y: 0, width: 390, height: 844)
+            ),
+            0
         )
     }
 
@@ -70,6 +90,37 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
                 frameEnd: CGRect(x: 0, y: 190, width: 844, height: 200),
                 screenBounds: CGRect(x: 0, y: 0, width: 844, height: 390)
             )
+        )
+    }
+
+    func testSelectionSheetKeepsPreferredHeightWhenBottomStackIsShorter() {
+        let bottomReplacementHeight = GhosttySelectionSheetSizing.bottomReplacementHeight(
+            bottomChromeHeight: 92,
+            softwareKeyboardOverlapHeight: 0
+        )
+
+        XCTAssertEqual(
+            GhosttySelectionSheetSizing.fixedDetentHeight(
+                preferredHeight: 310,
+                bottomReplacementHeight: bottomReplacementHeight
+            ),
+            310
+        )
+    }
+
+    func testSelectionSheetExpandsToReplaceKeyboardAndChromeStack() {
+        let bottomReplacementHeight = GhosttySelectionSheetSizing.bottomReplacementHeight(
+            bottomChromeHeight: 92.2,
+            softwareKeyboardOverlapHeight: 291.4
+        )
+
+        XCTAssertEqual(bottomReplacementHeight, 385)
+        XCTAssertEqual(
+            GhosttySelectionSheetSizing.fixedDetentHeight(
+                preferredHeight: 310,
+                bottomReplacementHeight: bottomReplacementHeight
+            ),
+            385
         )
     }
 }

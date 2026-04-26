@@ -5,6 +5,33 @@ import XCTest
 
 @MainActor
 final class GhosttySurfaceScreenModelTests: XCTestCase {
+    func testTerminalViewportStabilizerFreezesLiveSizeWhileSheetIsPresented() {
+        var stabilizer = GhosttyTerminalViewportStabilizer()
+        let keyboardSize = CGSize(width: 402, height: 673)
+        let sheetTransientSize = CGSize(width: 402, height: 727)
+
+        stabilizer.updateLiveSize(keyboardSize, isSheetPresented: false)
+        stabilizer.sheetPresentationChanged(isPresented: true, liveSize: keyboardSize)
+        stabilizer.updateLiveSize(sheetTransientSize, isSheetPresented: true)
+
+        XCTAssertEqual(stabilizer.effectiveSize(liveSize: sheetTransientSize), keyboardSize)
+        XCTAssertEqual(stabilizer.lastLiveSize, keyboardSize)
+    }
+
+    func testTerminalViewportStabilizerResumesLiveSizeAfterSheetDismissal() {
+        var stabilizer = GhosttyTerminalViewportStabilizer()
+        let keyboardSize = CGSize(width: 402, height: 673)
+        let restoredSize = CGSize(width: 402, height: 727)
+
+        stabilizer.updateLiveSize(keyboardSize, isSheetPresented: false)
+        stabilizer.sheetPresentationChanged(isPresented: true, liveSize: keyboardSize)
+        stabilizer.sheetPresentationChanged(isPresented: false, liveSize: restoredSize)
+
+        XCTAssertEqual(stabilizer.effectiveSize(liveSize: restoredSize), restoredSize)
+        XCTAssertEqual(stabilizer.lastLiveSize, restoredSize)
+        XCTAssertNil(stabilizer.frozenSize)
+    }
+
     func testRegistryChangesInvalidateScreenModel() async {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
