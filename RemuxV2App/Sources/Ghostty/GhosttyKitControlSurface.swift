@@ -167,23 +167,38 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     func sendInput(_ text: String) -> Bool {
         guard !text.isEmpty else { return true }
 
+        let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "control.sendInput handle=\(String(describing: storage.surface)) bytes=\(text.lengthOfBytes(using: .utf8)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
-        return text.withCString { pointer in
+        GhosttyRuntimeTrace.latency(
+            "control.sendInput begin handle=\(String(describing: storage.surface)) bytes=\(text.lengthOfBytes(using: .utf8)) size=\(ghosttyDiagnosticSurfaceSize(currentSize())) preview=\(text.debugDescription)"
+        )
+        let accepted = text.withCString { pointer in
             let byteCount = text.lengthOfBytes(using: .utf8)
             return ghostty_surface_input(storage.surface, pointer, UInt(byteCount))
         }
+        GhosttyRuntimeTrace.latency(
+            "control.sendInput end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        return accepted
     }
 
     @MainActor
     func sendText(_ text: String) {
         guard !text.isEmpty else { return }
 
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "control.sendText begin handle=\(String(describing: storage.surface)) bytes=\(text.lengthOfBytes(using: .utf8)) preview=\(text.debugDescription)"
+        )
         text.withCString { pointer in
             let byteCount = text.lengthOfBytes(using: .utf8)
             ghostty_surface_text(storage.surface, pointer, UInt(byteCount))
         }
+        GhosttyRuntimeTrace.latency(
+            "control.sendText end elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
     }
 
     @MainActor
@@ -196,22 +211,46 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     @discardableResult
     func tmuxFocus() -> Bool {
+        let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "control.tmuxFocus handle=\(String(describing: storage.surface)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
-        return ghostty_surface_tmux_focus(storage.surface)
+        GhosttyRuntimeTrace.latency(
+            "control.tmuxFocus begin handle=\(String(describing: storage.surface)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
+        let accepted = ghostty_surface_tmux_focus(storage.surface)
+        GhosttyRuntimeTrace.latency(
+            "control.tmuxFocus end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        return accepted
     }
 
     @MainActor
     @discardableResult
     func tmuxNewWindow() -> Bool {
-        ghostty_surface_tmux_new_window(storage.surface)
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "control.tmuxNewWindow begin handle=\(String(describing: storage.surface)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
+        let accepted = ghostty_surface_tmux_new_window(storage.surface)
+        GhosttyRuntimeTrace.latency(
+            "control.tmuxNewWindow end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        return accepted
     }
 
     @MainActor
     @discardableResult
     func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool {
-        ghostty_surface_tmux_split(storage.surface, direction)
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "control.tmuxSplit begin handle=\(String(describing: storage.surface)) direction=\(direction) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
+        let accepted = ghostty_surface_tmux_split(storage.surface, direction)
+        GhosttyRuntimeTrace.latency(
+            "control.tmuxSplit end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        return accepted
     }
 
     @MainActor
@@ -229,7 +268,15 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     @discardableResult
     func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
-        event.withCValue { ghostty_surface_key(storage.surface, $0) }
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "control.sendKey begin handle=\(String(describing: storage.surface)) event=\(event)"
+        )
+        let accepted = event.withCValue { ghostty_surface_key(storage.surface, $0) }
+        GhosttyRuntimeTrace.latency(
+            "control.sendKey end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        return accepted
     }
 
     @MainActor

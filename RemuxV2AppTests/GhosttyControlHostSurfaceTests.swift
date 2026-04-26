@@ -64,6 +64,37 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         sequencer.close()
     }
 
+    func testLatencyProbeStoreDetectsMarkersSplitAcrossChunks() {
+        let store = GhosttyLatencyProbeStore()
+
+        store.register(
+            marker: "__REMUX_KEY_probe__",
+            label: "debug-key-echo",
+            submittedAt: 100
+        )
+
+        XCTAssertTrue(store.recordHits(in: Data("__REMUX_".utf8)).isEmpty)
+        let hits = store.recordHits(in: Data("KEY_probe__".utf8))
+
+        XCTAssertEqual(hits.count, 1)
+        XCTAssertEqual(hits.first?.marker, "__REMUX_KEY_probe__")
+        XCTAssertEqual(hits.first?.label, "debug-key-echo")
+        XCTAssertEqual(hits.first?.submittedAt, 100)
+    }
+
+    func testTmuxOutputPayloadExtractsContiguousPaneBytes() {
+        var data = Data("%begin 1 0 0\r\n%end 1 0 0\r\n%output %284 ".utf8)
+        data.append(0xC2)
+        data.append(Data("\r\n%output %284 ".utf8))
+        data.append(0xA7)
+        data.append(Data("\r\n".utf8))
+
+        XCTAssertEqual(
+            GhosttyRuntimeTrace.tmuxOutputPayload(in: data),
+            Data(String(UnicodeScalar(0x00A7)!).utf8)
+        )
+    }
+
     func testTransportResizeContractCanRecordGhosttyViewportChanges() async throws {
         let transport = RecordingTmuxControlTransport()
 

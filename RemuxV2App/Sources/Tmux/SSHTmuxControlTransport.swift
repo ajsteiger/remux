@@ -134,6 +134,10 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         guard !hasStarted else { throw SSHTmuxControlTransportError.alreadyStarted }
         hasStarted = true
 
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "transport.start begin host=\(configuration.host):\(configuration.port) session=\(configuration.sessionName)"
+        )
         let establishedConnection = try await SSHTmuxControlBootstrap.connect(
             using: configuration,
             viewport: resizeState.latestViewport,
@@ -158,20 +162,37 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         for data in queuedWrites {
             try await establishedConnection.write(data)
         }
+        GhosttyRuntimeTrace.latency(
+            "transport.start end queuedWrites=\(queuedWrites.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
     }
 
     func send(_ data: Data) async throws {
         guard !data.isEmpty else { return }
 
+        let start = GhosttyRuntimeTrace.nowNanos()
         guard let connection else {
             pendingWrites.append(data)
+            GhosttyRuntimeTrace.latency(
+                "transport.send queued-before-start bytes=\(data.count) pending=\(pendingWrites.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+            )
             return
         }
 
+        GhosttyRuntimeTrace.latency(
+            "transport.send begin bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+        )
         try await connection.write(data)
+        GhosttyRuntimeTrace.latency(
+            "transport.send end bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
     }
 
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "transport.resize request columns=\(columns) rows=\(rows) px=\(width)x\(height)"
+        )
         resizeState.request(
             TmuxControlViewport(
                 columns: columns,
@@ -181,8 +202,16 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
             )
         )
 
-        guard let connection else { return }
+        guard let connection else {
+            GhosttyRuntimeTrace.latency(
+                "transport.resize queued-before-start elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            return
+        }
         try await drainResizeQueueIfNeeded(using: connection)
+        GhosttyRuntimeTrace.latency(
+            "transport.resize drained elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
     }
 
     func close() async {
@@ -194,6 +223,9 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
     private func emit(_ data: Data) {
         guard !hasFinished else { return }
+        GhosttyRuntimeTrace.latency(
+            "transport.emit bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+        )
         continuation.yield(data)
     }
 
@@ -215,7 +247,14 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
         do {
             while true {
+                let start = GhosttyRuntimeTrace.nowNanos()
+                GhosttyRuntimeTrace.latency(
+                    "transport.resize.apply begin columns=\(viewport.columns) rows=\(viewport.rows) px=\(viewport.pixelWidth)x\(viewport.pixelHeight)"
+                )
                 try await connection.resize(viewport)
+                GhosttyRuntimeTrace.latency(
+                    "transport.resize.apply end elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
                 guard let nextViewport = resizeState.completeApplied(viewport) else {
                     return
                 }
@@ -270,12 +309,23 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
 
         var buffer = allocator.buffer(capacity: data.count)
         buffer.writeBytes(data)
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "ssh.writeAndFlush begin bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+        )
         try await sessionChannel.writeAndFlush(
             SSHChannelData(type: .channel, data: .byteBuffer(buffer))
+        )
+        GhosttyRuntimeTrace.latency(
+            "ssh.writeAndFlush end bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
     }
 
     func resize(_ viewport: TmuxControlViewport) async throws {
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.latency(
+            "ssh.resize begin columns=\(viewport.columns) rows=\(viewport.rows) px=\(viewport.pixelWidth)x\(viewport.pixelHeight)"
+        )
         try await sessionChannel.triggerUserOutboundEvent(
             SSHChannelRequestEvent.WindowChangeRequest(
                 terminalCharacterWidth: Int(viewport.columns),
@@ -283,6 +333,9 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
                 terminalPixelWidth: Int(viewport.pixelWidth),
                 terminalPixelHeight: Int(viewport.pixelHeight)
             )
+        )
+        GhosttyRuntimeTrace.latency(
+            "ssh.resize end elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
     }
 
@@ -476,7 +529,11 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
             return
         }
 
-        onOutput(Data(bytes))
+        let data = Data(bytes)
+        GhosttyRuntimeTrace.latency(
+            "ssh.channelRead bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+        )
+        onOutput(data)
     }
 
     func channelInactive(context: ChannelHandlerContext) {
