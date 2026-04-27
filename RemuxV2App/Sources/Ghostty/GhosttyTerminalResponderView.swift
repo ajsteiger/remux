@@ -59,6 +59,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     private var isInputEnabled = false
     private var activationToken = -1
     private var pendingFirstResponderRequest = false
+    private var isFirstResponderRetryScheduled = false
     private var sendTextHandler: ((String) -> Bool)?
     private var sendPasteHandler: ((String) -> Bool)?
     private var sendKeyEventHandler: ((GhosttySurfaceKeyEvent) -> Bool)?
@@ -86,6 +87,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
                 resignFirstResponder()
             }
             pendingFirstResponderRequest = false
+            isFirstResponderRetryScheduled = false
             self.activationToken = activationToken
             return
         }
@@ -229,16 +231,32 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         }
 
         GhosttyRuntimeTrace.diagnostics(
-            "responder.requestFirstResponder schedule token=\(activationToken) firstResponder=\(isFirstResponder)"
+            "responder.requestFirstResponder immediate token=\(activationToken) firstResponder=\(isFirstResponder)"
+        )
+        let didBecomeFirstResponder = becomeFirstResponder()
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.requestFirstResponder immediate-result=\(didBecomeFirstResponder) token=\(activationToken) firstResponder=\(isFirstResponder)"
+        )
+        if didBecomeFirstResponder {
+            pendingFirstResponderRequest = false
+            isFirstResponderRetryScheduled = false
+            return
+        }
+
+        guard !isFirstResponderRetryScheduled else { return }
+        isFirstResponderRetryScheduled = true
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.requestFirstResponder schedule-retry token=\(activationToken) firstResponder=\(isFirstResponder)"
         )
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            self.isFirstResponderRetryScheduled = false
             guard self.pendingFirstResponderRequest else { return }
             guard self.isInputEnabled else { return }
 
             let didBecomeFirstResponder = self.becomeFirstResponder()
             GhosttyRuntimeTrace.diagnostics(
-                "responder.requestFirstResponder result=\(didBecomeFirstResponder) token=\(self.activationToken) firstResponder=\(self.isFirstResponder)"
+                "responder.requestFirstResponder retry-result=\(didBecomeFirstResponder) token=\(self.activationToken) firstResponder=\(self.isFirstResponder)"
             )
             if didBecomeFirstResponder {
                 self.pendingFirstResponderRequest = false
