@@ -123,4 +123,67 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
             385
         )
     }
+
+    func testKeyboardChromeReservesSoftwareKeyboardHeightDuringSystemHandoff() {
+        let keyboardReplacement = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
+            keyboardOverlapHeight: 308,
+            bottomSafeAreaHeight: 34
+        )
+        let visibleSystemPanel = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
+            for: .system,
+            isSoftwareKeyboardVisible: true,
+            reservedKeyboardReplacementHeight: keyboardReplacement
+        )
+        let pendingSystemPanel = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
+            for: .system,
+            isSoftwareKeyboardVisible: false,
+            reservedKeyboardReplacementHeight: keyboardReplacement
+        )
+
+        XCTAssertEqual(visibleSystemPanel, GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight)
+        XCTAssertEqual(
+            pendingSystemPanel,
+            GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight + keyboardReplacement
+        )
+    }
+
+    func testKeyboardChromeKeepsCustomAndSystemBottomOcclusionEquivalent() {
+        let keyboardReplacement = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
+            keyboardOverlapHeight: 308,
+            bottomSafeAreaHeight: 34
+        )
+        let systemOcclusion = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
+            for: .system,
+            isSoftwareKeyboardVisible: true,
+            reservedKeyboardReplacementHeight: keyboardReplacement
+        ) + keyboardReplacement
+        let customOcclusion = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
+            for: .custom,
+            isSoftwareKeyboardVisible: false,
+            reservedKeyboardReplacementHeight: keyboardReplacement
+        )
+
+        XCTAssertEqual(systemOcclusion, customOcclusion)
+    }
+
+    func testKeyboardChromeReplacementHeightExcludesBottomSafeArea() {
+        XCTAssertEqual(
+            GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
+                keyboardOverlapHeight: 308,
+                bottomSafeAreaHeight: 34
+            ),
+            274
+        )
+    }
+
+    func testKeyboardChromeCustomPanelHasNaturalMinimumWithoutKeyboardHistory() {
+        XCTAssertEqual(
+            GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
+                for: .custom,
+                isSoftwareKeyboardVisible: false,
+                reservedKeyboardReplacementHeight: 0
+            ),
+            GhosttyKeyboardChromeSizing.customKeyboardPanelMinimumHeight
+        )
+    }
 }
