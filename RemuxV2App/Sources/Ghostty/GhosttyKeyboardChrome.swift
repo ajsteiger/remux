@@ -173,33 +173,29 @@ struct GhosttyKeyboardChrome: View {
     var body: some View {
         VStack(alignment: .leading, spacing: showsAuxiliaryControls ? GhosttyKeyboardChromeSizing.rowSpacing : 0) {
             selectorRow
-
-            switch keyboardMode {
-            case .hidden:
-                EmptyView()
-            case .system:
-                Group {
-                    systemAccessoryRow
-                        .transition(
-                            .asymmetric(
-                                insertion: .move(edge: .bottom).combined(with: .opacity),
-                                removal: .opacity
-                            )
-                        )
+                .transaction { transaction in
+                    transaction.animation = nil
                 }
-                .frame(height: auxiliaryPanelHeight, alignment: .top)
-            case .custom:
-                customKeyboard
-                    .transition(
-                        .asymmetric(
-                            insertion: .move(edge: .bottom).combined(with: .opacity),
-                            removal: .opacity
-                        )
-                    )
-            }
+
+            auxiliaryContent
+                .animation(Self.transitionAnimation, value: keyboardMode)
         }
-        .animation(Self.transitionAnimation, value: keyboardMode)
         .animation(.easeInOut(duration: 0.18), value: isCompact)
+    }
+
+    @ViewBuilder
+    private var auxiliaryContent: some View {
+        switch keyboardMode {
+        case .hidden:
+            EmptyView()
+        case .system:
+            systemAccessoryRow
+                .frame(height: auxiliaryPanelHeight, alignment: .top)
+                .transition(.opacity)
+        case .custom:
+            customKeyboard
+                .transition(.opacity)
+        }
     }
 
     private var selectorRow: some View {
@@ -261,6 +257,7 @@ struct GhosttyKeyboardChrome: View {
             .layoutPriority(2)
         }
         .padding(4)
+        .frame(maxWidth: .infinity)
         .frame(height: GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight, alignment: .center)
         .background(GhosttyPhoneChromePalette.tray)
         .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
@@ -308,6 +305,7 @@ struct GhosttyKeyboardChrome: View {
             .frame(maxHeight: GhosttyKeyboardChromeSizing.customKeyboardScrollMaxHeight)
         }
         .padding(GhosttyKeyboardChromeSizing.customKeyboardPadding)
+        .frame(maxWidth: .infinity)
         .frame(height: auxiliaryPanelHeight, alignment: .top)
         .background(GhosttyPhoneChromePalette.tray)
         .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
