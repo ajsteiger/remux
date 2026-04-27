@@ -13,6 +13,63 @@ enum GhosttyKitRuntimeError: Error, Equatable {
     case surfaceCreationFailed
 }
 
+struct GhosttyTerminalAppearance: Equatable {
+    let fontSize: Float32?
+
+    func apply(to config: inout ghostty_surface_config_s) {
+        guard let fontSize, config.font_size == 0 else { return }
+        config.font_size = fontSize
+    }
+}
+
+enum GhosttyTerminalDeviceClass {
+    case phone
+    case pad
+}
+
+enum GhosttyTerminalAppearancePolicy {
+    static let phoneMinimumFontSize: Float32 = 11
+    static let phoneDefaultFontSize: Float32 = 11
+
+    static func appearance(
+        for deviceClass: GhosttyTerminalDeviceClass,
+        contentSizeCategory: UIContentSizeCategory = .large
+    ) -> GhosttyTerminalAppearance {
+        switch deviceClass {
+        case .phone:
+            GhosttyTerminalAppearance(
+                fontSize: phoneFontSize(contentSizeCategory: contentSizeCategory)
+            )
+        case .pad:
+            GhosttyTerminalAppearance(fontSize: nil)
+        }
+    }
+
+    @MainActor
+    static func currentDeviceAppearance() -> GhosttyTerminalAppearance {
+        let contentSizeCategory = UIApplication.shared.preferredContentSizeCategory
+
+        return switch UIDevice.current.userInterfaceIdiom {
+        case .phone:
+            appearance(for: .phone, contentSizeCategory: contentSizeCategory)
+        case .pad:
+            appearance(for: .pad, contentSizeCategory: contentSizeCategory)
+        default:
+            GhosttyTerminalAppearance(fontSize: nil)
+        }
+    }
+
+    private static func phoneFontSize(contentSizeCategory: UIContentSizeCategory) -> Float32 {
+        let traits = UITraitCollection(preferredContentSizeCategory: contentSizeCategory)
+        let scaledSize = UIFontMetrics(forTextStyle: .body).scaledValue(
+            for: CGFloat(phoneDefaultFontSize),
+            compatibleWith: traits
+        )
+
+        return Float32(max(scaledSize, CGFloat(phoneMinimumFontSize)))
+    }
+}
+
 final class GhosttyKitSurfaceView: UIView {
     override init(frame: CGRect) {
         let initialFrame = frame.isEmpty
@@ -96,6 +153,7 @@ final class GhosttyKitRuntime {
         )
 
         var surfaceConfig = ghostty_surface_config_new()
+        GhosttyTerminalAppearancePolicy.currentDeviceAppearance().apply(to: &surfaceConfig)
         surfaceConfig.platform_tag = GHOSTTY_PLATFORM_IOS
         surfaceConfig.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
             uiview: Unmanaged.passUnretained(view).toOpaque()

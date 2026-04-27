@@ -16,6 +16,54 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         XCTAssertEqual(view.frame.size.height, 1)
     }
 
+    func testPhoneTerminalAppearanceUsesAccessibleMobileDensity() {
+        var config = ghostty_surface_config_new()
+
+        GhosttyTerminalAppearancePolicy.appearance(
+            for: .phone,
+            contentSizeCategory: .large
+        ).apply(to: &config)
+
+        XCTAssertGreaterThanOrEqual(config.font_size, GhosttyTerminalAppearancePolicy.phoneMinimumFontSize)
+        XCTAssertEqual(config.font_size, GhosttyTerminalAppearancePolicy.phoneDefaultFontSize)
+    }
+
+    func testPhoneTerminalAppearanceScalesWithAccessibilityTextSize() {
+        var regularConfig = ghostty_surface_config_new()
+        var accessibilityConfig = ghostty_surface_config_new()
+
+        GhosttyTerminalAppearancePolicy.appearance(
+            for: .phone,
+            contentSizeCategory: .large
+        ).apply(to: &regularConfig)
+        GhosttyTerminalAppearancePolicy.appearance(
+            for: .phone,
+            contentSizeCategory: .accessibilityExtraExtraExtraLarge
+        ).apply(to: &accessibilityConfig)
+
+        XCTAssertGreaterThan(accessibilityConfig.font_size, regularConfig.font_size)
+    }
+
+    func testPhoneTerminalAppearancePreservesExplicitGhosttyFontSize() {
+        var config = ghostty_surface_config_new()
+        config.font_size = 14
+
+        GhosttyTerminalAppearancePolicy.appearance(
+            for: .phone,
+            contentSizeCategory: .accessibilityExtraExtraExtraLarge
+        ).apply(to: &config)
+
+        XCTAssertEqual(config.font_size, 14)
+    }
+
+    func testPadTerminalAppearanceUsesGhosttyDefaultDensity() {
+        var config = ghostty_surface_config_new()
+
+        GhosttyTerminalAppearancePolicy.appearance(for: .pad).apply(to: &config)
+
+        XCTAssertEqual(config.font_size, 0)
+    }
+
     func testRuntimeCreatesManualHostSurfaceThatAcceptsOutput() throws {
         let runtime = try GhosttyKitRuntime()
         let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))

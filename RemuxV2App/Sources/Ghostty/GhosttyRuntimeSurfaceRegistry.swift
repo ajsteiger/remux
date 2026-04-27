@@ -893,6 +893,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
 
         var config = baseConfig
+        GhosttyTerminalAppearancePolicy.currentDeviceAppearance().apply(to: &config)
         let scale = max(Double(UIScreen.main.scale), 1)
         config.scale_factor = scale
         config.initial_focused = false
