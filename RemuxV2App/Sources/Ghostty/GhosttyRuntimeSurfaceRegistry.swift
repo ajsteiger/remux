@@ -1129,12 +1129,14 @@ final class GhosttyManagedSurface {
     }
 
     @MainActor
-    func updateDisplay(size: CGSize, scale: CGFloat) {
+    @discardableResult
+    func updateDisplay(size: CGSize, scale: CGFloat) -> Bool {
         guard let metrics = displayUpdateTracker.nextMetrics(size: size, scale: scale) else {
-            return
+            return false
         }
 
         controlSurface.updateDisplay(metrics: metrics)
+        return true
     }
 
     @MainActor

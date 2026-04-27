@@ -203,27 +203,29 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         guard let surface else { return }
         synchronizeRoute()
 
-        let viewportHeight = max(bounds.height, 1)
-        let contentHeight = GhosttyPaneScrollGeometry.documentHeight(
-            viewportHeight: viewportHeight,
-            cellHeight: cellHeight(for: surface),
-            state: surface.scrollState
-        )
+        withProgrammaticScrollSynchronization {
+            let viewportHeight = max(bounds.height, 1)
+            let contentHeight = GhosttyPaneScrollGeometry.documentHeight(
+                viewportHeight: viewportHeight,
+                cellHeight: cellHeight(for: surface),
+                state: surface.scrollState
+            )
 
-        let contentSize = CGSize(width: max(bounds.width, 1), height: contentHeight)
-        if scrollView.contentSize != contentSize {
-            scrollView.contentSize = contentSize
-            contentView.frame = CGRect(origin: .zero, size: contentSize)
+            let contentSize = CGSize(width: max(bounds.width, 1), height: contentHeight)
+            if scrollView.contentSize != contentSize {
+                scrollView.contentSize = contentSize
+                contentView.frame = CGRect(origin: .zero, size: contentSize)
+            }
+
+            let maxOffsetY = max(0, contentHeight - viewportHeight)
+            let offsetY = GhosttyPaneScrollGeometry.contentOffsetY(
+                for: surface.scrollState,
+                cellHeight: cellHeight(for: surface),
+                maxContentOffsetY: maxOffsetY
+            )
+            applyProgrammaticContentOffset(CGPoint(x: 0, y: offsetY))
+            synchronizeSurfaceFrame()
         }
-
-        let maxOffsetY = max(0, contentHeight - viewportHeight)
-        let offsetY = GhosttyPaneScrollGeometry.contentOffsetY(
-            for: surface.scrollState,
-            cellHeight: cellHeight(for: surface),
-            maxContentOffsetY: maxOffsetY
-        )
-        applyProgrammaticContentOffset(CGPoint(x: 0, y: offsetY))
-        synchronizeSurfaceFrame()
     }
 
     private func synchronizeSurfaceFrame() {
@@ -232,11 +234,12 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         let viewportSize = CGSize(width: max(bounds.width, 1), height: max(bounds.height, 1))
         let origin = CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y)
         surface.view.frame = CGRect(origin: origin, size: viewportSize)
-        surface.view.alignGhosttyRendererSublayers()
         GhosttyRuntimeTrace.diagnostics(
             "scroll.surfaceFrame surface=\(ghosttyDiagnosticShortID(surface.id)) viewport=\(viewportSize.width)x\(viewportSize.height) offset=\(origin.x),\(origin.y) scale=\(displayScale) before={\(surface.diagnosticSummary())}"
         )
-        surface.updateDisplay(size: viewportSize, scale: displayScale)
+        if surface.updateDisplay(size: viewportSize, scale: displayScale) {
+            surface.view.alignGhosttyRendererSublayers()
+        }
         GhosttyRuntimeTrace.diagnostics(
             "scroll.surfaceFrame applied surface={\(surface.diagnosticSummary())}"
         )
@@ -244,9 +247,17 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
 
     private func applyProgrammaticContentOffset(_ offset: CGPoint) {
         guard scrollView.contentOffset != offset else { return }
-        isApplyingProgrammaticUpdate = true
         scrollView.setContentOffset(offset, animated: false)
+    }
+
+    private func withProgrammaticScrollSynchronization(_ body: () -> Void) {
+        pendingContentOffset = nil
+        invalidateDisplayLink()
+        isApplyingProgrammaticUpdate = true
+        body()
         isApplyingProgrammaticUpdate = false
+        pendingContentOffset = nil
+        invalidateDisplayLink()
     }
 
     private func cellHeight(for surface: GhosttyManagedSurface) -> CGFloat {
@@ -268,11 +279,15 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         displayLink = link
     }
 
+    private func invalidateDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
     @objc
     private func displayLinkTick() {
         guard let offset = pendingContentOffset else {
-            displayLink?.invalidate()
-            displayLink = nil
+            invalidateDisplayLink()
             return
         }
         pendingContentOffset = nil
