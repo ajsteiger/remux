@@ -56,84 +56,9 @@ enum GhosttyKeyboardChromeMode: Equatable {
     }
 }
 
-enum GhosttyKeyboardChromeSizing {
-    static let rowSpacing: CGFloat = 6
-    static let keyHeight: CGFloat = 34
-    static let keyVerticalPadding: CGFloat = 3
-    static let systemAccessoryPadding: CGFloat = 4
-    static let customKeyboardPadding: CGFloat = 10
-    static let customKeyboardHeaderHeight: CGFloat = 34
-    static let customKeyboardContentSpacing: CGFloat = 8
-    static let customRowSpacing: CGFloat = 6
-    static let customVisibleRowCount: CGFloat = 5
-
-    static var systemAccessoryPanelHeight: CGFloat {
-        keyHeight + keyVerticalPadding * 2 + systemAccessoryPadding * 2
-    }
-
-    static var customKeyboardScrollMaxHeight: CGFloat {
-        customVisibleRowCount * (keyHeight + keyVerticalPadding * 2)
-            + (customVisibleRowCount - 1) * customRowSpacing
-    }
-
-    static var customKeyboardPanelMinimumHeight: CGFloat {
-        customKeyboardPadding * 2
-            + customKeyboardHeaderHeight
-            + customKeyboardContentSpacing
-            + customKeyboardScrollMaxHeight
-    }
-
-    static func auxiliaryPanelHeight(
-        for mode: GhosttyKeyboardChromeMode,
-        isSoftwareKeyboardVisible: Bool,
-        reservedKeyboardReplacementHeight: CGFloat
-    ) -> CGFloat {
-        switch mode {
-        case .hidden:
-            return 0
-        case .system:
-            return systemAccessoryPanelHeight
-                + keyboardReplacementHeight(
-                    isSoftwareKeyboardVisible: isSoftwareKeyboardVisible,
-                    reservedKeyboardReplacementHeight: reservedKeyboardReplacementHeight
-                )
-        case .custom:
-            let handoffHeight = systemAccessoryPanelHeight
-                + keyboardReplacementHeight(
-                    isSoftwareKeyboardVisible: isSoftwareKeyboardVisible,
-                    reservedKeyboardReplacementHeight: reservedKeyboardReplacementHeight
-                )
-            return max(customKeyboardPanelMinimumHeight, handoffHeight)
-        }
-    }
-
-    static func keyboardReplacementHeight(
-        keyboardOverlapHeight: CGFloat,
-        bottomSafeAreaHeight: CGFloat
-    ) -> CGFloat {
-        guard keyboardOverlapHeight.isFinite, keyboardOverlapHeight > 0 else {
-            return 0
-        }
-        let safeAreaHeight = bottomSafeAreaHeight.isFinite ? max(0, bottomSafeAreaHeight) : 0
-        return ceil(max(0, keyboardOverlapHeight - safeAreaHeight))
-    }
-
-    private static func keyboardReplacementHeight(
-        isSoftwareKeyboardVisible: Bool,
-        reservedKeyboardReplacementHeight: CGFloat
-    ) -> CGFloat {
-        guard !isSoftwareKeyboardVisible else { return 0 }
-        guard reservedKeyboardReplacementHeight.isFinite, reservedKeyboardReplacementHeight > 0 else {
-            return 0
-        }
-        return ceil(reservedKeyboardReplacementHeight)
-    }
-}
-
 struct GhosttyKeyboardChrome: View {
     let keyboardMode: GhosttyKeyboardChromeMode
     let isSoftwareKeyboardVisible: Bool
-    let reservedKeyboardReplacementHeight: CGFloat
     let isEnabled: Bool
     let isCompact: Bool
     let isControlArmed: Bool
@@ -162,40 +87,35 @@ struct GhosttyKeyboardChrome: View {
         keyboardMode.showsAuxiliaryControls(isSoftwareKeyboardVisible: isSoftwareKeyboardVisible)
     }
 
-    private var auxiliaryPanelHeight: CGFloat {
-        GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
-            for: keyboardMode,
-            isSoftwareKeyboardVisible: isSoftwareKeyboardVisible,
-            reservedKeyboardReplacementHeight: reservedKeyboardReplacementHeight
-        )
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: showsAuxiliaryControls ? GhosttyKeyboardChromeSizing.rowSpacing : 0) {
+        VStack(alignment: .leading, spacing: showsAuxiliaryControls ? 6 : 0) {
             selectorRow
-                .transaction { transaction in
-                    transaction.animation = nil
+
+            switch keyboardMode {
+            case .hidden:
+                EmptyView()
+            case .system:
+                if showsAuxiliaryControls {
+                    systemAccessoryRow
+                        .transition(
+                            .asymmetric(
+                                insertion: .move(edge: .bottom).combined(with: .opacity),
+                                removal: .opacity
+                            )
+                        )
                 }
-
-            auxiliaryContent
-                .animation(Self.transitionAnimation, value: keyboardMode)
+            case .custom:
+                customKeyboard
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
+            }
         }
+        .animation(Self.transitionAnimation, value: keyboardMode)
         .animation(.easeInOut(duration: 0.18), value: isCompact)
-    }
-
-    @ViewBuilder
-    private var auxiliaryContent: some View {
-        switch keyboardMode {
-        case .hidden:
-            EmptyView()
-        case .system:
-            systemAccessoryRow
-                .frame(height: auxiliaryPanelHeight, alignment: .top)
-                .transition(.opacity)
-        case .custom:
-            customKeyboard
-                .transition(.opacity)
-        }
     }
 
     private var selectorRow: some View {
@@ -257,8 +177,6 @@ struct GhosttyKeyboardChrome: View {
             .layoutPriority(2)
         }
         .padding(4)
-        .frame(maxWidth: .infinity)
-        .frame(height: GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight, alignment: .center)
         .background(GhosttyPhoneChromePalette.tray)
         .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
         .overlay {
@@ -282,7 +200,7 @@ struct GhosttyKeyboardChrome: View {
     }
 
     private var customKeyboard: some View {
-        VStack(spacing: GhosttyKeyboardChromeSizing.customKeyboardContentSpacing) {
+        VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
 
@@ -296,17 +214,15 @@ struct GhosttyKeyboardChrome: View {
             }
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: GhosttyKeyboardChromeSizing.customRowSpacing) {
+                VStack(spacing: Self.customRowSpacing) {
                     ForEach(Self.customKeyRows) { row in
                         keyRow(row)
                     }
                 }
             }
-            .frame(maxHeight: GhosttyKeyboardChromeSizing.customKeyboardScrollMaxHeight)
+            .frame(maxHeight: Self.customKeyboardScrollMaxHeight)
         }
-        .padding(GhosttyKeyboardChromeSizing.customKeyboardPadding)
-        .frame(maxWidth: .infinity)
-        .frame(height: auxiliaryPanelHeight, alignment: .top)
+        .padding(10)
         .background(GhosttyPhoneChromePalette.tray)
         .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
         .overlay {
@@ -324,7 +240,7 @@ struct GhosttyKeyboardChrome: View {
             title: title,
             fontSize: 12,
             minWidth: 32,
-            minHeight: GhosttyKeyboardChromeSizing.keyHeight,
+            minHeight: Self.customKeyHeight,
             horizontalPadding: 4,
             verticalPadding: 3,
             isActive: isActive,
@@ -341,7 +257,7 @@ struct GhosttyKeyboardChrome: View {
             title: title,
             fontSize: 12,
             minWidth: 18,
-            minHeight: GhosttyKeyboardChromeSizing.keyHeight,
+            minHeight: Self.customKeyHeight,
             horizontalPadding: 3,
             verticalPadding: 3,
             isEnabled: isEnabled,
@@ -363,7 +279,7 @@ struct GhosttyKeyboardChrome: View {
                     title: key.title,
                     fontSize: 12,
                     minWidth: 0,
-                    minHeight: GhosttyKeyboardChromeSizing.keyHeight,
+                    minHeight: Self.customKeyHeight,
                     horizontalPadding: 4,
                     verticalPadding: 3,
                     fillsWidth: true,
@@ -423,6 +339,13 @@ struct GhosttyKeyboardChrome: View {
     }
 
     private static let systemTextKeys = ["{", "}", "[", "]", "<", ">", "=", ";", ":", "/", "-"]
+
+    private static let customKeyHeight: CGFloat = 34
+    private static let customRowSpacing: CGFloat = 6
+    private static let customVisibleRowCount: CGFloat = 5
+    private static let customKeyboardScrollMaxHeight: CGFloat =
+        customVisibleRowCount * (customKeyHeight + 6)
+        + (customVisibleRowCount - 1) * customRowSpacing
 
     private static let customKeyRows: [GhosttyCustomKeyboardRow] = [
         .init(

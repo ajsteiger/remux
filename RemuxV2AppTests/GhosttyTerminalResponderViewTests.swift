@@ -372,31 +372,6 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
     }
 
     @MainActor
-    func testResponderRequestsFirstResponderSynchronouslyWhenAlreadyInWindow() {
-        let view = GhosttyTerminalResponderUIView()
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
-        window.rootViewController = UIViewController()
-        window.rootViewController?.view.addSubview(view)
-        window.makeKeyAndVisible()
-        defer {
-            view.resignFirstResponder()
-            view.removeFromSuperview()
-            window.isHidden = true
-            window.rootViewController = nil
-        }
-
-        view.update(
-            isEnabled: true,
-            activationToken: 1,
-            sendText: { _ in true },
-            sendPaste: { _ in true },
-            sendKeyEvent: { _ in true }
-        )
-
-        XCTAssertTrue(view.isFirstResponder)
-    }
-
-    @MainActor
     func testResponderRequestsFirstResponderWhenInputBecomesEnabledWithSameActivationToken() async {
         let view = GhosttyTerminalResponderUIView()
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))

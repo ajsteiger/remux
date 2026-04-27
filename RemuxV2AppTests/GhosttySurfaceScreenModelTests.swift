@@ -10,9 +10,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let keyboardSize = CGSize(width: 402, height: 673)
         let sheetTransientSize = CGSize(width: 402, height: 727)
 
-        stabilizer.updateLiveSize(keyboardSize, isViewportFrozen: false)
+        stabilizer.updateLiveSize(keyboardSize, isSheetPresented: false)
         stabilizer.sheetPresentationChanged(isPresented: true, liveSize: keyboardSize)
-        stabilizer.updateLiveSize(sheetTransientSize, isViewportFrozen: true)
+        stabilizer.updateLiveSize(sheetTransientSize, isSheetPresented: true)
 
         XCTAssertEqual(stabilizer.effectiveSize(liveSize: sheetTransientSize), keyboardSize)
         XCTAssertEqual(stabilizer.lastLiveSize, keyboardSize)
@@ -23,37 +23,12 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let keyboardSize = CGSize(width: 402, height: 673)
         let restoredSize = CGSize(width: 402, height: 727)
 
-        stabilizer.updateLiveSize(keyboardSize, isViewportFrozen: false)
+        stabilizer.updateLiveSize(keyboardSize, isSheetPresented: false)
         stabilizer.sheetPresentationChanged(isPresented: true, liveSize: keyboardSize)
         stabilizer.sheetPresentationChanged(isPresented: false, liveSize: restoredSize)
 
         XCTAssertEqual(stabilizer.effectiveSize(liveSize: restoredSize), restoredSize)
         XCTAssertEqual(stabilizer.lastLiveSize, restoredSize)
-        XCTAssertNil(stabilizer.frozenSize)
-    }
-
-    func testTerminalViewportStabilizerFreezesLiveSizeDuringKeyboardHandoff() {
-        var stabilizer = GhosttyTerminalViewportStabilizer()
-        let stableSize = CGSize(width: 402, height: 399)
-        let transientSize = CGSize(width: 402, height: 91)
-
-        stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
-        stabilizer.keyboardHandoffStarted()
-        stabilizer.updateLiveSize(transientSize, isViewportFrozen: true)
-
-        XCTAssertEqual(stabilizer.effectiveSize(liveSize: transientSize), stableSize)
-        XCTAssertEqual(stabilizer.lastLiveSize, stableSize)
-    }
-
-    func testTerminalViewportStabilizerResumesAfterKeyboardHandoff() {
-        var stabilizer = GhosttyTerminalViewportStabilizer()
-        let stableSize = CGSize(width: 402, height: 399)
-
-        stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
-        stabilizer.keyboardHandoffStarted()
-        stabilizer.keyboardHandoffEnded()
-
-        XCTAssertEqual(stabilizer.effectiveSize(liveSize: stableSize), stableSize)
         XCTAssertNil(stabilizer.frozenSize)
     }
 
