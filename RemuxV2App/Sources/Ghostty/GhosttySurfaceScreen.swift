@@ -3,6 +3,8 @@ import UIKit
 import GhosttyKit
 
 struct GhosttySurfaceScreen: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @StateObject private var model: GhosttySurfaceScreenModel
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
@@ -127,6 +129,7 @@ struct GhosttySurfaceScreen: View {
                     keyboardMode: inputCoordinator.keyboardMode,
                     isSoftwareKeyboardVisible: inputCoordinator.isSoftwareKeyboardVisible,
                     reservedKeyboardReplacementHeight: keyboardReplacementHeight,
+                    reservesSystemKeyboardReplacement: keyboardHandoffTarget == .system,
                     isEnabled: isTerminalInputAvailable,
                     isCompact: chrome.isCompact,
                     isControlArmed: modifierState.isControlArmed,
@@ -165,10 +168,8 @@ struct GhosttySurfaceScreen: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
                 updateKeyboardVisibility(with: $0)
             }
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-                softwareKeyboardOverlapHeight = 0
-                inputCoordinator.updateSoftwareKeyboardVisibility(false)
-                updateKeyboardHandoffState(isSoftwareKeyboardVisible: false)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { notification in
+                updateKeyboardVisibility(with: notification)
             }
             .sheet(item: selectionSheetBinding) { sheet in
                 selectionSheetContent(sheet)
@@ -381,26 +382,45 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func updateKeyboardVisibility(with notification: Notification) {
-        guard
-            let frameValue = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue
-        else {
+        let timing = GhosttyKeyboardAnimationTiming(notification: notification)
+        let frameEnd = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
+            .cgRectValue
+            ?? CGRect(
+                x: 0,
+                y: UIScreen.main.bounds.maxY,
+                width: UIScreen.main.bounds.width,
+                height: 0
+            )
+
+        let isVisible = GhosttySoftwareKeyboardVisibility.isVisible(
+            frameEnd: frameEnd,
+            screenBounds: UIScreen.main.bounds
+        )
+
+        performChromeStateChange(timing: timing) {
+            softwareKeyboardOverlapHeight = GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
+                frameEnd: frameEnd,
+                screenBounds: UIScreen.main.bounds
+            )
+            if softwareKeyboardOverlapHeight > 0 {
+                lastSoftwareKeyboardOverlapHeight = softwareKeyboardOverlapHeight
+            }
+
+            inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
+            updateKeyboardHandoffState(isSoftwareKeyboardVisible: isVisible)
+        }
+    }
+
+    private func performChromeStateChange(
+        timing: GhosttyKeyboardAnimationTiming = .fallback,
+        _ changes: () -> Void
+    ) {
+        guard !reduceMotion, let animation = timing.animation else {
+            changes()
             return
         }
 
-        let isVisible = GhosttySoftwareKeyboardVisibility.isVisible(
-            frameEnd: frameValue.cgRectValue,
-            screenBounds: UIScreen.main.bounds
-        )
-        softwareKeyboardOverlapHeight = GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
-            frameEnd: frameValue.cgRectValue,
-            screenBounds: UIScreen.main.bounds
-        )
-        if softwareKeyboardOverlapHeight > 0 {
-            lastSoftwareKeyboardOverlapHeight = softwareKeyboardOverlapHeight
-        }
-
-        inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
-        updateKeyboardHandoffState(isSoftwareKeyboardVisible: isVisible)
+        withAnimation(animation, changes)
     }
 
     private func isKeyboardHandoff(
@@ -598,6 +618,48 @@ struct GhosttyPhoneChromeLayout: Equatable {
 
     var bottomPadding: CGFloat {
         isCompact ? 2 : 4
+    }
+}
+
+struct GhosttyKeyboardAnimationTiming: Equatable {
+    let duration: TimeInterval
+    let curveRawValue: Int
+
+    static let fallback = GhosttyKeyboardAnimationTiming(
+        duration: 0.28,
+        curveRawValue: UIView.AnimationCurve.easeOut.rawValue
+    )
+
+    init(duration: TimeInterval, curveRawValue: Int) {
+        self.duration = duration.isFinite && duration >= 0 ? duration : Self.fallback.duration
+        self.curveRawValue = curveRawValue
+    }
+
+    init(notification: Notification) {
+        let userInfo = notification.userInfo ?? [:]
+        let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval
+        let curve = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? Int
+        self.init(
+            duration: duration ?? Self.fallback.duration,
+            curveRawValue: curve ?? Self.fallback.curveRawValue
+        )
+    }
+
+    var animation: Animation? {
+        guard duration > 0 else { return nil }
+
+        switch UIView.AnimationCurve(rawValue: curveRawValue) {
+        case .easeInOut:
+            return .easeInOut(duration: duration)
+        case .easeIn:
+            return .easeIn(duration: duration)
+        case .easeOut:
+            return .easeOut(duration: duration)
+        case .linear:
+            return .linear(duration: duration)
+        default:
+            return .easeOut(duration: duration)
+        }
     }
 }
 

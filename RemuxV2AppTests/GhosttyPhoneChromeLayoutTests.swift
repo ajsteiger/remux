@@ -137,7 +137,8 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
         let pendingSystemPanel = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
             for: .system,
             isSoftwareKeyboardVisible: false,
-            reservedKeyboardReplacementHeight: keyboardReplacement
+            reservedKeyboardReplacementHeight: keyboardReplacement,
+            reservesSystemKeyboardReplacement: true
         )
 
         XCTAssertEqual(visibleSystemPanel, GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight)
@@ -145,6 +146,21 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
             pendingSystemPanel,
             GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight + keyboardReplacement
         )
+    }
+
+    func testKeyboardChromeDoesNotReserveStaleKeyboardHeightForNormalSystemOpen() {
+        let keyboardReplacement = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
+            keyboardOverlapHeight: 308,
+            bottomSafeAreaHeight: 34
+        )
+        let pendingSystemPanel = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
+            for: .system,
+            isSoftwareKeyboardVisible: false,
+            reservedKeyboardReplacementHeight: keyboardReplacement,
+            reservesSystemKeyboardReplacement: false
+        )
+
+        XCTAssertEqual(pendingSystemPanel, GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight)
     }
 
     func testKeyboardChromeKeepsCustomAndSystemBottomOcclusionEquivalent() {
@@ -185,5 +201,36 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
             ),
             GhosttyKeyboardChromeSizing.customKeyboardPanelMinimumHeight
         )
+    }
+
+    func testKeyboardAnimationTimingReadsUIKitNotificationMetadata() {
+        let notification = Notification(
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil,
+            userInfo: [
+                UIResponder.keyboardAnimationDurationUserInfoKey: TimeInterval(0.3833),
+                UIResponder.keyboardAnimationCurveUserInfoKey: 7,
+            ]
+        )
+
+        let timing = GhosttyKeyboardAnimationTiming(notification: notification)
+
+        XCTAssertEqual(timing.duration, 0.3833)
+        XCTAssertEqual(timing.curveRawValue, 7)
+    }
+
+    func testKeyboardAnimationTimingFallsBackForMissingMetadata() {
+        let timing = GhosttyKeyboardAnimationTiming(
+            notification: Notification(name: UIResponder.keyboardWillChangeFrameNotification)
+        )
+
+        XCTAssertEqual(timing, .fallback)
+    }
+
+    func testKeyboardAnimationTimingRejectsInvalidDuration() {
+        let timing = GhosttyKeyboardAnimationTiming(duration: -.infinity, curveRawValue: 0)
+
+        XCTAssertEqual(timing.duration, GhosttyKeyboardAnimationTiming.fallback.duration)
+        XCTAssertEqual(timing.curveRawValue, 0)
     }
 }
