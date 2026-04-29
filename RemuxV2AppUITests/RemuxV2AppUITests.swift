@@ -299,4 +299,165 @@ final class RemuxV2AppUITests: XCTestCase {
 
         return app.otherElements["settings.form"]
     }
+
+    func testCaptureDesignReviewScreens() throws {
+        try launchLiveSSHAppIfConfigured()
+
+        XCTAssertTrue(app.buttons["library.add-server"].waitForExistence(timeout: 12))
+        sleep(1)
+        attach(name: "10-library")
+
+        let settings = app.buttons["library.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        XCTAssertTrue(settingsForm.waitForExistence(timeout: 3))
+        sleep(1)
+        attach(name: "11-settings")
+
+        // Open the theme picker so we capture its expanded menu.
+        let theme = app.descendants(matching: .any)["settings.theme"]
+        if theme.waitForExistence(timeout: 2), theme.isHittable {
+            theme.tap()
+            sleep(1)
+            attach(name: "11b-theme-menu")
+            // Dismiss menu without picking a different theme by tapping the
+            // currently selected item (label varies; fall back to back swipe).
+            if !app.buttons["Ghostty Default"].waitForExistence(timeout: 1) {
+                app.swipeDown()
+            } else {
+                app.buttons["Ghostty Default"].tap()
+            }
+        }
+
+        app.navigationBars.buttons.firstMatch.tap()
+
+        let addServer = app.buttons["library.add-server"]
+        XCTAssertTrue(addServer.waitForExistence(timeout: 5))
+        addServer.tap()
+        XCTAssertTrue(app.textFields["connection.name"].waitForExistence(timeout: 3))
+        sleep(1)
+        attach(name: "12-connection-setup-empty")
+
+        // Fill the form so we can capture the populated state and Mosh validation.
+        let name = app.textFields["connection.name"]
+        name.tap()
+        name.typeText("Example SSH Server")
+
+        let host = app.textFields["connection.host"]
+        host.tap()
+        host.typeText("server.example.com")
+
+        let user = app.textFields["connection.username"]
+        user.tap()
+        user.typeText("demo")
+
+        let pwd = app.secureTextFields["connection.password"]
+        pwd.tap()
+        pwd.typeText("demo-password")
+        sleep(1)
+        attach(name: "13-connection-setup-filled")
+
+        // Switch to Mosh and surface the unsupported validation.
+        let transport = app.segmentedControls["connection.transport"]
+        if transport.waitForExistence(timeout: 2) {
+            transport.buttons["Mosh"].tap()
+            app.buttons["connection.save"].tap()
+            sleep(1)
+            attach(name: "14-connection-mosh-unsupported")
+            transport.buttons["SSH"].tap()
+        }
+
+        app.buttons["connection.cancel"].tap()
+        XCTAssertTrue(app.buttons["library.add-server"].waitForExistence(timeout: 3))
+        // The cancelled connection-setup form may have left the keyboard up
+        // and/or surfaced a password-manager prompt that overlays the list.
+        sleep(1)
+        dismissPasswordManagerPromptIfPresent()
+        if app.keyboards.firstMatch.exists {
+            app.tap()
+        }
+        sleep(1)
+
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 60)
+        sleep(3)
+        attach(name: "20-terminal-ready")
+
+        let panes = app.buttons["terminal.panes"]
+        XCTAssertTrue(panes.waitForExistence(timeout: 5))
+        if panes.isHittable { panes.tap() }
+        sleep(2)
+        attach(name: "21-panes-sheet")
+        dismissTopSheetIfPresent()
+
+        let windows = app.buttons["terminal.windows"]
+        XCTAssertTrue(windows.waitForExistence(timeout: 5))
+        if windows.isHittable { windows.tap() }
+        sleep(2)
+        attach(name: "22-windows-sheet")
+        dismissTopSheetIfPresent()
+
+        // Bring up the system iOS keyboard via the chrome toggle, then capture.
+        let keyboard = app.buttons["terminal.keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        if keyboard.isHittable { keyboard.tap() }
+        sleep(3)
+        attach(name: "23-system-keyboard-accessory")
+
+        // The "show custom keyboard" toggle is the trailing SF Symbol button
+        // on the accessory row. SwiftUI exposes it as a button labeled by its
+        // SF Symbol; match by image. As a fallback tap a coordinate near the
+        // accessory row's right edge.
+        let customByImage = app.buttons.matching(identifier: "square.grid.2x2").firstMatch
+        let customByLabel = app.buttons.matching(NSPredicate(format: "label == %@ OR label CONTAINS[c] %@",
+                                                              "square.grid.2x2",
+                                                              "custom keyboard")).firstMatch
+        if customByImage.exists, customByImage.isHittable {
+            customByImage.tap()
+        } else if customByLabel.exists, customByLabel.isHittable {
+            customByLabel.tap()
+        } else {
+            // Tap rightmost portion of the accessory row, which sits just above
+            // the keyboard. The dock + accessory occupy the bottom portion.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.55)).tap()
+        }
+        sleep(3)
+        attach(name: "24-custom-keyboard")
+
+        // Capture custom keyboard with ctrl armed (modifier feedback).
+        let ctrlButton = app.buttons.matching(NSPredicate(format: "label == %@", "ctrl")).firstMatch
+        if ctrlButton.exists, ctrlButton.isHittable {
+            ctrlButton.tap()
+            sleep(1)
+            attach(name: "25-custom-keyboard-ctrl-armed")
+        }
+
+        let home = app.buttons["terminal.home"]
+        XCTAssertTrue(home.waitForExistence(timeout: 5))
+        if home.isHittable { home.tap() }
+        sleep(2)
+        attach(name: "30-library-with-running-session")
+    }
+
+    private func attach(name: String) {
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func dismissTopSheetIfPresent() {
+        let sheet = app.otherElements.matching(identifier: "PopoverDismissRegion").firstMatch
+        if sheet.exists, sheet.isHittable {
+            sheet.tap()
+            return
+        }
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
+        sleep(1)
+        if app.buttons["terminal.home"].exists { return }
+
+        app.swipeDown()
+    }
 }
