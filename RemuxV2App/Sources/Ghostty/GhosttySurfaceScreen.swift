@@ -191,7 +191,7 @@ struct GhosttySurfaceScreen: View {
                 selectionSheetContent(sheet)
                     .presentationDetents(selectionSheetDetents(for: sheet))
                     .presentationDragIndicator(.visible)
-                    .presentationBackground(GhosttyPhoneChromePalette.screenBackground)
+                    .presentationBackground(.regularMaterial)
             }
             .onChange(of: registry.topLevels.map(\.id)) { _, topLevelIDs in
                 guard case .panes(let session) = selectionSheet else {
