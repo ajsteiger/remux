@@ -71,6 +71,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var displayLink: CADisplayLink?
     private var pendingContentOffset: CGPoint?
     private var isApplyingProgrammaticUpdate = false
+    private var lastAppliedScrollRoute: GhosttySurfaceScrollRoute?
     private var routeForwardingGesture = GhosttyRouteForwardingScrollGesture()
 
     private lazy var routeForwardingPanRecognizer: UIPanGestureRecognizer = {
@@ -96,9 +97,13 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         }
     }
 
-    func update(surface: GhosttyManagedSurface, displayScale: CGFloat) {
-        self.displayScale = max(displayScale, 1)
+    @discardableResult
+    func update(surface: GhosttyManagedSurface, displayScale: CGFloat) -> Bool {
+        let normalizedDisplayScale = max(displayScale, 1)
+        let didChangeScale = self.displayScale != normalizedDisplayScale
+        self.displayScale = normalizedDisplayScale
 
+        var needsLayout = didChangeScale
         if self.surface !== surface {
             GhosttyRuntimeTrace.diagnostics(
                 "scroll.update attach old=\(ghosttyDiagnosticShortID(self.surface?.id)) new=\(ghosttyDiagnosticShortID(surface.id)) bounds=\(ghosttyDiagnosticRect(bounds)) surface={\(surface.diagnosticSummary())}"
@@ -115,10 +120,14 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
                 guard let self, self.surface === surface else { return }
                 self.synchronizeFromSurface()
             }
+            needsLayout = true
         }
 
-        synchronizeRoute()
-        setNeedsLayout()
+        needsLayout = synchronizeRoute() || needsLayout
+        if needsLayout {
+            setNeedsLayout()
+        }
+        return needsLayout
     }
 
     override func layoutSubviews() {
@@ -132,6 +141,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         guard self.surface === surface else { return }
         surface.onScrollStateChange = nil
         self.surface = nil
+        lastAppliedScrollRoute = nil
         surface.view.removeFromSuperview()
     }
 
@@ -188,8 +198,11 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         addGestureRecognizer(routeForwardingPanRecognizer)
     }
 
-    private func synchronizeRoute() {
+    @discardableResult
+    private func synchronizeRoute() -> Bool {
         let route = surface?.scrollRoute ?? .viewport
+        let didChangeRoute = route != lastAppliedScrollRoute
+        lastAppliedScrollRoute = route
         let usesNativeViewportScroll = route == .viewport
         scrollView.isScrollEnabled = usesNativeViewportScroll
         scrollView.showsVerticalScrollIndicator = usesNativeViewportScroll
@@ -197,6 +210,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         if usesNativeViewportScroll {
             routeForwardingGesture.reset()
         }
+        return didChangeRoute
     }
 
     private func synchronizeFromSurface() {

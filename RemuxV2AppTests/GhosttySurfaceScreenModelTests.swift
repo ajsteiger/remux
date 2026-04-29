@@ -61,6 +61,22 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(stabilizer.frozenSize)
     }
 
+    func testTerminalViewportStabilizerKeepsLastUsableSizeDuringTransientInvalidGeometry() {
+        var stabilizer = GhosttyTerminalViewportStabilizer()
+        let stableSize = CGSize(width: 402, height: 674)
+
+        stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
+
+        XCTAssertEqual(
+            stabilizer.effectiveSize(liveSize: CGSize(width: 0, height: 0)),
+            stableSize
+        )
+        XCTAssertEqual(
+            stabilizer.effectiveSize(liveSize: CGSize(width: 402, height: 0.5)),
+            stableSize
+        )
+    }
+
     func testRegistryChangesInvalidateScreenModel() async {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),

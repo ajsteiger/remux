@@ -96,6 +96,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
         onCopySelection: (() -> Bool)?
     ) {
+        let previousTopLevel = self.topLevel
+        let previousRegistry = self.registry
         self.topLevel = topLevel
         self.registry = registry
         self.onSurfaceTap = onSurfaceTap
@@ -105,7 +107,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(topLevel?.id)) \(registry.diagnosticSelectionSummary())"
         )
         syncAttachedViews()
-        setNeedsLayout()
+        if previousTopLevel != topLevel || previousRegistry !== registry {
+            setNeedsLayout()
+        }
     }
 
     override func layoutSubviews() {
@@ -152,10 +156,13 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
                 ensureInteractionRecognizers(for: surface.view)
                 let container = scrollContainer(for: surface)
-                container.update(surface: surface, displayScale: effectiveScale)
+                let didChangeContainer = container.update(surface: surface, displayScale: effectiveScale)
                 if container.superview !== self {
                     container.removeFromSuperview()
                     addSubview(container)
+                }
+                if didChangeContainer {
+                    container.layoutIfNeeded()
                 }
             } else {
                 if let container = scrollContainersBySurfaceID[surface.id] {
@@ -193,9 +200,15 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             guard let surface = registry.managedSurface(for: surfaceID) else { return }
 
             let container = scrollContainer(for: surface)
-            container.frame = rect.integral
-            container.update(surface: surface, displayScale: effectiveScale)
-            container.layoutIfNeeded()
+            let targetFrame = rect.integral
+            let didChangeFrame = container.frame != targetFrame
+            if didChangeFrame {
+                container.frame = targetFrame
+            }
+            let didChangeContainer = container.update(surface: surface, displayScale: effectiveScale)
+            if didChangeFrame || didChangeContainer {
+                container.layoutIfNeeded()
+            }
             GhosttyRuntimeTrace.diagnostics(
                 "tree.layout leaf=\(ghosttyDiagnosticShortID(surfaceID)) rect=\(diagnosticRect(rect)) container=\(diagnosticRect(container.frame)) focused=\(surfaceID == focusedSurfaceID) beforeSurface={\(surface.diagnosticSummary())}"
             )

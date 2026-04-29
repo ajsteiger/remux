@@ -46,11 +46,11 @@ struct GhosttySurfaceScreen: View {
             )
             let keyboardReplacementHeight = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
                 keyboardOverlapHeight: lastSoftwareKeyboardOverlapHeight,
-                bottomSafeAreaHeight: GhosttyDeviceSafeArea.bottomInset
+                bottomSafeAreaHeight: screenProxy.safeAreaInsets.bottom
             )
             let currentKeyboardReplacementHeight = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
                 keyboardOverlapHeight: softwareKeyboardOverlapHeight,
-                bottomSafeAreaHeight: GhosttyDeviceSafeArea.bottomInset
+                bottomSafeAreaHeight: screenProxy.safeAreaInsets.bottom
             )
 
             ZStack {
@@ -688,7 +688,12 @@ struct GhosttyTerminalViewportStabilizer: Equatable {
     }
 
     func effectiveSize(liveSize: CGSize) -> CGSize {
-        frozenSize ?? Self.normalized(liveSize)
+        if let frozenSize {
+            return frozenSize
+        }
+
+        let normalizedSize = Self.normalized(liveSize)
+        return isUsable(normalizedSize) ? normalizedSize : lastLiveSize
     }
 
     static func normalized(_ size: CGSize) -> CGSize {
@@ -757,18 +762,6 @@ struct GhosttySoftwareKeyboardVisibility {
             return 0
         }
         return overlap.height
-    }
-}
-
-@MainActor
-private struct GhosttyDeviceSafeArea {
-    static var bottomInset: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?
-            .safeAreaInsets
-            .bottom ?? 0
     }
 }
 
@@ -844,8 +837,6 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
     func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
         uiView.isHidden = true
         uiView.alignGhosttyRendererSublayers()
-        Task { @MainActor in
-            model.attach(view: uiView, size: size)
-        }
+        model.attach(view: uiView, size: size)
     }
 }
