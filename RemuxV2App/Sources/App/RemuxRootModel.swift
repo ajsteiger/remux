@@ -17,22 +17,23 @@ final class RemuxRootModel: ObservableObject {
     enum SetupMode: Equatable {
         case newServer
         case newWorkspace(SavedServer.ID)
-        case editProfile(SavedServer.ID, SavedWorkspace.ID)
+        case editServer(SavedServer.ID, reconnectWorkspaceID: SavedWorkspace.ID?)
+        case editWorkspace(SavedServer.ID, SavedWorkspace.ID)
 
         var existingServerID: SavedServer.ID? {
             switch self {
             case .newServer:
                 nil
-            case .newWorkspace(let serverID), .editProfile(let serverID, _):
+            case .newWorkspace(let serverID), .editServer(let serverID, _), .editWorkspace(let serverID, _):
                 serverID
             }
         }
 
         var existingWorkspaceID: SavedWorkspace.ID? {
             switch self {
-            case .newServer, .newWorkspace:
+            case .newServer, .newWorkspace, .editServer:
                 nil
-            case .editProfile(_, let workspaceID):
+            case .editWorkspace(_, let workspaceID):
                 workspaceID
             }
         }
@@ -100,7 +101,22 @@ final class RemuxRootModel: ObservableObject {
         )
     }
 
-    func beginEditProfile(serverID: SavedServer.ID, workspaceID: SavedWorkspace.ID) async {
+    func beginEditServer(serverID: SavedServer.ID) async {
+        guard let server = library.server(id: serverID) else { return }
+
+        let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
+        let workspace = library.workspaces(for: serverID).first ?? SavedWorkspace(
+            serverID: serverID,
+            sessionName: defaultSessionName(for: serverID)
+        )
+        state = .setup(
+            TmuxConnectionDraft(server: server, workspace: workspace, password: password),
+            .empty,
+            .editServer(serverID, reconnectWorkspaceID: nil)
+        )
+    }
+
+    func beginEditWorkspace(serverID: SavedServer.ID, workspaceID: SavedWorkspace.ID) async {
         guard
             let server = library.server(id: serverID),
             let workspace = library.workspace(id: workspaceID)
@@ -112,7 +128,7 @@ final class RemuxRootModel: ObservableObject {
         state = .setup(
             TmuxConnectionDraft(server: server, workspace: workspace, password: password),
             .empty,
-            .editProfile(serverID, workspaceID)
+            .editWorkspace(serverID, workspaceID)
         )
     }
 
@@ -125,6 +141,22 @@ final class RemuxRootModel: ObservableObject {
     func saveAndConnect() async {
         guard case .setup(let draft, _, let mode) = state else { return }
 
+        switch mode {
+        case .editServer(let serverID, let reconnectWorkspaceID):
+            await saveServer(draft, serverID: serverID, reconnectWorkspaceID: reconnectWorkspaceID, mode: mode)
+
+        case .editWorkspace(let serverID, let workspaceID):
+            await saveWorkspace(draft, serverID: serverID, workspaceID: workspaceID, mode: mode)
+
+        case .newServer, .newWorkspace:
+            await saveProfileAndConnect(draft, mode: mode)
+        }
+    }
+
+    private func saveProfileAndConnect(
+        _ draft: TmuxConnectionDraft,
+        mode: SetupMode
+    ) async {
         switch TmuxConnectionDraftValidator.validate(
             draft,
             existingServerID: mode.existingServerID,
@@ -155,6 +187,81 @@ final class RemuxRootModel: ObservableObject {
         }
     }
 
+    private func saveServer(
+        _ draft: TmuxConnectionDraft,
+        serverID: SavedServer.ID,
+        reconnectWorkspaceID: SavedWorkspace.ID?,
+        mode: SetupMode
+    ) async {
+        switch TmuxConnectionDraftValidator.validateServer(draft, existingServerID: serverID) {
+        case .invalid(let validation):
+            state = .setup(draft, validation, mode)
+
+        case .valid(let submission):
+            do {
+                try await dependencies.profileRepository.saveServer(submission.server)
+                try await dependencies.passwordStore.savePassword(
+                    submission.password,
+                    for: submission.server.id
+                )
+                library = try await dependencies.profileRepository.loadSnapshot()
+                refreshActiveSessions(server: submission.server)
+
+                guard let reconnectWorkspaceID else {
+                    state = .library
+                    return
+                }
+
+                guard var workspace = library.workspace(id: reconnectWorkspaceID) else {
+                    state = .library
+                    return
+                }
+
+                workspace.lastOpenedAt = Date()
+                try await dependencies.profileRepository.saveWorkspace(workspace)
+                library = try await dependencies.profileRepository.loadSnapshot()
+                activate(
+                    server: submission.server,
+                    workspace: workspace,
+                    password: submission.password
+                )
+            } catch {
+                state = .failed(String(describing: error))
+            }
+        }
+    }
+
+    private func saveWorkspace(
+        _ draft: TmuxConnectionDraft,
+        serverID: SavedServer.ID,
+        workspaceID: SavedWorkspace.ID,
+        mode: SetupMode
+    ) async {
+        switch TmuxConnectionDraftValidator.validateWorkspace(
+            draft,
+            serverID: serverID,
+            existingWorkspaceID: workspaceID
+        ) {
+        case .invalid(let validation):
+            state = .setup(draft, validation, mode)
+
+        case .valid(let submission):
+            do {
+                var workspace = submission.workspace
+                if let existing = library.workspace(id: workspaceID) {
+                    workspace.lastOpenedAt = existing.lastOpenedAt
+                }
+
+                try await dependencies.profileRepository.saveWorkspace(workspace)
+                library = try await dependencies.profileRepository.loadSnapshot()
+                refreshActiveSession(workspace: workspace)
+                state = .library
+            } catch {
+                state = .failed(String(describing: error))
+            }
+        }
+    }
+
     func connect(to workspaceID: SavedWorkspace.ID) async {
         guard
             let workspace = library.workspace(id: workspaceID),
@@ -168,7 +275,7 @@ final class RemuxRootModel: ObservableObject {
             state = .setup(
                 TmuxConnectionDraft(server: server, workspace: workspace, password: ""),
                 .empty,
-                .editProfile(server.id, workspace.id)
+                .editServer(server.id, reconnectWorkspaceID: workspace.id)
             )
             return
         }
@@ -177,7 +284,7 @@ final class RemuxRootModel: ObservableObject {
             state = .setup(
                 TmuxConnectionDraft(server: server, workspace: workspace, password: password),
                 unsupportedTransportValidation(for: server.transportKind),
-                .editProfile(server.id, workspace.id)
+                .editServer(server.id, reconnectWorkspaceID: workspace.id)
             )
             return
         }
@@ -268,6 +375,32 @@ final class RemuxRootModel: ObservableObject {
         state = .terminal(workspace.id)
     }
 
+    private func refreshActiveSessions(server: SavedServer) {
+        for index in activeSessions.indices where activeSessions[index].target.server.id == server.id {
+            let target = activeSessions[index].target
+            activeSessions[index].target = TmuxConnectionTarget(
+                server: server,
+                workspace: target.workspace,
+                password: target.password,
+                terminalSettings: target.terminalSettings
+            )
+        }
+    }
+
+    private func refreshActiveSession(workspace: SavedWorkspace) {
+        guard let index = activeSessions.firstIndex(where: { $0.id == workspace.id }) else {
+            return
+        }
+
+        let target = activeSessions[index].target
+        activeSessions[index].target = TmuxConnectionTarget(
+            server: target.server,
+            workspace: workspace,
+            password: target.password,
+            terminalSettings: target.terminalSettings
+        )
+    }
+
     private func target(
         server: SavedServer,
         workspace: SavedWorkspace,
@@ -282,14 +415,15 @@ final class RemuxRootModel: ObservableObject {
     }
 
     private func defaultSessionName(for serverID: SavedServer.ID) -> String {
-        let existing = Set(library.workspaces(for: serverID).map(\.sessionName))
-        guard existing.contains("base") else { return "base" }
+        let workspaces = library.workspaces(for: serverID)
+        guard !workspaces.isEmpty else { return "base" }
 
-        var index = 2
-        while existing.contains("base-\(index)") {
+        let existing = Set(workspaces.map(\.sessionName))
+        var index = max(2, workspaces.count + 1)
+        while existing.contains("session-\(index)") {
             index += 1
         }
-        return "base-\(index)"
+        return "session-\(index)"
     }
 
     private func unsupportedTransportValidation(

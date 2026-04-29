@@ -107,6 +107,37 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.workspaces, [workspaceB])
     }
 
+    func testSaveServerDoesNotCreateOrModifyWorkspaces() async throws {
+        let root = temporaryRoot()
+        let repository = FileBackedConnectionProfileRepository(rootURL: root)
+        var server = SavedServer(
+            displayName: "Alpha",
+            host: "alpha.example.test",
+            username: "alice"
+        )
+
+        try await repository.saveServer(server)
+        server.displayName = "Alpha Updated"
+        try await repository.saveServer(server)
+
+        let snapshot = try await repository.loadSnapshot()
+        XCTAssertEqual(snapshot.servers, [server])
+        XCTAssertEqual(snapshot.workspaces, [])
+    }
+
+    func testSaveWorkspaceRequiresExistingServer() async throws {
+        let root = temporaryRoot()
+        let repository = FileBackedConnectionProfileRepository(rootURL: root)
+        let workspace = SavedWorkspace(serverID: UUID(), sessionName: "ops")
+
+        do {
+            try await repository.saveWorkspace(workspace)
+            XCTFail("expected missing server")
+        } catch ConnectionProfileRepositoryError.missingServer(let serverID) {
+            XCTAssertEqual(serverID, workspace.serverID)
+        }
+    }
+
     func testLegacyServerJSONDefaultsTransportToSSH() throws {
         let id = UUID()
         let data = Data(

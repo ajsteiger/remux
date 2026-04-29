@@ -80,9 +80,117 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(draft.displayName, server.displayName)
         XCTAssertEqual(draft.host, server.host)
         XCTAssertEqual(draft.username, server.username)
-        XCTAssertEqual(draft.sessionName, "base-2")
+        XCTAssertEqual(draft.sessionName, "session-2")
         XCTAssertEqual(validation, .empty)
         XCTAssertEqual(mode, .newWorkspace(server.id))
+    }
+
+    func testBeginNewWorkspaceSkipsExistingGeneratedSessionNames() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let base = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let generated = SavedWorkspace(serverID: server.id, sessionName: "session-2")
+        let harness = makeHarness(servers: [server], workspaces: [base, generated])
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+
+        await harness.model.beginNewWorkspace(for: server.id)
+
+        guard case .setup(let draft, let validation, let mode) = harness.model.state else {
+            XCTFail("expected setup state")
+            return
+        }
+
+        XCTAssertEqual(draft.sessionName, "session-3")
+        XCTAssertEqual(validation, .empty)
+        XCTAssertEqual(mode, .newWorkspace(server.id))
+    }
+
+    func testBeginEditServerLoadsServerScopedDraftWithoutReconnectTarget() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let base = SavedWorkspace(
+            serverID: server.id,
+            sessionName: "base",
+            lastOpenedAt: Date(timeIntervalSince1970: 100)
+        )
+        let logs = SavedWorkspace(
+            serverID: server.id,
+            sessionName: "logs",
+            lastOpenedAt: Date(timeIntervalSince1970: 200)
+        )
+        let harness = makeHarness(servers: [server], workspaces: [base, logs])
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+
+        await harness.model.beginEditServer(serverID: server.id)
+
+        guard case .setup(let draft, let validation, let mode) = harness.model.state else {
+            XCTFail("expected setup state")
+            return
+        }
+
+        XCTAssertEqual(draft.displayName, server.displayName)
+        XCTAssertEqual(draft.sessionName, "logs")
+        XCTAssertEqual(draft.password, "demo-password")
+        XCTAssertEqual(validation, .empty)
+        XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: nil))
+    }
+
+    func testBeginEditServerWorksWithoutExistingWorkspaces() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let harness = makeHarness(servers: [server], workspaces: [])
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+
+        await harness.model.beginEditServer(serverID: server.id)
+
+        guard case .setup(let draft, let validation, let mode) = harness.model.state else {
+            XCTFail("expected setup state")
+            return
+        }
+
+        XCTAssertEqual(draft.displayName, server.displayName)
+        XCTAssertEqual(draft.sessionName, "base")
+        XCTAssertEqual(draft.password, "demo-password")
+        XCTAssertEqual(validation, .empty)
+        XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: nil))
+    }
+
+    func testBeginEditWorkspaceUsesSessionScopedEditing() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let base = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let logs = SavedWorkspace(serverID: server.id, sessionName: "logs")
+        let harness = makeHarness(servers: [server], workspaces: [base, logs])
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+
+        await harness.model.beginEditWorkspace(serverID: server.id, workspaceID: logs.id)
+
+        guard case .setup(let draft, let validation, let mode) = harness.model.state else {
+            XCTFail("expected setup state")
+            return
+        }
+
+        XCTAssertEqual(draft.displayName, server.displayName)
+        XCTAssertEqual(draft.sessionName, "logs")
+        XCTAssertEqual(draft.password, "demo-password")
+        XCTAssertEqual(validation, .empty)
+        XCTAssertEqual(mode, .editWorkspace(server.id, logs.id))
     }
 
     func testConnectBlocksPersistedUnsupportedMoshProfile() async throws {
@@ -106,7 +214,64 @@ final class RemuxRootModelTests: XCTestCase {
 
         XCTAssertEqual(draft.transportKind, .mosh)
         XCTAssertNotNil(validation.transportKind)
-        XCTAssertEqual(mode, .editProfile(server.id, workspace.id))
+        XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: workspace.id))
+    }
+
+    func testEditServerSavesServerWithoutCreatingWorkspaceOrOpeningTerminal() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let harness = makeHarness(servers: [server], workspaces: [])
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+        await harness.model.beginEditServer(serverID: server.id)
+        harness.model.updateDraft { draft in
+            draft.displayName = "Build Host Updated"
+            draft.host = "updated.example.com"
+            draft.password = "updated-demo-password"
+        }
+
+        await harness.model.saveAndConnect()
+
+        XCTAssertEqual(harness.model.state, .library)
+        XCTAssertEqual(harness.model.activeSessions, [])
+        let snapshot = try await harness.profileRepository.loadSnapshot()
+        XCTAssertEqual(snapshot.servers.map(\.displayName), ["Build Host Updated"])
+        XCTAssertEqual(snapshot.servers.map(\.host), ["updated.example.com"])
+        XCTAssertEqual(snapshot.workspaces, [])
+        let savedPassword = try await harness.passwordStore.loadPassword(for: server.id)
+        XCTAssertEqual(savedPassword, "updated-demo-password")
+    }
+
+    func testEditWorkspaceSavesSessionWithoutOpeningTerminalOrChangingLastOpenedTime() async throws {
+        let lastOpenedAt = Date(timeIntervalSince1970: 500)
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(
+            serverID: server.id,
+            sessionName: "base",
+            lastOpenedAt: lastOpenedAt
+        )
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+        await harness.model.beginEditWorkspace(serverID: server.id, workspaceID: workspace.id)
+        harness.model.updateDraft { draft in
+            draft.sessionName = "logs"
+        }
+
+        await harness.model.saveAndConnect()
+
+        XCTAssertEqual(harness.model.state, .library)
+        XCTAssertEqual(harness.model.activeSessions, [])
+        let snapshot = try await harness.profileRepository.loadSnapshot()
+        XCTAssertEqual(snapshot.workspaces.map(\.sessionName), ["logs"])
+        XCTAssertEqual(snapshot.workspaces.first?.lastOpenedAt, lastOpenedAt)
     }
 
     func testConnectMultipleWorkspacesKeepsBothActiveWhileReturningToLibrary() async throws {
@@ -239,18 +404,21 @@ private actor TestConnectionProfileRepository: ConnectionProfileRepository {
         try await loadSnapshot().latestProfile
     }
 
-    func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
-        if let index = servers.firstIndex(where: { $0.id == server.id }) {
-            servers[index] = server
-        } else {
-            servers.append(server)
+    func saveServer(_ server: SavedServer) async throws {
+        upsert(server, into: &servers)
+    }
+
+    func saveWorkspace(_ workspace: SavedWorkspace) async throws {
+        guard servers.contains(where: { $0.id == workspace.serverID }) else {
+            throw ConnectionProfileRepositoryError.missingServer(workspace.serverID)
         }
 
-        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
-            workspaces[index] = workspace
-        } else {
-            workspaces.append(workspace)
-        }
+        upsert(workspace, into: &workspaces)
+    }
+
+    func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
+        upsert(server, into: &servers)
+        upsert(workspace, into: &workspaces)
     }
 
     func deleteServer(id: SavedServer.ID) async throws {
@@ -260,6 +428,14 @@ private actor TestConnectionProfileRepository: ConnectionProfileRepository {
 
     func deleteWorkspace(id: SavedWorkspace.ID) async throws {
         workspaces.removeAll { $0.id == id }
+    }
+
+    private func upsert<Element: Identifiable>(_ element: Element, into elements: inout [Element]) where Element.ID: Equatable {
+        if let index = elements.firstIndex(where: { $0.id == element.id }) {
+            elements[index] = element
+        } else {
+            elements.append(element)
+        }
     }
 }
 

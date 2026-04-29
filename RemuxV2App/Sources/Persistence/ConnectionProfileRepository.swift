@@ -46,9 +46,15 @@ struct ConnectionLibrarySnapshot: Equatable, Sendable {
 protocol ConnectionProfileRepository: Sendable {
     func loadSnapshot() async throws -> ConnectionLibrarySnapshot
     func loadProfile() async throws -> (SavedServer, SavedWorkspace)?
+    func saveServer(_ server: SavedServer) async throws
+    func saveWorkspace(_ workspace: SavedWorkspace) async throws
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws
     func deleteServer(id: SavedServer.ID) async throws
     func deleteWorkspace(id: SavedWorkspace.ID) async throws
+}
+
+enum ConnectionProfileRepositoryError: Error, Equatable {
+    case missingServer(SavedServer.ID)
 }
 
 actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
@@ -78,20 +84,29 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
         try await loadSnapshot().latestProfile
     }
 
-    func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
+    func saveServer(_ server: SavedServer) async throws {
         var servers = try await serverStore.load()
-        if let index = servers.firstIndex(where: { $0.id == server.id }) {
-            servers[index] = server
-        } else {
-            servers.append(server)
+        upsert(server, into: &servers)
+        try await serverStore.save(servers)
+    }
+
+    func saveWorkspace(_ workspace: SavedWorkspace) async throws {
+        let servers = try await serverStore.load()
+        guard servers.contains(where: { $0.id == workspace.serverID }) else {
+            throw ConnectionProfileRepositoryError.missingServer(workspace.serverID)
         }
 
         var workspaces = try await workspaceStore.load()
-        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
-            workspaces[index] = workspace
-        } else {
-            workspaces.append(workspace)
-        }
+        upsert(workspace, into: &workspaces)
+        try await workspaceStore.save(workspaces)
+    }
+
+    func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
+        var servers = try await serverStore.load()
+        upsert(server, into: &servers)
+
+        var workspaces = try await workspaceStore.load()
+        upsert(workspace, into: &workspaces)
 
         try await serverStore.save(servers)
         try await workspaceStore.save(workspaces)
@@ -108,5 +123,13 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
     func deleteWorkspace(id: SavedWorkspace.ID) async throws {
         let workspaces = try await workspaceStore.load()
         try await workspaceStore.save(workspaces.filter { $0.id != id })
+    }
+
+    private func upsert<Element: Identifiable>(_ element: Element, into elements: inout [Element]) where Element.ID: Equatable {
+        if let index = elements.firstIndex(where: { $0.id == element.id }) {
+            elements[index] = element
+        } else {
+            elements.append(element)
+        }
     }
 }

@@ -93,11 +93,12 @@ private struct RemuxWorkspaceShell: View {
         case .library:
             libraryStack
 
-        case .setup(let draft, let validation, _):
+        case .setup(let draft, let validation, let mode):
             NavigationStack {
                 ConnectionSetupView(
                     draft: draft,
                     validation: validation,
+                    mode: mode,
                     onChange: model.updateDraft,
                     onConnect: {
                         Task { await model.saveAndConnect() }
@@ -129,8 +130,11 @@ private struct RemuxWorkspaceShell: View {
                 onAddWorkspace: { serverID in
                     Task { await model.beginNewWorkspace(for: serverID) }
                 },
-                onEditProfile: { serverID, workspaceID in
-                    Task { await model.beginEditProfile(serverID: serverID, workspaceID: workspaceID) }
+                onEditServer: { serverID in
+                    Task { await model.beginEditServer(serverID: serverID) }
+                },
+                onEditWorkspace: { serverID, workspaceID in
+                    Task { await model.beginEditWorkspace(serverID: serverID, workspaceID: workspaceID) }
                 },
                 onConnect: { workspaceID in
                     Task { await model.connect(to: workspaceID) }
@@ -172,18 +176,25 @@ private struct ActiveTerminalSessionView: View {
 }
 
 private struct ConnectionLibraryView: View {
+    private static let collapsedConnectedSessionCount = 3
+    private static let collapsedRecentSessionCount = 5
+
     let snapshot: ConnectionLibrarySnapshot
     let activeSessions: [ActiveTerminalSession]
     let terminalSettings: TerminalSettings
     let onAddServer: () -> Void
     let onAddWorkspace: (SavedServer.ID) -> Void
-    let onEditProfile: (SavedServer.ID, SavedWorkspace.ID) -> Void
+    let onEditServer: (SavedServer.ID) -> Void
+    let onEditWorkspace: (SavedServer.ID, SavedWorkspace.ID) -> Void
     let onConnect: (SavedWorkspace.ID) -> Void
     let onShowActiveSession: (SavedWorkspace.ID) -> Void
     let onCloseActiveSession: (SavedWorkspace.ID) -> Void
     let onDeleteServer: (SavedServer.ID) -> Void
     let onDeleteWorkspace: (SavedWorkspace.ID) -> Void
     let onSettingsChange: (TerminalSettings) -> Void
+
+    @State private var showsAllConnectedSessions = false
+    @State private var showsAllRecentSessions = false
 
     var body: some View {
         List {
@@ -196,9 +207,8 @@ private struct ConnectionLibraryView: View {
                 }
             } else {
                 activeSessionsSection
-                overviewSection
-                sessionsSection
                 serversSection
+                recentSessionsSection
             }
         }
         .listStyle(.plain)
@@ -221,19 +231,10 @@ private struct ConnectionLibraryView: View {
             }
 
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if snapshot.servers.count == 1, let server = snapshot.servers.first {
-                    Button {
-                        onAddWorkspace(server.id)
-                    } label: {
-                        Image(systemName: "plus.square.on.square")
-                    }
-                    .accessibilityLabel("New Session")
-                    .accessibilityIdentifier("library.new-session")
-                }
-
                 Button(action: onAddServer) {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add Server")
                 .accessibilityIdentifier("library.add-server")
             }
         }
@@ -241,14 +242,14 @@ private struct ConnectionLibraryView: View {
 
     @ViewBuilder
     private var activeSessionsSection: some View {
-        if !activeSessions.isEmpty {
-            Section("Running") {
-                ForEach(activeSessions) { session in
+        if !sortedActiveSessions.isEmpty {
+            Section("Connected Sessions") {
+                ForEach(visibleConnectedSessions) { session in
                     Button {
                         onShowActiveSession(session.id)
                     } label: {
                         ActiveSessionLibraryRow(session: session)
-                            .accessibilityIdentifier("library.active-session.open")
+                            .accessibilityIdentifier("library.active-session.show")
                     }
                     .buttonStyle(.plain)
                     .swipeActions(edge: .trailing) {
@@ -257,51 +258,29 @@ private struct ConnectionLibraryView: View {
                         }
                     }
                 }
-            }
-        }
-    }
 
-    private var overviewSection: some View {
-        Section {
-            HStack(spacing: 16) {
-                LibraryCountPill(
-                    title: "Servers",
-                    value: snapshot.servers.count,
-                    systemImage: "server.rack"
-                )
-
-                Divider()
-
-                LibraryCountPill(
-                    title: "Sessions",
-                    value: snapshot.workspaces.count,
-                    systemImage: "terminal"
-                )
-            }
-            .padding(.vertical, 4)
-
-            if snapshot.servers.count == 1, let server = snapshot.servers.first {
-                Button {
-                    onAddWorkspace(server.id)
-                } label: {
-                    Label("New Session", systemImage: "plus.square.on.square")
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if sortedActiveSessions.count > Self.collapsedConnectedSessionCount {
+                    Button {
+                        withAnimation(.snappy) {
+                            showsAllConnectedSessions.toggle()
+                        }
+                    } label: {
+                        DisclosureRowLabel(
+                            title: showsAllConnectedSessions ? "Show fewer" : "View all \(sortedActiveSessions.count)",
+                            systemImage: showsAllConnectedSessions ? "chevron.up" : "chevron.down"
+                        )
+                    }
+                    .accessibilityIdentifier("library.connected-sessions.toggle")
                 }
-                .accessibilityIdentifier("library.new-session-overview")
             }
         }
     }
 
     @ViewBuilder
-    private var sessionsSection: some View {
-        let activeSessionIDs = Set(activeSessions.map(\.id))
-
-        Section("Sessions") {
-            if snapshot.workspaces.isEmpty {
-                Text("Create a session from a saved server.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(snapshot.workspaces.sorted(by: { $0.lastOpenedAt > $1.lastOpenedAt })) { workspace in
+    private var recentSessionsSection: some View {
+        if !recentWorkspaces.isEmpty {
+            Section("Recent Sessions") {
+                ForEach(visibleRecentWorkspaces) { workspace in
                     if let server = snapshot.server(id: workspace.serverID) {
                         Button {
                             onConnect(workspace.id)
@@ -309,14 +288,217 @@ private struct ConnectionLibraryView: View {
                             SessionLibraryRow(
                                 server: server,
                                 workspace: workspace,
-                                isActive: activeSessionIDs.contains(workspace.id)
+                                isConnected: false,
+                                subtitleMode: .serverAndLastOpened
                             )
-                            .accessibilityIdentifier("library.session.open")
+                            .accessibilityIdentifier("library.session.resume")
                         }
                         .buttonStyle(.plain)
                         .swipeActions(edge: .trailing) {
                             Button("Edit") {
-                                onEditProfile(server.id, workspace.id)
+                                onEditWorkspace(server.id, workspace.id)
+                            }
+                            Button("Delete", role: .destructive) {
+                                onDeleteWorkspace(workspace.id)
+                            }
+                        }
+                    }
+                }
+
+                if recentWorkspaces.count > Self.collapsedRecentSessionCount {
+                    Button {
+                        withAnimation(.snappy) {
+                            showsAllRecentSessions.toggle()
+                        }
+                    } label: {
+                        DisclosureRowLabel(
+                            title: showsAllRecentSessions ? "Show fewer" : "View all \(recentWorkspaces.count)",
+                            systemImage: showsAllRecentSessions ? "chevron.up" : "chevron.down"
+                        )
+                    }
+                    .accessibilityIdentifier("library.recent-sessions.toggle")
+                }
+            }
+        }
+    }
+
+    private var serversSection: some View {
+        Section("Servers") {
+            ForEach(snapshot.servers) { server in
+                let workspaces = snapshot.workspaces(for: server.id)
+                let latest = workspaces.first
+
+                NavigationLink {
+                    ServerDetailView(
+                        server: server,
+                        workspaces: workspaces,
+                        activeSessions: activeSessions.filter { $0.target.server.id == server.id },
+                        onAddWorkspace: onAddWorkspace,
+                        onEditServer: onEditServer,
+                        onEditWorkspace: onEditWorkspace,
+                        onConnect: onConnect,
+                        onDeleteWorkspace: onDeleteWorkspace
+                    )
+                } label: {
+                    ServerLibraryRow(
+                        server: server,
+                        sessionCount: workspaces.count,
+                        connectedSessionCount: connectedSessionCount(for: server.id),
+                        latestWorkspace: latest
+                    )
+                    .padding(.vertical, 4)
+                }
+                .accessibilityIdentifier("library.server.row")
+                .contextMenu {
+                    Button {
+                        onAddWorkspace(server.id)
+                    } label: {
+                        Label("New Session", systemImage: "plus.square.on.square")
+                    }
+
+                    if let latest {
+                        Button {
+                            onConnect(latest.id)
+                        } label: {
+                            Label("Resume Latest", systemImage: "play.fill")
+                        }
+                    }
+
+                    Button {
+                        onEditServer(server.id)
+                    } label: {
+                        Label("Edit Server", systemImage: "slider.horizontal.3")
+                    }
+
+                    Button(role: .destructive) {
+                        onDeleteServer(server.id)
+                    } label: {
+                        Label("Delete Server", systemImage: "trash")
+                    }
+                }
+                .swipeActions(edge: .trailing) {
+                    Button("Delete", role: .destructive) {
+                        onDeleteServer(server.id)
+                    }
+
+                    if let latest {
+                        Button("Resume") {
+                            onConnect(latest.id)
+                        }
+                        .tint(.green)
+                    }
+                }
+                .swipeActions(edge: .leading) {
+                    Button("New Session") {
+                        onAddWorkspace(server.id)
+                    }
+                    .tint(.blue)
+                }
+            }
+        }
+    }
+
+    private var sortedActiveSessions: [ActiveTerminalSession] {
+        activeSessions.sorted {
+            $0.target.workspace.lastOpenedAt > $1.target.workspace.lastOpenedAt
+        }
+    }
+
+    private var visibleConnectedSessions: [ActiveTerminalSession] {
+        guard !showsAllConnectedSessions else { return sortedActiveSessions }
+        return Array(sortedActiveSessions.prefix(Self.collapsedConnectedSessionCount))
+    }
+
+    private var activeWorkspaceIDs: Set<SavedWorkspace.ID> {
+        Set(activeSessions.map(\.id))
+    }
+
+    private var recentWorkspaces: [SavedWorkspace] {
+        snapshot.workspaces
+            .filter { !activeWorkspaceIDs.contains($0.id) }
+            .sorted { lhs, rhs in
+                if lhs.lastOpenedAt != rhs.lastOpenedAt {
+                    return lhs.lastOpenedAt > rhs.lastOpenedAt
+                }
+
+                return lhs.sessionName.localizedStandardCompare(rhs.sessionName) == .orderedAscending
+            }
+    }
+
+    private var visibleRecentWorkspaces: [SavedWorkspace] {
+        guard !showsAllRecentSessions else { return recentWorkspaces }
+        return Array(recentWorkspaces.prefix(Self.collapsedRecentSessionCount))
+    }
+
+    private func connectedSessionCount(for serverID: SavedServer.ID) -> Int {
+        activeSessions.filter { $0.target.server.id == serverID }.count
+    }
+}
+
+private struct ServerDetailView: View {
+    let server: SavedServer
+    let workspaces: [SavedWorkspace]
+    let activeSessions: [ActiveTerminalSession]
+    let onAddWorkspace: (SavedServer.ID) -> Void
+    let onEditServer: (SavedServer.ID) -> Void
+    let onEditWorkspace: (SavedServer.ID, SavedWorkspace.ID) -> Void
+    let onConnect: (SavedWorkspace.ID) -> Void
+    let onDeleteWorkspace: (SavedWorkspace.ID) -> Void
+
+    var body: some View {
+        List {
+            Section("Connection") {
+                LabeledContent("Address") {
+                    Text(serverAddress(server))
+                        .font(.footnote.monospaced())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                        .textSelection(.enabled)
+                }
+
+                LabeledContent("Transport") {
+                    TransportBadge(kind: server.transportKind)
+                }
+
+                LabeledContent("Sessions") {
+                    Text(
+                        serverSummary(
+                            sessionCount: workspaces.count,
+                            connectedSessionCount: activeSessions.count,
+                            latestWorkspace: nil
+                        )
+                    )
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Section("Sessions") {
+                if workspaces.isEmpty {
+                    Button {
+                        onAddWorkspace(server.id)
+                    } label: {
+                        Label("New Session", systemImage: "plus")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .accessibilityIdentifier("library.server.new-session")
+                } else {
+                    ForEach(workspaces) { workspace in
+                        Button {
+                            onConnect(workspace.id)
+                        } label: {
+                            SessionLibraryRow(
+                                server: server,
+                                workspace: workspace,
+                                isConnected: activeWorkspaceIDs.contains(workspace.id),
+                                subtitleMode: .lastOpenedOnly
+                            )
+                            .accessibilityIdentifier("library.session.resume")
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing) {
+                            Button("Edit") {
+                                onEditWorkspace(server.id, workspace.id)
                             }
                             Button("Delete", role: .destructive) {
                                 onDeleteWorkspace(workspace.id)
@@ -326,41 +508,45 @@ private struct ConnectionLibraryView: View {
                 }
             }
         }
-    }
-
-    private var serversSection: some View {
-        Section("Servers") {
-            ForEach(snapshot.servers) { server in
-                ServerLibraryRow(server: server)
-                    .padding(.vertical, 4)
-                    .swipeActions(edge: .trailing) {
-                        if let latest = snapshot.workspaces(for: server.id).first {
-                            Button("Edit") {
-                                onEditProfile(server.id, latest.id)
-                            }
-                        }
-                        Button("Delete", role: .destructive) {
-                            onDeleteServer(server.id)
-                        }
-                    }
+        .listStyle(.insetGrouped)
+        .navigationTitle(server.displayName)
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("library.server.detail")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    onEditServer(server.id)
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .accessibilityLabel("Edit Server")
+                .accessibilityIdentifier("library.server.edit")
 
                 Button {
                     onAddWorkspace(server.id)
                 } label: {
-                    Label("New Session", systemImage: "plus.square.on.square")
+                    Image(systemName: "plus")
                 }
+                .accessibilityLabel("New Session")
                 .accessibilityIdentifier("library.server.new-session")
-
-                if let latest = snapshot.workspaces(for: server.id).first {
-                    Button {
-                        onConnect(latest.id)
-                    } label: {
-                        Label("Open Latest", systemImage: "play.fill")
-                    }
-                    .accessibilityIdentifier("library.server.open-latest")
-                }
             }
         }
+    }
+
+    private var activeWorkspaceIDs: Set<SavedWorkspace.ID> {
+        Set(activeSessions.map(\.id))
+    }
+}
+
+private struct DisclosureRowLabel: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -423,52 +609,29 @@ private struct ActiveSessionLibraryRow: View {
 
             Spacer()
 
-            Text("RUNNING")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.green)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+            ConnectedStateIndicator()
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
 
-private struct LibraryCountPill: View {
-    let title: String
-    let value: Int
-    let systemImage: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(.blue)
-                .frame(width: 26, height: 26)
-                .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(value, format: .number)
-                    .font(.headline.monospacedDigit())
-            }
-
-            Spacer(minLength: 0)
-        }
-    }
-}
-
 private struct SessionLibraryRow: View {
+    enum SubtitleMode: Equatable {
+        case serverAndLastOpened
+        case lastOpenedOnly
+    }
+
     let server: SavedServer
     let workspace: SavedWorkspace
-    let isActive: Bool
+    let isConnected: Bool
+    let subtitleMode: SubtitleMode
 
     var body: some View {
         HStack(spacing: 12) {
@@ -483,40 +646,58 @@ private struct SessionLibraryRow: View {
                     .font(.headline)
                     .lineLimit(1)
 
-                HStack(spacing: 6) {
-                    Text(server.displayName)
-                    Text("opened \(workspace.lastOpenedAt, style: .relative)")
-                }
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                subtitle
             }
 
             Spacer()
 
-            if isActive {
-                Text("RUNNING")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.green)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+            if isConnected {
+                ConnectedStateIndicator()
             }
-            TransportBadge(kind: server.transportKind)
+
+            if subtitleMode == .serverAndLastOpened {
+                TransportBadge(kind: server.transportKind)
+            }
+
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var subtitle: some View {
+        switch subtitleMode {
+        case .serverAndLastOpened:
+            HStack(spacing: 6) {
+                Text(server.displayName)
+                Text("opened \(workspace.lastOpenedAt, style: .relative)")
+            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+
+        case .lastOpenedOnly:
+            Text("opened \(workspace.lastOpenedAt, style: .relative)")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
     }
 }
 
 private struct ServerLibraryRow: View {
     let server: SavedServer
+    let sessionCount: Int
+    let connectedSessionCount: Int
+    let latestWorkspace: SavedWorkspace?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Image(systemName: "server.rack")
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(.indigo)
@@ -531,15 +712,42 @@ private struct ServerLibraryRow: View {
                     TransportBadge(kind: server.transportKind)
                 }
 
-                Text("\(server.username)@\(server.host)\(server.port == 22 ? "" : ":\(server.port)")")
+                Text(serverAddress(server))
                     .font(.footnote.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .textSelection(.enabled)
+
+                Text(
+                    serverSummary(
+                        sessionCount: sessionCount,
+                        connectedSessionCount: connectedSessionCount,
+                        latestWorkspace: latestWorkspace
+                    )
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
             Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct ConnectedStateIndicator: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(.green)
+                .frame(width: 6, height: 6)
+            Text("Connected")
+                .font(.caption.weight(.medium))
+        }
+        .foregroundStyle(.green)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -557,6 +765,30 @@ private struct TransportBadge: View {
                 in: RoundedRectangle(cornerRadius: 5)
             )
     }
+}
+
+private func serverAddress(_ server: SavedServer) -> String {
+    "\(server.username)@\(server.host)\(server.port == 22 ? "" : ":\(server.port)")"
+}
+
+private func serverSummary(
+    sessionCount: Int,
+    connectedSessionCount: Int,
+    latestWorkspace: SavedWorkspace?
+) -> String {
+    var parts = [
+        "\(sessionCount) \(sessionCount == 1 ? "session" : "sessions")"
+    ]
+
+    if connectedSessionCount > 0 {
+        parts.append("\(connectedSessionCount) connected")
+    }
+
+    if let latestWorkspace {
+        parts.append("latest \(latestWorkspace.sessionName)")
+    }
+
+    return parts.joined(separator: " · ")
 }
 
 private struct TerminalSettingsView: View {
@@ -642,89 +874,110 @@ private struct TerminalSettingsView: View {
 private struct ConnectionSetupView: View {
     let draft: TmuxConnectionDraft
     let validation: TmuxConnectionDraftValidation
+    let mode: RemuxRootModel.SetupMode
     let onChange: ((inout TmuxConnectionDraft) -> Void) -> Void
     let onConnect: () -> Void
     let onCancel: () -> Void
 
     var body: some View {
         Form {
-            Section {
-                TextField("Name", text: binding(for: \.displayName))
-                    .textInputAutocapitalization(.words)
-                    .accessibilityIdentifier("connection.name")
-                validationMessage(validation.displayName)
-
-                TextField("Tailscale IP or host", text: binding(for: \.host))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .accessibilityIdentifier("connection.host")
-                validationMessage(validation.host)
-
-                TextField("Port", text: binding(for: \.port))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.numberPad)
-                    .accessibilityIdentifier("connection.port")
-                validationMessage(validation.port)
-
-                TextField("Username", text: binding(for: \.username))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("connection.username")
-                validationMessage(validation.username)
-
-                Picker("Transport", selection: transportBinding) {
-                    ForEach(ServerTransportKind.allCases) { kind in
-                        Text(kind.displayName).tag(kind)
+            if showsEditableServerFields {
+                Section {
+                    LabeledContent("Name") {
+                        TextField("Mac mini", text: binding(for: \.displayName))
+                            .textInputAutocapitalization(.words)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("connection.name")
                     }
+                    validationMessage(validation.displayName)
+
+                    LabeledContent("Host") {
+                        TextField("Tailscale IP or hostname", text: binding(for: \.host))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("connection.host")
+                    }
+                    validationMessage(validation.host)
+
+                    LabeledContent("Port") {
+                        TextField("22", text: binding(for: \.port))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("connection.port")
+                    }
+                    validationMessage(validation.port)
+
+                    LabeledContent("User") {
+                        TextField("Username", text: binding(for: \.username))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("connection.username")
+                    }
+                    validationMessage(validation.username)
+
+                    LabeledContent("Protocol") {
+                        Picker("Protocol", selection: transportBinding) {
+                            ForEach(ServerTransportKind.allCases) { kind in
+                                Text(kind.displayName).tag(kind)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 190)
+                        .accessibilityIdentifier("connection.transport")
+                    }
+                    validationMessage(
+                        validation.transportKind,
+                        accessibilityIdentifier: "connection.transport.validation"
+                    )
+                } header: {
+                    Text("Server")
                 }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("connection.transport")
-                validationMessage(
-                    validation.transportKind,
-                    accessibilityIdentifier: "connection.transport.validation"
-                )
-            } header: {
-                Label("Server", systemImage: "server.rack")
             }
 
-            Section {
-                SSHPasswordField(
-                    text: binding(for: \.password),
-                    placeholder: "Password"
-                )
-                    .frame(minHeight: 28)
-                    .accessibilityIdentifier("connection.password")
-                validationMessage(validation.password)
-            } header: {
-                Label("Authentication", systemImage: "lock")
-            }
-
-            Section {
-                TextField("Session", text: binding(for: \.sessionName))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("connection.session")
-                validationMessage(validation.sessionName)
-            } header: {
-                Label("tmux", systemImage: "rectangle.terminal")
-            }
-
-            Section {
-                Button {
-                    dismissKeyboard()
-                    onConnect()
-                } label: {
-                    Label("Save and Connect", systemImage: "terminal")
-                        .frame(maxWidth: .infinity, alignment: .center)
+            if showsServerSummary {
+                Section("Server") {
+                    ConnectionServerSummaryRow(draft: draft)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .accessibilityIdentifier("connection.save")
+            }
+
+            if showsAuthenticationFields {
+                Section {
+                    LabeledContent("Password") {
+                        SSHPasswordField(
+                            text: binding(for: \.password),
+                            placeholder: "Required"
+                        )
+                            .frame(minHeight: 28)
+                            .accessibilityIdentifier("connection.password")
+                    }
+                    validationMessage(validation.password)
+                } header: {
+                    Text("Authentication")
+                }
+            }
+
+            if showsSessionFields {
+                Section {
+                    LabeledContent("Name") {
+                        TextField("Session name", text: binding(for: \.sessionName))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                            .accessibilityIdentifier("connection.session")
+                    }
+                    validationMessage(validation.sessionName)
+                } header: {
+                    Text(sessionSectionTitle)
+                }
             }
         }
-        .navigationTitle("Connection")
+        .scrollDismissesKeyboard(.interactively)
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -732,10 +985,88 @@ private struct ConnectionSetupView: View {
                     dismissKeyboard()
                     onCancel()
                 } label: {
-                    Text("Cancel")
+                    Image(systemName: "xmark")
                 }
-                    .accessibilityIdentifier("connection.cancel")
+                .accessibilityLabel("Cancel")
+                .accessibilityIdentifier("connection.cancel")
             }
+
+            ToolbarItem(placement: .confirmationAction) {
+                Button(primaryActionTitle) {
+                    dismissKeyboard()
+                    onConnect()
+                }
+                .fontWeight(.semibold)
+                .accessibilityIdentifier("connection.save")
+            }
+        }
+    }
+
+    private var navigationTitle: String {
+        switch mode {
+        case .newServer:
+            "New Server"
+        case .newWorkspace:
+            "New Session"
+        case .editServer:
+            "Edit Server"
+        case .editWorkspace:
+            "Edit Session"
+        }
+    }
+
+    private var showsEditableServerFields: Bool {
+        switch mode {
+        case .newServer, .editServer:
+            true
+        case .newWorkspace, .editWorkspace:
+            false
+        }
+    }
+
+    private var showsServerSummary: Bool {
+        !showsEditableServerFields
+    }
+
+    private var showsAuthenticationFields: Bool {
+        switch mode {
+        case .newServer, .editServer:
+            true
+        case .newWorkspace, .editWorkspace:
+            false
+        }
+    }
+
+    private var showsSessionFields: Bool {
+        switch mode {
+        case .newServer, .newWorkspace, .editWorkspace:
+            true
+        case .editServer:
+            false
+        }
+    }
+
+    private var sessionSectionTitle: String {
+        switch mode {
+        case .newServer:
+            "First Session"
+        case .newWorkspace, .editWorkspace:
+            "Session"
+        case .editServer:
+            "Session"
+        }
+    }
+
+    private var primaryActionTitle: String {
+        switch mode {
+        case .newServer:
+            "Connect"
+        case .newWorkspace:
+            "Start"
+        case .editServer(_, let reconnectWorkspaceID):
+            reconnectWorkspaceID == nil ? "Save" : "Connect"
+        case .editWorkspace:
+            "Save"
         }
     }
 
@@ -780,6 +1111,32 @@ private struct ConnectionSetupView: View {
     }
 }
 
+private struct ConnectionServerSummaryRow: View {
+    let draft: TmuxConnectionDraft
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(draft.displayName)
+                    .lineLimit(1)
+
+                Text("\(draft.username)@\(draft.host)\(draft.port == "22" ? "" : ":\(draft.port)")")
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            TransportBadge(kind: draft.transportKind)
+        }
+        .padding(.vertical, 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct SSHPasswordField: UIViewRepresentable {
     @Binding var text: String
     let placeholder: String
@@ -793,6 +1150,7 @@ private struct SSHPasswordField: UIViewRepresentable {
         textField.autocorrectionType = .no
         textField.spellCheckingType = .no
         textField.clearButtonMode = .whileEditing
+        textField.textAlignment = .right
         textField.accessibilityIdentifier = "connection.password"
         textField.delegate = context.coordinator
         textField.addTarget(
@@ -826,6 +1184,7 @@ private struct SSHPasswordField: UIViewRepresentable {
     }
 }
 
+@MainActor
 private func dismissKeyboard() {
     UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder),

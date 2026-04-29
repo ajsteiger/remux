@@ -37,17 +37,28 @@ final class RemuxV2AppUITests: XCTestCase {
         saveConnectionAndWaitForTerminal()
         openHomeFromTerminal()
 
-        XCTAssertTrue(activeSessionRows.firstMatch.waitForExistence(timeout: 2))
+        let firstOpenSession = activeSessionRows.firstMatch
+        XCTAssertTrue(firstOpenSession.waitForExistence(timeout: 5))
+        if firstOpenSession.isHittable {
+            firstOpenSession.tap()
+        } else {
+            firstOpenSession.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        XCTAssertTrue(app.otherElements["terminal.screen"].waitForExistence(timeout: 5))
+        openHomeFromTerminal()
+
         openNewSessionFromLibrary()
 
         XCTAssertTrue(app.textFields["connection.session"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.textFields["connection.name"].waitForExistence(timeout: 0.5))
+        XCTAssertFalse(app.secureTextFields["connection.password"].exists)
         app.swipeUp()
         XCTAssertTrue(app.buttons["connection.save"].waitForExistence(timeout: 2))
         saveConnectionAndWaitForTerminal()
         openHomeFromTerminal()
 
         let runningSessions = activeSessionRows
-        XCTAssertTrue(runningSessions.element(boundBy: 1).waitForExistence(timeout: 2))
+        XCTAssertTrue(runningSessions.element(boundBy: 1).waitForExistence(timeout: 5))
     }
 
     func testMoshTransportShowsUnsupportedValidation() {
@@ -181,6 +192,8 @@ final class RemuxV2AppUITests: XCTestCase {
         } else {
             homeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
+
+        XCTAssertTrue(app.descendants(matching: .any)["library.list"].waitForExistence(timeout: 5))
     }
 
     private func waitForTerminalHomeButton(timeout: TimeInterval = 2) -> XCUIElement {
@@ -229,22 +242,20 @@ final class RemuxV2AppUITests: XCTestCase {
     }
 
     private func openNewSessionFromLibrary() {
-        let shortcutButton = app.buttons["library.new-session"]
-        if shortcutButton.waitForExistence(timeout: 1) {
-            if shortcutButton.isHittable {
-                shortcutButton.tap()
-            } else {
-                app.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.40)).tap()
-            }
+        let detailButton = app.buttons["library.server.new-session"]
+        if detailButton.waitForExistence(timeout: 1) {
+            detailButton.tap()
             return
         }
+
+        openFirstServerDetail()
 
         let serverButton = app.buttons["library.server.new-session"]
         XCTAssertTrue(serverButton.waitForExistence(timeout: 2))
         if serverButton.isHittable {
             serverButton.tap()
         } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.79)).tap()
+            serverButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
     }
 
@@ -267,14 +278,37 @@ final class RemuxV2AppUITests: XCTestCase {
 
     private func openFirstSavedSession() {
         let savedSession = app.descendants(matching: .any)
-            .matching(identifier: "library.session.open")
+            .matching(identifier: "library.session.resume")
             .firstMatch
-        XCTAssertTrue(savedSession.waitForExistence(timeout: 5))
-        savedSession.tap()
+        if savedSession.waitForExistence(timeout: 2) {
+            savedSession.tap()
+            return
+        }
+
+        openFirstServerDetail()
+
+        let serverSession = app.descendants(matching: .any)
+            .matching(identifier: "library.session.resume")
+            .firstMatch
+        XCTAssertTrue(serverSession.waitForExistence(timeout: 3))
+        serverSession.tap()
+    }
+
+    private func openFirstServerDetail() {
+        let server = app.descendants(matching: .any)
+            .matching(identifier: "library.server.row")
+            .firstMatch
+        XCTAssertTrue(server.waitForExistence(timeout: 3))
+        if !server.isHittable {
+            app.swipeUp()
+            XCTAssertTrue(server.waitForExistence(timeout: 2))
+        }
+
+        server.coordinate(withNormalizedOffset: CGVector(dx: 0.78, dy: 0.5)).tap()
     }
 
     private var activeSessionRows: XCUIElementQuery {
-        app.descendants(matching: .any).matching(identifier: "library.active-session.open")
+        app.descendants(matching: .any).matching(identifier: "library.active-session.show")
     }
 
     private func tapFontDefaultToggle() {
@@ -436,7 +470,7 @@ final class RemuxV2AppUITests: XCTestCase {
         XCTAssertTrue(home.waitForExistence(timeout: 5))
         if home.isHittable { home.tap() }
         sleep(2)
-        attach(name: "30-library-with-running-session")
+        attach(name: "30-library-with-connected-session")
     }
 
     private func attach(name: String) {

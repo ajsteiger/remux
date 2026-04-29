@@ -77,6 +77,28 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertNotNil(validation.password)
     }
 
+    func testInvalidConnectionDraftReportsServerAndSessionFailuresTogether() {
+        var draft = TmuxConnectionDraft()
+        draft.sessionName = ""
+
+        let result = TmuxConnectionDraftValidator.validate(
+            draft,
+            existingServerID: nil,
+            existingWorkspaceID: nil
+        )
+
+        guard case .invalid(let validation) = result else {
+            XCTFail("expected invalid submission")
+            return
+        }
+
+        XCTAssertNotNil(validation.displayName)
+        XCTAssertNotNil(validation.host)
+        XCTAssertNotNil(validation.username)
+        XCTAssertNotNil(validation.password)
+        XCTAssertNotNil(validation.sessionName)
+    }
+
     func testMoshDraftReportsUnsupportedTransport() {
         var draft = TmuxConnectionDraft()
         draft.displayName = "Laptop"
@@ -104,5 +126,52 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertNil(validation.username)
         XCTAssertNil(validation.password)
         XCTAssertNil(validation.sessionName)
+    }
+
+    func testServerDraftValidationDoesNotRequireSessionName() {
+        let serverID = UUID()
+        var draft = TmuxConnectionDraft()
+        draft.displayName = "Laptop"
+        draft.host = "laptop.example.com"
+        draft.port = "22"
+        draft.username = "demo"
+        draft.password = "demo-password"
+        draft.sessionName = ""
+
+        let result = TmuxConnectionDraftValidator.validateServer(
+            draft,
+            existingServerID: serverID
+        )
+
+        guard case .valid(let submission) = result else {
+            XCTFail("expected valid server submission")
+            return
+        }
+
+        XCTAssertEqual(submission.server.id, serverID)
+        XCTAssertEqual(submission.server.displayName, "Laptop")
+        XCTAssertEqual(submission.password, "demo-password")
+    }
+
+    func testWorkspaceDraftValidationOnlyRequiresSessionName() {
+        let serverID = UUID()
+        let workspaceID = UUID()
+        var draft = TmuxConnectionDraft()
+        draft.sessionName = "ops"
+
+        let result = TmuxConnectionDraftValidator.validateWorkspace(
+            draft,
+            serverID: serverID,
+            existingWorkspaceID: workspaceID
+        )
+
+        guard case .valid(let submission) = result else {
+            XCTFail("expected valid workspace submission")
+            return
+        }
+
+        XCTAssertEqual(submission.workspace.id, workspaceID)
+        XCTAssertEqual(submission.workspace.serverID, serverID)
+        XCTAssertEqual(submission.workspace.sessionName, "ops")
     }
 }

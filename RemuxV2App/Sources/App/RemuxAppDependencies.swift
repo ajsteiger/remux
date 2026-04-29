@@ -126,18 +126,21 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
         try await loadSnapshot().latestProfile
     }
 
-    func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
-        if let index = servers.firstIndex(where: { $0.id == server.id }) {
-            servers[index] = server
-        } else {
-            servers.append(server)
+    func saveServer(_ server: SavedServer) async throws {
+        upsert(server, into: &servers)
+    }
+
+    func saveWorkspace(_ workspace: SavedWorkspace) async throws {
+        guard servers.contains(where: { $0.id == workspace.serverID }) else {
+            throw ConnectionProfileRepositoryError.missingServer(workspace.serverID)
         }
 
-        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
-            workspaces[index] = workspace
-        } else {
-            workspaces.append(workspace)
-        }
+        upsert(workspace, into: &workspaces)
+    }
+
+    func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
+        upsert(server, into: &servers)
+        upsert(workspace, into: &workspaces)
     }
 
     func deleteServer(id: SavedServer.ID) async throws {
@@ -147,6 +150,14 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
 
     func deleteWorkspace(id: SavedWorkspace.ID) async throws {
         workspaces.removeAll { $0.id == id }
+    }
+
+    private func upsert<Element: Identifiable>(_ element: Element, into elements: inout [Element]) where Element.ID: Equatable {
+        if let index = elements.firstIndex(where: { $0.id == element.id }) {
+            elements[index] = element
+        } else {
+            elements.append(element)
+        }
     }
 }
 

@@ -148,8 +148,27 @@ struct ValidatedTmuxConnectionDraft: Equatable, Sendable {
     let password: String
 }
 
+struct ValidatedTmuxServerDraft: Equatable, Sendable {
+    let server: SavedServer
+    let password: String
+}
+
+struct ValidatedTmuxWorkspaceDraft: Equatable, Sendable {
+    let workspace: SavedWorkspace
+}
+
 enum TmuxConnectionDraftValidationResult: Equatable, Sendable {
     case valid(ValidatedTmuxConnectionDraft)
+    case invalid(TmuxConnectionDraftValidation)
+}
+
+enum TmuxServerDraftValidationResult: Equatable, Sendable {
+    case valid(ValidatedTmuxServerDraft)
+    case invalid(TmuxConnectionDraftValidation)
+}
+
+enum TmuxWorkspaceDraftValidationResult: Equatable, Sendable {
+    case valid(ValidatedTmuxWorkspaceDraft)
     case invalid(TmuxConnectionDraftValidation)
 }
 
@@ -159,13 +178,50 @@ enum TmuxConnectionDraftValidator {
         existingServerID: SavedServer.ID?,
         existingWorkspaceID: SavedWorkspace.ID?
     ) -> TmuxConnectionDraftValidationResult {
-        var validation = TmuxConnectionDraftValidation.empty
+        let serverResult = validateServer(draft, existingServerID: existingServerID)
+        let workspaceServerID: SavedServer.ID
+        if case .valid(let serverSubmission) = serverResult {
+            workspaceServerID = serverSubmission.server.id
+        } else {
+            workspaceServerID = existingServerID ?? UUID()
+        }
 
+        let workspaceResult = validateWorkspace(
+            draft,
+            serverID: workspaceServerID,
+            existingWorkspaceID: existingWorkspaceID
+        )
+
+        if case .valid(let serverSubmission) = serverResult,
+           case .valid(let workspaceSubmission) = workspaceResult {
+            return .valid(
+                ValidatedTmuxConnectionDraft(
+                    server: serverSubmission.server,
+                    workspace: workspaceSubmission.workspace,
+                    password: serverSubmission.password
+                )
+            )
+        }
+
+        var validation = TmuxConnectionDraftValidation.empty
+        if case .invalid(let serverValidation) = serverResult {
+            validation.merge(serverValidation)
+        }
+        if case .invalid(let workspaceValidation) = workspaceResult {
+            validation.merge(workspaceValidation)
+        }
+        return .invalid(validation)
+    }
+
+    static func validateServer(
+        _ draft: TmuxConnectionDraft,
+        existingServerID: SavedServer.ID?
+    ) -> TmuxServerDraftValidationResult {
+        var validation = TmuxConnectionDraftValidation.empty
         let displayName = draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let host = draft.host.trimmingCharacters(in: .whitespacesAndNewlines)
         let username = draft.username.trimmingCharacters(in: .whitespacesAndNewlines)
         let password = draft.password
-        let sessionName = draft.sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if displayName.isEmpty {
             validation.displayName = "Name is required."
@@ -180,6 +236,7 @@ enum TmuxConnectionDraftValidator {
             return .invalid(validation)
         }
 
+        let serverID = existingServerID ?? UUID()
         if username.isEmpty {
             validation.username = "Username is required."
         }
@@ -192,18 +249,12 @@ enum TmuxConnectionDraftValidator {
             validation.password = "Password is required."
         }
 
-        if sessionName.isEmpty {
-            validation.sessionName = "tmux session name is required."
-        }
-
         guard validation.isValid else {
             return .invalid(validation)
         }
 
-        let serverID = existingServerID ?? UUID()
-        let workspaceID = existingWorkspaceID ?? UUID()
         return .valid(
-            ValidatedTmuxConnectionDraft(
+            ValidatedTmuxServerDraft(
                 server: SavedServer(
                     id: serverID,
                     displayName: displayName,
@@ -212,14 +263,48 @@ enum TmuxConnectionDraftValidator {
                     username: username,
                     transportKind: draft.transportKind
                 ),
-                workspace: SavedWorkspace(
-                    id: workspaceID,
-                    serverID: serverID,
-                    sessionName: sessionName,
-                    lastOpenedAt: Date()
-                ),
                 password: password
             )
         )
+    }
+
+    static func validateWorkspace(
+        _ draft: TmuxConnectionDraft,
+        serverID: SavedServer.ID,
+        existingWorkspaceID: SavedWorkspace.ID?
+    ) -> TmuxWorkspaceDraftValidationResult {
+        var validation = TmuxConnectionDraftValidation.empty
+        let sessionName = draft.sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if sessionName.isEmpty {
+            validation.sessionName = "tmux session name is required."
+        }
+
+        guard validation.isValid else {
+            return .invalid(validation)
+        }
+
+        return .valid(
+            ValidatedTmuxWorkspaceDraft(
+                workspace: SavedWorkspace(
+                    id: existingWorkspaceID ?? UUID(),
+                    serverID: serverID,
+                    sessionName: sessionName,
+                    lastOpenedAt: Date()
+                )
+            )
+        )
+    }
+}
+
+private extension TmuxConnectionDraftValidation {
+    mutating func merge(_ other: TmuxConnectionDraftValidation) {
+        displayName = displayName ?? other.displayName
+        host = host ?? other.host
+        port = port ?? other.port
+        username = username ?? other.username
+        transportKind = transportKind ?? other.transportKind
+        password = password ?? other.password
+        sessionName = sessionName ?? other.sessionName
     }
 }
