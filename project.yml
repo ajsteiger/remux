@@ -57,3 +57,17 @@ targets:
         PRODUCT_NAME: RemuxV2Tests
         PRODUCT_MODULE_NAME: RemuxV2Tests
         GENERATE_INFOPLIST_FILE: YES
+  RemuxV2UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: RemuxV2AppUITests
+    dependencies:
+      - target: RemuxV2
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.appUITests
+        PRODUCT_NAME: RemuxV2UITests
+        PRODUCT_MODULE_NAME: RemuxV2UITests
+        GENERATE_INFOPLIST_FILE: YES
