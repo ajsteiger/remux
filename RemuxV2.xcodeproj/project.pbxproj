@@ -43,6 +43,7 @@
 		65D8BE172BA63D100D254EB3 /* RemuxRootModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 231B77B425C48FE9E9F40B6C /* RemuxRootModel.swift */; };
 		69339533904C776DF7D87FF1 /* TrustedHostStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF4524FB120EAF9C5FE0417 /* TrustedHostStore.swift */; };
 		6AAADFEC2AB20B9D2045C7FC /* TerminalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80C3CAF9DFF99EC18102BE7A /* TerminalSettings.swift */; };
+		6C3BC3B73F854354CB446629 /* Haptic.swift in Sources */ = {isa = PBXBuildFile; fileRef = B806F99221EF1FAA5FB04A4B /* Haptic.swift */; };
 		6E3E994F16DDD14D0243CE58 /* TmuxConnectionDraftValidatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05F48AC73F901DB106E6C01C /* TmuxConnectionDraftValidatorTests.swift */; };
 		72FD13275FBFDB2A98F49FC0 /* GhosttySurfaceKeyEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ADAF2C1C0E8974A8C9E3DC3 /* GhosttySurfaceKeyEvent.swift */; };
 		744AE7C46F2B7BFABD13B5FE /* GhosttyKitRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB15A47F01E5E01A3C97AF82 /* GhosttyKitRuntimeTests.swift */; };
@@ -130,7 +131,7 @@
 		80C3CAF9DFF99EC18102BE7A /* TerminalSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSettings.swift; sourceTree = "<group>"; };
 		817FDD4BEB6464048799A5A4 /* DebugConnectionProfileSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConnectionProfileSeeder.swift; sourceTree = "<group>"; };
 		84879EEDF23067C328BC48F6 /* GhosttySurfaceTreeModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceTreeModelTests.swift; sourceTree = "<group>"; };
-		849F7F39754D25C0F22EBD0E /* RemuxV2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RemuxV2.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		849F7F39754D25C0F22EBD0E /* RemuxV2.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RemuxV2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		88F2A5A9FD21117F83EA444B /* GhosttyTerminalQuickActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalQuickActionTests.swift; sourceTree = "<group>"; };
 		8ADAF2C1C0E8974A8C9E3DC3 /* GhosttySurfaceKeyEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceKeyEvent.swift; sourceTree = "<group>"; };
 		8E145CE85120CE4630B49245 /* GhosttyPanePreviewSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPanePreviewSession.swift; sourceTree = "<group>"; };
@@ -143,6 +144,7 @@
 		B10737967F1A200C0750F3D9 /* TmuxConnectionTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxConnectionTarget.swift; sourceTree = "<group>"; };
 		B479547BF840F8555FF2240D /* GhosttyTerminalResponderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalResponderView.swift; sourceTree = "<group>"; };
 		B5A1BD47A2F5D588B8C4D9F4 /* RemuxV2AppUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxV2AppUITests.swift; sourceTree = "<group>"; };
+		B806F99221EF1FAA5FB04A4B /* Haptic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptic.swift; sourceTree = "<group>"; };
 		B9493DB626B1C1661E681CFD /* ApplicationStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationStorage.swift; sourceTree = "<group>"; };
 		BE57E5CB96EED0F2BFCBD93B /* PanePreviewLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanePreviewLayout.swift; sourceTree = "<group>"; };
 		C0B13320E83702C0D1531853 /* GhosttyKeyboardChromeModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKeyboardChromeModeTests.swift; sourceTree = "<group>"; };
@@ -185,6 +187,7 @@
 			isa = PBXGroup;
 			children = (
 				817FDD4BEB6464048799A5A4 /* DebugConnectionProfileSeeder.swift */,
+				B806F99221EF1FAA5FB04A4B /* Haptic.swift */,
 				39D5982E4C03BB4206C1EC1D /* RemuxAppDependencies.swift */,
 				231B77B425C48FE9E9F40B6C /* RemuxRootModel.swift */,
 				0DE9AFE5A064EB80CEAE07CA /* RemuxV2App.swift */,
@@ -460,6 +463,7 @@
 				3F6AC13A3AD479CC30B4A4A4 /* GhosttyTerminalInputCoordinator.swift in Sources */,
 				223489E52DFBECF651EE90F9 /* GhosttyTerminalQuickAction.swift in Sources */,
 				467CABFB6959DCF0DF3AB217 /* GhosttyTerminalResponderView.swift in Sources */,
+				6C3BC3B73F854354CB446629 /* Haptic.swift in Sources */,
 				94F67FB1A6A504DC8F1E3588 /* JSONFileStore.swift in Sources */,
 				9D85793E68C6E00BCC47D768 /* KeychainPasswordStore.swift in Sources */,
 				0AE1EAAAECED71B4170AB0C6 /* PanePreviewLayout.swift in Sources */,
@@ -627,7 +631,9 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_LDFLAGS = "-lc++";
+				OTHER_LDFLAGS = (
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.app;
 				PRODUCT_NAME = RemuxV2;
 				SDKROOT = iphoneos;
@@ -688,7 +694,9 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				OTHER_LDFLAGS = "-lc++";
+				OTHER_LDFLAGS = (
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.app;
 				PRODUCT_NAME = RemuxV2;
 				SDKROOT = iphoneos;

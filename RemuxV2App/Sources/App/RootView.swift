@@ -1096,7 +1096,11 @@ private struct ConnectionSetupView: View {
     }
 
     private func submitIfPossible() {
-        guard canSubmit else { return }
+        guard canSubmit else {
+            Haptic.error()
+            return
+        }
+        Haptic.tap()
         dismissKeyboard()
         onConnect()
     }

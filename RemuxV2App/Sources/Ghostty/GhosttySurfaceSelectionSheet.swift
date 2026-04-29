@@ -49,6 +49,7 @@ struct GhosttyWindowSelectionSheet: View {
                         paneCount: topLevel.leafIDs.count
                     )
                     Button {
+                        Haptic.selection()
                         onSelect(topLevel.id)
                     } label: {
                         GhosttyWindowSelectionRow(
@@ -63,6 +64,7 @@ struct GhosttyWindowSelectionSheet: View {
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
+                            Haptic.warning()
                             pendingRemoval = request
                         } label: {
                             Label("Remove", systemImage: "trash")
@@ -70,6 +72,7 @@ struct GhosttyWindowSelectionSheet: View {
                     }
                     .contextMenu {
                         Button(role: .destructive) {
+                            Haptic.warning()
                             pendingRemoval = request
                         } label: {
                             Label("Remove Window \(index + 1)", systemImage: "trash")
@@ -233,6 +236,7 @@ struct GhosttyPaneSelectionSheet: View {
         ) {
             ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
                 Button {
+                    Haptic.selection()
                     onSelect(paneID)
                 } label: {
                     GhosttyPaneSelectionTile(
@@ -245,6 +249,7 @@ struct GhosttyPaneSelectionSheet: View {
                 .buttonStyle(.plain)
                 .contextMenu {
                     Button(role: .destructive) {
+                        Haptic.warning()
                         onRemove(paneID, index)
                     } label: {
                         Label("Remove Pane \(index + 1)", systemImage: "trash")
@@ -326,6 +331,7 @@ private struct GhosttySheetActionButton: View {
 
     var body: some View {
         Button {
+            Haptic.tap()
             action?()
         } label: {
             HStack(spacing: 8) {
