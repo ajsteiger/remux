@@ -1135,10 +1135,17 @@ final class GhosttyManagedSurface {
     @discardableResult
     func updateDisplay(size: CGSize, scale: CGFloat) -> Bool {
         guard let metrics = displayUpdateTracker.nextMetrics(size: size, scale: scale) else {
+            GhosttyRuntimeTrace.perf(
+                "managed.updateDisplay outcome=skip size=\(Int(size.width))x\(Int(size.height)) scale=\(scale)"
+            )
             return false
         }
 
-        controlSurface.updateDisplay(metrics: metrics)
+        GhosttyRuntimeTrace.perfMeasure(
+            "managed.updateDisplay outcome=hit size=\(Int(size.width))x\(Int(size.height)) scale=\(scale)"
+        ) {
+            controlSurface.updateDisplay(metrics: metrics)
+        }
         return true
     }
 

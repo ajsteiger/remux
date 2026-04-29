@@ -439,6 +439,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         let targetBox = UnsafeSendable(target)
         let actionBox = UnsafeSendable(action)
         if Thread.isMainThread {
+            GhosttyRuntimeTrace.perf("runtime.action route=main")
             return MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeAction(
                     app: appBox.value,
@@ -447,13 +448,15 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                 ) ?? true
             }
         } else {
-            return DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    callbacks.surfaceDelegate?.runtimeAction(
-                        app: appBox.value,
-                        target: targetBox.value,
-                        action: actionBox.value
-                    ) ?? true
+            return GhosttyRuntimeTrace.perfMeasure("runtime.action route=sync") {
+                DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        callbacks.surfaceDelegate?.runtimeAction(
+                            app: appBox.value,
+                            target: targetBox.value,
+                            action: actionBox.value
+                        ) ?? true
+                    }
                 }
             }
         }
@@ -543,11 +546,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
 
     private static func readPasteboardString() -> String? {
         if Thread.isMainThread {
+            GhosttyRuntimeTrace.perf("runtime.readPasteboard route=main")
             return UIPasteboard.general.string
         }
 
-        return DispatchQueue.main.sync {
-            UIPasteboard.general.string
+        return GhosttyRuntimeTrace.perfMeasure("runtime.readPasteboard route=sync") {
+            DispatchQueue.main.sync {
+                UIPasteboard.general.string
+            }
         }
     }
 
@@ -575,6 +581,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         let appBox = UnsafeSendable(app)
         let requestBox = UnsafeSendable(request)
         if Thread.isMainThread {
+            GhosttyRuntimeTrace.perf("runtime.createSurface route=main")
             return MainActor.assumeIsolated {
                 UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
                     app: appBox.value,
@@ -582,12 +589,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                 ))
             }.value
         } else {
-            return DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
-                        app: appBox.value,
-                        request: requestBox.value
-                    ))
+            return GhosttyRuntimeTrace.perfMeasure("runtime.createSurface route=sync") {
+                DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
+                            app: appBox.value,
+                            request: requestBox.value
+                        ))
+                    }
                 }
             }.value
         }
@@ -601,6 +610,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         let appBox = UnsafeSendable(app)
         let requestBox = UnsafeSendable(request)
         if Thread.isMainThread {
+            GhosttyRuntimeTrace.perf("runtime.createSurfaceTree route=main")
             return MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
                     app: appBox.value,
@@ -608,12 +618,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                 ) ?? false
             }
         } else {
-            return DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
-                        app: appBox.value,
-                        request: requestBox.value
-                    ) ?? false
+            return GhosttyRuntimeTrace.perfMeasure("runtime.createSurfaceTree route=sync") {
+                DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
+                            app: appBox.value,
+                            request: requestBox.value
+                        ) ?? false
+                    }
                 }
             }
         }
@@ -627,6 +639,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         let appBox = UnsafeSendable(app)
         let surfaceBox = UnsafeSendable(surface)
         if Thread.isMainThread {
+            GhosttyRuntimeTrace.perf("runtime.selectSurface route=main")
             MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeSelectSurface(
                     app: appBox.value,
@@ -634,12 +647,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                 )
             }
         } else {
-            DispatchQueue.main.sync {
-                MainActor.assumeIsolated {
-                    callbacks.surfaceDelegate?.runtimeSelectSurface(
-                        app: appBox.value,
-                        surface: surfaceBox.value
-                    )
+            GhosttyRuntimeTrace.perfMeasure("runtime.selectSurface route=sync") {
+                DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        callbacks.surfaceDelegate?.runtimeSelectSurface(
+                            app: appBox.value,
+                            surface: surfaceBox.value
+                        )
+                    }
                 }
             }
         }

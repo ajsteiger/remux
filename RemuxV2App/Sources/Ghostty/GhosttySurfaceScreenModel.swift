@@ -74,12 +74,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         guard size.width > 1, size.height > 1 else { return }
 
         if let controlSurface {
-            view.alignGhosttyRendererSublayers()
-            updateHostDisplay(controlSurface, size: size, scale: view.contentScaleFactor)
-            controlSurface.setVisible(false)
-            controlSurface.setFocused(false)
+            GhosttyRuntimeTrace.perfMeasure(
+                "model.attach route=repeat size=\(Int(size.width))x\(Int(size.height))"
+            ) {
+                view.alignGhosttyRendererSublayers()
+                updateHostDisplay(controlSurface, size: size, scale: view.contentScaleFactor)
+                controlSurface.setVisible(false)
+                controlSurface.setFocused(false)
+            }
             return
         }
+        GhosttyRuntimeTrace.perf("model.attach route=initial size=\(Int(size.width))x\(Int(size.height))")
 
         state = .starting
         debugStatus = "creating Ghostty runtime"

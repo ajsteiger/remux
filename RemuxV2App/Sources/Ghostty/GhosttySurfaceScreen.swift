@@ -176,15 +176,19 @@ struct GhosttySurfaceScreen: View {
                 bottomChromeHeight = GhosttySelectionSheetSizing.normalizedHeight(newHeight)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
+                GhosttyRuntimeTrace.perf("kbd.willChangeFrame")
                 updateKeyboardVisibility(with: $0)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { notification in
+                GhosttyRuntimeTrace.perf("kbd.willHide")
                 updateKeyboardVisibility(with: notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                GhosttyRuntimeTrace.perf("kbd.didShow")
                 completeKeyboardDidShow()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+                GhosttyRuntimeTrace.perf("kbd.didHide")
                 completeKeyboardDidHide()
             }
             .sheet(item: selectionSheetBinding) { sheet in

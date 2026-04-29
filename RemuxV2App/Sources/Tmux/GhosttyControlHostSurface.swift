@@ -8,6 +8,7 @@ enum GhosttyRuntimeTrace {
     private static let verboseLatencyEnabled = latencyMode == "1"
     static let diagnosticsEnabled = isEnabled ||
         ProcessInfo.processInfo.environment["REMUX_TRACE_GHOSTTY_DIAGNOSTICS"] == "1"
+    static let perfEnabled = ProcessInfo.processInfo.environment["REMUX_TRACE_PERF"] == "1"
 
     private static let latencyProbeStore = GhosttyLatencyProbeStore()
 
@@ -18,6 +19,34 @@ enum GhosttyRuntimeTrace {
     static func diagnostics(_ message: @autoclosure () -> String) {
         guard diagnosticsEnabled else { return }
         NSLog("Remux diag %@", message())
+    }
+
+    /// Lightweight perf signpost. Gated on REMUX_TRACE_PERF=1 so it's a true
+    /// no-op (and the message autoclosure is not evaluated) in normal builds.
+    /// `thread` is captured because some Ghostty callbacks fire off-main and
+    /// we want to see which queue is actually doing the work.
+    static func perf(_ message: @autoclosure () -> String) {
+        guard perfEnabled else { return }
+        let threadLabel = Thread.isMainThread ? "main" : (Thread.current.name ?? "bg")
+        NSLog("Remux perf t=%llu thread=%@ %@", nowNanos(), threadLabel, message())
+    }
+
+    /// Wraps a block, recording its entry thread and elapsed duration when
+    /// REMUX_TRACE_PERF=1. Always cheap when disabled — the only cost is one
+    /// `nowNanos()` call before invoking the body.
+    static func perfMeasure<T>(_ label: @autoclosure () -> String, _ body: () -> T) -> T {
+        guard perfEnabled else { return body() }
+        let entryThread = Thread.isMainThread ? "main" : (Thread.current.name ?? "bg")
+        let start = nowNanos()
+        let result = body()
+        NSLog(
+            "Remux perf t=%llu thread=%@ %@ elapsed_ms=%@",
+            start,
+            entryThread,
+            label(),
+            elapsedMilliseconds(from: start)
+        )
+        return result
     }
 
     static func latency(_ message: @autoclosure () -> String) {
