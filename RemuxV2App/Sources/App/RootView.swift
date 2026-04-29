@@ -988,7 +988,7 @@ private struct ConnectionSetupView: View {
             if showsSessionFields {
                 Section {
                     LabeledContent("Name") {
-                        TextField("Session name", text: binding(for: \.sessionName))
+                        TextField("e.g. main, work", text: binding(for: \.sessionName))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .multilineTextAlignment(.trailing)
@@ -1000,6 +1000,8 @@ private struct ConnectionSetupView: View {
                     validationMessage(validation.sessionName)
                 } header: {
                     Text(sessionSectionTitle)
+                } footer: {
+                    Text(sessionSectionFooter)
                 }
             }
         })
@@ -1191,6 +1193,19 @@ private struct ConnectionSetupView: View {
             "Session"
         case .editServer:
             "Session"
+        }
+    }
+
+    private var sessionSectionFooter: String {
+        switch mode {
+        case .newServer:
+            "A tmux session groups your windows and panes. You can create more later."
+        case .newWorkspace:
+            "Names a tmux session on this server. Reuse a name to attach to an existing session."
+        case .editWorkspace:
+            "Renaming applies the next time you connect."
+        case .editServer:
+            ""
         }
     }
 
