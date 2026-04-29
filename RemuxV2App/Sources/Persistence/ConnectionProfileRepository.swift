@@ -1,8 +1,54 @@
 import Foundation
 
+struct ConnectionLibrarySnapshot: Equatable, Sendable {
+    static let empty = ConnectionLibrarySnapshot(servers: [], workspaces: [])
+
+    let servers: [SavedServer]
+    let workspaces: [SavedWorkspace]
+
+    var isEmpty: Bool {
+        servers.isEmpty && workspaces.isEmpty
+    }
+
+    var latestProfile: (SavedServer, SavedWorkspace)? {
+        guard let workspace = workspaces.sorted(by: { $0.lastOpenedAt > $1.lastOpenedAt }).first else {
+            return nil
+        }
+
+        guard let server = server(id: workspace.serverID) else {
+            return nil
+        }
+
+        return (server, workspace)
+    }
+
+    func server(id: SavedServer.ID) -> SavedServer? {
+        servers.first(where: { $0.id == id })
+    }
+
+    func workspace(id: SavedWorkspace.ID) -> SavedWorkspace? {
+        workspaces.first(where: { $0.id == id })
+    }
+
+    func workspaces(for serverID: SavedServer.ID) -> [SavedWorkspace] {
+        workspaces
+            .filter { $0.serverID == serverID }
+            .sorted { lhs, rhs in
+                if lhs.lastOpenedAt != rhs.lastOpenedAt {
+                    return lhs.lastOpenedAt > rhs.lastOpenedAt
+                }
+
+                return lhs.sessionName.localizedStandardCompare(rhs.sessionName) == .orderedAscending
+            }
+    }
+}
+
 protocol ConnectionProfileRepository: Sendable {
+    func loadSnapshot() async throws -> ConnectionLibrarySnapshot
     func loadProfile() async throws -> (SavedServer, SavedWorkspace)?
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws
+    func deleteServer(id: SavedServer.ID) async throws
+    func deleteWorkspace(id: SavedWorkspace.ID) async throws
 }
 
 actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
@@ -14,19 +60,22 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
         self.workspaceStore = JSONFileStore(fileURL: rootURL.appendingPathComponent("workspaces.json"))
     }
 
-    func loadProfile() async throws -> (SavedServer, SavedWorkspace)? {
+    func loadSnapshot() async throws -> ConnectionLibrarySnapshot {
         let servers = try await serverStore.load()
         let workspaces = try await workspaceStore.load()
+        let serverIDs = Set(servers.map(\.id))
+        let validWorkspaces = workspaces.filter { serverIDs.contains($0.serverID) }
 
-        guard let workspace = workspaces.sorted(by: { $0.lastOpenedAt > $1.lastOpenedAt }).first else {
-            return nil
-        }
+        return ConnectionLibrarySnapshot(
+            servers: servers.sorted { lhs, rhs in
+                lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
+            },
+            workspaces: validWorkspaces
+        )
+    }
 
-        guard let server = servers.first(where: { $0.id == workspace.serverID }) else {
-            return nil
-        }
-
-        return (server, workspace)
+    func loadProfile() async throws -> (SavedServer, SavedWorkspace)? {
+        try await loadSnapshot().latestProfile
     }
 
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
@@ -46,5 +95,18 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
 
         try await serverStore.save(servers)
         try await workspaceStore.save(workspaces)
+    }
+
+    func deleteServer(id: SavedServer.ID) async throws {
+        let servers = try await serverStore.load()
+        let workspaces = try await workspaceStore.load()
+
+        try await serverStore.save(servers.filter { $0.id != id })
+        try await workspaceStore.save(workspaces.filter { $0.serverID != id })
+    }
+
+    func deleteWorkspace(id: SavedWorkspace.ID) async throws {
+        let workspaces = try await workspaceStore.load()
+        try await workspaceStore.save(workspaces.filter { $0.id != id })
     }
 }

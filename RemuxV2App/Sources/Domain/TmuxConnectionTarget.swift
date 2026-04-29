@@ -1,24 +1,62 @@
 import Foundation
 
+enum ServerTransportKind: String, CaseIterable, Codable, Identifiable, Sendable {
+    case ssh
+    case mosh
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .ssh:
+            "SSH"
+        case .mosh:
+            "Mosh"
+        }
+    }
+}
+
 struct SavedServer: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var displayName: String
     var host: String
     var port: Int
     var username: String
+    var transportKind: ServerTransportKind
 
     init(
         id: UUID = UUID(),
         displayName: String,
         host: String,
         port: Int = 22,
-        username: String
+        username: String,
+        transportKind: ServerTransportKind = .ssh
     ) {
         self.id = id
         self.displayName = displayName
         self.host = host
         self.port = port
         self.username = username
+        self.transportKind = transportKind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case displayName
+        case host
+        case port
+        case username
+        case transportKind
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        host = try container.decode(String.self, forKey: .host)
+        port = try container.decode(Int.self, forKey: .port)
+        username = try container.decode(String.self, forKey: .username)
+        transportKind = try container.decodeIfPresent(ServerTransportKind.self, forKey: .transportKind) ?? .ssh
     }
 }
 
@@ -45,6 +83,19 @@ struct TmuxConnectionTarget: Equatable, Sendable {
     let server: SavedServer
     let workspace: SavedWorkspace
     let password: String
+    let terminalSettings: TerminalSettings
+
+    init(
+        server: SavedServer,
+        workspace: SavedWorkspace,
+        password: String,
+        terminalSettings: TerminalSettings = .default
+    ) {
+        self.server = server
+        self.workspace = workspace
+        self.password = password
+        self.terminalSettings = terminalSettings
+    }
 }
 
 struct TmuxConnectionDraft: Equatable, Sendable {
@@ -52,6 +103,7 @@ struct TmuxConnectionDraft: Equatable, Sendable {
     var host: String = ""
     var port: String = "22"
     var username: String = ""
+    var transportKind: ServerTransportKind = .ssh
     var password: String = ""
     var sessionName: String = "base"
 
@@ -62,6 +114,7 @@ struct TmuxConnectionDraft: Equatable, Sendable {
         self.host = server.host
         self.port = String(server.port)
         self.username = server.username
+        self.transportKind = server.transportKind
         self.password = password
         self.sessionName = workspace.sessionName
     }
@@ -72,6 +125,7 @@ struct TmuxConnectionDraftValidation: Equatable, Sendable {
     var host: String?
     var port: String?
     var username: String?
+    var transportKind: String?
     var password: String?
     var sessionName: String?
 
@@ -82,6 +136,7 @@ struct TmuxConnectionDraftValidation: Equatable, Sendable {
             host == nil &&
             port == nil &&
             username == nil &&
+            transportKind == nil &&
             password == nil &&
             sessionName == nil
     }
@@ -129,6 +184,10 @@ enum TmuxConnectionDraftValidator {
             validation.username = "Username is required."
         }
 
+        if draft.transportKind == .mosh {
+            validation.transportKind = "Mosh needs a native mosh client integration before it can connect."
+        }
+
         if password.isEmpty {
             validation.password = "Password is required."
         }
@@ -150,7 +209,8 @@ enum TmuxConnectionDraftValidator {
                     displayName: displayName,
                     host: host,
                     port: port,
-                    username: username
+                    username: username,
+                    transportKind: draft.transportKind
                 ),
                 workspace: SavedWorkspace(
                     id: workspaceID,
