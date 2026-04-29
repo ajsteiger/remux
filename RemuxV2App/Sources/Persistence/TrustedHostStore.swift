@@ -42,6 +42,13 @@ final class TrustedHostStore: @unchecked Sendable {
         )
     }
 
+    func deleteIdentity(for serverID: SavedServer.ID) throws {
+        try lock.withLock {
+            let identities = try loadLocked().filter { $0.serverID != serverID }
+            try saveLocked(identities)
+        }
+    }
+
     fileprivate func validate(server: SavedServer, hostKey: NIOSSHPublicKey) throws {
         let identity = try Self.identity(server: server, hostKey: hostKey)
 

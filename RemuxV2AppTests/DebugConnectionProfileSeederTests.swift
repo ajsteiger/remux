@@ -29,6 +29,7 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
                 "REMUX_DEBUG_SERVER_HOST": "server.example.com",
                 "REMUX_DEBUG_SERVER_PORT": "22",
                 "REMUX_DEBUG_SERVER_USERNAME": "demo",
+                "REMUX_DEBUG_SERVER_TRANSPORT": "ssh",
                 "REMUX_DEBUG_SERVER_PASSWORD": "debug-password",
                 "REMUX_DEBUG_TMUX_SESSION": "base",
             ],
@@ -42,21 +43,71 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
         XCTAssertEqual(profile?.0.host, "server.example.com")
         XCTAssertEqual(profile?.0.port, 22)
         XCTAssertEqual(profile?.0.username, "demo")
+        XCTAssertEqual(profile?.0.transportKind, .ssh)
         XCTAssertEqual(profile?.1.sessionName, "base")
         let password = try await passwordStore.loadPassword(for: try XCTUnwrap(profile?.0.id))
         XCTAssertEqual(password, "debug-password")
     }
+
+    func testSeedRejectsUnsupportedTransport() async throws {
+        let repository = InMemoryConnectionProfileRepository()
+        let passwordStore = InMemoryPasswordStore()
+
+        do {
+            _ = try await DebugConnectionProfileSeeder.seedIfRequested(
+                environment: [
+                    "REMUX_DEBUG_SEED_CONNECTION": "1",
+                    "REMUX_DEBUG_SERVER_NAME": "Example Server",
+                    "REMUX_DEBUG_SERVER_HOST": "server.example.com",
+                    "REMUX_DEBUG_SERVER_PORT": "22",
+                    "REMUX_DEBUG_SERVER_USERNAME": "demo",
+                    "REMUX_DEBUG_SERVER_TRANSPORT": "mosh",
+                    "REMUX_DEBUG_SERVER_PASSWORD": "debug-password",
+                    "REMUX_DEBUG_TMUX_SESSION": "base",
+                ],
+                profileRepository: repository,
+                passwordStore: passwordStore
+            )
+            XCTFail("expected invalid environment")
+        } catch DebugConnectionProfileSeederError.invalidEnvironment(let validation) {
+            XCTAssertNotNil(validation.transportKind)
+        }
+    }
 }
 
 private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
-    private var profile: (SavedServer, SavedWorkspace)?
+    private var servers: [SavedServer] = []
+    private var workspaces: [SavedWorkspace] = []
+
+    func loadSnapshot() async throws -> ConnectionLibrarySnapshot {
+        ConnectionLibrarySnapshot(servers: servers, workspaces: workspaces)
+    }
 
     func loadProfile() async throws -> (SavedServer, SavedWorkspace)? {
-        profile
+        try await loadSnapshot().latestProfile
     }
 
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
-        profile = (server, workspace)
+        if let index = servers.firstIndex(where: { $0.id == server.id }) {
+            servers[index] = server
+        } else {
+            servers.append(server)
+        }
+
+        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            workspaces[index] = workspace
+        } else {
+            workspaces.append(workspace)
+        }
+    }
+
+    func deleteServer(id: SavedServer.ID) async throws {
+        servers.removeAll { $0.id == id }
+        workspaces.removeAll { $0.serverID == id }
+    }
+
+    func deleteWorkspace(id: SavedWorkspace.ID) async throws {
+        workspaces.removeAll { $0.id == id }
     }
 }
 
