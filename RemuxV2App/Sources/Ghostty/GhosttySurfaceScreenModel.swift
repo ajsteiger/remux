@@ -35,6 +35,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var transport: (any TmuxControlTransport)?
     private var transportWriteSequencer: TmuxControlWriteSequencer?
     private var hostDisplayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
+    private var hostAttachmentTracker = GhosttyHostAttachmentTracker()
 
     init(
         target: TmuxConnectionTarget,
@@ -74,13 +75,16 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         guard size.width > 1, size.height > 1 else { return }
 
         if let controlSurface {
+            let shouldRefreshHost = hostAttachmentTracker.record(
+                view: view,
+                size: size,
+                scale: view.contentScaleFactor
+            )
             GhosttyRuntimeTrace.perfMeasure(
-                "model.attach route=repeat size=\(Int(size.width))x\(Int(size.height))"
+                "model.attach route=repeat outcome=\(shouldRefreshHost ? "apply" : "skip") size=\(Int(size.width))x\(Int(size.height))"
             ) {
-                view.alignGhosttyRendererSublayers()
-                updateHostDisplay(controlSurface, size: size, scale: view.contentScaleFactor)
-                controlSurface.setVisible(false)
-                controlSurface.setFocused(false)
+                guard shouldRefreshHost else { return }
+                applyHostAttachment(controlSurface, view: view, size: size)
             }
             return
         }
@@ -89,6 +93,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         state = .starting
         debugStatus = "creating Ghostty runtime"
         hostDisplayUpdateTracker.reset()
+        hostAttachmentTracker.reset()
 
         do {
             surfaceRegistry.reset()
@@ -142,10 +147,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     return true
                 }
             )
-            view.alignGhosttyRendererSublayers()
-            updateHostDisplay(surface, size: size, scale: view.contentScaleFactor)
-            surface.setVisible(false)
-            surface.setFocused(false)
+            _ = hostAttachmentTracker.record(
+                view: view,
+                size: size,
+                scale: view.contentScaleFactor
+            )
+            applyHostAttachment(surface, view: view, size: size)
 
             let hostSurface = GhosttyControlHostSurface(
                 transport: transport,
@@ -183,6 +190,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         transport = nil
         runtime = nil
         hostDisplayUpdateTracker.reset()
+        hostAttachmentTracker.reset()
         surfaceRegistry.reset()
         state = .idle
         debugStatus = "stopped"
@@ -523,6 +531,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surface.updateDisplay(metrics: metrics)
     }
 
+    private func applyHostAttachment(
+        _ surface: GhosttyKitControlSurface,
+        view: GhosttyKitSurfaceView,
+        size: CGSize
+    ) {
+        view.alignGhosttyRendererSublayers()
+        updateHostDisplay(surface, size: size, scale: view.contentScaleFactor)
+        surface.setVisible(false)
+        surface.setFocused(false)
+    }
+
     private func startTransport(
         _ transport: any TmuxControlTransport,
         surface: GhosttyKitControlSurface
@@ -669,6 +688,28 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             debugLatencyProbeDelayTask = nil
             submitDebugLatencyProbeIfReady()
         }
+    }
+}
+
+struct GhosttyHostAttachmentTracker: Equatable {
+    private var viewID: ObjectIdentifier?
+    private var metrics: GhosttySurfaceDisplayMetrics?
+
+    mutating func record(view: AnyObject, size: CGSize, scale: CGFloat) -> Bool {
+        let nextViewID = ObjectIdentifier(view)
+        let nextMetrics = GhosttySurfaceDisplayMetrics(size: size, scale: scale)
+        guard viewID != nextViewID || metrics != nextMetrics else {
+            return false
+        }
+
+        viewID = nextViewID
+        metrics = nextMetrics
+        return true
+    }
+
+    mutating func reset() {
+        viewID = nil
+        metrics = nil
     }
 }
 

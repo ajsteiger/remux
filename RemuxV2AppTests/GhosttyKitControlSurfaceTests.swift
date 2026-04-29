@@ -175,6 +175,40 @@ final class GhosttyKitControlSurfaceTests: XCTestCase {
         XCTAssertNotNil(tracker.nextMetrics(size: size, scale: 3))
     }
 
+    func testHostAttachmentTrackerSuppressesUnchangedViewAndMetrics() {
+        var tracker = GhosttyHostAttachmentTracker()
+        let view = NSObject()
+        let size = CGSize(width: 390, height: 641)
+
+        XCTAssertTrue(tracker.record(view: view, size: size, scale: 3))
+        XCTAssertFalse(tracker.record(view: view, size: size, scale: 3))
+    }
+
+    func testHostAttachmentTrackerEmitsForChangedViewOrMetrics() {
+        var tracker = GhosttyHostAttachmentTracker()
+        let firstView = NSObject()
+        let secondView = NSObject()
+        let size = CGSize(width: 390, height: 641)
+
+        XCTAssertTrue(tracker.record(view: firstView, size: size, scale: 3))
+        XCTAssertTrue(tracker.record(view: firstView, size: CGSize(width: 390, height: 640.5), scale: 3))
+        XCTAssertFalse(tracker.record(view: firstView, size: CGSize(width: 390, height: 640.5), scale: 3))
+        XCTAssertTrue(tracker.record(view: secondView, size: CGSize(width: 390, height: 640.5), scale: 3))
+    }
+
+    func testHostAttachmentTrackerResetAllowsSameAttachmentAgain() {
+        var tracker = GhosttyHostAttachmentTracker()
+        let view = NSObject()
+        let size = CGSize(width: 390, height: 641)
+
+        XCTAssertTrue(tracker.record(view: view, size: size, scale: 3))
+        XCTAssertFalse(tracker.record(view: view, size: size, scale: 3))
+
+        tracker.reset()
+
+        XCTAssertTrue(tracker.record(view: view, size: size, scale: 3))
+    }
+
     func testDecodeGhosttyTextReturnsEmptyStringForMissingBuffer() {
         XCTAssertEqual(
             GhosttyKitControlSurface.decodeGhosttyText(
