@@ -632,7 +632,7 @@ private struct GhosttyKeyboardChromeDockButton: View {
 
     private func dockBadge(_ value: String) -> some View {
         Text(value)
-            .font(.system(size: 9.5, weight: .bold, design: .rounded).monospacedDigit())
+            .font(.system(size: 9.5, weight: .bold).monospacedDigit())
             .lineLimit(1)
             .minimumScaleFactor(0.8)
             .foregroundStyle(isActive ? Color.black.opacity(0.78) : GhosttyPhoneChromePalette.accent)
@@ -671,7 +671,7 @@ private struct GhosttyKeyboardChromeIconButton: View {
                         .font(.system(size: 14, weight: .semibold))
                 } else if let title {
                     Text(title)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(.system(size: 12, weight: .bold))
                 }
             }
             .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.86))
@@ -705,7 +705,7 @@ private struct GhosttyKeyboardKeyButton: View {
             _ = action()
         } label: {
             Text(title)
-                .font(.system(size: fontSize, weight: .semibold, design: .rounded))
+                .font(.system(size: fontSize, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))

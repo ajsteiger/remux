@@ -290,12 +290,12 @@ private struct GhosttyPaneRemovalRequest: Identifiable {
 private func sheetHeader(caption: String, title: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
         Text(caption)
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .font(.system(size: 10, weight: .semibold))
             .tracking(1.0)
             .foregroundStyle(GhosttySheetPalette.tertiary)
 
         Text(title)
-            .font(.system(size: 18, weight: .semibold, design: .rounded))
+            .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(GhosttySheetPalette.primary)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -334,7 +334,7 @@ private struct GhosttySheetActionButton: View {
                     .foregroundStyle(foreground)
 
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(foreground)
             }
             .frame(maxWidth: .infinity)
@@ -373,17 +373,17 @@ private struct GhosttyWindowSelectionRow: View {
                 .frame(width: 30, height: 30)
                 .overlay {
                     Text("\(index + 1)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(isSelected ? Color.black.opacity(0.78) : GhosttySheetPalette.primary)
                 }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Window \(index + 1)")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(GhosttySheetPalette.primary)
 
                 Text("\(topLevel.leafIDs.count) \(topLevel.leafIDs.count == 1 ? "pane" : "panes")")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(GhosttySheetPalette.secondary)
             }
 
@@ -472,7 +472,7 @@ private struct GhosttyPaneSelectionTile: View {
     private var captionRow: some View {
         HStack(spacing: 6) {
             Text("\(index + 1)")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.tertiary)
 
@@ -485,7 +485,7 @@ private struct GhosttyPaneSelectionTile: View {
                         .frame(width: 6, height: 6)
 
                     Text("active")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(GhosttySheetPalette.accent)
                 }
             }
