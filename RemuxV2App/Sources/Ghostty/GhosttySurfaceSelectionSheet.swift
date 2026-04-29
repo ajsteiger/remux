@@ -41,38 +41,44 @@ struct GhosttyWindowSelectionSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             sheetHeader(caption: "SESSION", title: sessionName)
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 8) {
-                    ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
-                        HStack(spacing: 8) {
-                            Button {
-                                onSelect(topLevel.id)
-                            } label: {
-                                GhosttyWindowSelectionRow(
-                                    index: index,
-                                    topLevel: topLevel,
-                                    isSelected: topLevel.id == registry.selectedTopLevel?.id
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .layoutPriority(1)
-
-                            GhosttySheetIconActionButton(
-                                title: "Remove Window \(index + 1)",
-                                systemName: "trash",
-                                isDestructive: true
-                            ) {
-                                pendingRemoval = GhosttyWindowRemovalRequest(
-                                    id: topLevel.id,
-                                    displayIndex: index + 1,
-                                    paneCount: topLevel.leafIDs.count
-                                )
-                            }
+            List {
+                ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
+                    let request = GhosttyWindowRemovalRequest(
+                        id: topLevel.id,
+                        displayIndex: index + 1,
+                        paneCount: topLevel.leafIDs.count
+                    )
+                    Button {
+                        onSelect(topLevel.id)
+                    } label: {
+                        GhosttyWindowSelectionRow(
+                            index: index,
+                            topLevel: topLevel,
+                            isSelected: topLevel.id == registry.selectedTopLevel?.id
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) {
+                            pendingRemoval = request
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
+                    }
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            pendingRemoval = request
+                        } label: {
+                            Label("Remove Window \(index + 1)", systemImage: "trash")
                         }
                     }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             GhosttySheetBottomActionBar {
@@ -226,27 +232,23 @@ struct GhosttyPaneSelectionSheet: View {
             spacing: layout.gridSpacing
         ) {
             ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
-                ZStack(alignment: .topTrailing) {
-                    Button {
-                        onSelect(paneID)
-                    } label: {
-                        GhosttyPaneSelectionTile(
-                            index: index,
-                            isSelected: paneID == selectedLeafID,
-                            state: session.imagesByPaneID[paneID],
-                            layout: layout
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    GhosttySheetIconActionButton(
-                        title: "Remove Pane \(index + 1)",
-                        systemName: "trash",
-                        isDestructive: true
-                    ) {
+                Button {
+                    onSelect(paneID)
+                } label: {
+                    GhosttyPaneSelectionTile(
+                        index: index,
+                        isSelected: paneID == selectedLeafID,
+                        state: session.imagesByPaneID[paneID],
+                        layout: layout
+                    )
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button(role: .destructive) {
                         onRemove(paneID, index)
+                    } label: {
+                        Label("Remove Pane \(index + 1)", systemImage: "trash")
                     }
-                    .padding(6)
                 }
             }
         }
@@ -348,38 +350,6 @@ private struct GhosttySheetActionButton: View {
         .buttonStyle(.plain)
         .disabled(action == nil)
         .opacity(action == nil ? 0.5 : 1.0)
-    }
-
-    private var foreground: Color {
-        isDestructive ? Color(red: 1.0, green: 0.55, blue: 0.55) : GhosttySheetPalette.primary
-    }
-
-    private var background: Color {
-        isDestructive ? Color(red: 0.36, green: 0.18, blue: 0.20) : GhosttySheetPalette.row
-    }
-}
-
-private struct GhosttySheetIconActionButton: View {
-    let title: String
-    let systemName: String
-    var isDestructive = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(foreground)
-                .frame(width: 34, height: 34)
-                .background(background)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(GhosttySheetPalette.stroke, lineWidth: 1)
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
     }
 
     private var foreground: Color {
