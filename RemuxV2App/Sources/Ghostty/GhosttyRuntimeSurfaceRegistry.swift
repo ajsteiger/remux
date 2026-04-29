@@ -73,6 +73,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @Published private(set) var debugSummary = "runtime callbacks: none"
 
     var onChange: (() -> Void)?
+    var terminalSettings: TerminalSettings = .default
 
     private var managedSurfaces: [UUID: GhosttyManagedSurface] = [:]
     private var surfaceIDsByHandle: [ghostty_surface_t: UUID] = [:]
@@ -893,7 +894,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
 
         var config = baseConfig
-        GhosttyTerminalAppearancePolicy.currentDeviceAppearance().apply(to: &config)
+        GhosttyTerminalAppearancePolicy
+            .currentDeviceAppearance(settings: terminalSettings)
+            .apply(to: &config)
         let scale = max(Double(UIScreen.main.scale), 1)
         config.scale_factor = scale
         config.initial_focused = false

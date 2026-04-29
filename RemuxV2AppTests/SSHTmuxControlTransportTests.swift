@@ -79,4 +79,17 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm-256color; '/opt/homebrew/bin/tmux' has-session -t 'owner'\"'\"'s base' 2>/dev/null || '/opt/homebrew/bin/tmux' new-session -d -s 'owner'\"'\"'s base'; exec '/opt/homebrew/bin/tmux' -CC attach-session -t 'owner'\"'\"'s base'"
         )
     }
+
+    func testUnavailableMoshTransportFailsExplicitly() async {
+        let transport = UnavailableTmuxControlTransport(kind: .mosh)
+
+        do {
+            try await transport.start()
+            XCTFail("expected unavailable transport failure")
+        } catch let error as TmuxTransportAvailabilityError {
+            XCTAssertEqual(error, .unsupportedTransport(.mosh))
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
 }

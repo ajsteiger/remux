@@ -32,28 +32,32 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(stabilizer.frozenSize)
     }
 
-    func testTerminalViewportStabilizerFreezesLiveSizeDuringKeyboardHandoff() {
+    func testTerminalViewportStabilizerFreezesLiveSizeDuringKeyboardTransition() {
         var stabilizer = GhosttyTerminalViewportStabilizer()
         let stableSize = CGSize(width: 402, height: 399)
         let transientSize = CGSize(width: 402, height: 91)
 
         stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
-        stabilizer.keyboardHandoffStarted()
+        stabilizer.keyboardTransitionStarted()
         stabilizer.updateLiveSize(transientSize, isViewportFrozen: true)
 
         XCTAssertEqual(stabilizer.effectiveSize(liveSize: transientSize), stableSize)
         XCTAssertEqual(stabilizer.lastLiveSize, stableSize)
     }
 
-    func testTerminalViewportStabilizerResumesAfterKeyboardHandoff() {
+    func testTerminalViewportStabilizerResumesAfterKeyboardTransitionWithFinalLiveSize() {
         var stabilizer = GhosttyTerminalViewportStabilizer()
         let stableSize = CGSize(width: 402, height: 399)
+        let transientSize = CGSize(width: 402, height: 91)
+        let finalSize = CGSize(width: 402, height: 674)
 
         stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
-        stabilizer.keyboardHandoffStarted()
-        stabilizer.keyboardHandoffEnded()
+        stabilizer.keyboardTransitionStarted()
+        stabilizer.updateLiveSize(transientSize, isViewportFrozen: true)
+        stabilizer.keyboardTransitionEnded(liveSize: finalSize)
 
-        XCTAssertEqual(stabilizer.effectiveSize(liveSize: stableSize), stableSize)
+        XCTAssertEqual(stabilizer.effectiveSize(liveSize: finalSize), finalSize)
+        XCTAssertEqual(stabilizer.lastLiveSize, finalSize)
         XCTAssertNil(stabilizer.frozenSize)
     }
 

@@ -197,6 +197,70 @@ extension TmuxControlTransport {
     }
 }
 
+enum TmuxTransportAvailabilityError: LocalizedError, Equatable, Sendable {
+    case unsupportedTransport(ServerTransportKind)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedTransport(.ssh):
+            "SSH transport is not available."
+        case .unsupportedTransport(.mosh):
+            "Mosh transport requires a native mosh client integration before Remux can connect with it."
+        }
+    }
+}
+
+actor UnavailableTmuxControlTransport: TmuxControlTransport {
+    nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
+
+    private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let error: TmuxTransportAvailabilityError
+    private var didFinish = false
+
+    init(kind: ServerTransportKind) {
+        self.error = .unsupportedTransport(kind)
+
+        var streamContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+        self.receivedBytes = AsyncThrowingStream { continuation in
+            streamContinuation = continuation
+        }
+        self.continuation = streamContinuation!
+    }
+
+    func start() async throws {
+        finish(error)
+        throw error
+    }
+
+    func send(_ data: Data) async throws {
+        _ = data
+        throw error
+    }
+
+    func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
+        _ = columns
+        _ = rows
+        _ = width
+        _ = height
+        throw error
+    }
+
+    func close() async {
+        finish(nil)
+    }
+
+    private func finish(_ finishError: (any Error)?) {
+        guard !didFinish else { return }
+        didFinish = true
+
+        if let finishError {
+            continuation.finish(throwing: finishError)
+        } else {
+            continuation.finish()
+        }
+    }
+}
+
 protocol GhosttyControlSurface: AnyObject {
     /// Feed bytes into Ghostty's surface ingress. The concrete Ghostty-backed
     /// implementation is expected to call ghostty_surface_process_output.

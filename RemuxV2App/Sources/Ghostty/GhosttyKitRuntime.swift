@@ -8,6 +8,7 @@ enum GhosttyKitRuntimeError: Error, Equatable {
     case initializationFailed(Int32)
     case processDirectoryConfigurationFailed(String)
     case environmentConfigurationFailed(String)
+    case runtimeConfigurationFileFailed(String)
     case configCreationFailed
     case appCreationFailed
     case surfaceCreationFailed
@@ -32,6 +33,21 @@ enum GhosttyTerminalAppearancePolicy {
     static let phoneDefaultFontSize: Float32 = 11
 
     static func appearance(
+        for settings: TerminalSettings,
+        deviceClass: GhosttyTerminalDeviceClass,
+        contentSizeCategory: UIContentSizeCategory = .large
+    ) -> GhosttyTerminalAppearance {
+        if let fontSize = settings.fontSize {
+            return GhosttyTerminalAppearance(fontSize: fontSize)
+        }
+
+        return appearance(
+            for: deviceClass,
+            contentSizeCategory: contentSizeCategory
+        )
+    }
+
+    static func appearance(
         for deviceClass: GhosttyTerminalDeviceClass,
         contentSizeCategory: UIContentSizeCategory = .large
     ) -> GhosttyTerminalAppearance {
@@ -46,16 +62,24 @@ enum GhosttyTerminalAppearancePolicy {
     }
 
     @MainActor
-    static func currentDeviceAppearance() -> GhosttyTerminalAppearance {
+    static func currentDeviceAppearance(settings: TerminalSettings = .default) -> GhosttyTerminalAppearance {
         let contentSizeCategory = UIApplication.shared.preferredContentSizeCategory
 
         return switch UIDevice.current.userInterfaceIdiom {
         case .phone:
-            appearance(for: .phone, contentSizeCategory: contentSizeCategory)
+            appearance(
+                for: settings,
+                deviceClass: .phone,
+                contentSizeCategory: contentSizeCategory
+            )
         case .pad:
-            appearance(for: .pad, contentSizeCategory: contentSizeCategory)
+            appearance(
+                for: settings,
+                deviceClass: .pad,
+                contentSizeCategory: contentSizeCategory
+            )
         default:
-            GhosttyTerminalAppearance(fontSize: nil)
+            GhosttyTerminalAppearance(fontSize: settings.fontSize)
         }
     }
 
@@ -128,9 +152,15 @@ final class GhosttyKitRuntime {
 
     private let state: GhosttyKitRuntimeState
 
-    init(surfaceDelegate: GhosttyKitRuntimeSurfaceDelegate? = nil) throws {
+    init(
+        surfaceDelegate: GhosttyKitRuntimeSurfaceDelegate? = nil,
+        terminalSettings: TerminalSettings = .default
+    ) throws {
         try Self.initializeBackend()
-        state = try GhosttyKitRuntimeState(surfaceDelegate: surfaceDelegate)
+        state = try GhosttyKitRuntimeState(
+            surfaceDelegate: surfaceDelegate,
+            terminalSettings: terminalSettings
+        )
     }
 
 #if DEBUG
@@ -153,7 +183,9 @@ final class GhosttyKitRuntime {
         )
 
         var surfaceConfig = ghostty_surface_config_new()
-        GhosttyTerminalAppearancePolicy.currentDeviceAppearance().apply(to: &surfaceConfig)
+        GhosttyTerminalAppearancePolicy
+            .currentDeviceAppearance(settings: state.terminalSettings)
+            .apply(to: &surfaceConfig)
         surfaceConfig.platform_tag = GHOSTTY_PLATFORM_IOS
         surfaceConfig.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
             uiview: Unmanaged.passUnretained(view).toOpaque()
@@ -239,15 +271,20 @@ final class GhosttyKitRuntime {
 
 private final class GhosttyKitRuntimeState {
     let app: ghostty_app_t
+    let terminalSettings: TerminalSettings
 
     private let config: ghostty_config_t
     private let callbacks: GhosttyKitRuntimeCallbacks
 
     @MainActor
-    init(surfaceDelegate: GhosttyKitRuntimeSurfaceDelegate?) throws {
+    init(
+        surfaceDelegate: GhosttyKitRuntimeSurfaceDelegate?,
+        terminalSettings: TerminalSettings
+    ) throws {
         guard let config = ghostty_config_new() else {
             throw GhosttyKitRuntimeError.configCreationFailed
         }
+        try Self.loadSettings(terminalSettings, into: config)
         ghostty_config_finalize(config)
 
         let callbacks = GhosttyKitRuntimeCallbacks()
@@ -274,6 +311,7 @@ private final class GhosttyKitRuntimeState {
         self.app = app
         self.config = config
         self.callbacks = callbacks
+        self.terminalSettings = terminalSettings
         callbacks.app = app
     }
 
@@ -284,6 +322,29 @@ private final class GhosttyKitRuntimeState {
         ghostty_app_free(app)
         ghostty_config_free(config)
         _ = callbacks
+    }
+
+    private static func loadSettings(
+        _ settings: TerminalSettings,
+        into config: ghostty_config_t
+    ) throws {
+        guard let contents = settings.ghosttyConfigContents else { return }
+
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remux-ghostty-\(UUID().uuidString).conf")
+
+        do {
+            try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            throw GhosttyKitRuntimeError.runtimeConfigurationFileFailed(fileURL.path)
+        }
+        defer {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+
+        fileURL.path.withCString { path in
+            ghostty_config_load_file(config, path)
+        }
     }
 }
 

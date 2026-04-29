@@ -40,16 +40,22 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         target: TmuxConnectionTarget,
         transportFactory: @escaping TransportFactory,
         surfaceRegistry: GhosttyRuntimeSurfaceRegistry = GhosttyRuntimeSurfaceRegistry(),
-        runtimeFactory: @escaping RuntimeFactory = { try GhosttyKitRuntime(surfaceDelegate: $0) },
+        runtimeFactory: RuntimeFactory? = nil,
         debugPaneInputSmoke: DebugPaneInputSmokeCommand? = .fromEnvironment(),
         debugLatencyProbe: DebugLatencyProbeCommand? = .fromEnvironment()
     ) {
         self.target = target
         self.transportFactory = transportFactory
         self.surfaceRegistry = surfaceRegistry
-        self.runtimeFactory = runtimeFactory
+        self.runtimeFactory = runtimeFactory ?? { delegate in
+            try GhosttyKitRuntime(
+                surfaceDelegate: delegate,
+                terminalSettings: target.terminalSettings
+            )
+        }
         self.debugPaneInputSmoke = debugPaneInputSmoke
         self.debugLatencyProbe = debugLatencyProbe
+        surfaceRegistry.terminalSettings = target.terminalSettings
         surfaceRegistry.onChange = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
