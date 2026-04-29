@@ -54,8 +54,8 @@ struct GhosttySurfaceScreen: View {
             )
 
             ZStack {
-                GhosttyPhoneChromePalette.screenBackground
-                    .ignoresSafeArea()
+                target.terminalSettings.theme.swiftUIBackground
+                    .ignoresSafeArea(.all, edges: .all)
 
                 GeometryReader { proxy in
                     let liveTerminalViewportSize = GhosttyTerminalViewportStabilizer.normalized(proxy.size)
@@ -84,7 +84,7 @@ struct GhosttySurfaceScreen: View {
                                 height: terminalViewportSize.height,
                                 alignment: .topLeading
                             )
-                            .background(GhosttyPhoneChromePalette.screenBackground)
+                            .background(target.terminalSettings.theme.swiftUIBackground)
 
                         GhosttyTerminalResponderRepresentable(
                             isEnabled: inputCoordinator.keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
@@ -162,7 +162,7 @@ struct GhosttySurfaceScreen: View {
                 .padding(.top, showsAuxiliaryControls ? 6 : 4)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
-                .background(GhosttyPhoneChromePalette.screenBackground)
+                .background(target.terminalSettings.theme.swiftUIBackground)
                 .background {
                     GeometryReader { chromeProxy in
                         Color.clear.preference(
