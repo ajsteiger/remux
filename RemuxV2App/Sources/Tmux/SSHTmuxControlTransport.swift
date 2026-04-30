@@ -90,6 +90,49 @@ struct TmuxViewportResizeState: Equatable, Sendable {
     }
 }
 
+final class SSHTmuxControlInboundStream: @unchecked Sendable {
+    let receivedBytes: AsyncThrowingStream<Data, Error>
+
+    private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let lock = NIOLock()
+    private var didFinish = false
+
+    init() {
+        var streamContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+        self.receivedBytes = AsyncThrowingStream { continuation in
+            streamContinuation = continuation
+        }
+        self.continuation = streamContinuation!
+    }
+
+    func yield(_ data: Data) {
+        guard !data.isEmpty else { return }
+
+        lock.withLock {
+            guard !didFinish else { return }
+            GhosttyRuntimeTrace.latency(
+                "transport.emit bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+            )
+            continuation.yield(data)
+        }
+    }
+
+    func finish(_ error: Error?) {
+        let shouldFinish = lock.withLock {
+            guard !didFinish else { return false }
+            didFinish = true
+            return true
+        }
+        guard shouldFinish else { return }
+
+        if let error {
+            continuation.finish(throwing: error)
+        } else {
+            continuation.finish()
+        }
+    }
+}
+
 enum SSHTmuxControlTransportError: LocalizedError, Equatable {
     case remoteExit(Int)
     case unsupportedInboundChannel
@@ -111,23 +154,19 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
     nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
 
     private let configuration: SSHTmuxControlConfiguration
-    private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let inboundStream: SSHTmuxControlInboundStream
 
     private var resizeState: TmuxViewportResizeState
     private var pendingWrites: [Data] = []
     private var connection: SSHTmuxControlConnection?
     private var hasStarted = false
-    private var hasFinished = false
 
     init(configuration: SSHTmuxControlConfiguration) {
         self.configuration = configuration
         self.resizeState = TmuxViewportResizeState(initialViewport: configuration.initialViewport)
-
-        var streamContinuation: AsyncThrowingStream<Data, Error>.Continuation?
-        self.receivedBytes = AsyncThrowingStream { continuation in
-            streamContinuation = continuation
-        }
-        self.continuation = streamContinuation!
+        let inboundStream = SSHTmuxControlInboundStream()
+        self.inboundStream = inboundStream
+        self.receivedBytes = inboundStream.receivedBytes
     }
 
     func start() async throws {
@@ -142,15 +181,11 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
             using: configuration,
             viewport: resizeState.latestViewport,
             command: tmuxAttachCommand(),
-            onOutput: { [transport = self] data in
-                Task {
-                    await transport.emit(data)
-                }
+            onOutput: { [inboundStream] data in
+                inboundStream.yield(data)
             },
-            onFinish: { [transport = self] error in
-                Task {
-                    await transport.finish(error)
-                }
+            onFinish: { [inboundStream] error in
+                inboundStream.finish(error)
             }
         )
 
@@ -218,26 +253,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         let activeConnection = connection
         connection = nil
         await activeConnection?.close()
-        finish(nil)
-    }
-
-    private func emit(_ data: Data) {
-        guard !hasFinished else { return }
-        GhosttyRuntimeTrace.latency(
-            "transport.emit bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
-        )
-        continuation.yield(data)
-    }
-
-    private func finish(_ error: Error?) {
-        guard !hasFinished else { return }
-        hasFinished = true
-
-        if let error {
-            continuation.finish(throwing: error)
-        } else {
-            continuation.finish()
-        }
+        inboundStream.finish(nil)
     }
 
     private func drainResizeQueueIfNeeded(

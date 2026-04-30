@@ -2,6 +2,63 @@ import XCTest
 @testable import RemuxV2
 
 final class SSHTmuxControlTransportTests: XCTestCase {
+    func testInboundStreamYieldsBytesInCallOrder() async throws {
+        let stream = SSHTmuxControlInboundStream()
+        let first = Data("first".utf8)
+        let second = Data("second".utf8)
+        let third = Data("third".utf8)
+
+        stream.yield(first)
+        stream.yield(second)
+        stream.yield(third)
+        stream.finish(nil)
+
+        var iterator = stream.receivedBytes.makeAsyncIterator()
+        let receivedFirst = try await iterator.next()
+        let receivedSecond = try await iterator.next()
+        let receivedThird = try await iterator.next()
+        let end = try await iterator.next()
+
+        XCTAssertEqual(receivedFirst, first)
+        XCTAssertEqual(receivedSecond, second)
+        XCTAssertEqual(receivedThird, third)
+        XCTAssertNil(end)
+    }
+
+    func testInboundStreamIgnoresYieldsAfterFinish() async throws {
+        let stream = SSHTmuxControlInboundStream()
+
+        stream.finish(nil)
+        stream.yield(Data("late".utf8))
+
+        var iterator = stream.receivedBytes.makeAsyncIterator()
+        let end = try await iterator.next()
+
+        XCTAssertNil(end)
+    }
+
+    func testInboundStreamFinishesWithFirstError() async {
+        enum Failure: Error, Equatable {
+            case first
+            case second
+        }
+
+        let stream = SSHTmuxControlInboundStream()
+
+        stream.finish(Failure.first)
+        stream.finish(Failure.second)
+
+        var iterator = stream.receivedBytes.makeAsyncIterator()
+        do {
+            _ = try await iterator.next()
+            XCTFail("expected first finish error")
+        } catch let error as Failure {
+            XCTAssertEqual(error, .first)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
     func testResizeStateBeginsApplyingOnlyWhenViewportChanges() {
         let initial = TmuxControlViewport(columns: 80, rows: 24, pixelWidth: 800, pixelHeight: 600)
         var state = TmuxViewportResizeState(initialViewport: initial)
