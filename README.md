@@ -1,35 +1,49 @@
 # Remux V2
 
-Remux V2 is being rebuilt as a native iOS tmux client on top of Ghostty.
+Remux V2 is an early iOS client for remote tmux sessions.
 
-This workspace was reset after the previous app drifted into rendering a normal
-`tmux attach-session` TUI inside one terminal surface. That path is not the
-target architecture.
+It saves SSH servers and tmux session names, opens tmux in control mode, and
+renders the terminal through `GhosttyKit`. The goal is a native mobile tmux
+client, not an SSH terminal with `tmux attach` running inside it.
 
-The target path is:
+## Status
 
-```text
-SSH transport
--> tmux -CC control mode
--> Ghostty tmux parser/viewer
--> native Remux window/pane model
--> Ghostty-backed pane surfaces
--> iOS UI
-```
+This is active development work. It is not ready to use as a production
+terminal client.
 
-The retained architecture and planning context lives under `docs/`.
+Working today:
 
-## Current State
+- Saving SSH servers and tmux session names
+- Opening tmux control-mode sessions over SSH
+- Storing server passwords in Keychain
+- Remembering trusted SSH host identities
+- Persisting terminal settings
+- Rendering terminal surfaces through `GhosttyKit`
 
-- The app boots into persisted connection setup or a real SSH-backed `tmux -CC attach-session` target.
-- Remux owns a real Ghostty runtime on iOS and creates manual-backed `ghostty_surface_t` instances through the embedded runtime API.
-- Ghostty runtime callbacks for `create_surface` and `create_surface_tree` are implemented on the Remux side, so tmux-driven child panes can be materialized as native iOS-managed surface trees.
-- The visible pane tree now tracks per-top-level focused pane state and tap-to-focus selection.
-- The host/control surface is hidden from the UI and marked not visible; visible pane surfaces are marked visible so Ghostty can actually render them.
-- Live end-to-end validation now proves tmux creates a native Ghostty pane surface, Remux routes focused-pane input through `ghostty_surface_text`, Ghostty emits `send-keys -H`, and tmux returns live `%output`.
-- Current remaining gap: mobile viewport/font sizing and complete initial pane state restoration are still rough.
+SSH is the only transport available today. Mosh is not implemented yet.
 
-## Generate Project
+## Project Layout
+
+- [RemuxV2App](RemuxV2App): iOS app source
+- [RemuxV2AppTests](RemuxV2AppTests): unit and integration-style tests
+- [RemuxV2AppUITests](RemuxV2AppUITests): UI tests
+- [docs](docs): project documentation
+- [project.yml](project.yml): XcodeGen project definition
+
+## Documentation
+
+- [Overview](docs/overview.md)
+- [Architecture](docs/architecture.md)
+- [Development](docs/development.md)
+
+## Requirements
+
+- Xcode with iOS 18 SDK support
+- XcodeGen
+- The `GhosttyKit`terminal-renderer XCFramework at the path configured in
+  [project.yml](project.yml)
+
+## Generate the Xcode Project
 
 ```bash
 xcodegen generate
@@ -51,28 +65,4 @@ xcodebuild test \
   -project RemuxV2.xcodeproj \
   -scheme RemuxV2 \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest'
-```
-
-## Debug Seed
-
-Debug builds can seed one saved connection through explicit launch
-environment variables. This uses the same JSON profile repository and Keychain
-password store as the setup form.
-
-```bash
-REMUX_DEBUG_SEED_CONNECTION=1
-REMUX_DEBUG_SERVER_NAME="My Mac"
-REMUX_DEBUG_SERVER_HOST="server.example.com"
-REMUX_DEBUG_SERVER_PORT=22
-REMUX_DEBUG_SERVER_USERNAME="alice"
-REMUX_DEBUG_SERVER_PASSWORD="<password>"
-REMUX_DEBUG_TMUX_SESSION="base"
-```
-
-Debug builds can also submit one command to the first focused native tmux pane
-after the Ghostty transport is running and the pane surface exists. This goes
-through the same raw `ghostty_surface_input` path as user input.
-
-```bash
-REMUX_DEBUG_PANE_INPUT="echo REMUX_INPUT_TEST"
 ```
