@@ -1,31 +1,47 @@
 @preconcurrency import Citadel
 import Foundation
 
-struct RemuxAppDependencies {
+struct RemuxAppDependencies: Sendable {
     let profileRepository: any ConnectionProfileRepository
     let settingsRepository: any TerminalSettingsRepository
     let passwordStore: any PasswordStore
     let trustedHostStore: TrustedHostStore
+    private let sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     private let transportFactory: @Sendable (
         _ target: TmuxConnectionTarget,
-        _ trustedHostStore: TrustedHostStore
+        _ trustedHostStore: TrustedHostStore,
+        _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     ) -> any TmuxControlTransport
+    private let sshConnectionPrewarmer: @Sendable (
+        _ target: TmuxConnectionTarget,
+        _ trustedHostStore: TrustedHostStore,
+        _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
+    ) async -> Void
 
     init(
         profileRepository: any ConnectionProfileRepository,
         settingsRepository: any TerminalSettingsRepository,
         passwordStore: any PasswordStore,
         trustedHostStore: TrustedHostStore,
+        sshConnectionPool: SSHTmuxAuthenticatedConnectionPool = SSHTmuxAuthenticatedConnectionPool(),
         transportFactory: @escaping @Sendable (
             _ target: TmuxConnectionTarget,
-            _ trustedHostStore: TrustedHostStore
-        ) -> any TmuxControlTransport = RemuxAppDependencies.liveTransport
+            _ trustedHostStore: TrustedHostStore,
+            _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
+        ) -> any TmuxControlTransport = RemuxAppDependencies.liveTransport,
+        sshConnectionPrewarmer: @escaping @Sendable (
+            _ target: TmuxConnectionTarget,
+            _ trustedHostStore: TrustedHostStore,
+            _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
+        ) async -> Void = RemuxAppDependencies.liveSSHConnectionPrewarmer
     ) {
         self.profileRepository = profileRepository
         self.settingsRepository = settingsRepository
         self.passwordStore = passwordStore
         self.trustedHostStore = trustedHostStore
+        self.sshConnectionPool = sshConnectionPool
         self.transportFactory = transportFactory
+        self.sshConnectionPrewarmer = sshConnectionPrewarmer
     }
 
     static func launch() -> Result<RemuxAppDependencies, Error> {
@@ -50,34 +66,82 @@ struct RemuxAppDependencies {
     }
 
     func makeTransport(for target: TmuxConnectionTarget) -> any TmuxControlTransport {
-        transportFactory(target, trustedHostStore)
+        transportFactory(target, trustedHostStore, sshConnectionPool)
+    }
+
+    func prewarmSSHConnection(for target: TmuxConnectionTarget) async {
+        await sshConnectionPrewarmer(target, trustedHostStore, sshConnectionPool)
+    }
+
+    func closeIdleSSHConnections(forServerID serverID: SavedServer.ID) {
+        Task {
+            await sshConnectionPool.closeIdleConnections(forServerID: serverID)
+        }
     }
 
     private static func liveTransport(
         target: TmuxConnectionTarget,
-        trustedHostStore: TrustedHostStore
+        trustedHostStore: TrustedHostStore,
+        sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     ) -> any TmuxControlTransport {
         switch target.server.transportKind {
         case .ssh:
             return SSHTmuxControlTransport(
-                configuration: SSHTmuxControlConfiguration(
-                    host: target.server.host,
-                    port: target.server.port,
-                    authenticationMethod: {
-                        .passwordBased(
-                            username: target.server.username,
-                            password: target.password
-                        )
-                    },
-                    hostKeyValidator: trustedHostStore.validator(for: target.server),
-                    sessionName: target.workspace.sessionName,
+                configuration: sshConfiguration(
+                    for: target,
+                    trustedHostStore: trustedHostStore,
                     traceFlowID: "session.open.\(target.workspace.id.uuidString)"
-                )
+                ),
+                authenticatedConnectionPool: sshConnectionPool
             )
 
         case .mosh:
             return UnavailableTmuxControlTransport(kind: .mosh)
         }
+    }
+
+    private static func liveSSHConnectionPrewarmer(
+        target: TmuxConnectionTarget,
+        trustedHostStore: TrustedHostStore,
+        sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
+    ) async {
+        guard target.server.transportKind == .ssh else { return }
+
+        let trace = SSHTmuxControlStartupTrace(flowID: nil)
+        let configuration = sshConfiguration(
+            for: target,
+            trustedHostStore: trustedHostStore,
+            traceFlowID: nil
+        )
+        guard let poolKey = configuration.authenticatedConnectionPoolKey else { return }
+
+        await sshConnectionPool.prewarmConnection(
+            for: poolKey,
+            configuration: configuration,
+            trace: trace,
+            reason: "library"
+        )
+    }
+
+    private static func sshConfiguration(
+        for target: TmuxConnectionTarget,
+        trustedHostStore: TrustedHostStore,
+        traceFlowID: String?
+    ) -> SSHTmuxControlConfiguration {
+        SSHTmuxControlConfiguration(
+            host: target.server.host,
+            port: target.server.port,
+            authenticationMethod: {
+                .passwordBased(
+                    username: target.server.username,
+                    password: target.password
+                )
+            },
+            hostKeyValidator: trustedHostStore.validator(for: target.server),
+            sessionName: target.workspace.sessionName,
+            traceFlowID: traceFlowID,
+            authenticatedConnectionPoolKey: SSHTmuxAuthenticatedConnectionPoolKey(target: target)
+        )
     }
 
 #if DEBUG
@@ -90,8 +154,10 @@ struct RemuxAppDependencies {
             settingsRepository: InMemoryTerminalSettingsRepository(),
             passwordStore: InMemoryPasswordStore(),
             trustedHostStore: TrustedHostStore(rootURL: root),
-            transportFactory: { _, _ in
+            transportFactory: { _, _, _ in
                 DeterministicTmuxControlTransport(chunks: [])
+            },
+            sshConnectionPrewarmer: { _, _, _ in
             }
         )
     }

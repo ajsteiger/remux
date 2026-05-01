@@ -1,4 +1,5 @@
 @preconcurrency import Citadel
+import CryptoKit
 import Foundation
 import NIO
 import NIOConcurrencyHelpers
@@ -14,6 +15,7 @@ struct SSHTmuxControlConfiguration: Sendable {
     let sessionName: String
     let initialViewport: TmuxControlViewport
     let traceFlowID: String?
+    let authenticatedConnectionPoolKey: SSHTmuxAuthenticatedConnectionPoolKey?
 
     init(
         host: String,
@@ -24,7 +26,8 @@ struct SSHTmuxControlConfiguration: Sendable {
         tmuxExecutable: String = "tmux",
         sessionName: String,
         initialViewport: TmuxControlViewport = .default,
-        traceFlowID: String? = nil
+        traceFlowID: String? = nil,
+        authenticatedConnectionPoolKey: SSHTmuxAuthenticatedConnectionPoolKey? = nil
     ) {
         self.host = host
         self.port = port
@@ -35,6 +38,29 @@ struct SSHTmuxControlConfiguration: Sendable {
         self.sessionName = sessionName
         self.initialViewport = initialViewport
         self.traceFlowID = traceFlowID
+        self.authenticatedConnectionPoolKey = authenticatedConnectionPoolKey
+    }
+}
+
+struct SSHTmuxAuthenticatedConnectionPoolKey: Hashable, Sendable {
+    let serverID: SavedServer.ID
+    let host: String
+    let port: Int
+    let username: String
+    private let passwordFingerprint: String
+
+    init(target: TmuxConnectionTarget) {
+        self.serverID = target.server.id
+        self.host = target.server.host
+        self.port = target.server.port
+        self.username = target.server.username
+        self.passwordFingerprint = Self.fingerprint(password: target.password)
+    }
+
+    private static func fingerprint(password: String) -> String {
+        SHA256.hash(data: Data(password.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 
@@ -242,16 +268,21 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
     private let configuration: SSHTmuxControlConfiguration
     private let inboundStream: SSHTmuxControlInboundStream
+    private let authenticatedConnectionPool: SSHTmuxAuthenticatedConnectionPool?
 
     private var resizeState: TmuxViewportResizeState
     private var pendingWrites: [Data] = []
-    private var preparedConnection: SSHTmuxPreparedConnection?
+    private var preparedControlSession: SSHTmuxPreparedControlSessionTask?
     private var connection: SSHTmuxControlConnection?
     private var hasStarted = false
     private var isClosed = false
 
-    init(configuration: SSHTmuxControlConfiguration) {
+    init(
+        configuration: SSHTmuxControlConfiguration,
+        authenticatedConnectionPool: SSHTmuxAuthenticatedConnectionPool? = nil
+    ) {
         self.configuration = configuration
+        self.authenticatedConnectionPool = authenticatedConnectionPool
         self.resizeState = TmuxViewportResizeState(initialViewport: configuration.initialViewport)
         let inboundStream = SSHTmuxControlInboundStream()
         self.inboundStream = inboundStream
@@ -259,9 +290,9 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
     }
 
     func prepare() async {
-        guard !isClosed, preparedConnection == nil, connection == nil, !hasStarted else { return }
+        guard !isClosed, preparedControlSession == nil, connection == nil, !hasStarted else { return }
 
-        preparedConnection = makePreparedConnection()
+        preparedControlSession = await makePreparedControlSessionTask()
     }
 
     func start(initialViewport: TmuxControlViewport?) async throws {
@@ -276,19 +307,26 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         GhosttyRuntimeTrace.latency(
             "transport.start begin host=\(configuration.host):\(configuration.port) session=\(configuration.sessionName)"
         )
-        let preparedConnection = preparedConnection ?? makePreparedConnection()
-        self.preparedConnection = preparedConnection
-        let startupTrace = preparedConnection.trace
-        var authenticatedConnection: SSHTmuxAuthenticatedConnection?
+        let preparedControlSessionTask: SSHTmuxPreparedControlSessionTask
+        if let existingPreparedControlSession = self.preparedControlSession {
+            preparedControlSessionTask = existingPreparedControlSession
+        } else {
+            preparedControlSessionTask = await makePreparedControlSessionTask()
+        }
+        self.preparedControlSession = preparedControlSessionTask
+        let startupTrace = preparedControlSessionTask.trace
+        var preparedControlSession: SSHTmuxPreparedControlSession?
         var startedConnection: SSHTmuxControlConnection?
         let establishedConnection: SSHTmuxControlConnection
         do {
-            let authenticated = try await preparedConnection.task.value
-            self.preparedConnection = nil
-            authenticatedConnection = authenticated
+            let readyPreparedControlSession = try await startupTrace.stage("preparedSession.ready") {
+                try await preparedControlSessionTask.task.value
+            }
+            preparedControlSession = readyPreparedControlSession
+            self.preparedControlSession = nil
             guard !isClosed else { throw SSHTmuxControlTransportError.closed }
-            establishedConnection = try await SSHTmuxControlBootstrap.openControlSession(
-                using: authenticated,
+            establishedConnection = try await SSHTmuxControlBootstrap.activateControlSession(
+                using: readyPreparedControlSession,
                 viewport: resizeState.latestViewport,
                 command: tmuxAttachCommand(),
                 trace: startupTrace,
@@ -300,13 +338,13 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
                 }
             )
             startedConnection = establishedConnection
-            authenticatedConnection = nil
+            preparedControlSession = nil
             guard !isClosed else { throw SSHTmuxControlTransportError.closed }
             startedConnection = nil
         } catch {
-            self.preparedConnection = nil
+            self.preparedControlSession = nil
             await startedConnection?.close()
-            await authenticatedConnection?.close()
+            await preparedControlSession?.close(disposition: .invalidated)
             throw error
         }
 
@@ -384,28 +422,54 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
     func close() async {
         let activeConnection = connection
-        let pendingPreparedConnection = preparedConnection
+        let pendingPreparedControlSession = preparedControlSession
         connection = nil
-        preparedConnection = nil
+        preparedControlSession = nil
         isClosed = true
-        pendingPreparedConnection?.task.cancel()
         await activeConnection?.close()
-        if let pendingPreparedConnection {
+        if let pendingPreparedControlSession {
             Task {
-                do {
-                    let authenticatedConnection = try await pendingPreparedConnection.task.value
-                    await authenticatedConnection.close()
-                } catch is CancellationError {
-                    GhosttyRuntimeTrace.latency("transport.prepare.cleanup cancelled")
-                } catch {
-                    NSLog("Remux prepared SSH connection cleanup failed: %@", String(describing: error))
-                }
+                await pendingPreparedControlSession.cancelAndCleanup()
             }
         }
         inboundStream.finish(nil)
     }
 
-    private func makePreparedConnection() -> SSHTmuxPreparedConnection {
+    private func makePreparedControlSessionTask() async -> SSHTmuxPreparedControlSessionTask {
+        let preparedConnection = await makePreparedConnection()
+        let trace = preparedConnection.trace
+        let task = Task.detached(priority: .userInitiated) {
+            let authenticated = try await trace.stage("sshRoot.ready") {
+                try await preparedConnection.task.value
+            }
+            let claimedConnection = try await preparedConnection.claim(
+                authenticated,
+                trace: trace
+            )
+
+            do {
+                let sessionChannel = try await SSHTmuxControlBootstrap.openSessionChannel(
+                    using: claimedConnection.authenticatedConnection,
+                    trace: trace
+                )
+                return SSHTmuxPreparedControlSession(
+                    claimedConnection: claimedConnection,
+                    sessionChannel: sessionChannel
+                )
+            } catch {
+                await claimedConnection.releaseAfterFailedStart()
+                throw error
+            }
+        }
+
+        return SSHTmuxPreparedControlSessionTask(
+            trace: trace,
+            preparedConnection: preparedConnection,
+            task: task
+        )
+    }
+
+    private func makePreparedConnection() async -> SSHTmuxPreparedConnection {
         let configuration = self.configuration
         let startupTrace = SSHTmuxControlStartupTrace(flowID: configuration.traceFlowID)
         startupTrace.event(
@@ -417,8 +481,19 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
             ]
         )
 
+        if let authenticatedConnectionPool,
+           let poolKey = configuration.authenticatedConnectionPoolKey {
+            return await authenticatedConnectionPool.preparedConnection(
+                for: poolKey,
+                configuration: configuration,
+                trace: startupTrace
+            )
+        }
+
         return SSHTmuxPreparedConnection(
             trace: startupTrace,
+            ownership: .dedicated,
+            cancelAuthenticationOnClose: true,
             task: Task.detached(priority: .userInitiated) {
                 try await SSHTmuxControlBootstrap.authenticate(
                     using: configuration,
@@ -483,12 +558,20 @@ enum SSHTmuxControlCommandBuilder {
 }
 
 private final class SSHTmuxControlConnection: @unchecked Sendable {
-    private let rootChannel: Channel
+    private let authenticatedConnection: SSHTmuxAuthenticatedConnection
+    private let authenticatedConnectionLease: SSHTmuxAuthenticatedConnectionLease?
     private let sessionChannel: Channel
     private let allocator = ByteBufferAllocator()
+    private let closeLock = NIOLock()
+    private var didClose = false
 
-    init(rootChannel: Channel, sessionChannel: Channel) {
-        self.rootChannel = rootChannel
+    init(
+        authenticatedConnection: SSHTmuxAuthenticatedConnection,
+        authenticatedConnectionLease: SSHTmuxAuthenticatedConnectionLease?,
+        sessionChannel: Channel
+    ) {
+        self.authenticatedConnection = authenticatedConnection
+        self.authenticatedConnectionLease = authenticatedConnectionLease
         self.sessionChannel = sessionChannel
     }
 
@@ -528,14 +611,142 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
     }
 
     func close() async {
+        let shouldClose = closeLock.withLock {
+            guard !didClose else { return false }
+            didClose = true
+            return true
+        }
+        guard shouldClose else { return }
+
         try? await sessionChannel.close()
-        try? await rootChannel.close()
+        if let authenticatedConnectionLease {
+            await authenticatedConnectionLease.release(.reusable)
+        } else {
+            await authenticatedConnection.close()
+        }
     }
 }
 
 private struct SSHTmuxPreparedConnection {
     let trace: SSHTmuxControlStartupTrace
+    let ownership: SSHTmuxPreparedConnectionOwnership
+    let cancelAuthenticationOnClose: Bool
     let task: Task<SSHTmuxAuthenticatedConnection, Error>
+
+    func claim(
+        _ authenticatedConnection: SSHTmuxAuthenticatedConnection,
+        trace: SSHTmuxControlStartupTrace
+    ) async throws -> SSHTmuxClaimedAuthenticatedConnection {
+        switch ownership {
+        case .dedicated:
+            return SSHTmuxClaimedAuthenticatedConnection(
+                authenticatedConnection: authenticatedConnection,
+                lease: nil
+            )
+
+        case .pooled(let pool, let key, let generation):
+            let lease = try await trace.stage("sshRoot.pool.lease") {
+                try await pool.leaseConnection(
+                    authenticatedConnection,
+                    for: key,
+                    generation: generation
+                )
+            }
+            return SSHTmuxClaimedAuthenticatedConnection(
+                authenticatedConnection: authenticatedConnection,
+                lease: lease
+            )
+        }
+    }
+
+    func cancelAndCleanup() async {
+        guard cancelAuthenticationOnClose else { return }
+
+        task.cancel()
+        do {
+            let authenticatedConnection = try await task.value
+            await authenticatedConnection.close()
+        } catch is CancellationError {
+            GhosttyRuntimeTrace.latency("transport.prepare.cleanup cancelled")
+        } catch {
+            NSLog("Remux prepared SSH connection cleanup failed: %@", String(describing: error))
+        }
+    }
+}
+
+private struct SSHTmuxPreparedControlSessionTask {
+    let trace: SSHTmuxControlStartupTrace
+    let preparedConnection: SSHTmuxPreparedConnection
+    let task: Task<SSHTmuxPreparedControlSession, Error>
+
+    func cancelAndCleanup() async {
+        task.cancel()
+
+        do {
+            let preparedSession = try await task.value
+            await preparedSession.close(disposition: .reusable)
+        } catch is CancellationError {
+            GhosttyRuntimeTrace.latency("transport.prepareSession.cleanup cancelled")
+            await preparedConnection.cancelAndCleanup()
+        } catch {
+            NSLog("Remux prepared SSH session cleanup failed: %@", String(describing: error))
+            await preparedConnection.cancelAndCleanup()
+        }
+    }
+}
+
+private enum SSHTmuxPreparedConnectionOwnership {
+    case dedicated
+    case pooled(
+        pool: SSHTmuxAuthenticatedConnectionPool,
+        key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    )
+}
+
+private struct SSHTmuxClaimedAuthenticatedConnection {
+    let authenticatedConnection: SSHTmuxAuthenticatedConnection
+    let lease: SSHTmuxAuthenticatedConnectionLease?
+
+    func releaseAfterFailedStart() async {
+        await release(.invalidated)
+    }
+
+    func release(_ disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition) async {
+        if let lease {
+            await lease.release(disposition)
+        } else {
+            await authenticatedConnection.close()
+        }
+    }
+}
+
+private final class SSHTmuxPreparedControlSession: @unchecked Sendable {
+    let claimedConnection: SSHTmuxClaimedAuthenticatedConnection
+    let sessionChannel: Channel
+
+    private let closeLock = NIOLock()
+    private var didClose = false
+
+    init(
+        claimedConnection: SSHTmuxClaimedAuthenticatedConnection,
+        sessionChannel: Channel
+    ) {
+        self.claimedConnection = claimedConnection
+        self.sessionChannel = sessionChannel
+    }
+
+    func close(disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition) async {
+        let shouldClose = closeLock.withLock {
+            guard !didClose else { return false }
+            didClose = true
+            return true
+        }
+        guard shouldClose else { return }
+
+        try? await sessionChannel.close()
+        await claimedConnection.release(disposition)
+    }
 }
 
 private final class SSHTmuxAuthenticatedConnection: @unchecked Sendable {
@@ -553,6 +764,364 @@ private final class SSHTmuxAuthenticatedConnection: @unchecked Sendable {
         } catch {
             NSLog("Remux authenticated SSH root close failed: %@", String(describing: error))
         }
+    }
+}
+
+private enum SSHTmuxAuthenticatedConnectionLeaseDisposition: Sendable {
+    case reusable
+    case invalidated
+}
+
+private final class SSHTmuxAuthenticatedConnectionLease: @unchecked Sendable {
+    let connection: SSHTmuxAuthenticatedConnection
+
+    private let pool: SSHTmuxAuthenticatedConnectionPool
+    private let key: SSHTmuxAuthenticatedConnectionPoolKey
+    private let generation: UUID
+    private let lock = NIOLock()
+    private var isReleased = false
+
+    init(
+        connection: SSHTmuxAuthenticatedConnection,
+        pool: SSHTmuxAuthenticatedConnectionPool,
+        key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
+        self.connection = connection
+        self.pool = pool
+        self.key = key
+        self.generation = generation
+    }
+
+    func release(_ disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition) async {
+        let shouldRelease = lock.withLock {
+            guard !isReleased else { return false }
+            isReleased = true
+            return true
+        }
+        guard shouldRelease else { return }
+
+        await pool.releaseConnection(
+            connection,
+            for: key,
+            generation: generation,
+            disposition: disposition
+        )
+    }
+}
+
+actor SSHTmuxAuthenticatedConnectionPool {
+    private enum EntryReadiness: Equatable, Sendable {
+        case connecting
+        case ready
+
+        var traceValue: String {
+            switch self {
+            case .connecting:
+                "connecting"
+            case .ready:
+                "ready"
+            }
+        }
+    }
+
+    private struct Entry {
+        let generation: UUID
+        let task: Task<SSHTmuxAuthenticatedConnection, Error>
+        var activeLeaseCount: Int
+        var idleCloseTask: Task<Void, Never>?
+        var readiness: EntryReadiness
+    }
+
+    private struct EntrySnapshot: Sendable {
+        let generation: UUID
+        let task: Task<SSHTmuxAuthenticatedConnection, Error>
+        let didReuse: Bool
+        let readiness: EntryReadiness
+    }
+
+    private let idleTimeout: Duration
+    private var entries: [SSHTmuxAuthenticatedConnectionPoolKey: Entry] = [:]
+
+    init(idleTimeout: Duration = .seconds(120)) {
+        self.idleTimeout = idleTimeout
+    }
+
+    func prewarmConnection(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        configuration: SSHTmuxControlConfiguration,
+        trace: SSHTmuxControlStartupTrace,
+        reason: String
+    ) {
+        let snapshot = entrySnapshot(
+            for: key,
+            configuration: configuration,
+            trace: trace
+        )
+        let eventPrefix = snapshot.didReuse ? "sshRoot.prewarm.hit" : "sshRoot.prewarm.miss"
+        trace.event(
+            eventPrefix,
+            fields: poolTraceFields(key: key, reason: reason, readiness: snapshot.readiness)
+        )
+
+        guard snapshot.readiness == .connecting else { return }
+
+        Task {
+            do {
+                _ = try await snapshot.task.value
+                trace.event(
+                    "sshRoot.prewarm.ready",
+                    fields: poolTraceFields(key: key, reason: reason, readiness: .ready)
+                )
+            } catch is CancellationError {
+                trace.event(
+                    "sshRoot.prewarm.cancelled",
+                    fields: poolTraceFields(key: key, reason: reason, readiness: .connecting)
+                )
+            } catch {
+                var fields = poolTraceFields(key: key, reason: reason, readiness: .connecting)
+                fields["error"] = String(describing: error)
+                trace.event("sshRoot.prewarm.failed", fields: fields)
+                NSLog(
+                    "Remux SSH root prewarm failed for %@@%@:%d (%@): %@",
+                    key.username,
+                    key.host,
+                    key.port,
+                    reason,
+                    String(describing: error)
+                )
+            }
+        }
+    }
+
+    fileprivate func preparedConnection(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        configuration: SSHTmuxControlConfiguration,
+        trace: SSHTmuxControlStartupTrace
+    ) -> SSHTmuxPreparedConnection {
+        let snapshot = entrySnapshot(
+            for: key,
+            configuration: configuration,
+            trace: trace
+        )
+        trace.event(
+            snapshot.didReuse ? "sshRoot.pool.hit" : "sshRoot.pool.miss",
+            fields: poolTraceFields(key: key, readiness: snapshot.readiness)
+        )
+
+        return SSHTmuxPreparedConnection(
+            trace: trace,
+            ownership: .pooled(
+                pool: self,
+                key: key,
+                generation: snapshot.generation
+            ),
+            cancelAuthenticationOnClose: false,
+            task: snapshot.task
+        )
+    }
+
+    fileprivate func leaseConnection(
+        _ connection: SSHTmuxAuthenticatedConnection,
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) async throws -> SSHTmuxAuthenticatedConnectionLease {
+        guard var entry = entries[key], entry.generation == generation else {
+            await connection.close()
+            throw SSHTmuxControlTransportError.closed
+        }
+
+        entry.idleCloseTask?.cancel()
+        entry.idleCloseTask = nil
+        entry.activeLeaseCount += 1
+        entries[key] = entry
+
+        return SSHTmuxAuthenticatedConnectionLease(
+            connection: connection,
+            pool: self,
+            key: key,
+            generation: generation
+        )
+    }
+
+    fileprivate func releaseConnection(
+        _ connection: SSHTmuxAuthenticatedConnection,
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID,
+        disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition
+    ) async {
+        guard var entry = entries[key], entry.generation == generation else {
+            await connection.close()
+            return
+        }
+
+        switch disposition {
+        case .reusable:
+            entry.activeLeaseCount = max(0, entry.activeLeaseCount - 1)
+            entries[key] = entry
+            scheduleIdleCloseIfNeeded(for: key, generation: generation)
+
+        case .invalidated:
+            entry.idleCloseTask?.cancel()
+            entries.removeValue(forKey: key)
+            await connection.close()
+        }
+    }
+
+    func closeIdleConnections(forServerID serverID: SavedServer.ID) {
+        let closing = entries
+            .filter { key, entry in
+                key.serverID == serverID && entry.activeLeaseCount == 0
+            }
+
+        for (key, entry) in closing {
+            entry.idleCloseTask?.cancel()
+            entries.removeValue(forKey: key)
+            closeEntryTask(entry.task, reason: "server_profile_changed")
+        }
+    }
+
+    func closeAllConnections() {
+        let closing = Array(entries.values)
+        entries.removeAll()
+
+        for entry in closing {
+            entry.idleCloseTask?.cancel()
+            closeEntryTask(entry.task, reason: "pool_closed")
+        }
+    }
+
+    private func entrySnapshot(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        configuration: SSHTmuxControlConfiguration,
+        trace: SSHTmuxControlStartupTrace
+    ) -> EntrySnapshot {
+        if let existing = entries[key] {
+            return EntrySnapshot(
+                generation: existing.generation,
+                task: existing.task,
+                didReuse: true,
+                readiness: existing.readiness
+            )
+        }
+
+        let generation = UUID()
+        let task = Task.detached(priority: .userInitiated) {
+            try await SSHTmuxControlBootstrap.authenticate(
+                using: configuration,
+                trace: trace
+            )
+        }
+        entries[key] = Entry(
+            generation: generation,
+            task: task,
+            activeLeaseCount: 0,
+            idleCloseTask: nil,
+            readiness: .connecting
+        )
+
+        Task {
+            do {
+                _ = try await task.value
+                self.authenticationSucceeded(for: key, generation: generation)
+            } catch {
+                self.authenticationFailed(for: key, generation: generation)
+            }
+        }
+
+        return EntrySnapshot(
+            generation: generation,
+            task: task,
+            didReuse: false,
+            readiness: .connecting
+        )
+    }
+
+    private func authenticationSucceeded(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
+        guard var entry = entries[key], entry.generation == generation else { return }
+        entry.readiness = .ready
+        entries[key] = entry
+        scheduleIdleCloseIfNeeded(for: key, generation: generation)
+    }
+
+    private func authenticationFailed(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
+        guard let entry = entries[key], entry.generation == generation else { return }
+        entry.idleCloseTask?.cancel()
+        entries.removeValue(forKey: key)
+    }
+
+    private func scheduleIdleCloseIfNeeded(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
+        guard var entry = entries[key], entry.generation == generation else { return }
+        guard entry.activeLeaseCount == 0 else { return }
+
+        entry.idleCloseTask?.cancel()
+        entry.idleCloseTask = Task {
+            do {
+                try await Task.sleep(for: idleTimeout)
+                self.closeIdleEntry(for: key, generation: generation)
+            } catch is CancellationError {
+                return
+            } catch {
+                NSLog("Remux SSH root idle close timer failed: %@", String(describing: error))
+            }
+        }
+        entries[key] = entry
+    }
+
+    private func closeIdleEntry(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
+        guard let entry = entries[key], entry.generation == generation else { return }
+        guard entry.activeLeaseCount == 0 else { return }
+
+        entry.idleCloseTask?.cancel()
+        entries.removeValue(forKey: key)
+        closeEntryTask(entry.task, reason: "idle_timeout")
+    }
+
+    private nonisolated func closeEntryTask(
+        _ task: Task<SSHTmuxAuthenticatedConnection, Error>,
+        reason: String
+    ) {
+        task.cancel()
+        Task {
+            do {
+                let connection = try await task.value
+                GhosttyRuntimeTrace.latency("sshRoot.pool.close reason=\(reason)")
+                await connection.close()
+            } catch is CancellationError {
+                GhosttyRuntimeTrace.latency("sshRoot.pool.close cancelled reason=\(reason)")
+            } catch {
+                NSLog("Remux SSH root pool close failed (%@): %@", reason, String(describing: error))
+            }
+        }
+    }
+
+    private func poolTraceFields(
+        key: SSHTmuxAuthenticatedConnectionPoolKey,
+        reason: String? = nil,
+        readiness: EntryReadiness
+    ) -> [String: String] {
+        var fields = [
+            "host": "\(key.host):\(key.port)",
+            "readiness": readiness.traceValue,
+            "serverID": key.serverID.uuidString,
+            "username": key.username,
+        ]
+        if let reason {
+            fields["reason"] = reason
+        }
+        return fields
     }
 }
 
@@ -632,89 +1201,123 @@ private enum SSHTmuxControlBootstrap {
         }
     }
 
-    static func openControlSession(
+    static func openSessionChannel(
         using authenticatedConnection: SSHTmuxAuthenticatedConnection,
+        trace: SSHTmuxControlStartupTrace
+    ) async throws -> Channel {
+        let channel = authenticatedConnection.rootChannel
+        let sshHandler = authenticatedConnection.sshHandler
+
+        return try await trace.stage("sessionChannel.open") {
+            try await channel.eventLoop.flatSubmit { [eventLoop = channel.eventLoop] in
+                let promise = eventLoop.makePromise(of: Channel.self)
+                sshHandler.createChannel(promise) { channel, channelType in
+                    guard case .session = channelType else {
+                        return channel.eventLoop.makeFailedFuture(
+                            SSHTmuxControlTransportError.unsupportedInboundChannel
+                        )
+                    }
+
+                    return channel.eventLoop.makeSucceededFuture(())
+                }
+                return promise.futureResult
+            }.get()
+        }
+    }
+
+    static func activateControlSession(
+        using preparedSession: SSHTmuxPreparedControlSession,
         viewport: TmuxControlViewport,
         command: String,
         trace: SSHTmuxControlStartupTrace,
         onOutput: @escaping @Sendable (Data) -> Void,
         onFinish: @escaping @Sendable (Error?) -> Void
     ) async throws -> SSHTmuxControlConnection {
-        let channel = authenticatedConnection.rootChannel
-        let sshHandler = authenticatedConnection.sshHandler
-        var sessionChannel: Channel?
+        let childChannel = preparedSession.sessionChannel
+        let handler = SSHTmuxControlChannelHandler(
+            onFirstOutput: { data in
+                trace.event(
+                    "firstOutput",
+                    fields: [
+                        "bytes": "\(data.count)",
+                        "preview": GhosttyRuntimeTrace.preview(data, limit: 80),
+                    ]
+                )
+            },
+            onOutput: onOutput,
+            onFinish: onFinish
+        )
+
+        try await trace.stage("sessionChannel.handler.add") {
+            try await childChannel.pipeline.addHandler(handler).get()
+        }
+
+        try await trace.stage(
+            "pty.request",
+            fields: [
+                "columns": "\(viewport.columns)",
+                "rows": "\(viewport.rows)",
+                "pixelHeight": "\(viewport.pixelHeight)",
+                "pixelWidth": "\(viewport.pixelWidth)",
+            ]
+        ) {
+            try await childChannel.triggerUserOutboundEvent(
+                SSHChannelRequestEvent.PseudoTerminalRequest(
+                    wantReply: true,
+                    term: "xterm-256color",
+                    terminalCharacterWidth: Int(viewport.columns),
+                    terminalRowHeight: Int(viewport.rows),
+                    terminalPixelWidth: Int(viewport.pixelWidth),
+                    terminalPixelHeight: Int(viewport.pixelHeight),
+                    terminalModes: .init([.ECHO: 0])
+                )
+            )
+        }
+        try await trace.stage(
+            "exec.request",
+            fields: ["commandBytes": "\(command.lengthOfBytes(using: .utf8))"]
+        ) {
+            try await childChannel.triggerUserOutboundEvent(
+                SSHChannelRequestEvent.ExecRequest(command: command, wantReply: true)
+            )
+        }
+        trace.event("bootstrap.connected")
+
+        return SSHTmuxControlConnection(
+            authenticatedConnection: preparedSession.claimedConnection.authenticatedConnection,
+            authenticatedConnectionLease: preparedSession.claimedConnection.lease,
+            sessionChannel: childChannel
+        )
+    }
+
+    static func openControlSession(
+        using claimedConnection: SSHTmuxClaimedAuthenticatedConnection,
+        viewport: TmuxControlViewport,
+        command: String,
+        trace: SSHTmuxControlStartupTrace,
+        onOutput: @escaping @Sendable (Data) -> Void,
+        onFinish: @escaping @Sendable (Error?) -> Void
+    ) async throws -> SSHTmuxControlConnection {
+        let childChannel = try await openSessionChannel(
+            using: claimedConnection.authenticatedConnection,
+            trace: trace
+        )
+        let preparedSession = SSHTmuxPreparedControlSession(
+            claimedConnection: claimedConnection,
+            sessionChannel: childChannel
+        )
 
         do {
-            let handler = SSHTmuxControlChannelHandler(
-                onFirstOutput: { data in
-                    trace.event(
-                        "firstOutput",
-                        fields: [
-                            "bytes": "\(data.count)",
-                            "preview": GhosttyRuntimeTrace.preview(data, limit: 80),
-                        ]
-                    )
-                },
+            return try await activateControlSession(
+                using: preparedSession,
+                viewport: viewport,
+                command: command,
+                trace: trace,
                 onOutput: onOutput,
                 onFinish: onFinish
             )
-
-            let childChannel = try await trace.stage("sessionChannel.open") {
-                try await channel.eventLoop.flatSubmit { [eventLoop = channel.eventLoop] in
-                    let promise = eventLoop.makePromise(of: Channel.self)
-                    sshHandler.createChannel(promise) { channel, channelType in
-                        guard case .session = channelType else {
-                            return channel.eventLoop.makeFailedFuture(
-                                SSHTmuxControlTransportError.unsupportedInboundChannel
-                            )
-                        }
-
-                        return channel.pipeline.addHandler(handler)
-                    }
-                    return promise.futureResult
-                }.get()
-            }
-            sessionChannel = childChannel
-
-            try await trace.stage(
-                "pty.request",
-                fields: [
-                    "columns": "\(viewport.columns)",
-                    "rows": "\(viewport.rows)",
-                    "pixelHeight": "\(viewport.pixelHeight)",
-                    "pixelWidth": "\(viewport.pixelWidth)",
-                ]
-            ) {
-                try await childChannel.triggerUserOutboundEvent(
-                    SSHChannelRequestEvent.PseudoTerminalRequest(
-                        wantReply: true,
-                        term: "xterm-256color",
-                        terminalCharacterWidth: Int(viewport.columns),
-                        terminalRowHeight: Int(viewport.rows),
-                        terminalPixelWidth: Int(viewport.pixelWidth),
-                        terminalPixelHeight: Int(viewport.pixelHeight),
-                        terminalModes: .init([.ECHO: 0])
-                    )
-                )
-            }
-            try await trace.stage(
-                "exec.request",
-                fields: ["commandBytes": "\(command.lengthOfBytes(using: .utf8))"]
-            ) {
-                try await childChannel.triggerUserOutboundEvent(
-                    SSHChannelRequestEvent.ExecRequest(command: command, wantReply: true)
-                )
-            }
-            trace.event("bootstrap.connected")
-
-            return SSHTmuxControlConnection(
-                rootChannel: channel,
-                sessionChannel: childChannel
-            )
         } catch {
-            if let sessionChannel {
-                try? await sessionChannel.close()
-            }
+            await preparedSession.close(disposition: .invalidated)
             throw error
         }
     }

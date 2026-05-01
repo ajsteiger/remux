@@ -41,6 +41,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var hostDisplayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
     private var hostAttachmentTracker = GhosttyHostAttachmentTracker()
     private var didTraceTerminalReady = false
+    private var transportStartToken: UInt64 = 0
 
     init(
         target: TmuxConnectionTarget,
@@ -224,6 +225,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         hostSurface = nil
         controlSurface = nil
         transport = nil
+        transportStartToken &+= 1
         runtime = nil
         hostDisplayUpdateTracker.reset()
         hostAttachmentTracker.reset()
@@ -564,16 +566,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         _ transport: any TmuxControlTransport,
         surface: GhosttyKitControlSurface
     ) {
+        let currentSize = surface.currentSize()
+        if currentSize.columns > 0, currentSize.rows > 0 {
+            traceSurfaceSized(currentSize)
+            beginTransportStart(transport, surfaceSize: currentSize)
+            return
+        }
+
         Task { @MainActor in
             for attempt in 0..<Self.surfaceSizeReadinessMaxAttempts {
                 let size = surface.currentSize()
                 if size.columns > 0, size.rows > 0 {
-                    GhosttyRuntimeTrace.flowEvent(
-                        sessionOpenFlowID,
-                        event: "model.surfaceSized",
-                        fields: ["size": ghosttyDiagnosticSurfaceSize(size)]
-                    )
-                    await startTransport(transport, surface: surface)
+                    traceSurfaceSized(size)
+                    beginTransportStart(transport, surfaceSize: size)
                     return
                 }
 
@@ -584,8 +589,81 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             }
 
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.surfaceSize.timeoutFallback")
-            await startTransport(transport, surface: surface)
+            beginTransportStart(transport, surfaceSize: surface.currentSize())
         }
+    }
+
+    private func traceSurfaceSized(_ size: ghostty_surface_size_s) {
+        GhosttyRuntimeTrace.flowEvent(
+            sessionOpenFlowID,
+            event: "model.surfaceSized",
+            fields: ["size": ghosttyDiagnosticSurfaceSize(size)]
+        )
+    }
+
+    private func beginTransportStart(
+        _ transport: any TmuxControlTransport,
+        surfaceSize: ghostty_surface_size_s
+    ) {
+        transportStartToken &+= 1
+        let token = transportStartToken
+        let flowID = sessionOpenFlowID
+        let initialViewport = TmuxControlViewport(ghosttySurfaceSize: surfaceSize)
+        if let initialViewport {
+            GhosttyRuntimeTrace.flowEvent(
+                flowID,
+                event: "model.transport.startViewport",
+                fields: [
+                    "columns": "\(initialViewport.columns)",
+                    "rows": "\(initialViewport.rows)",
+                ]
+            )
+        }
+        GhosttyRuntimeTrace.flowEvent(flowID, event: "model.transport.start.begin")
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                try await transport.start(initialViewport: initialViewport)
+                GhosttyRuntimeTrace.flowEvent(flowID, event: "model.transport.start.end")
+                let shouldCloseTransport = await MainActor.run { [weak self] in
+                    guard let self else { return true }
+                    return self.completeTransportStart(token: token)
+                }
+                if shouldCloseTransport {
+                    await transport.close()
+                }
+            } catch {
+                await transport.close()
+                await MainActor.run { [weak self] in
+                    self?.failTransportStart(error, token: token)
+                }
+            }
+        }
+    }
+
+    private func completeTransportStart(token: UInt64) -> Bool {
+        guard token == transportStartToken, transport != nil else { return true }
+
+        state = .running
+        debugStatus = "transport started"
+        submitDebugPaneInputSmokeIfReady()
+        scheduleDebugLatencyProbeIfNeeded()
+        submitDebugLatencyProbeIfReady()
+        traceTerminalReadyIfNeeded()
+        return false
+    }
+
+    private func failTransportStart(_ error: Error, token: UInt64) {
+        guard token == transportStartToken else { return }
+
+        controlSurface?.setBackingExited(true)
+        GhosttyRuntimeTrace.flowEnd(
+            sessionOpenFlowID,
+            event: "model.transport.failed",
+            fields: ["error": String(describing: error)]
+        )
+        state = .failed(String(describing: error))
+        debugStatus = String(describing: error)
     }
 
     private func updateHostDisplay(
@@ -658,44 +736,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         case nil:
             return try runtimeFactory(surfaceRegistry)
-        }
-    }
-
-    private func startTransport(
-        _ transport: any TmuxControlTransport,
-        surface: GhosttyKitControlSurface
-    ) async {
-        do {
-            let initialViewport = TmuxControlViewport(ghosttySurfaceSize: surface.currentSize())
-            if let initialViewport {
-                GhosttyRuntimeTrace.flowEvent(
-                    sessionOpenFlowID,
-                    event: "model.transport.startViewport",
-                    fields: [
-                        "columns": "\(initialViewport.columns)",
-                        "rows": "\(initialViewport.rows)",
-                    ]
-                )
-            }
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.start.begin")
-            try await transport.start(initialViewport: initialViewport)
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.start.end")
-            state = .running
-            debugStatus = "transport started"
-            submitDebugPaneInputSmokeIfReady()
-            scheduleDebugLatencyProbeIfNeeded()
-            submitDebugLatencyProbeIfReady()
-            traceTerminalReadyIfNeeded()
-        } catch {
-            await transport.close()
-            surface.setBackingExited(true)
-            GhosttyRuntimeTrace.flowEnd(
-                sessionOpenFlowID,
-                event: "model.transport.failed",
-                fields: ["error": String(describing: error)]
-            )
-            state = .failed(String(describing: error))
-            debugStatus = String(describing: error)
         }
     }
 

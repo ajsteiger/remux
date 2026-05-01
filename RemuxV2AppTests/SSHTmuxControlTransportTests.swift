@@ -32,6 +32,55 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         XCTAssertEqual(tracedConfiguration.traceFlowID, "session.open.test")
     }
 
+    func testAuthenticatedConnectionPoolKeyIsServerAndCredentialScoped() {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "server.example.com",
+            username: "tester"
+        )
+        let base = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let logs = SavedWorkspace(serverID: server.id, sessionName: "logs")
+
+        let baseTarget = TmuxConnectionTarget(
+            server: server,
+            workspace: base,
+            password: "test-password"
+        )
+        let logsTarget = TmuxConnectionTarget(
+            server: server,
+            workspace: logs,
+            password: "test-password"
+        )
+        let changedPasswordTarget = TmuxConnectionTarget(
+            server: server,
+            workspace: base,
+            password: "other-test-password"
+        )
+        let changedUserTarget = TmuxConnectionTarget(
+            server: SavedServer(
+                id: server.id,
+                displayName: server.displayName,
+                host: server.host,
+                username: "other-tester"
+            ),
+            workspace: base,
+            password: "test-password"
+        )
+
+        XCTAssertEqual(
+            SSHTmuxAuthenticatedConnectionPoolKey(target: baseTarget),
+            SSHTmuxAuthenticatedConnectionPoolKey(target: logsTarget)
+        )
+        XCTAssertNotEqual(
+            SSHTmuxAuthenticatedConnectionPoolKey(target: baseTarget),
+            SSHTmuxAuthenticatedConnectionPoolKey(target: changedPasswordTarget)
+        )
+        XCTAssertNotEqual(
+            SSHTmuxAuthenticatedConnectionPoolKey(target: baseTarget),
+            SSHTmuxAuthenticatedConnectionPoolKey(target: changedUserTarget)
+        )
+    }
+
     func testInboundStreamYieldsBytesInCallOrder() async throws {
         let stream = SSHTmuxControlInboundStream()
         let first = Data("first".utf8)

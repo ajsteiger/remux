@@ -136,6 +136,42 @@ final class RemuxV2AppUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(5))
     }
 
+    func testLiveWarmSSHRootReuseWhenConfigured() throws {
+        let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+        closeActiveSessionFromLibraryIfPossible()
+
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+    }
+
+    func testLiveLibraryPrewarmedSSHRootWhenConfigured() throws {
+        let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+
+        let savedSession = app.descendants(matching: .any)
+            .matching(identifier: "library.session.resume")
+            .firstMatch
+        XCTAssertTrue(savedSession.waitForExistence(timeout: 5))
+        RunLoop.current.run(until: Date().addingTimeInterval(2.5))
+
+        savedSession.tap()
+        waitForLiveTerminalReady(timeout: 90)
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+    }
+
     private func cleanupGeneratedLiveLatencySessionIfPossible(_ sessionName: String) {
         guard sessionName.hasPrefix("remux-latency-") else { return }
 

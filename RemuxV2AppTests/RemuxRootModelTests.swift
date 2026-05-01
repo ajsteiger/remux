@@ -58,6 +58,95 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(harness.model.library.workspaces, [workspace])
     }
 
+    func testLoadPrewarmsLatestSSHWorkspacePerRecentServer() async throws {
+        let now = Date()
+        let firstServer = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let secondServer = SavedServer(
+            displayName: "Logs Host",
+            host: "logs.example.test",
+            username: "logger"
+        )
+        let moshServer = SavedServer(
+            displayName: "Mosh Host",
+            host: "mosh.example.test",
+            username: "mosh",
+            transportKind: .mosh
+        )
+        let olderFirstWorkspace = SavedWorkspace(
+            serverID: firstServer.id,
+            sessionName: "older",
+            lastOpenedAt: now.addingTimeInterval(-120)
+        )
+        let newestFirstWorkspace = SavedWorkspace(
+            serverID: firstServer.id,
+            sessionName: "newest",
+            lastOpenedAt: now
+        )
+        let secondWorkspace = SavedWorkspace(
+            serverID: secondServer.id,
+            sessionName: "logs",
+            lastOpenedAt: now.addingTimeInterval(-30)
+        )
+        let moshWorkspace = SavedWorkspace(
+            serverID: moshServer.id,
+            sessionName: "mosh",
+            lastOpenedAt: now.addingTimeInterval(30)
+        )
+        let prewarmer = RecordingSSHConnectionPrewarmer()
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [firstServer, secondServer, moshServer],
+            workspaces: [
+                olderFirstWorkspace,
+                newestFirstWorkspace,
+                secondWorkspace,
+                moshWorkspace,
+            ],
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            sshConnectionPrewarmer: { target, _, _ in
+                prewarmer.record(target)
+            }
+        )
+        try await harness.passwordStore.savePassword("first-secret", for: firstServer.id)
+        try await harness.passwordStore.savePassword("second-secret", for: secondServer.id)
+        try await harness.passwordStore.savePassword("mosh-secret", for: moshServer.id)
+
+        await harness.model.load()
+
+        let didPrewarm = await waitUntil {
+            prewarmer.targets.count == 2
+        }
+        XCTAssertTrue(didPrewarm)
+
+        let targets = prewarmer.targets
+        XCTAssertEqual(Set(targets.map(\.server.id)), Set([firstServer.id, secondServer.id]))
+        XCTAssertTrue(targets.contains { $0.workspace.id == newestFirstWorkspace.id })
+        XCTAssertFalse(targets.contains { $0.workspace.id == olderFirstWorkspace.id })
+        XCTAssertFalse(targets.contains { $0.server.id == moshServer.id })
+
+        let didPrepareTransports = await waitUntil {
+            transportFactory.events.filter { event in
+                if case .prepared = event { return true }
+                return false
+            }.count == 2
+        }
+        XCTAssertTrue(didPrepareTransports)
+        XCTAssertEqual(
+            Set(transportFactory.targets.map(\.workspace.id)),
+            Set([newestFirstWorkspace.id, secondWorkspace.id])
+        )
+    }
+
     func testBeginNewWorkspaceUsesExistingServerAndNextSessionName() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -314,8 +403,9 @@ final class RemuxRootModelTests: XCTestCase {
         let harness = makeHarness(
             servers: [server],
             workspaces: [workspace],
-            transportFactory: { target, trustedHostStore in
-                transportFactory.makeTransport(
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
                     target: target,
                     trustedHostStore: trustedHostStore
                 )
@@ -335,7 +425,7 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertTrue(prepared)
 
         let target = try XCTUnwrap(harness.model.activeSessions.first?.target)
-        let createdID = try XCTUnwrap(transportFactory.createdIDs.first)
+        let createdID = try XCTUnwrap(transportFactory.createdIDs.last)
         let claimed = harness.model.makeTransport(for: target)
         let claimedTransport = try XCTUnwrap(claimed as? RecordingRootTmuxControlTransport)
         XCTAssertEqual(claimedTransport.id, createdID)
@@ -384,7 +474,16 @@ final class RemuxRootModelTests: XCTestCase {
         servers: [SavedServer] = [],
         workspaces: [SavedWorkspace] = [],
         settings: TerminalSettings = .default,
-        transportFactory: (@Sendable (TmuxConnectionTarget, TrustedHostStore) -> any TmuxControlTransport)? = nil
+        transportFactory: (@Sendable (
+            TmuxConnectionTarget,
+            TrustedHostStore,
+            SSHTmuxAuthenticatedConnectionPool
+        ) -> any TmuxControlTransport)? = nil,
+        sshConnectionPrewarmer: (@Sendable (
+            TmuxConnectionTarget,
+            TrustedHostStore,
+            SSHTmuxAuthenticatedConnectionPool
+        ) async -> Void)? = nil
     ) -> RemuxRootModelHarness {
         let profileRepository = TestConnectionProfileRepository(
             servers: servers,
@@ -393,15 +492,17 @@ final class RemuxRootModelTests: XCTestCase {
         let settingsRepository = TestTerminalSettingsRepository(settings: settings)
         let passwordStore = TestPasswordStore()
         let trustedHostStore = TrustedHostStore(rootURL: temporaryRoot())
-        let resolvedTransportFactory = transportFactory ?? { _, _ in
+        let resolvedTransportFactory = transportFactory ?? { _, _, _ in
             DeterministicTmuxControlTransport(chunks: [])
         }
+        let resolvedSSHConnectionPrewarmer = sshConnectionPrewarmer ?? { _, _, _ in }
         let dependencies = RemuxAppDependencies(
             profileRepository: profileRepository,
             settingsRepository: settingsRepository,
             passwordStore: passwordStore,
             trustedHostStore: trustedHostStore,
-            transportFactory: resolvedTransportFactory
+            transportFactory: resolvedTransportFactory,
+            sshConnectionPrewarmer: resolvedSSHConnectionPrewarmer
         )
 
         return RemuxRootModelHarness(
@@ -443,9 +544,27 @@ private enum RecordingRootTransportEvent: Equatable {
     case closed(UUID)
 }
 
+private final class RecordingSSHConnectionPrewarmer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedTargets: [TmuxConnectionTarget] = []
+
+    var targets: [TmuxConnectionTarget] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedTargets
+    }
+
+    func record(_ target: TmuxConnectionTarget) {
+        lock.lock()
+        recordedTargets.append(target)
+        lock.unlock()
+    }
+}
+
 private final class RecordingRootTransportFactory: @unchecked Sendable {
     private let lock = NSLock()
     private var recordedEvents: [RecordingRootTransportEvent] = []
+    private var recordedTargets: [TmuxConnectionTarget] = []
 
     var events: [RecordingRootTransportEvent] {
         lock.lock()
@@ -460,15 +579,27 @@ private final class RecordingRootTransportFactory: @unchecked Sendable {
         }
     }
 
+    var targets: [TmuxConnectionTarget] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedTargets
+    }
+
     func makeTransport(
         target: TmuxConnectionTarget,
         trustedHostStore: TrustedHostStore
     ) -> any TmuxControlTransport {
-        _ = target
         _ = trustedHostStore
         let transport = RecordingRootTmuxControlTransport(factory: self)
+        record(target: target)
         record(.created(transport.id))
         return transport
+    }
+
+    func record(target: TmuxConnectionTarget) {
+        lock.lock()
+        recordedTargets.append(target)
+        lock.unlock()
     }
 
     func record(_ event: RecordingRootTransportEvent) {
