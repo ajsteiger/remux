@@ -303,6 +303,48 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(harness.model.state, .terminal(base.id))
     }
 
+    func testConnectPreparesTransportAndTerminalClaimsPreparedTransport() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            transportFactory: { target, trustedHostStore in
+                transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            }
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let prepared = await waitUntil {
+            transportFactory.events.contains { event in
+                if case .prepared = event { return true }
+                return false
+            }
+        }
+        XCTAssertTrue(prepared)
+
+        let target = try XCTUnwrap(harness.model.activeSessions.first?.target)
+        let createdID = try XCTUnwrap(transportFactory.createdIDs.first)
+        let claimed = harness.model.makeTransport(for: target)
+        let claimedTransport = try XCTUnwrap(claimed as? RecordingRootTmuxControlTransport)
+        XCTAssertEqual(claimedTransport.id, createdID)
+
+        let fresh = harness.model.makeTransport(for: target)
+        let freshTransport = try XCTUnwrap(fresh as? RecordingRootTmuxControlTransport)
+        XCTAssertNotEqual(freshTransport.id, createdID)
+    }
+
     func testCloseActiveSessionRemovesOnlyThatRuntimeSession() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -341,7 +383,8 @@ final class RemuxRootModelTests: XCTestCase {
     private func makeHarness(
         servers: [SavedServer] = [],
         workspaces: [SavedWorkspace] = [],
-        settings: TerminalSettings = .default
+        settings: TerminalSettings = .default,
+        transportFactory: (@Sendable (TmuxConnectionTarget, TrustedHostStore) -> any TmuxControlTransport)? = nil
     ) -> RemuxRootModelHarness {
         let profileRepository = TestConnectionProfileRepository(
             servers: servers,
@@ -350,11 +393,15 @@ final class RemuxRootModelTests: XCTestCase {
         let settingsRepository = TestTerminalSettingsRepository(settings: settings)
         let passwordStore = TestPasswordStore()
         let trustedHostStore = TrustedHostStore(rootURL: temporaryRoot())
+        let resolvedTransportFactory = transportFactory ?? { _, _ in
+            DeterministicTmuxControlTransport(chunks: [])
+        }
         let dependencies = RemuxAppDependencies(
             profileRepository: profileRepository,
             settingsRepository: settingsRepository,
             passwordStore: passwordStore,
-            trustedHostStore: trustedHostStore
+            trustedHostStore: trustedHostStore,
+            transportFactory: resolvedTransportFactory
         )
 
         return RemuxRootModelHarness(
@@ -369,6 +416,18 @@ final class RemuxRootModelTests: XCTestCase {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
     }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1.0,
+        condition: () -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
 }
 
 private struct RemuxRootModelHarness {
@@ -376,6 +435,89 @@ private struct RemuxRootModelHarness {
     let profileRepository: TestConnectionProfileRepository
     let settingsRepository: TestTerminalSettingsRepository
     let passwordStore: TestPasswordStore
+}
+
+private enum RecordingRootTransportEvent: Equatable {
+    case created(UUID)
+    case prepared(UUID)
+    case closed(UUID)
+}
+
+private final class RecordingRootTransportFactory: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedEvents: [RecordingRootTransportEvent] = []
+
+    var events: [RecordingRootTransportEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedEvents
+    }
+
+    var createdIDs: [UUID] {
+        events.compactMap { event in
+            if case .created(let id) = event { return id }
+            return nil
+        }
+    }
+
+    func makeTransport(
+        target: TmuxConnectionTarget,
+        trustedHostStore: TrustedHostStore
+    ) -> any TmuxControlTransport {
+        _ = target
+        _ = trustedHostStore
+        let transport = RecordingRootTmuxControlTransport(factory: self)
+        record(.created(transport.id))
+        return transport
+    }
+
+    func record(_ event: RecordingRootTransportEvent) {
+        lock.lock()
+        recordedEvents.append(event)
+        lock.unlock()
+    }
+}
+
+private actor RecordingRootTmuxControlTransport: TmuxControlTransport {
+    nonisolated let id = UUID()
+    nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
+
+    private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let factory: RecordingRootTransportFactory
+
+    init(factory: RecordingRootTransportFactory) {
+        self.factory = factory
+
+        var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+        receivedBytes = AsyncThrowingStream { continuation in
+            capturedContinuation = continuation
+        }
+        continuation = capturedContinuation!
+    }
+
+    func prepare() async {
+        factory.record(.prepared(id))
+    }
+
+    func start(initialViewport: TmuxControlViewport?) async throws {
+        _ = initialViewport
+    }
+
+    func send(_ data: Data) async throws {
+        _ = data
+    }
+
+    func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
+        _ = columns
+        _ = rows
+        _ = width
+        _ = height
+    }
+
+    func close() async {
+        factory.record(.closed(id))
+        continuation.finish()
+    }
 }
 
 private actor TestConnectionProfileRepository: ConnectionProfileRepository {

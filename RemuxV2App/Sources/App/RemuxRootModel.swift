@@ -53,6 +53,7 @@ final class RemuxRootModel: ObservableObject {
     @Published private(set) var activeSessions: [ActiveTerminalSession] = []
 
     private let dependencies: RemuxAppDependencies
+    private var preparedTransports: [SavedWorkspace.ID: PreparedTmuxControlTransport] = [:]
 
     init(dependencies: RemuxAppDependencies) {
         self.dependencies = dependencies
@@ -205,6 +206,7 @@ final class RemuxRootModel: ObservableObject {
                     for: submission.server.id
                 )
                 library = try await dependencies.profileRepository.loadSnapshot()
+                closePreparedTransports(forServerID: submission.server.id)
                 refreshActiveSessions(server: submission.server)
 
                 guard let reconnectWorkspaceID else {
@@ -254,6 +256,7 @@ final class RemuxRootModel: ObservableObject {
 
                 try await dependencies.profileRepository.saveWorkspace(workspace)
                 library = try await dependencies.profileRepository.loadSnapshot()
+                closePreparedTransport(for: workspace.id)
                 refreshActiveSession(workspace: workspace)
                 state = .library
             } catch {
@@ -366,6 +369,7 @@ final class RemuxRootModel: ObservableObject {
     }
 
     func closeActiveSession(_ id: SavedWorkspace.ID) {
+        closePreparedTransport(for: id)
         activeSessions.removeAll { $0.id == id }
 
         guard case .terminal(let selectedID) = state, selectedID == id else {
@@ -380,6 +384,7 @@ final class RemuxRootModel: ObservableObject {
             try await dependencies.profileRepository.deleteServer(id: id)
             try await dependencies.passwordStore.deletePassword(for: id)
             try dependencies.trustedHostStore.deleteIdentity(for: id)
+            closePreparedTransports(forServerID: id)
             activeSessions.removeAll { $0.target.server.id == id }
             library = try await dependencies.profileRepository.loadSnapshot()
             state = .library
@@ -391,6 +396,7 @@ final class RemuxRootModel: ObservableObject {
     func deleteWorkspace(_ id: SavedWorkspace.ID) async {
         do {
             try await dependencies.profileRepository.deleteWorkspace(id: id)
+            closePreparedTransport(for: id)
             activeSessions.removeAll { $0.id == id }
             library = try await dependencies.profileRepository.loadSnapshot()
             state = .library
@@ -411,7 +417,29 @@ final class RemuxRootModel: ObservableObject {
     }
 
     func makeTransport(for target: TmuxConnectionTarget) -> any TmuxControlTransport {
-        dependencies.makeTransport(for: target)
+        if let prepared = preparedTransports.removeValue(forKey: target.workspace.id) {
+            guard prepared.target == target else {
+                Task { await prepared.transport.close() }
+                GhosttyRuntimeTrace.flowEvent(
+                    sessionOpenFlowID(target.workspace.id),
+                    event: "model.transport.prewarm.discarded",
+                    fields: [
+                        "workspaceID": target.workspace.id.uuidString,
+                        "reason": "target_changed",
+                    ]
+                )
+                return dependencies.makeTransport(for: target)
+            }
+
+            GhosttyRuntimeTrace.flowEvent(
+                sessionOpenFlowID(target.workspace.id),
+                event: "model.transport.prewarm.claimed",
+                fields: ["workspaceID": target.workspace.id.uuidString]
+            )
+            return prepared.transport
+        }
+
+        return dependencies.makeTransport(for: target)
     }
 
     private func activate(
@@ -430,6 +458,7 @@ final class RemuxRootModel: ObservableObject {
             ]
         )
         let target = target(server: server, workspace: workspace, password: password)
+        prepareTransport(for: target)
         let activeSession = ActiveTerminalSession(target: target)
 
         if let index = activeSessions.firstIndex(where: { $0.id == activeSession.id }) {
@@ -488,6 +517,56 @@ final class RemuxRootModel: ObservableObject {
         )
     }
 
+    private func prepareTransport(for target: TmuxConnectionTarget) {
+        guard target.server.transportKind == .ssh else { return }
+
+        let transport = dependencies.makeTransport(for: target)
+        replacePreparedTransport(
+            PreparedTmuxControlTransport(target: target, transport: transport),
+            for: target.workspace.id
+        )
+
+        GhosttyRuntimeTrace.flowEvent(
+            sessionOpenFlowID(target.workspace.id),
+            event: "model.transport.prewarm.created",
+            fields: ["workspaceID": target.workspace.id.uuidString]
+        )
+        Task.detached(priority: .userInitiated) {
+            await transport.prepare()
+        }
+        GhosttyRuntimeTrace.flowEvent(
+            sessionOpenFlowID(target.workspace.id),
+            event: "model.transport.prewarm.scheduled",
+            fields: ["workspaceID": target.workspace.id.uuidString]
+        )
+    }
+
+    private func replacePreparedTransport(
+        _ preparedTransport: PreparedTmuxControlTransport,
+        for workspaceID: SavedWorkspace.ID
+    ) {
+        if let existing = preparedTransports.updateValue(preparedTransport, forKey: workspaceID) {
+            Task { await existing.transport.close() }
+        }
+    }
+
+    private func closePreparedTransport(for workspaceID: SavedWorkspace.ID) {
+        guard let prepared = preparedTransports.removeValue(forKey: workspaceID) else { return }
+        Task { await prepared.transport.close() }
+    }
+
+    private func closePreparedTransports(forServerID serverID: SavedServer.ID) {
+        let closing = preparedTransports.filter { _, prepared in
+            prepared.target.server.id == serverID
+        }
+        for workspaceID in closing.keys {
+            preparedTransports.removeValue(forKey: workspaceID)
+        }
+        for prepared in closing.values {
+            Task { await prepared.transport.close() }
+        }
+    }
+
     private func defaultSessionName(for serverID: SavedServer.ID) -> String {
         let workspaces = library.workspaces(for: serverID)
         guard !workspaces.isEmpty else { return "base" }
@@ -520,4 +599,9 @@ final class RemuxRootModel: ObservableObject {
     private func sessionShowFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
         "session.show.\(workspaceID.uuidString)"
     }
+}
+
+private struct PreparedTmuxControlTransport {
+    let target: TmuxConnectionTarget
+    let transport: any TmuxControlTransport
 }
