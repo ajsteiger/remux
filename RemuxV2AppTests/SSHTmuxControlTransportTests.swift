@@ -1,7 +1,37 @@
+@preconcurrency import Citadel
 import XCTest
 @testable import RemuxV2
 
 final class SSHTmuxControlTransportTests: XCTestCase {
+    func testConfigurationStoresOptionalTraceFlowID() {
+        let server = SavedServer(displayName: "Trace Host", host: "example.com", username: "tester")
+        let trustedHostStore = TrustedHostStore(
+            rootURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+
+        let defaultConfiguration = SSHTmuxControlConfiguration(
+            host: server.host,
+            authenticationMethod: {
+                .passwordBased(username: server.username, password: "pw")
+            },
+            hostKeyValidator: trustedHostStore.validator(for: server),
+            sessionName: "base"
+        )
+        XCTAssertNil(defaultConfiguration.traceFlowID)
+
+        let tracedConfiguration = SSHTmuxControlConfiguration(
+            host: server.host,
+            authenticationMethod: {
+                .passwordBased(username: server.username, password: "pw")
+            },
+            hostKeyValidator: trustedHostStore.validator(for: server),
+            sessionName: "base",
+            traceFlowID: "session.open.test"
+        )
+        XCTAssertEqual(tracedConfiguration.traceFlowID, "session.open.test")
+    }
+
     func testInboundStreamYieldsBytesInCallOrder() async throws {
         let stream = SSHTmuxControlInboundStream()
         let first = Data("first".utf8)

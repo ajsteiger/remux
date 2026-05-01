@@ -13,6 +13,7 @@ struct SSHTmuxControlConfiguration: Sendable {
     let tmuxExecutable: String
     let sessionName: String
     let initialViewport: TmuxControlViewport
+    let traceFlowID: String?
 
     init(
         host: String,
@@ -22,7 +23,8 @@ struct SSHTmuxControlConfiguration: Sendable {
         connectTimeout: TimeAmount = .seconds(30),
         tmuxExecutable: String = "tmux",
         sessionName: String,
-        initialViewport: TmuxControlViewport = .default
+        initialViewport: TmuxControlViewport = .default,
+        traceFlowID: String? = nil
     ) {
         self.host = host
         self.port = port
@@ -32,6 +34,7 @@ struct SSHTmuxControlConfiguration: Sendable {
         self.tmuxExecutable = tmuxExecutable
         self.sessionName = sessionName
         self.initialViewport = initialViewport
+        self.traceFlowID = traceFlowID
     }
 }
 
@@ -87,6 +90,87 @@ struct TmuxViewportResizeState: Equatable, Sendable {
 
     mutating func failApplying() {
         isApplying = false
+    }
+}
+
+struct SSHTmuxControlStartupTrace: Sendable {
+    private let flowID: String?
+    private let startedAt: UInt64
+
+    init(flowID: String?, startedAt: UInt64 = GhosttyRuntimeTrace.nowNanos()) {
+        self.flowID = flowID
+        self.startedAt = startedAt
+    }
+
+    func event(
+        _ name: String,
+        fields: [String: String] = [:],
+        at timestamp: UInt64 = GhosttyRuntimeTrace.nowNanos()
+    ) {
+        GhosttyRuntimeTrace.latency(
+            "transport.startup.\(name) since_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: startedAt, to: timestamp))\(latencyFields(fields))"
+        )
+
+        if let flowID {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                flowID,
+                event: "transport.startup.\(name)",
+                fields: fields,
+                at: timestamp
+            )
+        }
+    }
+
+    func stage<T>(
+        _ name: String,
+        fields: [String: String] = [:],
+        operation: () async throws -> T
+    ) async throws -> T {
+        let stageStart = GhosttyRuntimeTrace.nowNanos()
+        event("\(name).begin", fields: fields, at: stageStart)
+
+        do {
+            let result = try await operation()
+            let finishedAt = GhosttyRuntimeTrace.nowNanos()
+            event(
+                "\(name).end",
+                fields: stageFields(fields, stageStart: stageStart, finishedAt: finishedAt),
+                at: finishedAt
+            )
+            return result
+        } catch {
+            let failedAt = GhosttyRuntimeTrace.nowNanos()
+            var failureFields = stageFields(fields, stageStart: stageStart, finishedAt: failedAt)
+            failureFields["error"] = String(describing: error)
+            event("\(name).failed", fields: failureFields, at: failedAt)
+            throw error
+        }
+    }
+
+    private func stageFields(
+        _ fields: [String: String],
+        stageStart: UInt64,
+        finishedAt: UInt64
+    ) -> [String: String] {
+        var stageFields = fields
+        stageFields["elapsed_ms"] = GhosttyRuntimeTrace.elapsedMilliseconds(from: stageStart, to: finishedAt)
+        return stageFields
+    }
+
+    private func latencyFields(_ fields: [String: String]) -> String {
+        guard !fields.isEmpty else { return "" }
+
+        return " " + fields
+            .sorted(by: { $0.key < $1.key })
+            .map { key, value in "\(key)=\(sanitizeLatencyField(value))" }
+            .joined(separator: " ")
+    }
+
+    private func sanitizeLatencyField(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
     }
 }
 
@@ -177,10 +261,20 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         GhosttyRuntimeTrace.latency(
             "transport.start begin host=\(configuration.host):\(configuration.port) session=\(configuration.sessionName)"
         )
+        let startupTrace = SSHTmuxControlStartupTrace(flowID: configuration.traceFlowID)
+        startupTrace.event(
+            "begin",
+            fields: [
+                "host": configuration.host,
+                "port": "\(configuration.port)",
+                "session": configuration.sessionName,
+            ]
+        )
         let establishedConnection = try await SSHTmuxControlBootstrap.connect(
             using: configuration,
             viewport: resizeState.latestViewport,
             command: tmuxAttachCommand(),
+            trace: startupTrace,
             onOutput: { [inboundStream] data in
                 inboundStream.yield(data)
             },
@@ -194,9 +288,21 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
         let queuedWrites = pendingWrites
         pendingWrites.removeAll(keepingCapacity: true)
+        startupTrace.event(
+            "queuedWrites.begin",
+            fields: ["count": "\(queuedWrites.count)"]
+        )
         for data in queuedWrites {
             try await establishedConnection.write(data)
         }
+        startupTrace.event(
+            "queuedWrites.end",
+            fields: ["count": "\(queuedWrites.count)"]
+        )
+        startupTrace.event(
+            "end",
+            fields: ["queuedWrites": "\(queuedWrites.count)"]
+        )
         GhosttyRuntimeTrace.latency(
             "transport.start end queuedWrites=\(queuedWrites.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
@@ -366,6 +472,7 @@ private enum SSHTmuxControlBootstrap {
         using configuration: SSHTmuxControlConfiguration,
         viewport: TmuxControlViewport,
         command: String,
+        trace: SSHTmuxControlStartupTrace,
         onOutput: @escaping @Sendable (Data) -> Void,
         onFinish: @escaping @Sendable (Error?) -> Void
     ) async throws -> SSHTmuxControlConnection {
@@ -373,6 +480,7 @@ private enum SSHTmuxControlBootstrap {
         var sessionChannel: Channel?
 
         do {
+            trace.event("bootstrap.configure.begin")
             let bootstrap = ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
                 .channelInitializer { channel in
                     let handshake = SSHTmuxControlHandshakeHandler(
@@ -401,48 +509,93 @@ private enum SSHTmuxControlBootstrap {
                 .connectTimeout(configuration.connectTimeout)
                 .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
                 .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
+            trace.event("bootstrap.configure.end")
 
-            let channel = try await bootstrap.connect(
-                host: configuration.host,
-                port: configuration.port
-            ).get()
+            let channel = try await trace.stage(
+                "tcpConnect",
+                fields: [
+                    "host": configuration.host,
+                    "port": "\(configuration.port)",
+                ]
+            ) {
+                try await bootstrap.connect(
+                    host: configuration.host,
+                    port: configuration.port
+                ).get()
+            }
             rootChannel = channel
 
-            let handshake = try await channel.pipeline.handler(type: SSHTmuxControlHandshakeHandler.self).get()
-            try await handshake.authenticated.get()
+            let handshake = try await trace.stage("handshakeHandler.lookup") {
+                try await channel.pipeline.handler(type: SSHTmuxControlHandshakeHandler.self).get()
+            }
+            try await trace.stage("sshAuthentication") {
+                try await handshake.authenticated.get()
+            }
 
-            let sshHandler = try await channel.pipeline.handler(type: NIOSSHHandler.self).get()
-            let handler = SSHTmuxControlChannelHandler(onOutput: onOutput, onFinish: onFinish)
+            let sshHandler = try await trace.stage("sshHandler.lookup") {
+                try await channel.pipeline.handler(type: NIOSSHHandler.self).get()
+            }
+            let handler = SSHTmuxControlChannelHandler(
+                onFirstOutput: { data in
+                    trace.event(
+                        "firstOutput",
+                        fields: [
+                            "bytes": "\(data.count)",
+                            "preview": GhosttyRuntimeTrace.preview(data, limit: 80),
+                        ]
+                    )
+                },
+                onOutput: onOutput,
+                onFinish: onFinish
+            )
 
-            let childChannel = try await channel.eventLoop.flatSubmit { [eventLoop = channel.eventLoop] in
-                let promise = eventLoop.makePromise(of: Channel.self)
-                sshHandler.createChannel(promise) { channel, channelType in
-                    guard case .session = channelType else {
-                        return channel.eventLoop.makeFailedFuture(
-                            SSHTmuxControlTransportError.unsupportedInboundChannel
-                        )
+            let childChannel = try await trace.stage("sessionChannel.open") {
+                try await channel.eventLoop.flatSubmit { [eventLoop = channel.eventLoop] in
+                    let promise = eventLoop.makePromise(of: Channel.self)
+                    sshHandler.createChannel(promise) { channel, channelType in
+                        guard case .session = channelType else {
+                            return channel.eventLoop.makeFailedFuture(
+                                SSHTmuxControlTransportError.unsupportedInboundChannel
+                            )
+                        }
+
+                        return channel.pipeline.addHandler(handler)
                     }
-
-                    return channel.pipeline.addHandler(handler)
-                }
-                return promise.futureResult
-            }.get()
+                    return promise.futureResult
+                }.get()
+            }
             sessionChannel = childChannel
 
-            try await childChannel.triggerUserOutboundEvent(
-                SSHChannelRequestEvent.PseudoTerminalRequest(
-                    wantReply: true,
-                    term: "xterm-256color",
-                    terminalCharacterWidth: Int(viewport.columns),
-                    terminalRowHeight: Int(viewport.rows),
-                    terminalPixelWidth: Int(viewport.pixelWidth),
-                    terminalPixelHeight: Int(viewport.pixelHeight),
-                    terminalModes: .init([.ECHO: 0])
+            try await trace.stage(
+                "pty.request",
+                fields: [
+                    "columns": "\(viewport.columns)",
+                    "rows": "\(viewport.rows)",
+                    "pixelHeight": "\(viewport.pixelHeight)",
+                    "pixelWidth": "\(viewport.pixelWidth)",
+                ]
+            ) {
+                try await childChannel.triggerUserOutboundEvent(
+                    SSHChannelRequestEvent.PseudoTerminalRequest(
+                        wantReply: true,
+                        term: "xterm-256color",
+                        terminalCharacterWidth: Int(viewport.columns),
+                        terminalRowHeight: Int(viewport.rows),
+                        terminalPixelWidth: Int(viewport.pixelWidth),
+                        terminalPixelHeight: Int(viewport.pixelHeight),
+                        terminalModes: .init([.ECHO: 0])
+                    )
                 )
-            )
-            try await childChannel.triggerUserOutboundEvent(
-                SSHChannelRequestEvent.ExecRequest(command: command, wantReply: true)
-            )
+            }
+            try await trace.stage(
+                "exec.request",
+                fields: ["commandBytes": "\(command.lengthOfBytes(using: .utf8))"]
+            ) {
+                try await childChannel.triggerUserOutboundEvent(
+                    SSHChannelRequestEvent.ExecRequest(command: command, wantReply: true)
+                )
+            }
+            trace.event("bootstrap.connected")
 
             return SSHTmuxControlConnection(
                 rootChannel: channel,
@@ -500,17 +653,21 @@ private final class SSHTmuxControlHandshakeHandler: ChannelInboundHandler, Senda
 private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = SSHChannelData
 
+    private let onFirstOutput: @Sendable (Data) -> Void
     private let onOutput: @Sendable (Data) -> Void
     private let onFinish: @Sendable (Error?) -> Void
     private let lock = NIOLock()
 
     private var didFinish = false
+    private var didReportFirstOutput = false
     private var exitStatus: Int?
 
     init(
+        onFirstOutput: @escaping @Sendable (Data) -> Void,
         onOutput: @escaping @Sendable (Data) -> Void,
         onFinish: @escaping @Sendable (Error?) -> Void
     ) {
+        self.onFirstOutput = onFirstOutput
         self.onOutput = onOutput
         self.onFinish = onFinish
     }
@@ -549,6 +706,14 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
         GhosttyRuntimeTrace.latency(
             "ssh.channelRead bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )
+        let shouldReportFirstOutput = lock.withLock { () -> Bool in
+            guard !didReportFirstOutput else { return false }
+            didReportFirstOutput = true
+            return true
+        }
+        if shouldReportFirstOutput {
+            onFirstOutput(data)
+        }
         onOutput(data)
     }
 

@@ -70,7 +70,8 @@ struct RemuxAppDependencies {
                         )
                     },
                     hostKeyValidator: trustedHostStore.validator(for: target.server),
-                    sessionName: target.workspace.sessionName
+                    sessionName: target.workspace.sessionName,
+                    traceFlowID: "session.open.\(target.workspace.id.uuidString)"
                 )
             )
 
