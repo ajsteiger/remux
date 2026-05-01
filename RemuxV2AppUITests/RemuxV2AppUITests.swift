@@ -102,6 +102,10 @@ final class RemuxV2AppUITests: XCTestCase {
 
     func testLiveLatencyProfileRealRuntimeWhenConfigured() throws {
         let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
         try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
 
         openFirstSavedSession()
@@ -130,6 +134,24 @@ final class RemuxV2AppUITests: XCTestCase {
         XCTAssertTrue(split.waitForExistence(timeout: 8))
         split.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(5))
+    }
+
+    private func cleanupGeneratedLiveLatencySessionIfPossible(_ sessionName: String) {
+        guard sessionName.hasPrefix("remux-latency-") else { return }
+
+        if !app.keyboards.firstMatch.exists {
+            let keyboard = app.buttons["terminal.keyboard"]
+            guard keyboard.waitForExistence(timeout: 2) else { return }
+            keyboard.tap()
+            guard app.keyboards.firstMatch.waitForExistence(timeout: 4) else { return }
+        }
+
+        app.typeText("tmux kill-session -t \(shellEscaped(sessionName))\n")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+    }
+
+    private func shellEscaped(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
     }
 
     private func launchSimulatorApp() {
