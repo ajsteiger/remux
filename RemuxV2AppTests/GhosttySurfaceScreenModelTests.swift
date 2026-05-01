@@ -93,6 +93,65 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(didIncrementRevision)
     }
 
+    func testPrecreatedRuntimeFailureIsReusedAtAttach() {
+        enum RuntimeFailure: Error {
+            case expected
+        }
+
+        var runtimeFactoryCalls = 0
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            runtimeFactory: { _ in
+                runtimeFactoryCalls += 1
+                throw RuntimeFailure.expected
+            },
+            precreateRuntime: true,
+            debugPaneInputSmoke: nil,
+            debugLatencyProbe: nil
+        )
+
+        XCTAssertEqual(runtimeFactoryCalls, 1)
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        XCTAssertEqual(runtimeFactoryCalls, 1)
+        XCTAssertEqual(model.state, .failed(String(describing: RuntimeFailure.expected)))
+    }
+
+    func testStopClearsPrecreatedRuntimeResult() {
+        enum RuntimeFailure: Error {
+            case expected
+        }
+
+        var runtimeFactoryCalls = 0
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            runtimeFactory: { _ in
+                runtimeFactoryCalls += 1
+                throw RuntimeFailure.expected
+            },
+            precreateRuntime: true,
+            debugPaneInputSmoke: nil,
+            debugLatencyProbe: nil
+        )
+
+        XCTAssertEqual(runtimeFactoryCalls, 1)
+
+        model.stop()
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        XCTAssertEqual(runtimeFactoryCalls, 2)
+        XCTAssertEqual(model.state, .failed(String(describing: RuntimeFailure.expected)))
+    }
+
     func testRuntimeCloseSurfaceDefersWhenBackingIsAlive() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let managed = Self.managedSurface()

@@ -29,7 +29,8 @@ struct GhosttySurfaceScreen: View {
         _model = StateObject(
             wrappedValue: GhosttySurfaceScreenModel(
                 target: target,
-                transportFactory: transportFactory
+                transportFactory: transportFactory,
+                precreateRuntime: true
             )
         )
     }

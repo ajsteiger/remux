@@ -27,6 +27,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private let target: TmuxConnectionTarget
     private let transportFactory: TransportFactory
     private let runtimeFactory: RuntimeFactory
+    private var precreatedRuntime: Result<GhosttyKitRuntime, Error>?
     private var debugPaneInputSmoke: DebugPaneInputSmokeCommand?
     private var debugLatencyProbe: DebugLatencyProbeCommand?
     private var debugLatencyProbeDelaySatisfied = false
@@ -46,6 +47,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         transportFactory: @escaping TransportFactory,
         surfaceRegistry: GhosttyRuntimeSurfaceRegistry = GhosttyRuntimeSurfaceRegistry(),
         runtimeFactory: RuntimeFactory? = nil,
+        precreateRuntime: Bool = false,
         debugPaneInputSmoke: DebugPaneInputSmokeCommand? = .fromEnvironment(),
         debugLatencyProbe: DebugLatencyProbeCommand? = .fromEnvironment()
     ) {
@@ -73,6 +75,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 submitDebugLatencyProbeIfReady()
                 traceTerminalReadyIfNeeded()
             }
+        }
+        if precreateRuntime {
+            precreateRuntimeIfNeeded()
         }
     }
 
@@ -110,7 +115,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         do {
             surfaceRegistry.reset()
-            let runtime = try runtimeFactory(surfaceRegistry)
+            let runtime = try claimRuntime()
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.created")
             let transport = transportFactory(target)
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.created")
@@ -214,6 +219,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         debugLatencyProbeDelayTask?.cancel()
         debugLatencyProbeDelayTask = nil
         debugLatencyProbeDelaySatisfied = false
+        precreatedRuntime = nil
         hostSurface?.stop(finalCommand: finalCommand)
         hostSurface = nil
         controlSurface = nil
@@ -606,6 +612,53 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         updateHostDisplay(surface, size: size, scale: view.contentScaleFactor)
         surface.setVisible(false)
         surface.setFocused(false)
+    }
+
+    private func precreateRuntimeIfNeeded() {
+        guard precreatedRuntime == nil, runtime == nil else { return }
+
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.precreate.begin")
+        do {
+            let runtime = try runtimeFactory(surfaceRegistry)
+            precreatedRuntime = .success(runtime)
+            GhosttyRuntimeTrace.flowEvent(
+                sessionOpenFlowID,
+                event: "model.runtime.precreate.end",
+                fields: ["elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start)]
+            )
+        } catch {
+            precreatedRuntime = .failure(error)
+            GhosttyRuntimeTrace.flowEvent(
+                sessionOpenFlowID,
+                event: "model.runtime.precreate.failed",
+                fields: [
+                    "elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start),
+                    "error": String(describing: error),
+                ]
+            )
+        }
+    }
+
+    private func claimRuntime() throws -> GhosttyKitRuntime {
+        switch precreatedRuntime {
+        case .success(let runtime):
+            precreatedRuntime = nil
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.precreate.claimed")
+            return runtime
+
+        case .failure(let error):
+            precreatedRuntime = nil
+            GhosttyRuntimeTrace.flowEvent(
+                sessionOpenFlowID,
+                event: "model.runtime.precreate.claimFailed",
+                fields: ["error": String(describing: error)]
+            )
+            throw error
+
+        case nil:
+            return try runtimeFactory(surfaceRegistry)
+        }
     }
 
     private func startTransport(
