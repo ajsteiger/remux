@@ -407,7 +407,7 @@ enum SSHTmuxControlCommandBuilder {
         let session = shellEscape(sessionName)
 
         return """
-        export PATH=\(remotePath) TERM=xterm-256color; \(tmux) has-session -t \(session) 2>/dev/null || \(tmux) new-session -d -s \(session); exec \(tmux) -CC attach-session -t \(session)
+        export PATH=\(remotePath) TERM=xterm-256color; exec \(tmux) -CC new-session -A -s \(session)
         """
     }
 
