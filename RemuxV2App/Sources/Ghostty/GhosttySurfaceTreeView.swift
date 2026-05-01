@@ -214,6 +214,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             )
             surface.setVisible(true)
             surface.setFocused(surfaceID == focusedSurfaceID)
+            registry.recordSurfacePresentation(surfaceID, reason: "tree.layout")
             GhosttyRuntimeTrace.diagnostics(
                 "tree.layout applied leaf=\(ghosttyDiagnosticShortID(surfaceID)) afterSurface={\(surface.diagnosticSummary())}"
             )

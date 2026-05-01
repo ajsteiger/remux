@@ -79,6 +79,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var surfaceIDsByHandle: [ghostty_surface_t: UUID] = [:]
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
+    private var interactiveReadinessTracker = GhosttyInteractiveReadinessTracker()
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
         guard let selectedTopLevelID else { return nil }
@@ -98,6 +99,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surfaceIDsByHandle = [:]
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
+        interactiveReadinessTracker.reset()
         notifyChanged()
     }
 
@@ -152,6 +154,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "selectSurface end reason=\(reason) target=\(shortID(id)) topIndex=\(index) \(diagnosticSelectionSummary())"
             )
             notifyChanged()
+            recordSurfacePresentation(id, reason: reason)
             return
         }
         GhosttyRuntimeTrace.diagnostics(
@@ -436,9 +439,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
             topLevels.append(topLevel)
             selectedTopLevelID = topLevel.id
-            GhosttyRuntimeTrace.flowEndIfActive(
+            traceTopologyReady(
                 "tmux.newWindow",
                 event: "registry.createSurface.window",
+                surfaceID: managed.id,
                 fields: [
                     "surface": ghosttyDiagnosticShortID(managed.id),
                     "topLevel": ghosttyDiagnosticShortID(topLevel.id),
@@ -463,9 +467,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             GhosttyRuntimeTrace.latency(
                 "registry.runtimeCreateSurface end split surface=\(ghosttyDiagnosticShortID(managed.id)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
-            GhosttyRuntimeTrace.flowEndIfActive(
+            traceTopologyReady(
                 "tmux.splitPane",
                 event: "registry.createSurface.split",
+                surfaceID: managed.id,
                 fields: [
                     "surface": ghosttyDiagnosticShortID(managed.id),
                     "topLevels": "\(topLevels.count)",
@@ -618,18 +623,21 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.latency(
             "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
         )
-        GhosttyRuntimeTrace.flowEndIfActive(
+        let readinessSurfaceID = focusedLeafID ?? leafSurfaces.first?.id
+        traceTopologyReady(
             "tmux.newWindow",
             event: "registry.createSurfaceTree",
+            surfaceID: readinessSurfaceID,
             fields: [
                 "focused": ghosttyDiagnosticShortID(focusedLeafID),
                 "leaves": "\(leafSurfaces.count)",
                 "topLevels": "\(topLevels.count)",
             ]
         )
-        GhosttyRuntimeTrace.flowEndIfActive(
+        traceTopologyReady(
             "tmux.splitPane",
             event: "registry.createSurfaceTree",
+            surfaceID: readinessSurfaceID,
             fields: [
                 "focused": ghosttyDiagnosticShortID(focusedLeafID),
                 "leaves": "\(leafSurfaces.count)",
@@ -673,6 +681,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         selectSurface(id, reason: "runtimeSelectSurface")
         updateDebugSummary("selected surface=\(id.uuidString)")
+    }
+
+    func recordSurfacePresentation(_ surfaceID: UUID, reason: String) {
+        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
+        completeInteractiveReadinessIfNeeded(surfaceID: surfaceID, reason: reason)
     }
 
     func runtimeAction(
@@ -971,7 +984,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         let initialScrollState = controlSurface.scrollState()
         let initialScrollRoute = controlSurface.scrollRoute()
 
-        return GhosttyManagedSurface(
+        let managed = GhosttyManagedSurface(
             id: surfaceID,
             view: view,
             controlSurface: controlSurface,
@@ -979,6 +992,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             scrollState: initialScrollState,
             scrollRoute: initialScrollRoute
         )
+        managed.onDisplayUpdate = { [weak self] surface, size, scale in
+            self?.recordSurfaceDisplayUpdate(surfaceID: surface.id, size: size, scale: scale)
+        }
+        return managed
     }
 
     private static func initialViewSize(
@@ -999,6 +1016,125 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var selectedActiveSurface: GhosttyManagedSurface? {
         guard let surfaceID = selectedActiveLeafID else { return nil }
         return managedSurfaces[surfaceID]
+    }
+
+    private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
+        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
+        guard let surface = managedSurfaces[surfaceID] else { return }
+        let completions = interactiveReadinessTracker.recordRender(
+            surfaceID: surfaceID,
+            size: size,
+            state: interactiveReadinessState(for: surface)
+        )
+        if completions.isEmpty {
+            traceInteractiveWaiting(surfaceID: surfaceID, reason: "display.update", scale: scale)
+        }
+        for completion in completions {
+            traceInteractiveReady(completion, reason: "display.update", scale: scale)
+        }
+    }
+
+    private func traceTopologyReady(
+        _ flow: String,
+        event: String,
+        surfaceID: UUID?,
+        fields: [String: String]
+    ) {
+        guard GhosttyRuntimeTrace.isFlowActive(flow) else { return }
+
+        var eventFields = fields
+        if let surfaceID {
+            eventFields["readySurface"] = ghosttyDiagnosticShortID(surfaceID)
+        }
+        GhosttyRuntimeTrace.flowEventIfActive(flow, event: event, fields: eventFields)
+
+        guard let surfaceID, let surface = managedSurfaces[surfaceID] else {
+            var missingFields = eventFields
+            missingFields["reason"] = "missing_ready_surface"
+            GhosttyRuntimeTrace.flowEventIfActive(flow, event: "interactive.waiting", fields: missingFields)
+            return
+        }
+
+        interactiveReadinessTracker.begin(flow: flow, surfaceID: surfaceID)
+        completeInteractiveReadinessIfNeeded(surfaceID: surfaceID, reason: event, surface: surface)
+    }
+
+    private func completeInteractiveReadinessIfNeeded(
+        surfaceID: UUID,
+        reason: String,
+        surface: GhosttyManagedSurface? = nil
+    ) {
+        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
+        guard let surface = surface ?? managedSurfaces[surfaceID] else { return }
+        let completions = interactiveReadinessTracker.updatePresentation(
+            surfaceID: surfaceID,
+            state: interactiveReadinessState(for: surface)
+        )
+        if completions.isEmpty {
+            traceInteractiveWaiting(surfaceID: surfaceID, reason: reason, scale: nil)
+        }
+        for completion in completions {
+            traceInteractiveReady(completion, reason: reason, scale: nil)
+        }
+    }
+
+    private func interactiveReadinessState(
+        for surface: GhosttyManagedSurface
+    ) -> GhosttyInteractiveSurfaceReadinessState {
+        GhosttyInteractiveSurfaceReadinessState(
+            selected: selectedActiveLeafID == surface.id,
+            visible: surface.isVisible,
+            focused: surface.isFocused
+        )
+    }
+
+    private func traceInteractiveReady(
+        _ completion: GhosttyInteractiveReadinessCompletion,
+        reason: String,
+        scale: CGFloat?
+    ) {
+        var fields = [
+            "focused": "\(completion.state.focused)",
+            "reason": reason,
+            "rendered": "\(completion.rendered)",
+            "selected": "\(completion.state.selected)",
+            "surface": ghosttyDiagnosticShortID(completion.surfaceID),
+            "visible": "\(completion.state.visible)",
+        ]
+        if let size = completion.size {
+            fields["size"] = "\(Int(size.width))x\(Int(size.height))"
+        }
+        if let scale {
+            fields["scale"] = String(format: "%.1f", Double(scale))
+        }
+        GhosttyRuntimeTrace.flowEndIfActive(
+            completion.flow,
+            event: "interactive.ready",
+            fields: fields
+        )
+    }
+
+    private func traceInteractiveWaiting(surfaceID: UUID, reason: String, scale: CGFloat?) {
+        guard let surface = managedSurfaces[surfaceID] else { return }
+        let state = interactiveReadinessState(for: surface)
+        let renderStatus = interactiveReadinessTracker.renderStatus(for: surfaceID)
+        var fields = [
+            "focused": "\(state.focused)",
+            "reason": reason,
+            "rendered": "\(renderStatus.rendered)",
+            "selected": "\(state.selected)",
+            "surface": ghosttyDiagnosticShortID(surfaceID),
+            "visible": "\(state.visible)",
+        ]
+        if let size = renderStatus.size {
+            fields["size"] = "\(Int(size.width))x\(Int(size.height))"
+        }
+        if let scale {
+            fields["scale"] = String(format: "%.1f", Double(scale))
+        }
+        for flow in interactiveReadinessTracker.pendingFlows(for: surfaceID) {
+            GhosttyRuntimeTrace.flowEventIfActive(flow, event: "interactive.waiting", fields: fields)
+        }
     }
 
     private func removeManagedSurface(_ id: UUID) {
@@ -1078,6 +1214,7 @@ final class GhosttyManagedSurface {
     private(set) var scrollState: GhosttySurfaceScrollState
     private(set) var scrollRoute: GhosttySurfaceScrollRoute
     var onScrollStateChange: (@MainActor () -> Void)?
+    var onDisplayUpdate: (@MainActor (GhosttyManagedSurface, CGSize, CGFloat) -> Void)?
 
     private let sendInputHandler: (@MainActor (String) -> Bool)?
     private let sendPasteHandler: (@MainActor (String) -> Bool)?
@@ -1180,6 +1317,9 @@ final class GhosttyManagedSurface {
             "managed.updateDisplay outcome=hit size=\(Int(size.width))x\(Int(size.height)) scale=\(scale)"
         ) {
             controlSurface.updateDisplay(metrics: metrics)
+        }
+        if GhosttyRuntimeTrace.flowTraceEnabled {
+            onDisplayUpdate?(self, size, scale)
         }
         return true
     }
@@ -1339,6 +1479,106 @@ final class GhosttyManagedSurface {
     @MainActor
     func diagnosticSummary() -> String {
         "surface=\(ghosttyDiagnosticShortID(id)) handle=\(String(describing: controlSurface.handle)) manual=\(ghosttyDiagnosticPointer(manualUserdata)) visible=\(isVisible) focused=\(isFocused) view=\(ghosttyDiagnosticRect(view.frame)) bounds=\(ghosttyDiagnosticRect(view.bounds)) size=\(ghosttyDiagnosticSurfaceSize(controlSurface.currentSize())) scroll=total:\(scrollState.total) offset:\(scrollState.offset) len:\(scrollState.len) route:\(scrollRoute)"
+    }
+}
+
+struct GhosttyInteractiveSurfaceReadinessState: Equatable {
+    let selected: Bool
+    let visible: Bool
+    let focused: Bool
+
+    var isInteractive: Bool {
+        selected && visible && focused
+    }
+}
+
+struct GhosttyInteractiveReadinessCompletion: Equatable {
+    let flow: String
+    let surfaceID: UUID
+    let rendered: Bool
+    let size: CGSize?
+    let state: GhosttyInteractiveSurfaceReadinessState
+}
+
+final class GhosttyInteractiveReadinessTracker {
+    private struct Pending {
+        let flow: String
+        let surfaceID: UUID
+    }
+
+    private struct RenderState {
+        let rendered: Bool
+        let size: CGSize?
+    }
+
+    private var pendingByFlow: [String: Pending] = [:]
+    private var renderedSurfaces: [UUID: RenderState] = [:]
+
+    func reset() {
+        pendingByFlow = [:]
+        renderedSurfaces = [:]
+    }
+
+    func begin(flow: String, surfaceID: UUID) {
+        pendingByFlow[flow] = Pending(flow: flow, surfaceID: surfaceID)
+    }
+
+    func pendingFlows(for surfaceID: UUID) -> [String] {
+        pendingByFlow.values
+            .filter { $0.surfaceID == surfaceID }
+            .map(\.flow)
+            .sorted()
+    }
+
+    func renderStatus(for surfaceID: UUID) -> (rendered: Bool, size: CGSize?) {
+        let state = renderedSurfaces[surfaceID]
+        return (state?.rendered ?? false, state?.size)
+    }
+
+    func recordRender(
+        surfaceID: UUID,
+        size: CGSize,
+        state: GhosttyInteractiveSurfaceReadinessState
+    ) -> [GhosttyInteractiveReadinessCompletion] {
+        let rendered = size.width > 1 && size.height > 1
+        renderedSurfaces[surfaceID] = RenderState(
+            rendered: rendered,
+            size: rendered ? size : nil
+        )
+        return completeReadyPending(surfaceID: surfaceID, state: state)
+    }
+
+    func updatePresentation(
+        surfaceID: UUID,
+        state: GhosttyInteractiveSurfaceReadinessState
+    ) -> [GhosttyInteractiveReadinessCompletion] {
+        completeReadyPending(surfaceID: surfaceID, state: state)
+    }
+
+    private func completeReadyPending(
+        surfaceID: UUID,
+        state: GhosttyInteractiveSurfaceReadinessState
+    ) -> [GhosttyInteractiveReadinessCompletion] {
+        guard state.isInteractive else { return [] }
+        guard renderedSurfaces[surfaceID]?.rendered == true else { return [] }
+
+        var completions: [GhosttyInteractiveReadinessCompletion] = []
+        for (flow, pending) in pendingByFlow where pending.surfaceID == surfaceID {
+            let renderState = renderedSurfaces[surfaceID]
+            completions.append(
+                GhosttyInteractiveReadinessCompletion(
+                    flow: flow,
+                    surfaceID: surfaceID,
+                    rendered: true,
+                    size: renderState?.size,
+                    state: state
+                )
+            )
+        }
+        for completion in completions {
+            pendingByFlow[completion.flow] = nil
+        }
+        return completions
     }
 }
 

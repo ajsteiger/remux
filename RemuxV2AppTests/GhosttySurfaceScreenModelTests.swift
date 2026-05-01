@@ -629,6 +629,53 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("input rejected"))
     }
 
+    func testInteractiveReadinessWaitsForRenderedFocusedVisibleSelectedSurface() {
+        let tracker = GhosttyInteractiveReadinessTracker()
+        let surfaceID = UUID()
+        let notSelected = GhosttyInteractiveSurfaceReadinessState(
+            selected: false,
+            visible: true,
+            focused: true
+        )
+        let ready = GhosttyInteractiveSurfaceReadinessState(
+            selected: true,
+            visible: true,
+            focused: true
+        )
+
+        tracker.begin(flow: "tmux.splitPane", surfaceID: surfaceID)
+
+        XCTAssertTrue(
+            tracker.recordRender(
+                surfaceID: surfaceID,
+                size: CGSize(width: 1, height: 300),
+                state: ready
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            tracker.recordRender(
+                surfaceID: surfaceID,
+                size: CGSize(width: 200, height: 300),
+                state: notSelected
+            ).isEmpty
+        )
+
+        let completions = tracker.updatePresentation(surfaceID: surfaceID, state: ready)
+        XCTAssertEqual(
+            completions,
+            [
+                GhosttyInteractiveReadinessCompletion(
+                    flow: "tmux.splitPane",
+                    surfaceID: surfaceID,
+                    rendered: true,
+                    size: CGSize(width: 200, height: 300),
+                    state: ready
+                ),
+            ]
+        )
+        XCTAssertTrue(tracker.updatePresentation(surfaceID: surfaceID, state: ready).isEmpty)
+    }
+
     func testPasteRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var firstPaste: [String] = []

@@ -474,15 +474,24 @@ struct GhosttySurfaceScreen: View {
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "ui.sendTerminalText.begin",
-            fields: ["bytes": "\(outbound.lengthOfBytes(using: .utf8))"],
+            fields: terminalInputTraceFields(
+                extra: ["bytes": "\(outbound.lengthOfBytes(using: .utf8))"]
+            ),
             at: submittedAt
         )
         let accepted = model.sendInputToFocusedSurface(outbound)
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "ui.sendTerminalText.end",
-            fields: ["accepted": "\(accepted)"]
+            fields: terminalInputTraceFields(extra: ["accepted": "\(accepted)"])
         )
+        if !accepted {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                "terminal.input",
+                event: "ui.sendTerminalText.rejected",
+                fields: terminalInputTraceFields()
+            )
+        }
         return accepted
     }
 
@@ -629,6 +638,21 @@ struct GhosttySurfaceScreen: View {
 
     private var sessionOpenFlowID: String {
         "session.open.\(target.workspace.id.uuidString)"
+    }
+
+    private func terminalInputTraceFields(extra: [String: String] = [:]) -> [String: String] {
+        var fields = [
+            "activeLeaf": ghosttyDiagnosticShortID(registry.selectedActiveLeafID),
+            "inputAvailable": "\(isTerminalInputAvailable)",
+            "keyboardMode": "\(inputCoordinator.keyboardMode)",
+            "state": "\(model.state)",
+            "topLevels": "\(registry.topLevels.count)",
+            "workspaceID": target.workspace.id.uuidString,
+        ]
+        for (key, value) in extra {
+            fields[key] = value
+        }
+        return fields
     }
 
     @ViewBuilder

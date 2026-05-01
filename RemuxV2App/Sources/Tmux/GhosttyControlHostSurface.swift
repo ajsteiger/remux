@@ -119,6 +119,11 @@ enum GhosttyRuntimeTrace {
         logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
     }
 
+    static func isFlowActive(_ flow: String) -> Bool {
+        guard flowTraceEnabled else { return false }
+        return flowTraceStore.start(for: flow) != nil
+    }
+
     static func elapsedMilliseconds(from start: UInt64, to end: UInt64 = nowNanos()) -> String {
         String(format: "%.3f", Double(end &- start) / 1_000_000)
     }

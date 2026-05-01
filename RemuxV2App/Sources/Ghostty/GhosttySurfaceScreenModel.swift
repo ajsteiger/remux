@@ -237,7 +237,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             event: "model.sendInput.end",
             fields: [
                 "accepted": "\(accepted)",
+                "activeLeaf": ghosttyDiagnosticShortID(surfaceRegistry.selectedActiveLeafID),
                 "bytes": "\(text.lengthOfBytes(using: .utf8))",
+                "state": "\(state)",
+                "topLevels": "\(surfaceRegistry.topLevels.count)",
             ]
         )
 
