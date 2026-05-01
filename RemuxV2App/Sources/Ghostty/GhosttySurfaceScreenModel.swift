@@ -199,12 +199,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func stop() {
         GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.stop")
+        let finalCommand = DebugGeneratedTmuxSessionCleanup.finalCommand(
+            for: target.workspace.sessionName
+        )
         transportWriteSequencer?.close()
         transportWriteSequencer = nil
         debugLatencyProbeDelayTask?.cancel()
         debugLatencyProbeDelayTask = nil
         debugLatencyProbeDelaySatisfied = false
-        hostSurface?.stop()
+        hostSurface?.stop(finalCommand: finalCommand)
         hostSurface = nil
         controlSurface = nil
         transport = nil
@@ -779,6 +782,31 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             debugLatencyProbeDelayTask = nil
             submitDebugLatencyProbeIfReady()
         }
+    }
+}
+
+enum DebugGeneratedTmuxSessionCleanup {
+    private static let environmentKey = "REMUX_DEBUG_KILL_GENERATED_TMUX_SESSION_ON_STOP"
+
+    static func finalCommand(
+        for sessionName: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Data? {
+#if DEBUG
+        guard environment[environmentKey] == "1" else { return nil }
+        guard sessionName.hasPrefix("remux-latency-") else { return nil }
+        guard sessionName.allSatisfy(isSafeTmuxTargetCharacter) else { return nil }
+
+        return Data("kill-session -t \(sessionName)\n".utf8)
+#else
+        _ = sessionName
+        _ = environment
+        return nil
+#endif
+    }
+
+    private static func isSafeTmuxTargetCharacter(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber || character == "-"
     }
 }
 

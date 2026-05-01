@@ -41,6 +41,60 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertNil(host.lastError)
     }
 
+    func testStopSendsFinalTmuxCommandBeforeClosingTransport() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let host = GhosttyControlHostSurface(
+            transport: transport,
+            surface: surface
+        )
+        let command = Data("kill-session -t remux-latency-1234\n".utf8)
+
+        host.stop(finalCommand: command)
+
+        let finished = await waitUntilAsync {
+            let sentCommands = await transport.sentCommands()
+            let closeCount = await transport.closeCount()
+            return sentCommands == [command] && closeCount == 1
+        }
+        let sentCommands = await transport.sentCommands()
+        let closeCount = await transport.closeCount()
+
+        XCTAssertTrue(finished)
+        XCTAssertEqual(sentCommands, [command])
+        XCTAssertEqual(closeCount, 1)
+    }
+
+    func testGeneratedTmuxSessionCleanupIsGatedToSafeLatencySessions() {
+        let enabled = ["REMUX_DEBUG_KILL_GENERATED_TMUX_SESSION_ON_STOP": "1"]
+
+        XCTAssertEqual(
+            DebugGeneratedTmuxSessionCleanup.finalCommand(
+                for: "remux-latency-ABCD1234",
+                environment: enabled
+            ),
+            Data("kill-session -t remux-latency-ABCD1234\n".utf8)
+        )
+        XCTAssertNil(
+            DebugGeneratedTmuxSessionCleanup.finalCommand(
+                for: "base",
+                environment: enabled
+            )
+        )
+        XCTAssertNil(
+            DebugGeneratedTmuxSessionCleanup.finalCommand(
+                for: "remux-latency-bad;kill-server",
+                environment: enabled
+            )
+        )
+        XCTAssertNil(
+            DebugGeneratedTmuxSessionCleanup.finalCommand(
+                for: "remux-latency-ABCD1234",
+                environment: [:]
+            )
+        )
+    }
+
     func testWriteSequencerPreservesCommandOrderAcrossAsyncTransportSends() async {
         let transport = RecordingTmuxControlTransport(sendDelay: .milliseconds(5))
         let sequencer = TmuxControlWriteSequencer(transport: transport)

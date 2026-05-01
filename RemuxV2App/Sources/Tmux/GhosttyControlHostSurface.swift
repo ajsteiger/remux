@@ -721,13 +721,20 @@ final class GhosttyControlHostSurface {
         }
     }
 
-    func stop() {
+    func stop(finalCommand: Data? = nil) {
         pumpTask?.cancel()
         pumpTask = nil
         isRunning = false
         surface?.setBackingExited(true)
 
-        Task { [transport] in
+        Task { [transport, finalCommand] in
+            if let finalCommand {
+                do {
+                    try await transport.send(finalCommand)
+                } catch {
+                    NSLog("Remux final tmux command failed: %@", String(describing: error))
+                }
+            }
             await transport.close()
         }
     }

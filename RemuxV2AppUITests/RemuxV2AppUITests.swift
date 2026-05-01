@@ -139,19 +139,23 @@ final class RemuxV2AppUITests: XCTestCase {
     private func cleanupGeneratedLiveLatencySessionIfPossible(_ sessionName: String) {
         guard sessionName.hasPrefix("remux-latency-") else { return }
 
-        if !app.keyboards.firstMatch.exists {
-            let keyboard = app.buttons["terminal.keyboard"]
-            guard keyboard.waitForExistence(timeout: 2) else { return }
-            keyboard.tap()
-            guard app.keyboards.firstMatch.waitForExistence(timeout: 4) else { return }
-        }
-
-        app.typeText("tmux kill-session -t \(shellEscaped(sessionName))\n")
-        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        closeActiveSessionFromLibraryIfPossible()
     }
 
-    private func shellEscaped(_ value: String) -> String {
-        "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+    private func closeActiveSessionFromLibraryIfPossible() {
+        if app.buttons["terminal.home"].waitForExistence(timeout: 2) {
+            app.buttons["terminal.home"].tap()
+        }
+
+        let activeSession = app.buttons["library.active-session.show"].firstMatch
+        guard activeSession.waitForExistence(timeout: 5) else { return }
+
+        activeSession.swipeLeft()
+        let close = app.buttons["Close"].firstMatch
+        guard close.waitForExistence(timeout: 3) else { return }
+
+        close.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
     }
 
     private func launchSimulatorApp() {
@@ -175,6 +179,9 @@ final class RemuxV2AppUITests: XCTestCase {
         app.launchEnvironment["REMUX_DEBUG_SERVER_TRANSPORT"] = "ssh"
         app.launchEnvironment["REMUX_DEBUG_SERVER_PASSWORD"] = configuration.password
         app.launchEnvironment["REMUX_DEBUG_TMUX_SESSION"] = sessionName
+        if sessionName.hasPrefix("remux-latency-") {
+            app.launchEnvironment["REMUX_DEBUG_KILL_GENERATED_TMUX_SESSION_ON_STOP"] = "1"
+        }
         if traceRuntime {
             app.launchEnvironment["REMUX_TRACE_FLOWS"] = "1"
             app.launchEnvironment["REMUX_TRACE_LATENCY"] = "1"
