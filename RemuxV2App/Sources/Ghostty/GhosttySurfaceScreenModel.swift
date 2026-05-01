@@ -5,6 +5,9 @@ import UIKit
 
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
+    private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
+    private static let surfaceSizeReadinessMaxAttempts = 125
+
     enum State: Equatable {
         case idle
         case starting
@@ -556,7 +559,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surface: GhosttyKitControlSurface
     ) {
         Task { @MainActor in
-            for _ in 0..<20 {
+            for attempt in 0..<Self.surfaceSizeReadinessMaxAttempts {
                 let size = surface.currentSize()
                 if size.columns > 0, size.rows > 0 {
                     GhosttyRuntimeTrace.flowEvent(
@@ -568,7 +571,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     return
                 }
 
-                try? await Task.sleep(for: .milliseconds(50))
+                if attempt == 0 {
+                    GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.surfaceSize.waiting")
+                }
+                try? await Task.sleep(for: Self.surfaceSizeReadinessRetryDelay)
             }
 
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.surfaceSize.timeoutFallback")
