@@ -406,6 +406,10 @@ final class GhosttyLatencyProbeStore: @unchecked Sendable {
 protocol TmuxControlTransport: Sendable {
     var receivedBytes: AsyncThrowingStream<Data, Error> { get }
 
+    /// Starts any transport work that does not depend on the terminal viewport.
+    /// Implementations must keep this idempotent; `start()` remains the point
+    /// where the transport becomes usable and queued writes may flush.
+    func prepare() async
     func start() async throws
     func send(_ data: Data) async throws
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws
@@ -413,6 +417,8 @@ protocol TmuxControlTransport: Sendable {
 }
 
 extension TmuxControlTransport {
+    func prepare() async {}
+
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
         _ = columns
         _ = rows

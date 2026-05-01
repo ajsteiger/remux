@@ -221,6 +221,7 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable {
     case remoteExit(Int)
     case unsupportedInboundChannel
     case alreadyStarted
+    case closed
 
     var errorDescription: String? {
         switch self {
@@ -230,6 +231,8 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable {
             return "Remux received an unexpected SSH channel type."
         case .alreadyStarted:
             return "The tmux control transport has already started."
+        case .closed:
+            return "The tmux control transport has already been closed."
         }
     }
 }
@@ -242,8 +245,10 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
     private var resizeState: TmuxViewportResizeState
     private var pendingWrites: [Data] = []
+    private var preparedConnection: SSHTmuxPreparedConnection?
     private var connection: SSHTmuxControlConnection?
     private var hasStarted = false
+    private var isClosed = false
 
     init(configuration: SSHTmuxControlConfiguration) {
         self.configuration = configuration
@@ -253,7 +258,14 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         self.receivedBytes = inboundStream.receivedBytes
     }
 
+    func prepare() async {
+        guard !isClosed, preparedConnection == nil, connection == nil, !hasStarted else { return }
+
+        preparedConnection = makePreparedConnection()
+    }
+
     func start() async throws {
+        guard !isClosed else { throw SSHTmuxControlTransportError.closed }
         guard !hasStarted else { throw SSHTmuxControlTransportError.alreadyStarted }
         hasStarted = true
 
@@ -261,27 +273,39 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         GhosttyRuntimeTrace.latency(
             "transport.start begin host=\(configuration.host):\(configuration.port) session=\(configuration.sessionName)"
         )
-        let startupTrace = SSHTmuxControlStartupTrace(flowID: configuration.traceFlowID)
-        startupTrace.event(
-            "begin",
-            fields: [
-                "host": configuration.host,
-                "port": "\(configuration.port)",
-                "session": configuration.sessionName,
-            ]
-        )
-        let establishedConnection = try await SSHTmuxControlBootstrap.connect(
-            using: configuration,
-            viewport: resizeState.latestViewport,
-            command: tmuxAttachCommand(),
-            trace: startupTrace,
-            onOutput: { [inboundStream] data in
-                inboundStream.yield(data)
-            },
-            onFinish: { [inboundStream] error in
-                inboundStream.finish(error)
-            }
-        )
+        let preparedConnection = preparedConnection ?? makePreparedConnection()
+        self.preparedConnection = preparedConnection
+        let startupTrace = preparedConnection.trace
+        var authenticatedConnection: SSHTmuxAuthenticatedConnection?
+        var startedConnection: SSHTmuxControlConnection?
+        let establishedConnection: SSHTmuxControlConnection
+        do {
+            let authenticated = try await preparedConnection.task.value
+            self.preparedConnection = nil
+            authenticatedConnection = authenticated
+            guard !isClosed else { throw SSHTmuxControlTransportError.closed }
+            establishedConnection = try await SSHTmuxControlBootstrap.openControlSession(
+                using: authenticated,
+                viewport: resizeState.latestViewport,
+                command: tmuxAttachCommand(),
+                trace: startupTrace,
+                onOutput: { [inboundStream] data in
+                    inboundStream.yield(data)
+                },
+                onFinish: { [inboundStream] error in
+                    inboundStream.finish(error)
+                }
+            )
+            startedConnection = establishedConnection
+            authenticatedConnection = nil
+            guard !isClosed else { throw SSHTmuxControlTransportError.closed }
+            startedConnection = nil
+        } catch {
+            self.preparedConnection = nil
+            await startedConnection?.close()
+            await authenticatedConnection?.close()
+            throw error
+        }
 
         connection = establishedConnection
         resizeState.markApplied(resizeState.latestViewport)
@@ -357,9 +381,48 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
     func close() async {
         let activeConnection = connection
+        let pendingPreparedConnection = preparedConnection
         connection = nil
+        preparedConnection = nil
+        isClosed = true
+        pendingPreparedConnection?.task.cancel()
         await activeConnection?.close()
+        if let pendingPreparedConnection {
+            Task {
+                do {
+                    let authenticatedConnection = try await pendingPreparedConnection.task.value
+                    await authenticatedConnection.close()
+                } catch is CancellationError {
+                    GhosttyRuntimeTrace.latency("transport.prepare.cleanup cancelled")
+                } catch {
+                    NSLog("Remux prepared SSH connection cleanup failed: %@", String(describing: error))
+                }
+            }
+        }
         inboundStream.finish(nil)
+    }
+
+    private func makePreparedConnection() -> SSHTmuxPreparedConnection {
+        let configuration = self.configuration
+        let startupTrace = SSHTmuxControlStartupTrace(flowID: configuration.traceFlowID)
+        startupTrace.event(
+            "begin",
+            fields: [
+                "host": configuration.host,
+                "port": "\(configuration.port)",
+                "session": configuration.sessionName,
+            ]
+        )
+
+        return SSHTmuxPreparedConnection(
+            trace: startupTrace,
+            task: Task.detached(priority: .userInitiated) {
+                try await SSHTmuxControlBootstrap.authenticate(
+                    using: configuration,
+                    trace: startupTrace
+                )
+            }
+        )
     }
 
     private func drainResizeQueueIfNeeded(
@@ -467,17 +530,35 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
     }
 }
 
+private struct SSHTmuxPreparedConnection {
+    let trace: SSHTmuxControlStartupTrace
+    let task: Task<SSHTmuxAuthenticatedConnection, Error>
+}
+
+private final class SSHTmuxAuthenticatedConnection: @unchecked Sendable {
+    let rootChannel: Channel
+    let sshHandler: NIOSSHHandler
+
+    init(rootChannel: Channel, sshHandler: NIOSSHHandler) {
+        self.rootChannel = rootChannel
+        self.sshHandler = sshHandler
+    }
+
+    func close() async {
+        do {
+            try await rootChannel.close()
+        } catch {
+            NSLog("Remux authenticated SSH root close failed: %@", String(describing: error))
+        }
+    }
+}
+
 private enum SSHTmuxControlBootstrap {
-    static func connect(
+    static func authenticate(
         using configuration: SSHTmuxControlConfiguration,
-        viewport: TmuxControlViewport,
-        command: String,
-        trace: SSHTmuxControlStartupTrace,
-        onOutput: @escaping @Sendable (Data) -> Void,
-        onFinish: @escaping @Sendable (Error?) -> Void
-    ) async throws -> SSHTmuxControlConnection {
+        trace: SSHTmuxControlStartupTrace
+    ) async throws -> SSHTmuxAuthenticatedConnection {
         var rootChannel: Channel?
-        var sessionChannel: Channel?
 
         do {
             trace.event("bootstrap.configure.begin")
@@ -535,6 +616,32 @@ private enum SSHTmuxControlBootstrap {
             let sshHandler = try await trace.stage("sshHandler.lookup") {
                 try await channel.pipeline.handler(type: NIOSSHHandler.self).get()
             }
+
+            return SSHTmuxAuthenticatedConnection(
+                rootChannel: channel,
+                sshHandler: sshHandler
+            )
+        } catch {
+            if let rootChannel {
+                try? await rootChannel.close()
+            }
+            throw error
+        }
+    }
+
+    static func openControlSession(
+        using authenticatedConnection: SSHTmuxAuthenticatedConnection,
+        viewport: TmuxControlViewport,
+        command: String,
+        trace: SSHTmuxControlStartupTrace,
+        onOutput: @escaping @Sendable (Data) -> Void,
+        onFinish: @escaping @Sendable (Error?) -> Void
+    ) async throws -> SSHTmuxControlConnection {
+        let channel = authenticatedConnection.rootChannel
+        let sshHandler = authenticatedConnection.sshHandler
+        var sessionChannel: Channel?
+
+        do {
             let handler = SSHTmuxControlChannelHandler(
                 onFirstOutput: { data in
                     trace.event(
@@ -604,9 +711,6 @@ private enum SSHTmuxControlBootstrap {
         } catch {
             if let sessionChannel {
                 try? await sessionChannel.close()
-            }
-            if let rootChannel {
-                try? await rootChannel.close()
             }
             throw error
         }

@@ -111,6 +111,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.created")
             let transport = transportFactory(target)
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.created")
+            Task.detached(priority: .userInitiated) {
+                await transport.prepare()
+            }
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.prepare.scheduled")
             let writeSequencer = TmuxControlWriteSequencer(
                 transport: transport,
                 onFailure: { [weak self] error in
