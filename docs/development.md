@@ -1,12 +1,12 @@
 # Development
 
-Remux V2 uses XcodeGen. The checked-in project definition is `project.yml`.
+Remux uses XcodeGen. The checked-in project definition is `project.yml`.
 
 ## Requirements
 
 - Xcode with iOS 18 SDK support
 - XcodeGen on `PATH`
-- `GhosttyKit`terminal-renderer XCFramework at the relative path configured in
+- terminal-renderer XCFramework at the relative path configured in
   [project.yml](../project.yml)
 
 ## Generate Project

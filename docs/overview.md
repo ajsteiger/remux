@@ -1,6 +1,6 @@
 # Overview
 
-Remux V2 is an iOS app for remote tmux sessions.
+Remux is an iOS app for remote tmux sessions.
 
 It keeps the app model close to tmux instead of treating tmux as one
 full-screen terminal attachment:

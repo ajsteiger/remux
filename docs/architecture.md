@@ -1,6 +1,6 @@
 # Architecture
 
-Remux V2 keeps the iOS app shell separate from the tmux transport and the
+Remux keeps the iOS app shell separate from the tmux transport and the
 Ghostty terminal runtime.
 
 SwiftUI owns presentation and user intent. The transport layer moves bytes.

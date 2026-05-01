@@ -1,28 +1,70 @@
-# Remux V2
+# Remux
 
-Remux V2 is an early iOS client for remote tmux sessions.
+Remux is a native iOS client for remote tmux workspaces.
 
-It saves SSH servers and tmux session names, opens tmux in control mode, and
-renders the terminal through `GhosttyKit`. The goal is a native mobile tmux
-client, not an SSH terminal with `tmux attach` running inside it.
+Remux brings tmux's session, window, and pane model into a native iPhone
+interface. Connect to a server, open or create a tmux session, then switch
+sessions, browse windows, split panes, close panes, and send input through
+native iOS controls.
 
-## Status
+## What Works Today
 
-This is active development work. It is not ready to use as a production
-terminal client.
+- Save SSH servers and multiple tmux sessions per server
+- Open existing tmux sessions or create new ones over SSH
+- Keep multiple terminal sessions running and switch between them
+- Render tmux windows and panes as native iOS-managed terminal surfaces
+- Browse tmux windows and panes from native iOS controls
+- Focus panes and route keyboard, paste, mouse, and scroll input to the
+  focused pane
+- Create and close tmux windows from the app
+- Split and close tmux panes from the app
+- Copy terminal selections and paste through the focused pane
+- Store server passwords in Keychain
+- Remember trusted SSH hosts
+- Save terminal font and theme settings
 
-Working today:
+## Current Limits
 
-- Saving SSH servers and tmux session names
-- Opening tmux control-mode sessions over SSH
-- Storing server passwords in Keychain
-- Remembering trusted SSH host identities
-- Persisting terminal settings
-- Rendering terminal surfaces through `GhosttyKit`
+- This is early development work, not a daily-driver terminal yet.
+- SSH is the only transport available today. Mosh support is planned.
+- Source builds currently require a local terminal-renderer XCFramework at the
+  path configured in [project.yml](project.yml). The framework is not
+  distributed in this repository, so it must be available at that path before
+  generating or building the project.
 
-SSH is the only transport available today. Mosh is not implemented yet.
+## Build from Source
 
-## Project Layout
+Requirements:
+
+- Xcode with iOS 18 SDK support
+- XcodeGen
+- the terminal-renderer XCFramework configured in [project.yml](project.yml)
+
+Generate the Xcode project:
+
+```bash
+xcodegen generate
+```
+
+Build:
+
+```bash
+xcodebuild build \
+  -project RemuxV2.xcodeproj \
+  -scheme RemuxV2 \
+  -destination 'generic/platform=iOS Simulator'
+```
+
+Test:
+
+```bash
+xcodebuild test \
+  -project RemuxV2.xcodeproj \
+  -scheme RemuxV2 \
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest'
+```
+
+## Repository Layout
 
 - [RemuxV2App](RemuxV2App): iOS app source
 - [RemuxV2AppTests](RemuxV2AppTests): unit and integration-style tests
@@ -35,34 +77,3 @@ SSH is the only transport available today. Mosh is not implemented yet.
 - [Overview](docs/overview.md)
 - [Architecture](docs/architecture.md)
 - [Development](docs/development.md)
-
-## Requirements
-
-- Xcode with iOS 18 SDK support
-- XcodeGen
-- The `GhosttyKit`terminal-renderer XCFramework at the path configured in
-  [project.yml](project.yml)
-
-## Generate the Xcode Project
-
-```bash
-xcodegen generate
-```
-
-## Build
-
-```bash
-xcodebuild build \
-  -project RemuxV2.xcodeproj \
-  -scheme RemuxV2 \
-  -destination 'generic/platform=iOS Simulator'
-```
-
-## Test
-
-```bash
-xcodebuild test \
-  -project RemuxV2.xcodeproj \
-  -scheme RemuxV2 \
-  -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest'
-```
