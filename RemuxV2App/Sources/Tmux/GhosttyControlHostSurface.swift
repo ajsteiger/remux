@@ -410,7 +410,7 @@ protocol TmuxControlTransport: Sendable {
     /// Implementations must keep this idempotent; `start()` remains the point
     /// where the transport becomes usable and queued writes may flush.
     func prepare() async
-    func start() async throws
+    func start(initialViewport: TmuxControlViewport?) async throws
     func send(_ data: Data) async throws
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws
     func close() async
@@ -457,7 +457,8 @@ actor UnavailableTmuxControlTransport: TmuxControlTransport {
         self.continuation = streamContinuation!
     }
 
-    func start() async throws {
+    func start(initialViewport: TmuxControlViewport?) async throws {
+        _ = initialViewport
         finish(error)
         throw error
     }

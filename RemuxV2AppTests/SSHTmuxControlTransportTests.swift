@@ -171,7 +171,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         let transport = UnavailableTmuxControlTransport(kind: .mosh)
 
         do {
-            try await transport.start()
+            try await transport.start(initialViewport: nil)
             XCTFail("expected unavailable transport failure")
         } catch let error as TmuxTransportAvailabilityError {
             XCTAssertEqual(error, .unsupportedTransport(.mosh))

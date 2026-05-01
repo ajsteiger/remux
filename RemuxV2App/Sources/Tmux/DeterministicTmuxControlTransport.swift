@@ -26,7 +26,17 @@ actor DeterministicTmuxControlTransport: TmuxControlTransport {
         continuation = capturedContinuation!
     }
 
-    func start() async throws {
+    func start(initialViewport: TmuxControlViewport?) async throws {
+        if let initialViewport {
+            resizeEvents.append(
+                ResizeEvent(
+                    columns: initialViewport.columns,
+                    rows: initialViewport.rows,
+                    width: initialViewport.pixelWidth,
+                    height: initialViewport.pixelHeight
+                )
+            )
+        }
         guard !started else { return }
         started = true
 

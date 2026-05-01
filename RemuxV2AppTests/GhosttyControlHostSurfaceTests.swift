@@ -198,6 +198,32 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         )
     }
 
+    func testDeterministicTransportRecordsInitialStartViewport() async throws {
+        let transport = DeterministicTmuxControlTransport(chunks: [])
+
+        try await transport.start(
+            initialViewport: TmuxControlViewport(
+                columns: 90,
+                rows: 30,
+                pixelWidth: 900,
+                pixelHeight: 700
+            )
+        )
+
+        let resizeEvents = await transport.resizesSentByGhostty()
+        XCTAssertEqual(
+            resizeEvents,
+            [
+                DeterministicTmuxControlTransport.ResizeEvent(
+                    columns: 90,
+                    rows: 30,
+                    width: 900,
+                    height: 700
+                ),
+            ]
+        )
+    }
+
     func testGhosttyOutputRejectionStopsPumpAndMarksBackingExited() async {
         let transport = RecordingTmuxControlTransport()
         let surface = RecordingGhosttyControlSurface(rejectOutput: true)
@@ -249,7 +275,7 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         )
 
         host.start()
-        try? await transport.start()
+        try? await transport.start(initialViewport: nil)
 
         let processed = await waitUntil {
             surface.processedOutput == [first, second]
@@ -314,7 +340,9 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
         continuation = capturedContinuation!
     }
 
-    func start() async throws {}
+    func start(initialViewport: TmuxControlViewport?) async throws {
+        _ = initialViewport
+    }
 
     func send(_ data: Data) async throws {
         if let sendDelay {

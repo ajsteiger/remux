@@ -1336,7 +1336,9 @@ private actor NoopTmuxControlTransport: TmuxControlTransport {
         }
     }
 
-    func start() async throws {}
+    func start(initialViewport: TmuxControlViewport?) async throws {
+        _ = initialViewport
+    }
 
     func send(_ data: Data) async throws {
         _ = data

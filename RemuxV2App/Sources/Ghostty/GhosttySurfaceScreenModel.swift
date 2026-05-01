@@ -607,25 +607,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surface: GhosttyKitControlSurface
     ) async {
         do {
-            if let viewport = TmuxControlViewport(ghosttySurfaceSize: surface.currentSize()) {
+            let initialViewport = TmuxControlViewport(ghosttySurfaceSize: surface.currentSize())
+            if let initialViewport {
                 GhosttyRuntimeTrace.flowEvent(
                     sessionOpenFlowID,
-                    event: "model.transport.resizeBeforeStart.begin",
+                    event: "model.transport.startViewport",
                     fields: [
-                        "columns": "\(viewport.columns)",
-                        "rows": "\(viewport.rows)",
+                        "columns": "\(initialViewport.columns)",
+                        "rows": "\(initialViewport.rows)",
                     ]
                 )
-                try await transport.resize(
-                    columns: viewport.columns,
-                    rows: viewport.rows,
-                    width: viewport.pixelWidth,
-                    height: viewport.pixelHeight
-                )
-                GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.resizeBeforeStart.end")
             }
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.start.begin")
-            try await transport.start()
+            try await transport.start(initialViewport: initialViewport)
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.start.end")
             state = .running
             debugStatus = "transport started"

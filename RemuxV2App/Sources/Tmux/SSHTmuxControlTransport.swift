@@ -264,10 +264,13 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         preparedConnection = makePreparedConnection()
     }
 
-    func start() async throws {
+    func start(initialViewport: TmuxControlViewport?) async throws {
         guard !isClosed else { throw SSHTmuxControlTransportError.closed }
         guard !hasStarted else { throw SSHTmuxControlTransportError.alreadyStarted }
         hasStarted = true
+        if let initialViewport {
+            resizeState.request(initialViewport)
+        }
 
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(
