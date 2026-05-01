@@ -11,6 +11,8 @@ enum GhosttyRuntimeTrace {
     static let perfEnabled = ProcessInfo.processInfo.environment["REMUX_TRACE_PERF"] == "1"
 
     private static let latencyProbeStore = GhosttyLatencyProbeStore()
+    private static let latencyMarkerAccumulator = GhosttyLatencyMarkerAccumulator()
+    private static let flowTraceStore = GhosttyFlowTraceStore()
 
     static func nowNanos() -> UInt64 {
         DispatchTime.now().uptimeNanoseconds
@@ -57,14 +59,84 @@ enum GhosttyRuntimeTrace {
         NSLog("Remux latency t=%llu %@", nowNanos(), resolvedMessage)
     }
 
+    static func flowBegin(
+        _ flow: String,
+        event: String,
+        fields: [String: String] = [:],
+        startedAt: UInt64? = nil
+    ) {
+        guard flowTraceEnabled else { return }
+        let timestamp = startedAt ?? nowNanos()
+        flowTraceStore.begin(flow: flow, at: timestamp)
+        logFlow(flow, event: event, startedAt: timestamp, at: timestamp, fields: fields)
+    }
+
+    static func flowEvent(
+        _ flow: String,
+        event: String,
+        fields: [String: String] = [:],
+        at timestamp: UInt64? = nil
+    ) {
+        guard flowTraceEnabled else { return }
+        let eventTimestamp = timestamp ?? nowNanos()
+        let start = flowTraceStore.start(for: flow) ?? eventTimestamp
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+    }
+
+    static func flowEventIfActive(
+        _ flow: String,
+        event: String,
+        fields: [String: String] = [:],
+        at timestamp: UInt64? = nil
+    ) {
+        guard flowTraceEnabled else { return }
+        guard let start = flowTraceStore.start(for: flow) else { return }
+        let eventTimestamp = timestamp ?? nowNanos()
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+    }
+
+    static func flowEnd(
+        _ flow: String,
+        event: String,
+        fields: [String: String] = [:],
+        at timestamp: UInt64? = nil
+    ) {
+        guard flowTraceEnabled else { return }
+        let eventTimestamp = timestamp ?? nowNanos()
+        let start = flowTraceStore.end(flow: flow) ?? eventTimestamp
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+    }
+
+    static func flowEndIfActive(
+        _ flow: String,
+        event: String,
+        fields: [String: String] = [:],
+        at timestamp: UInt64? = nil
+    ) {
+        guard flowTraceEnabled else { return }
+        guard let start = flowTraceStore.end(flow: flow) else { return }
+        let eventTimestamp = timestamp ?? nowNanos()
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+    }
+
     static func elapsedMilliseconds(from start: UInt64, to end: UInt64 = nowNanos()) -> String {
         String(format: "%.3f", Double(end &- start) / 1_000_000)
     }
 
-    static func registerLatencyProbe(marker: String, label: String, submittedAt: UInt64 = nowNanos()) {
+    static func registerLatencyProbe(marker: String, label: String, submittedAt: UInt64? = nil) {
         guard latencyEnabled else { return }
-        latencyProbeStore.register(marker: marker, label: label, submittedAt: submittedAt)
+        let timestamp = submittedAt ?? nowNanos()
+        latencyProbeStore.register(marker: marker, label: label, submittedAt: timestamp)
         latency("probe_register label=\(label) marker=\(marker)")
+    }
+
+    static func registerLatencyMarkers(in text: String, label: String, submittedAt: UInt64? = nil) {
+        guard latencyEnabled else { return }
+        let timestamp = submittedAt ?? nowNanos()
+
+        for marker in latencyMarkerAccumulator.append(text) {
+            registerLatencyProbe(marker: marker, label: label, submittedAt: timestamp)
+        }
     }
 
     static func observeInboundData(_ data: Data, source: String) {
@@ -76,6 +148,17 @@ enum GhosttyRuntimeTrace {
         for hit in hits {
             latency(
                 "probe_hit label=\(hit.label) marker=\(hit.marker) hit=\(hit.hitCount) source=\(source) bytes=\(data.count) offset=\(hit.offset) delta_ms=\(elapsedMilliseconds(from: hit.submittedAt, to: now)) preview=\(preview(data, limit: 160))"
+            )
+            flowEventIfActive(
+                "terminal.input",
+                event: "probe.hit",
+                fields: [
+                    "label": hit.label,
+                    "marker": hit.marker,
+                    "source": source,
+                    "delta_ms": elapsedMilliseconds(from: hit.submittedAt, to: now),
+                ],
+                at: now
             )
         }
     }
@@ -117,6 +200,36 @@ enum GhosttyRuntimeTrace {
             message.hasPrefix("debugLatencyProbe")
     }
 
+    static var flowTraceEnabled: Bool {
+        perfEnabled || latencyEnabled ||
+            ProcessInfo.processInfo.environment["REMUX_TRACE_FLOWS"] == "1"
+    }
+
+    private static func logFlow(
+        _ flow: String,
+        event: String,
+        startedAt: UInt64,
+        at timestamp: UInt64,
+        fields: [String: String]
+    ) {
+        var parts = [
+            "flow=\(flow)",
+            "event=\(event)",
+            "since_ms=\(elapsedMilliseconds(from: startedAt, to: timestamp))",
+        ]
+        for (key, value) in fields.sorted(by: { $0.key < $1.key }) {
+            parts.append("\(key)=\(normalizeFieldValue(value))")
+        }
+        NSLog("Remux flow t=%llu %@", timestamp, parts.joined(separator: " "))
+    }
+
+    private static func normalizeFieldValue(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+    }
+
     private static func appendTmuxOutputPayload(
         from rawLine: Data.SubSequence,
         to payload: inout Data
@@ -136,6 +249,83 @@ enum GhosttyRuntimeTrace {
         let payloadStart = line.index(after: paneIDEnd)
         guard payloadStart < line.endIndex else { return }
         payload.append(contentsOf: line[payloadStart..<line.endIndex])
+    }
+}
+
+final class GhosttyFlowTraceStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var starts: [String: UInt64] = [:]
+
+    func begin(flow: String, at timestamp: UInt64) {
+        lock.withLock {
+            starts[flow] = timestamp
+        }
+    }
+
+    func start(for flow: String) -> UInt64? {
+        lock.withLock {
+            starts[flow]
+        }
+    }
+
+    func end(flow: String) -> UInt64? {
+        lock.withLock {
+            starts.removeValue(forKey: flow)
+        }
+    }
+}
+
+final class GhosttyLatencyMarkerAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let prefix = "__REMUX_LATENCY_"
+    private let maxBufferedCharacters: Int
+    private var buffer = ""
+
+    init(maxBufferedCharacters: Int = 256) {
+        self.maxBufferedCharacters = max(32, maxBufferedCharacters)
+    }
+
+    func append(_ text: String) -> [String] {
+        lock.withLock {
+            appendLocked(text)
+        }
+    }
+
+    private func appendLocked(_ text: String) -> [String] {
+        guard !text.isEmpty else { return [] }
+
+        buffer.append(text)
+        var markers: [String] = []
+
+        while true {
+            guard let prefixRange = buffer.range(of: prefix) else {
+                preservePossiblePrefixSuffix()
+                return markers
+            }
+
+            if prefixRange.lowerBound > buffer.startIndex {
+                buffer.removeSubrange(buffer.startIndex..<prefixRange.lowerBound)
+            }
+
+            let markerBodyStart = buffer.index(buffer.startIndex, offsetBy: prefix.count)
+            guard let markerEnd = buffer[markerBodyStart...].range(of: "__")?.upperBound else {
+                trimUnclosedMarkerIfNeeded()
+                return markers
+            }
+
+            markers.append(String(buffer[buffer.startIndex..<markerEnd]))
+            buffer.removeSubrange(buffer.startIndex..<markerEnd)
+        }
+    }
+
+    private func preservePossiblePrefixSuffix() {
+        let suffixLength = min(buffer.count, prefix.count - 1)
+        buffer = String(buffer.suffix(suffixLength))
+    }
+
+    private func trimUnclosedMarkerIfNeeded() {
+        guard buffer.count > maxBufferedCharacters else { return }
+        buffer = String(buffer.suffix(maxBufferedCharacters))
     }
 }
 

@@ -436,6 +436,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
             topLevels.append(topLevel)
             selectedTopLevelID = topLevel.id
+            GhosttyRuntimeTrace.flowEndIfActive(
+                "tmux.newWindow",
+                event: "registry.createSurface.window",
+                fields: [
+                    "surface": ghosttyDiagnosticShortID(managed.id),
+                    "topLevel": ghosttyDiagnosticShortID(topLevel.id),
+                    "topLevels": "\(topLevels.count)",
+                ]
+            )
             GhosttyRuntimeTrace.latency(
                 "registry.runtimeCreateSurface end topLevel=\(ghosttyDiagnosticShortID(topLevel.id)) surface=\(ghosttyDiagnosticShortID(managed.id)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
@@ -453,6 +462,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
             GhosttyRuntimeTrace.latency(
                 "registry.runtimeCreateSurface end split surface=\(ghosttyDiagnosticShortID(managed.id)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            GhosttyRuntimeTrace.flowEndIfActive(
+                "tmux.splitPane",
+                event: "registry.createSurface.split",
+                fields: [
+                    "surface": ghosttyDiagnosticShortID(managed.id),
+                    "topLevels": "\(topLevels.count)",
+                ]
             )
             return managed.controlSurface.handle
 
@@ -600,6 +617,24 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         GhosttyRuntimeTrace.latency(
             "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
+        )
+        GhosttyRuntimeTrace.flowEndIfActive(
+            "tmux.newWindow",
+            event: "registry.createSurfaceTree",
+            fields: [
+                "focused": ghosttyDiagnosticShortID(focusedLeafID),
+                "leaves": "\(leafSurfaces.count)",
+                "topLevels": "\(topLevels.count)",
+            ]
+        )
+        GhosttyRuntimeTrace.flowEndIfActive(
+            "tmux.splitPane",
+            event: "registry.createSurfaceTree",
+            fields: [
+                "focused": ghosttyDiagnosticShortID(focusedLeafID),
+                "leaves": "\(leafSurfaces.count)",
+                "topLevels": "\(topLevels.count)",
+            ]
         )
         return true
     }

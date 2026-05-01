@@ -82,6 +82,36 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertEqual(hits.first?.submittedAt, 100)
     }
 
+    func testLatencyMarkerAccumulatorDetectsMarkersSplitAcrossCharacterInput() {
+        let accumulator = GhosttyLatencyMarkerAccumulator()
+        var markers: [String] = []
+
+        for character in "echo __REMUX_LATENCY_UIKEY1234__\n" {
+            markers.append(contentsOf: accumulator.append(String(character)))
+        }
+
+        XCTAssertEqual(markers, ["__REMUX_LATENCY_UIKEY1234__"])
+    }
+
+    func testLatencyMarkerAccumulatorPreservesPartialPrefixAcrossChunks() {
+        let accumulator = GhosttyLatencyMarkerAccumulator()
+
+        XCTAssertTrue(accumulator.append("echo __REMUX_LA").isEmpty)
+        XCTAssertEqual(
+            accumulator.append("TENCY_UIKEY5678__\n"),
+            ["__REMUX_LATENCY_UIKEY5678__"]
+        )
+    }
+
+    func testLatencyMarkerAccumulatorReturnsMultipleMarkersFromChunk() {
+        let accumulator = GhosttyLatencyMarkerAccumulator()
+
+        XCTAssertEqual(
+            accumulator.append("__REMUX_LATENCY_ONE__ __REMUX_LATENCY_TWO__"),
+            ["__REMUX_LATENCY_ONE__", "__REMUX_LATENCY_TWO__"]
+        )
+    }
+
     func testTmuxOutputPayloadExtractsContiguousPaneBytes() {
         var data = Data("%begin 1 0 0\r\n%end 1 0 0\r\n%output %284 ".utf8)
         data.append(0xC2)

@@ -225,6 +225,16 @@ struct GhosttySurfaceScreen: View {
         .overlay(alignment: .topLeading) {
             GhosttyTerminalScreenAccessibilityMarker()
         }
+        .onAppear {
+            GhosttyRuntimeTrace.flowEvent(
+                sessionOpenFlowID,
+                event: "ui.terminalScreen.appear",
+                fields: [
+                    "session": target.workspace.sessionName,
+                    "workspaceID": target.workspace.id.uuidString,
+                ]
+            )
+        }
         .onDisappear {
             model.stop()
         }
@@ -276,12 +286,26 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showSystemKeyboard() {
+        GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.showSystemKeyboard")
         inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
     }
 
     private func handleSurfaceTap(_ surfaceID: UUID) {
+        GhosttyRuntimeTrace.flowBegin(
+            "terminal.input",
+            event: "ui.tap.surface",
+            fields: [
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+                "workspaceID": target.workspace.id.uuidString,
+            ]
+        )
         let didActivatePane = model.focusTmuxPane(surfaceID)
         inputCoordinator.handleSurfaceTap(isInputAvailable: didActivatePane)
+        GhosttyRuntimeTrace.flowEvent(
+            "terminal.input",
+            event: "ui.tap.surface.end",
+            fields: ["activated": "\(didActivatePane)"]
+        )
     }
 
     private func handleWindowSwipe(_ direction: GhosttyRuntimeSelectionDirection) {
@@ -290,6 +314,15 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func toggleKeyboardChrome() {
+        GhosttyRuntimeTrace.flowBegin(
+            "terminal.input",
+            event: "ui.tap.keyboardToggle",
+            fields: [
+                "inputAvailable": "\(isTerminalInputAvailable)",
+                "mode": "\(inputCoordinator.keyboardMode)",
+                "workspaceID": target.workspace.id.uuidString,
+            ]
+        )
         let previousMode = inputCoordinator.keyboardMode
         let expectedMode = previousMode.toggledKeyboard()
         let startsSystemKeyboardTransition = isSystemKeyboardTransition(
@@ -366,6 +399,7 @@ struct GhosttySurfaceScreen: View {
 
     private func showWindows() {
         guard !registry.topLevels.isEmpty else { return }
+        GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "ui.showWindows")
         captureSelectionSheetBottomReplacementHeight()
         selectionSheet = .windows
     }
@@ -412,6 +446,7 @@ struct GhosttySurfaceScreen: View {
 
     private func showPanes() {
         guard let topLevel = registry.selectedTopLevel else { return }
+        GhosttyRuntimeTrace.flowEventIfActive("tmux.splitPane", event: "ui.showPanes")
 
         // Carry the preview session in the sheet payload itself so the pane
         // sheet never renders against a separate optional state that may lag
@@ -428,7 +463,27 @@ struct GhosttySurfaceScreen: View {
 
     private func sendTerminalText(_ text: String) -> Bool {
         let outbound = modifierState.apply(to: text)
-        return model.sendInputToFocusedSurface(outbound)
+        let submittedAt = GhosttyRuntimeTrace.latencyEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        if let submittedAt {
+            GhosttyRuntimeTrace.registerLatencyMarkers(
+                in: outbound,
+                label: "typed-input",
+                submittedAt: submittedAt
+            )
+        }
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "ui.sendTerminalText.begin",
+            fields: ["bytes": "\(outbound.lengthOfBytes(using: .utf8))"],
+            at: submittedAt
+        )
+        let accepted = model.sendInputToFocusedSurface(outbound)
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "ui.sendTerminalText.end",
+            fields: ["accepted": "\(accepted)"]
+        )
+        return accepted
     }
 
     private func sendTerminalPaste(_ text: String) -> Bool {
@@ -471,6 +526,15 @@ struct GhosttySurfaceScreen: View {
             frameEnd: frameEnd,
             screenBounds: UIScreen.main.bounds
         )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "ui.keyboard.notification",
+            fields: [
+                "name": notification.name.rawValue,
+                "visible": "\(isVisible)",
+                "height": "\(Int(frameEnd.height))",
+            ]
+        )
 
         performKeyboardChromeStateChange {
             beginKeyboardViewportTransition()
@@ -511,6 +575,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func completeKeyboardDidShow() {
+        GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.keyboard.didShow")
         performKeyboardChromeStateChange {
             if keyboardHandoffTarget == .system {
                 keyboardHandoffTarget = nil
@@ -520,6 +585,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func completeKeyboardDidHide() {
+        GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.keyboard.didHide")
         performKeyboardChromeStateChange {
             if keyboardHandoffTarget == .custom {
                 keyboardHandoffTarget = nil
@@ -561,6 +627,10 @@ struct GhosttySurfaceScreen: View {
         )
     }
 
+    private var sessionOpenFlowID: String {
+        "session.open.\(target.workspace.id.uuidString)"
+    }
+
     @ViewBuilder
     private func selectionSheetContent(_ sheet: GhosttySurfaceSelectionSheet) -> some View {
         switch sheet {
@@ -569,6 +639,14 @@ struct GhosttySurfaceScreen: View {
                 registry: registry,
                 sessionName: target.workspace.sessionName,
                 onCreateWindow: {
+                    GhosttyRuntimeTrace.flowBegin(
+                        "tmux.newWindow",
+                        event: "ui.tap.newWindow",
+                        fields: [
+                            "topLevelsBefore": "\(registry.topLevels.count)",
+                            "workspaceID": target.workspace.id.uuidString,
+                        ]
+                    )
                     guard model.createTmuxWindow() else { return }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
@@ -590,11 +668,27 @@ struct GhosttySurfaceScreen: View {
                 registry: registry,
                 session: session,
                 onSplitPane: {
+                    GhosttyRuntimeTrace.flowBegin(
+                        "tmux.splitPane",
+                        event: "ui.tap.splitPane",
+                        fields: [
+                            "panesBefore": "\(registry.selectedTopLevel?.leafIDs.count ?? 0)",
+                            "workspaceID": target.workspace.id.uuidString,
+                        ]
+                    )
                     guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT) else { return }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 },
                 onStackPane: {
+                    GhosttyRuntimeTrace.flowBegin(
+                        "tmux.splitPane",
+                        event: "ui.tap.stackPane",
+                        fields: [
+                            "panesBefore": "\(registry.selectedTopLevel?.leafIDs.count ?? 0)",
+                            "workspaceID": target.workspace.id.uuidString,
+                        ]
+                    )
                     guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) else { return }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()

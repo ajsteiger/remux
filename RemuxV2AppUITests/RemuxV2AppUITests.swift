@@ -100,15 +100,50 @@ final class RemuxV2AppUITests: XCTestCase {
         waitForLiveTerminalReady(timeout: 60)
     }
 
+    func testLiveLatencyProfileRealRuntimeWhenConfigured() throws {
+        let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        let marker = "__REMUX_LATENCY_UIKEY\(UUID().uuidString.prefix(8).uppercased())__"
+        let keyboard = app.buttons["terminal.keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        keyboard.tap()
+        _ = app.keyboards.firstMatch.waitForExistence(timeout: 8)
+        app.typeText("echo \(marker)\n")
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+
+        let windows = app.buttons["terminal.windows"]
+        XCTAssertTrue(windows.waitForExistence(timeout: 10))
+        windows.tap()
+        let newWindow = app.buttons["New Window"]
+        XCTAssertTrue(newWindow.waitForExistence(timeout: 8))
+        newWindow.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+
+        let panes = app.buttons["terminal.panes"]
+        XCTAssertTrue(panes.waitForExistence(timeout: 10))
+        panes.tap()
+        let split = app.buttons["Split"]
+        XCTAssertTrue(split.waitForExistence(timeout: 8))
+        split.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(5))
+    }
+
     private func launchSimulatorApp() {
         app.launchEnvironment["REMUX_UI_TESTING"] = "1"
         app.launch()
     }
 
-    private func launchLiveSSHAppIfConfigured() throws {
+    private func launchLiveSSHAppIfConfigured(
+        traceRuntime: Bool = false,
+        sessionNameOverride: String? = nil
+    ) throws {
         let configuration = try liveSSHConfiguration()
         let displayName = configuration.displayName ?? "Live SSH"
-        let sessionName = configuration.sessionName ?? "remux-live-e2e"
+        let sessionName = sessionNameOverride ?? configuration.sessionName ?? "remux-live-e2e"
 
         app.launchEnvironment["REMUX_DEBUG_SEED_CONNECTION"] = "1"
         app.launchEnvironment["REMUX_DEBUG_SERVER_NAME"] = displayName
@@ -118,6 +153,11 @@ final class RemuxV2AppUITests: XCTestCase {
         app.launchEnvironment["REMUX_DEBUG_SERVER_TRANSPORT"] = "ssh"
         app.launchEnvironment["REMUX_DEBUG_SERVER_PASSWORD"] = configuration.password
         app.launchEnvironment["REMUX_DEBUG_TMUX_SESSION"] = sessionName
+        if traceRuntime {
+            app.launchEnvironment["REMUX_TRACE_FLOWS"] = "1"
+            app.launchEnvironment["REMUX_TRACE_LATENCY"] = "1"
+            app.launchEnvironment["REMUX_TRACE_PERF"] = "1"
+        }
         app.launch()
     }
 

@@ -36,6 +36,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var transportWriteSequencer: TmuxControlWriteSequencer?
     private var hostDisplayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
     private var hostAttachmentTracker = GhosttyHostAttachmentTracker()
+    private var didTraceTerminalReady = false
 
     init(
         target: TmuxConnectionTarget,
@@ -67,6 +68,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 submitDebugPaneInputSmokeIfReady()
                 scheduleDebugLatencyProbeIfNeeded()
                 submitDebugLatencyProbeIfReady()
+                traceTerminalReadyIfNeeded()
             }
         }
     }
@@ -89,6 +91,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return
         }
         GhosttyRuntimeTrace.perf("model.attach route=initial size=\(Int(size.width))x\(Int(size.height))")
+        GhosttyRuntimeTrace.flowEvent(
+            sessionOpenFlowID,
+            event: "model.attach.initial",
+            fields: [
+                "size": "\(Int(size.width))x\(Int(size.height))",
+                "workspaceID": target.workspace.id.uuidString,
+            ]
+        )
 
         state = .starting
         debugStatus = "creating Ghostty runtime"
@@ -98,7 +108,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         do {
             surfaceRegistry.reset()
             let runtime = try runtimeFactory(surfaceRegistry)
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.created")
             let transport = transportFactory(target)
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.created")
             let writeSequencer = TmuxControlWriteSequencer(
                 transport: transport,
                 onFailure: { [weak self] error in
@@ -147,6 +159,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     return true
                 }
             )
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.hostSurface.created")
             _ = hostAttachmentTracker.record(
                 view: view,
                 size: size,
@@ -169,16 +182,23 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             self.hostSurface = hostSurface
 
             hostSurface.start()
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.hostPump.started")
             debugStatus = "waiting for host surface size"
 
             startTransportWhenSurfaceIsSized(transport, surface: surface)
         } catch {
+            GhosttyRuntimeTrace.flowEnd(
+                sessionOpenFlowID,
+                event: "model.attach.failed",
+                fields: ["error": String(describing: error)]
+            )
             state = .failed(String(describing: error))
             debugStatus = String(describing: error)
         }
     }
 
     func stop() {
+        GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.stop")
         transportWriteSequencer?.close()
         transportWriteSequencer = nil
         debugLatencyProbeDelayTask?.cancel()
@@ -211,6 +231,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
         GhosttyRuntimeTrace.latency(
             "model.sendInput end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "model.sendInput.end",
+            fields: [
+                "accepted": "\(accepted)",
+                "bytes": "\(text.lengthOfBytes(using: .utf8))",
+            ]
         )
 
         return accepted
@@ -384,11 +412,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     func createTmuxWindow() -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency("model.createTmuxWindow begin")
+        GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "model.createTmuxWindow.begin")
         guard let controlSurface else {
             debugStatus = "tmux new-window dropped: host missing"
             GhosttyRuntimeTrace.latency(
                 "model.createTmuxWindow dropped hostMissing elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
+            GhosttyRuntimeTrace.flowEnd("tmux.newWindow", event: "model.createTmuxWindow.dropped")
             return false
         }
 
@@ -397,6 +427,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "model.createTmuxWindow rejected elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
+            GhosttyRuntimeTrace.flowEnd("tmux.newWindow", event: "model.createTmuxWindow.rejected")
             return false
         }
 
@@ -404,6 +435,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.createTmuxWindow queued elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
+        GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "model.createTmuxWindow.queued")
         return true
     }
 
@@ -413,6 +445,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.splitFocusedTmuxPane begin direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.splitPane",
+            event: "model.splitFocusedTmuxPane.begin",
+            fields: ["direction": "\(direction)"]
+        )
         guard
             let surfaceID = surfaceRegistry.selectedActiveLeafID,
             let surface = surfaceRegistry.managedSurface(for: surfaceID)
@@ -421,6 +458,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "model.splitFocusedTmuxPane dropped noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
+            GhosttyRuntimeTrace.flowEnd("tmux.splitPane", event: "model.splitFocusedTmuxPane.dropped")
             return false
         }
 
@@ -429,12 +467,18 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "model.splitFocusedTmuxPane rejected target=\(ghosttyDiagnosticShortID(surfaceID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
+            GhosttyRuntimeTrace.flowEnd("tmux.splitPane", event: "model.splitFocusedTmuxPane.rejected")
             return false
         }
 
         debugStatus = "tmux split queued"
         GhosttyRuntimeTrace.latency(
             "model.splitFocusedTmuxPane queued target=\(ghosttyDiagnosticShortID(surfaceID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.splitPane",
+            event: "model.splitFocusedTmuxPane.queued",
+            fields: ["target": ghosttyDiagnosticShortID(surfaceID)]
         )
         return true
     }
@@ -505,6 +549,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             for _ in 0..<20 {
                 let size = surface.currentSize()
                 if size.columns > 0, size.rows > 0 {
+                    GhosttyRuntimeTrace.flowEvent(
+                        sessionOpenFlowID,
+                        event: "model.surfaceSized",
+                        fields: ["size": ghosttyDiagnosticSurfaceSize(size)]
+                    )
                     await startTransport(transport, surface: surface)
                     return
                 }
@@ -512,6 +561,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(50))
             }
 
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.surfaceSize.timeoutFallback")
             await startTransport(transport, surface: surface)
         }
     }
@@ -548,25 +598,63 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     ) async {
         do {
             if let viewport = TmuxControlViewport(ghosttySurfaceSize: surface.currentSize()) {
+                GhosttyRuntimeTrace.flowEvent(
+                    sessionOpenFlowID,
+                    event: "model.transport.resizeBeforeStart.begin",
+                    fields: [
+                        "columns": "\(viewport.columns)",
+                        "rows": "\(viewport.rows)",
+                    ]
+                )
                 try await transport.resize(
                     columns: viewport.columns,
                     rows: viewport.rows,
                     width: viewport.pixelWidth,
                     height: viewport.pixelHeight
                 )
+                GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.resizeBeforeStart.end")
             }
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.start.begin")
             try await transport.start()
+            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.start.end")
             state = .running
             debugStatus = "transport started"
             submitDebugPaneInputSmokeIfReady()
             scheduleDebugLatencyProbeIfNeeded()
             submitDebugLatencyProbeIfReady()
+            traceTerminalReadyIfNeeded()
         } catch {
             await transport.close()
             surface.setBackingExited(true)
+            GhosttyRuntimeTrace.flowEnd(
+                sessionOpenFlowID,
+                event: "model.transport.failed",
+                fields: ["error": String(describing: error)]
+            )
             state = .failed(String(describing: error))
             debugStatus = String(describing: error)
         }
+    }
+
+    private func traceTerminalReadyIfNeeded() {
+        guard !didTraceTerminalReady else { return }
+        guard state == .running else { return }
+        guard !surfaceRegistry.topLevels.isEmpty else { return }
+
+        didTraceTerminalReady = true
+        GhosttyRuntimeTrace.flowEnd(
+            sessionOpenFlowID,
+            event: "terminal.ready",
+            fields: [
+                "topLevels": "\(surfaceRegistry.topLevels.count)",
+                "managedSurfaces": "\(surfaceRegistry.allManagedSurfaces().count)",
+                "workspaceID": target.workspace.id.uuidString,
+            ]
+        )
+    }
+
+    private var sessionOpenFlowID: String {
+        "session.open.\(target.workspace.id.uuidString)"
     }
 
     private func submitDebugPaneInputSmokeIfReady() {

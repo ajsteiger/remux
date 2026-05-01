@@ -263,15 +263,34 @@ final class RemuxRootModel: ObservableObject {
     }
 
     func connect(to workspaceID: SavedWorkspace.ID) async {
+        let flow = sessionOpenFlowID(workspaceID)
+        GhosttyRuntimeTrace.flowEvent(
+            flow,
+            event: "model.connect.begin",
+            fields: ["workspaceID": workspaceID.uuidString]
+        )
         guard
             let workspace = library.workspace(id: workspaceID),
             let server = library.server(id: workspace.serverID)
         else {
+            GhosttyRuntimeTrace.flowEnd(
+                flow,
+                event: "model.connect.missingProfile",
+                fields: ["workspaceID": workspaceID.uuidString]
+            )
             return
         }
 
         let password = (try? await dependencies.passwordStore.loadPassword(for: server.id)) ?? ""
         guard !password.isEmpty else {
+            GhosttyRuntimeTrace.flowEnd(
+                flow,
+                event: "model.connect.missingPassword",
+                fields: [
+                    "workspaceID": workspaceID.uuidString,
+                    "server": server.displayName,
+                ]
+            )
             state = .setup(
                 TmuxConnectionDraft(server: server, workspace: workspace, password: ""),
                 .empty,
@@ -281,6 +300,14 @@ final class RemuxRootModel: ObservableObject {
         }
 
         if server.transportKind == .mosh {
+            GhosttyRuntimeTrace.flowEnd(
+                flow,
+                event: "model.connect.unsupportedTransport",
+                fields: [
+                    "workspaceID": workspaceID.uuidString,
+                    "transport": server.transportKind.rawValue,
+                ]
+            )
             state = .setup(
                 TmuxConnectionDraft(server: server, workspace: workspace, password: password),
                 unsupportedTransportValidation(for: server.transportKind),
@@ -293,20 +320,49 @@ final class RemuxRootModel: ObservableObject {
             var openedWorkspace = workspace
             openedWorkspace.lastOpenedAt = Date()
             try await dependencies.profileRepository.saveProfile(server: server, workspace: openedWorkspace)
+            GhosttyRuntimeTrace.flowEvent(
+                flow,
+                event: "model.connect.profileSaved",
+                fields: [
+                    "server": server.displayName,
+                    "session": openedWorkspace.sessionName,
+                ]
+            )
             library = try await dependencies.profileRepository.loadSnapshot()
+            GhosttyRuntimeTrace.flowEvent(flow, event: "model.connect.libraryReloaded")
             activate(server: server, workspace: openedWorkspace, password: password)
         } catch {
+            GhosttyRuntimeTrace.flowEnd(
+                flow,
+                event: "model.connect.failed",
+                fields: ["error": String(describing: error)]
+            )
             state = .failed(String(describing: error))
         }
     }
 
     func showActiveSession(_ id: SavedWorkspace.ID) {
+        GhosttyRuntimeTrace.flowEvent(
+            sessionShowFlowID(id),
+            event: "model.showActiveSession.begin",
+            fields: ["workspaceID": id.uuidString]
+        )
         guard activeSessions.contains(where: { $0.id == id }) else {
+            GhosttyRuntimeTrace.flowEnd(
+                sessionShowFlowID(id),
+                event: "model.showActiveSession.missing",
+                fields: ["workspaceID": id.uuidString]
+            )
             state = .library
             return
         }
 
         state = .terminal(id)
+        GhosttyRuntimeTrace.flowEnd(
+            sessionShowFlowID(id),
+            event: "model.showActiveSession.end",
+            fields: ["workspaceID": id.uuidString]
+        )
     }
 
     func closeActiveSession(_ id: SavedWorkspace.ID) {
@@ -363,6 +419,16 @@ final class RemuxRootModel: ObservableObject {
         workspace: SavedWorkspace,
         password: String
     ) {
+        let flow = sessionOpenFlowID(workspace.id)
+        GhosttyRuntimeTrace.flowEvent(
+            flow,
+            event: "model.activate.begin",
+            fields: [
+                "server": server.displayName,
+                "session": workspace.sessionName,
+                "workspaceID": workspace.id.uuidString,
+            ]
+        )
         let target = target(server: server, workspace: workspace, password: password)
         let activeSession = ActiveTerminalSession(target: target)
 
@@ -373,6 +439,14 @@ final class RemuxRootModel: ObservableObject {
         }
 
         state = .terminal(workspace.id)
+        GhosttyRuntimeTrace.flowEvent(
+            flow,
+            event: "model.activate.end",
+            fields: [
+                "activeSessions": "\(activeSessions.count)",
+                "workspaceID": workspace.id.uuidString,
+            ]
+        )
     }
 
     private func refreshActiveSessions(server: SavedServer) {
@@ -437,5 +511,13 @@ final class RemuxRootModel: ObservableObject {
             validation.transportKind = "Mosh needs a native mosh client integration before it can connect."
         }
         return validation
+    }
+
+    private func sessionOpenFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
+        "session.open.\(workspaceID.uuidString)"
+    }
+
+    private func sessionShowFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
+        "session.show.\(workspaceID.uuidString)"
     }
 }

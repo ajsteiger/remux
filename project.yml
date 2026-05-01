@@ -71,3 +71,14 @@ targets:
         PRODUCT_NAME: RemuxV2UITests
         PRODUCT_MODULE_NAME: RemuxV2UITests
         GENERATE_INFOPLIST_FILE: YES
+schemes:
+  RemuxV2:
+    build:
+      targets:
+        RemuxV2: all
+        RemuxV2Tests: [test]
+        RemuxV2UITests: [test]
+    test:
+      targets:
+        - RemuxV2Tests
+        - RemuxV2UITests

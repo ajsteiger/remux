@@ -137,9 +137,17 @@ private struct RemuxWorkspaceShell: View {
                     Task { await model.beginEditWorkspace(serverID: serverID, workspaceID: workspaceID) }
                 },
                 onConnect: { workspaceID in
+                    traceSessionOpenTap(workspaceID)
                     Task { await model.connect(to: workspaceID) }
                 },
-                onShowActiveSession: model.showActiveSession,
+                onShowActiveSession: { workspaceID in
+                    GhosttyRuntimeTrace.flowBegin(
+                        sessionShowFlowID(workspaceID),
+                        event: "ui.tap.activeSession",
+                        fields: ["workspaceID": workspaceID.uuidString]
+                    )
+                    model.showActiveSession(workspaceID)
+                },
                 onCloseActiveSession: model.closeActiveSession,
                 onDeleteServer: { serverID in
                     Task { await model.deleteServer(serverID) }
@@ -157,6 +165,31 @@ private struct RemuxWorkspaceShell: View {
             )
         }
         .zIndex(2)
+    }
+
+    private func traceSessionOpenTap(_ workspaceID: SavedWorkspace.ID) {
+        var fields = ["workspaceID": workspaceID.uuidString]
+        if let workspace = model.library.workspace(id: workspaceID) {
+            fields["session"] = workspace.sessionName
+            if let server = model.library.server(id: workspace.serverID) {
+                fields["server"] = server.displayName
+                fields["host"] = server.host
+            }
+        }
+
+        GhosttyRuntimeTrace.flowBegin(
+            sessionOpenFlowID(workspaceID),
+            event: "ui.tap.session",
+            fields: fields
+        )
+    }
+
+    private func sessionOpenFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
+        "session.open.\(workspaceID.uuidString)"
+    }
+
+    private func sessionShowFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
+        "session.show.\(workspaceID.uuidString)"
     }
 
 }
