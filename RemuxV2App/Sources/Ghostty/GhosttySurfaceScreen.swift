@@ -700,7 +700,11 @@ struct GhosttySurfaceScreen: View {
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
-                    guard model.createTmuxWindow() else { return }
+                    requestSystemKeyboardRefocusAfterTopologyChange()
+                    guard model.createTmuxWindow() else {
+                        cancelPendingTopologyInputRefocus()
+                        return
+                    }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 },
@@ -710,7 +714,11 @@ struct GhosttySurfaceScreen: View {
                     refocusSystemKeyboardIfActive()
                 },
                 onRemoveWindow: { id in
-                    guard model.closeTmuxWindow(id) else { return }
+                    requestSystemKeyboardRefocusAfterTopologyChange()
+                    guard model.closeTmuxWindow(id) else {
+                        cancelPendingTopologyInputRefocus()
+                        return
+                    }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 }
