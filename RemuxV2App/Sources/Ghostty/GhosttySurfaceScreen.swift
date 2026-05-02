@@ -14,7 +14,11 @@ struct GhosttySurfaceScreen: View {
     @State private var terminalViewportStabilizer = GhosttyTerminalViewportStabilizer()
     @State private var keyboardHandoffTarget: GhosttyKeyboardChromeMode?
     @State private var isKeyboardViewportTransitionActive = false
-    @State private var latestLiveTerminalViewportSize = CGSize(width: 1, height: 1)
+    @State private var keyboardViewportTransitionTarget: GhosttyKeyboardViewportTransitionTarget?
+    @State private var keyboardViewportTransitionFallbackToken: UInt64 = 0
+    @State private var keyboardViewportTransitionAllowsLiveSizeCompletion = false
+    @State private var isAwaitingSystemKeyboardPresentation = false
+    @State private var terminalViewportSizeCache = GhosttyTerminalViewportSizeCache()
     @State private var pendingTopologyInputRefocus = GhosttyPendingTopologyInputRefocus()
 
     private let target: TmuxConnectionTarget
@@ -89,7 +93,8 @@ struct GhosttySurfaceScreen: View {
                             .background(target.terminalSettings.theme.swiftUIBackground)
 
                         GhosttyTerminalResponderRepresentable(
-                            isEnabled: inputCoordinator.keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
+                            isEnabled: isTerminalInputAvailable,
+                            wantsFirstResponder: inputCoordinator.keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
                             activationToken: inputCoordinator.terminalActivationToken,
                             sendText: sendTerminalText,
                             sendPaste: sendTerminalPaste,
@@ -112,18 +117,10 @@ struct GhosttySurfaceScreen: View {
                         .id(model.surfaceRegistryRevision)
                     }
                     .onAppear {
-                        latestLiveTerminalViewportSize = liveTerminalViewportSize
-                        terminalViewportStabilizer.updateLiveSize(
-                            liveTerminalViewportSize,
-                            isViewportFrozen: isTerminalViewportFrozen
-                        )
+                        updateTerminalViewportLiveSize(liveTerminalViewportSize)
                     }
                     .onChange(of: liveTerminalViewportSize) { _, newValue in
-                        latestLiveTerminalViewportSize = newValue
-                        terminalViewportStabilizer.updateLiveSize(
-                            newValue,
-                            isViewportFrozen: isTerminalViewportFrozen
-                        )
+                        updateTerminalViewportLiveSize(newValue)
                     }
                     .onChange(of: selectionSheet?.id) { _, newValue in
                         terminalViewportStabilizer.sheetPresentationChanged(
@@ -140,7 +137,10 @@ struct GhosttySurfaceScreen: View {
                     reservedKeyboardReplacementHeight: keyboardReplacementHeight,
                     currentKeyboardReplacementHeight: currentKeyboardReplacementHeight,
                     reservesSystemKeyboardReplacement: GhosttyKeyboardChromeReservation
-                        .reservesSystemKeyboardReplacement(handoffTarget: keyboardHandoffTarget),
+                        .reservesSystemKeyboardReplacement(
+                            handoffTarget: keyboardHandoffTarget,
+                            isAwaitingSystemKeyboardPresentation: isAwaitingSystemKeyboardPresentation
+                        ),
                     isEnabled: isTerminalInputAvailable,
                     isCompact: chrome.isCompact,
                     isControlArmed: modifierState.isControlArmed,
@@ -334,10 +334,18 @@ struct GhosttySurfaceScreen: View {
             from: previousMode,
             to: expectedMode
         ) && isTerminalInputAvailable
+        GhosttyRuntimeTrace.perf(
+            "kbd.toggleKeyboard from=\(previousMode.traceLabel) to=\(expectedMode.traceLabel) inputAvailable=\(isTerminalInputAvailable) startsSystemTransition=\(startsSystemKeyboardTransition)"
+        )
 
         performKeyboardChromeStateChange {
             if startsSystemKeyboardTransition {
-                beginKeyboardViewportTransition()
+                isAwaitingSystemKeyboardPresentation = expectedMode == .system
+                beginKeyboardViewportTransition(
+                    target: expectedMode == .system ? .shown : .hidden,
+                    allowsTargetOverride: true,
+                    allowsLiveSizeCompletion: true
+                )
             }
 
             inputCoordinator.toggleKeyboard(isInputAvailable: isTerminalInputAvailable)
@@ -350,43 +358,25 @@ struct GhosttySurfaceScreen: View {
     private func toggleCustomKeyboard() {
         let previousMode = inputCoordinator.keyboardMode
         let expectedMode = previousMode.toggledCustomKeyboard()
-        let startsKeyboardPresentation = previousMode == .custom
-            && expectedMode == .system
-            && isTerminalInputAvailable
-
-        if startsKeyboardPresentation {
-            performKeyboardChromeStateChange {
-                keyboardHandoffTarget = expectedMode
-                beginKeyboardViewportTransition()
-            }
-
-            Task { @MainActor in
-                await Task.yield()
-                completeCustomToSystemKeyboardToggle(expectedMode: expectedMode)
-            }
-            return
-        }
+        GhosttyRuntimeTrace.perf(
+            "kbd.toggleCustom from=\(previousMode.traceLabel) to=\(expectedMode.traceLabel) inputAvailable=\(isTerminalInputAvailable) handoff=\(isKeyboardHandoff(from: previousMode, to: expectedMode))"
+        )
 
         performKeyboardChromeStateChange {
             if isKeyboardHandoff(from: previousMode, to: expectedMode), isTerminalInputAvailable {
                 keyboardHandoffTarget = expectedMode
-                beginKeyboardViewportTransition()
+                isAwaitingSystemKeyboardPresentation = expectedMode == .system
+                beginKeyboardViewportTransition(
+                    target: expectedMode == .system ? .shown : .hidden,
+                    allowsTargetOverride: true,
+                    allowsLiveSizeCompletion: true
+                )
             }
 
             inputCoordinator.toggleCustomKeyboard(isInputAvailable: isTerminalInputAvailable)
             if inputCoordinator.keyboardMode != expectedMode {
                 keyboardHandoffTarget = nil
-                endTerminalViewportFreezeIfPossible()
-            }
-        }
-    }
-
-    private func completeCustomToSystemKeyboardToggle(expectedMode: GhosttyKeyboardChromeMode) {
-        performKeyboardChromeStateChange {
-            inputCoordinator.toggleCustomKeyboard(isInputAvailable: isTerminalInputAvailable)
-            if inputCoordinator.keyboardMode != expectedMode {
-                keyboardHandoffTarget = nil
-                endTerminalViewportFreezeIfPossible()
+                completeKeyboardViewportTransition()
             }
         }
     }
@@ -492,7 +482,8 @@ struct GhosttySurfaceScreen: View {
 
     private func sendTerminalText(_ text: String) -> Bool {
         let outbound = modifierState.apply(to: text)
-        let submittedAt = GhosttyRuntimeTrace.latencyEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        let start = GhosttyRuntimeTrace.nowNanos()
+        let submittedAt = GhosttyRuntimeTrace.latencyEnabled ? start : nil
         if let submittedAt {
             GhosttyRuntimeTrace.registerLatencyMarkers(
                 in: outbound,
@@ -509,6 +500,9 @@ struct GhosttySurfaceScreen: View {
             at: submittedAt
         )
         let accepted = model.sendInputToFocusedSurface(outbound)
+        GhosttyRuntimeTrace.perf(
+            "input.sendText bytes=\(outbound.lengthOfBytes(using: .utf8)) accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "ui.sendTerminalText.end",
@@ -539,7 +533,12 @@ struct GhosttySurfaceScreen: View {
 
     private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
         let outbound = modifierState.apply(to: event)
-        return model.sendKeyEventToFocusedSurface(outbound)
+        let start = GhosttyRuntimeTrace.nowNanos()
+        let accepted = model.sendKeyEventToFocusedSurface(outbound)
+        GhosttyRuntimeTrace.perf(
+            "input.sendKey accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+        return accepted
     }
 
     private func performQuickAction(_ action: GhosttyTerminalQuickAction) {
@@ -564,6 +563,21 @@ struct GhosttySurfaceScreen: View {
             frameEnd: frameEnd,
             screenBounds: UIScreen.main.bounds
         )
+        let nextOverlapHeight = GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
+            frameEnd: frameEnd,
+            screenBounds: UIScreen.main.bounds
+        )
+        let fallbackDelay = keyboardTransitionFallbackDelay(for: notification)
+        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
+            .doubleValue
+            ?? GhosttyKeyboardViewportTransitionTiming.defaultAnimationDuration
+        let notificationTarget: GhosttyKeyboardViewportTransitionTarget = isVisible ? .shown : .hidden
+        let shouldBeginViewportTransition = GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+            notificationTarget: notificationTarget,
+            keyboardMode: inputCoordinator.keyboardMode,
+            handoffTarget: keyboardHandoffTarget,
+            isDismissSystemKeyboardRequested: inputCoordinator.isDismissSystemKeyboardRequested
+        )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "ui.keyboard.notification",
@@ -571,22 +585,60 @@ struct GhosttySurfaceScreen: View {
                 "name": notification.name.rawValue,
                 "visible": "\(isVisible)",
                 "height": "\(Int(frameEnd.height))",
+                "beginTransition": "\(shouldBeginViewportTransition)",
             ]
+        )
+        GhosttyRuntimeTrace.perf(
+            "kbd.visibility visible=\(isVisible) overlap=\(nextOverlapHeight) duration_ms=\(String(format: "%.3f", duration * 1000)) fallback_ms=\(String(format: "%.3f", fallbackDelay * 1000)) beginTransition=\(shouldBeginViewportTransition) awaitingSystem=\(isAwaitingSystemKeyboardPresentation) frame=\(Int(frameEnd.origin.x)),\(Int(frameEnd.origin.y)),\(Int(frameEnd.width)),\(Int(frameEnd.height))"
         )
 
         performKeyboardChromeStateChange {
-            beginKeyboardViewportTransition()
+            if shouldBeginViewportTransition {
+                beginKeyboardViewportTransition(
+                    target: notificationTarget,
+                    fallbackDelay: fallbackDelay
+                )
+            } else {
+                GhosttyRuntimeTrace.perf(
+                    "kbd.visibility skipTransition target=\(notificationTarget.traceLabel) mode=\(inputCoordinator.keyboardMode.traceLabel) handoff=\(keyboardHandoffTarget.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
+                )
+            }
 
-            softwareKeyboardOverlapHeight = GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
-                frameEnd: frameEnd,
-                screenBounds: UIScreen.main.bounds
-            )
-            if softwareKeyboardOverlapHeight > 0 {
-                lastSoftwareKeyboardOverlapHeight = softwareKeyboardOverlapHeight
+            if softwareKeyboardOverlapHeight != nextOverlapHeight {
+                softwareKeyboardOverlapHeight = nextOverlapHeight
+            }
+            if nextOverlapHeight > 0, lastSoftwareKeyboardOverlapHeight != nextOverlapHeight {
+                lastSoftwareKeyboardOverlapHeight = nextOverlapHeight
+            }
+            if isVisible {
+                isAwaitingSystemKeyboardPresentation = false
             }
 
             inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
         }
+    }
+
+    private func updateTerminalViewportLiveSize(_ size: CGSize) {
+        let normalizedSize = GhosttyTerminalViewportStabilizer.normalized(size)
+        let previousSize = terminalViewportSizeCache.latestLiveSize
+        let wasFrozen = isTerminalViewportFrozen
+        terminalViewportSizeCache.latestLiveSize = normalizedSize
+        if previousSize != normalizedSize {
+            GhosttyRuntimeTrace.perf(
+                "viewport.live size=\(normalizedSize.traceLabel) previous=\(previousSize.traceLabel) frozen=\(wasFrozen) transitionActive=\(isKeyboardViewportTransitionActive) transitionTarget=\(keyboardViewportTransitionTarget.traceLabel) handoff=\(keyboardHandoffTarget.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
+            )
+        }
+        if shouldCompleteKeyboardViewportTransitionFromLiveSize(normalizedSize, previousSize: previousSize) {
+            completeKeyboardViewportTransitionFromLiveSize(normalizedSize)
+        }
+        guard !isTerminalViewportFrozen else { return }
+        guard terminalViewportStabilizer.lastLiveSize != normalizedSize else { return }
+
+        terminalViewportStabilizer.updateLiveSize(
+            normalizedSize,
+            isViewportFrozen: false
+        )
+        GhosttyRuntimeTrace.perf("viewport.live applied size=\(normalizedSize.traceLabel)")
     }
 
     private func isSystemKeyboardTransition(
@@ -605,16 +657,45 @@ struct GhosttySurfaceScreen: View {
             || (previousMode == .custom && nextMode == .system)
     }
 
-    private func beginKeyboardViewportTransition() {
-        guard !isKeyboardViewportTransitionActive else { return }
+    private func beginKeyboardViewportTransition(
+        target: GhosttyKeyboardViewportTransitionTarget?,
+        allowsTargetOverride: Bool = false,
+        allowsLiveSizeCompletion: Bool = false,
+        fallbackDelay: TimeInterval = GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
+    ) {
+        guard !isKeyboardViewportTransitionActive else {
+            if keyboardViewportTransitionTarget == nil || allowsTargetOverride {
+                keyboardViewportTransitionTarget = target
+            }
+            keyboardViewportTransitionAllowsLiveSizeCompletion =
+                keyboardViewportTransitionAllowsLiveSizeCompletion || allowsLiveSizeCompletion
+            GhosttyRuntimeTrace.perf(
+                "kbd.transition alreadyActive target=\(keyboardViewportTransitionTarget.traceLabel) liveSizeCompletion=\(keyboardViewportTransitionAllowsLiveSizeCompletion) fallback_ms=\(String(format: "%.3f", fallbackDelay * 1000))"
+            )
+            scheduleKeyboardViewportTransitionFallback(after: fallbackDelay)
+            return
+        }
 
+        keyboardViewportTransitionTarget = target
         isKeyboardViewportTransitionActive = true
+        keyboardViewportTransitionAllowsLiveSizeCompletion = allowsLiveSizeCompletion
+        GhosttyRuntimeTrace.perf(
+            "kbd.transition begin target=\(target.traceLabel) live=\(terminalViewportSizeCache.latestLiveSize.width)x\(terminalViewportSizeCache.latestLiveSize.height) liveSizeCompletion=\(allowsLiveSizeCompletion)"
+        )
         terminalViewportStabilizer.keyboardTransitionStarted()
+        scheduleKeyboardViewportTransitionFallback(after: fallbackDelay)
     }
 
     private func completeKeyboardDidShow() {
         GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.keyboard.didShow")
         performKeyboardChromeStateChange {
+            guard shouldCompleteKeyboardViewportTransition(for: .shown) else {
+                GhosttyRuntimeTrace.perf(
+                    "kbd.transition ignoreDidShow target=\(keyboardViewportTransitionTarget.traceLabel)"
+                )
+                return
+            }
+            isAwaitingSystemKeyboardPresentation = false
             if keyboardHandoffTarget == .system {
                 keyboardHandoffTarget = nil
             }
@@ -625,6 +706,24 @@ struct GhosttySurfaceScreen: View {
     private func completeKeyboardDidHide() {
         GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.keyboard.didHide")
         performKeyboardChromeStateChange {
+            guard GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+                notificationTarget: .hidden,
+                keyboardMode: inputCoordinator.keyboardMode,
+                handoffTarget: keyboardHandoffTarget,
+                isDismissSystemKeyboardRequested: inputCoordinator.isDismissSystemKeyboardRequested
+            ) else {
+                GhosttyRuntimeTrace.perf(
+                    "kbd.transition ignoreDidHideByPolicy mode=\(inputCoordinator.keyboardMode.traceLabel) handoff=\(keyboardHandoffTarget.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
+                )
+                return
+            }
+            guard shouldCompleteKeyboardViewportTransition(for: .hidden) else {
+                GhosttyRuntimeTrace.perf(
+                    "kbd.transition ignoreDidHide target=\(keyboardViewportTransitionTarget.traceLabel)"
+                )
+                return
+            }
+            isAwaitingSystemKeyboardPresentation = false
             if keyboardHandoffTarget == .custom {
                 keyboardHandoffTarget = nil
             }
@@ -639,16 +738,125 @@ struct GhosttySurfaceScreen: View {
         }
 
         isKeyboardViewportTransitionActive = false
+        keyboardViewportTransitionTarget = nil
+        keyboardViewportTransitionAllowsLiveSizeCompletion = false
+        keyboardViewportTransitionFallbackToken += 1
+        GhosttyRuntimeTrace.perf(
+            "kbd.transition complete live=\(terminalViewportSizeCache.latestLiveSize.traceLabel)"
+        )
         endTerminalViewportFreezeIfPossible()
     }
 
-    private func endTerminalViewportFreezeIfPossible() {
-        guard selectionSheet == nil else { return }
-        guard keyboardHandoffTarget == nil else { return }
-        guard !isKeyboardViewportTransitionActive else { return }
+    private func shouldCompleteKeyboardViewportTransitionFromLiveSize(
+        _ normalizedSize: CGSize,
+        previousSize: CGSize
+    ) -> Bool {
+        guard isKeyboardViewportTransitionActive else { return false }
+        guard keyboardViewportTransitionAllowsLiveSizeCompletion else { return false }
+        guard normalizedSize != previousSize else { return false }
+        guard normalizedSize.width > 1, normalizedSize.height > 1 else { return false }
+        return true
+    }
 
+    private func completeKeyboardViewportTransitionFromLiveSize(_ liveSize: CGSize) {
+        GhosttyRuntimeTrace.perf(
+            "kbd.transition liveSizeComplete target=\(keyboardViewportTransitionTarget.traceLabel) live=\(liveSize.traceLabel)"
+        )
+        switch keyboardViewportTransitionTarget {
+        case .shown:
+            if keyboardHandoffTarget == .system {
+                keyboardHandoffTarget = nil
+            }
+        case .hidden:
+            if keyboardHandoffTarget == .custom {
+                keyboardHandoffTarget = nil
+            }
+        case .none:
+            break
+        }
+        completeKeyboardViewportTransition()
+    }
+
+    private func completeKeyboardViewportTransitionFromFallback(token: UInt64) {
+        guard keyboardViewportTransitionFallbackToken == token else { return }
+        guard isKeyboardViewportTransitionActive else { return }
+
+        GhosttyRuntimeTrace.perf(
+            "kbd.transition fallbackComplete target=\(keyboardViewportTransitionTarget.traceLabel)"
+        )
+        switch keyboardViewportTransitionTarget {
+        case .shown:
+            if keyboardHandoffTarget == .system {
+                keyboardHandoffTarget = nil
+            }
+        case .hidden:
+            if keyboardHandoffTarget == .custom {
+                keyboardHandoffTarget = nil
+            }
+        case .none:
+            break
+        }
+        completeKeyboardViewportTransition()
+    }
+
+    private func scheduleKeyboardViewportTransitionFallback(after delay: TimeInterval) {
+        keyboardViewportTransitionFallbackToken += 1
+        let token = keyboardViewportTransitionFallbackToken
+        let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
+        GhosttyRuntimeTrace.perf(
+            "kbd.transition scheduleFallback token=\(token) delay_ms=\(String(format: "%.3f", max(0, delay) * 1000))"
+        )
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            completeKeyboardViewportTransitionFromFallback(token: token)
+        }
+    }
+
+    private func keyboardTransitionFallbackDelay(for notification: Notification) -> TimeInterval {
+        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
+            .doubleValue
+            ?? GhosttyKeyboardViewportTransitionTiming.defaultAnimationDuration
+        return min(
+            max(
+                duration + GhosttyKeyboardViewportTransitionTiming.fallbackGraceInterval,
+                GhosttyKeyboardViewportTransitionTiming.minimumFallbackDelay
+            ),
+            GhosttyKeyboardViewportTransitionTiming.maximumFallbackDelay
+        )
+    }
+
+    private func shouldCompleteKeyboardViewportTransition(
+        for event: GhosttyKeyboardViewportTransitionTarget
+    ) -> Bool {
+        keyboardViewportTransitionTarget == nil || keyboardViewportTransitionTarget == event
+    }
+
+    private func endTerminalViewportFreezeIfPossible() {
+        guard selectionSheet == nil else {
+            GhosttyRuntimeTrace.perf("viewport.freeze hold reason=selectionSheet")
+            return
+        }
+        guard keyboardHandoffTarget == nil else {
+            GhosttyRuntimeTrace.perf("viewport.freeze hold reason=handoff target=\(keyboardHandoffTarget.traceLabel)")
+            return
+        }
+        guard !isKeyboardViewportTransitionActive else {
+            GhosttyRuntimeTrace.perf("viewport.freeze hold reason=transition target=\(keyboardViewportTransitionTarget.traceLabel)")
+            return
+        }
+
+        let previousEffectiveSize = terminalViewportStabilizer.effectiveSize(
+            liveSize: terminalViewportSizeCache.latestLiveSize
+        )
         terminalViewportStabilizer.keyboardTransitionEnded(
-            liveSize: latestLiveTerminalViewportSize
+            liveSize: terminalViewportSizeCache.latestLiveSize
+        )
+        let nextEffectiveSize = terminalViewportStabilizer.effectiveSize(
+            liveSize: terminalViewportSizeCache.latestLiveSize
+        )
+        GhosttyRuntimeTrace.perf(
+            "viewport.freeze release live=\(terminalViewportSizeCache.latestLiveSize.traceLabel) previousEffective=\(previousEffectiveSize.traceLabel) nextEffective=\(nextEffectiveSize.traceLabel)"
         )
     }
 
@@ -885,6 +1093,94 @@ struct GhosttyTerminalViewportStabilizer: Equatable {
             frozenSize = fallbackSize
         }
     }
+}
+
+enum GhosttyKeyboardViewportTransitionTarget: Equatable {
+    case shown
+    case hidden
+
+    var traceLabel: String {
+        switch self {
+        case .shown:
+            return "shown"
+        case .hidden:
+            return "hidden"
+        }
+    }
+}
+
+enum GhosttyKeyboardViewportTransitionPolicy {
+    static func shouldBeginVisibilityTransition(
+        notificationTarget: GhosttyKeyboardViewportTransitionTarget,
+        keyboardMode: GhosttyKeyboardChromeMode,
+        handoffTarget: GhosttyKeyboardChromeMode?,
+        isDismissSystemKeyboardRequested: Bool
+    ) -> Bool {
+        switch notificationTarget {
+        case .shown:
+            return keyboardMode == .system || handoffTarget == .system
+
+        case .hidden:
+            guard handoffTarget != .system else { return false }
+            guard !(keyboardMode == .system && !isDismissSystemKeyboardRequested) else {
+                return false
+            }
+            return true
+        }
+    }
+}
+
+private enum GhosttyKeyboardViewportTransitionTiming {
+    static let defaultAnimationDuration: TimeInterval = 0.35
+    static let fallbackGraceInterval: TimeInterval = 0.02
+    static let minimumFallbackDelay: TimeInterval = 0.25
+    static let maximumFallbackDelay: TimeInterval = 1.0
+    static let defaultFallbackDelay: TimeInterval = 1.0
+}
+
+private extension Optional where Wrapped == GhosttyKeyboardViewportTransitionTarget {
+    var traceLabel: String {
+        switch self {
+        case .some(let target):
+            return target.traceLabel
+        case .none:
+            return "nil"
+        }
+    }
+}
+
+private extension Optional where Wrapped == GhosttyKeyboardChromeMode {
+    var traceLabel: String {
+        switch self {
+        case .some(let mode):
+            return mode.traceLabel
+        case .none:
+            return "nil"
+        }
+    }
+}
+
+private extension GhosttyKeyboardChromeMode {
+    var traceLabel: String {
+        switch self {
+        case .hidden:
+            return "hidden"
+        case .system:
+            return "system"
+        case .custom:
+            return "custom"
+        }
+    }
+}
+
+private extension CGSize {
+    var traceLabel: String {
+        "\(width)x\(height)"
+    }
+}
+
+private final class GhosttyTerminalViewportSizeCache {
+    var latestLiveSize = CGSize(width: 1, height: 1)
 }
 
 struct GhosttyPhoneChromeLayout: Equatable {

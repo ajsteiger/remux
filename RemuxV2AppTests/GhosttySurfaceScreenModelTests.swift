@@ -77,6 +77,50 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
+    func testKeyboardViewportTransitionPolicyIgnoresUnrequestedHideWhileShowingSystemKeyboard() {
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+                notificationTarget: .hidden,
+                keyboardMode: .system,
+                handoffTarget: nil,
+                isDismissSystemKeyboardRequested: false
+            )
+        )
+    }
+
+    func testKeyboardViewportTransitionPolicyAllowsRequestedSystemKeyboardHide() {
+        XCTAssertTrue(
+            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+                notificationTarget: .hidden,
+                keyboardMode: .hidden,
+                handoffTarget: nil,
+                isDismissSystemKeyboardRequested: true
+            )
+        )
+    }
+
+    func testKeyboardViewportTransitionPolicyIgnoresHideDuringCustomToSystemHandoff() {
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+                notificationTarget: .hidden,
+                keyboardMode: .system,
+                handoffTarget: .system,
+                isDismissSystemKeyboardRequested: false
+            )
+        )
+    }
+
+    func testKeyboardViewportTransitionPolicyAllowsSystemToCustomHandoffHide() {
+        XCTAssertTrue(
+            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+                notificationTarget: .hidden,
+                keyboardMode: .custom,
+                handoffTarget: .custom,
+                isDismissSystemKeyboardRequested: false
+            )
+        )
+    }
+
     func testRegistryChangesInvalidateScreenModel() async {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),

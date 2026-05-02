@@ -100,6 +100,46 @@ final class RemuxV2AppUITests: XCTestCase {
         waitForLiveTerminalReady(timeout: 60)
     }
 
+    func testLiveSSHKeyboardResizeTraceWhenConfigured() throws {
+        let sessionName = "remux-latency-keyboard-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+
+        waitForLiveTerminalReady(timeout: 60)
+
+        let keyboard = app.buttons["terminal.keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        keyboard.tap()
+        XCTAssertNotNil(
+            waitForKeyboardPresence(true, label: "initial system show")
+        )
+
+        tapCustomKeyboardToggle()
+        XCTAssertNotNil(
+            waitForKeyboardPresence(false, label: "system to custom hide")
+        )
+
+        tapSystemKeyboardToggleFromCustomKeyboard()
+        XCTAssertNotNil(
+            waitForKeyboardPresence(true, label: "custom to system show")
+        )
+
+        app.typeText("echo remux-keyboard-resize\r")
+        keyboard.tap()
+        XCTAssertNotNil(
+            waitForKeyboardPresence(false, label: "system hide")
+        )
+
+        keyboard.tap()
+        XCTAssertNotNil(
+            waitForKeyboardPresence(true, label: "second system show")
+        )
+    }
+
     func testLiveLatencyProfileRealRuntimeWhenConfigured() throws {
         let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
         defer {
@@ -192,6 +232,59 @@ final class RemuxV2AppUITests: XCTestCase {
 
         close.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(2))
+    }
+
+    private func tapCustomKeyboardToggle() {
+        let customByImage = app.buttons.matching(identifier: "square.grid.2x2").firstMatch
+        let customByLabel = app.buttons.matching(
+            NSPredicate(
+                format: "label == %@ OR label CONTAINS[c] %@",
+                "square.grid.2x2",
+                "custom keyboard"
+            )
+        ).firstMatch
+
+        if customByImage.waitForExistence(timeout: 1), customByImage.isHittable {
+            customByImage.tap()
+        } else if customByLabel.exists, customByLabel.isHittable {
+            customByLabel.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.55)).tap()
+        }
+    }
+
+    private func tapSystemKeyboardToggleFromCustomKeyboard() {
+        let abcButton = app.buttons.matching(NSPredicate(format: "label == %@", "abc")).firstMatch
+        XCTAssertTrue(abcButton.waitForExistence(timeout: 5))
+        if abcButton.isHittable {
+            abcButton.tap()
+        } else {
+            abcButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+    }
+
+    @discardableResult
+    private func waitForKeyboardPresence(
+        _ expected: Bool,
+        label: String,
+        timeout: TimeInterval = 3,
+        pollInterval: TimeInterval = 0.01
+    ) -> TimeInterval? {
+        let start = Date()
+        let deadline = start.addingTimeInterval(timeout)
+        let keyboard = app.keyboards.firstMatch
+
+        repeat {
+            if keyboard.exists == expected {
+                let elapsed = Date().timeIntervalSince(start)
+                print("Remux UI perf keyboard.\(expected ? "visible" : "hidden") label=\"\(label)\" elapsed_ms=\(String(format: "%.3f", elapsed * 1000))")
+                return elapsed
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        } while Date() < deadline
+
+        XCTFail("Timed out waiting for keyboard \(expected ? "visible" : "hidden") during \(label)")
+        return nil
     }
 
     private func launchSimulatorApp() {

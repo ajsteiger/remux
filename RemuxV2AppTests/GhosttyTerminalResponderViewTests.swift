@@ -9,6 +9,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 1,
             sendText: { _ in true },
             sendPaste: { _ in true },
@@ -25,6 +26,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 1,
             sendText: { _ in true },
             sendPaste: { _ in true },
@@ -46,6 +48,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 1,
             sendText: {
                 receivedText.append($0)
@@ -67,6 +70,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: false,
+            wantsFirstResponder: false,
             activationToken: 1,
             sendText: {
                 receivedText.append($0)
@@ -89,6 +93,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 1,
             sendText: {
                 rawText.append($0)
@@ -115,6 +120,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 1,
             sendText: { _ in true },
             sendPaste: {
@@ -387,6 +393,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: false,
+            wantsFirstResponder: false,
             activationToken: 7,
             sendText: { _ in true },
             sendPaste: { _ in true },
@@ -394,6 +401,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 7,
             sendText: { _ in true },
             sendPaste: { _ in true },
@@ -402,6 +410,44 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         let becameFirstResponder = await waitUntil { view.isFirstResponder }
         XCTAssertTrue(becameFirstResponder)
+    }
+
+    @MainActor
+    func testResponderCanStayEligibleWithoutRequestingFirstResponder() {
+        let view = GhosttyTerminalResponderUIView()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        window.rootViewController = UIViewController()
+        window.rootViewController?.view.addSubview(view)
+        window.makeKeyAndVisible()
+        defer {
+            view.resignFirstResponder()
+            view.removeFromSuperview()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        view.update(
+            isEnabled: true,
+            wantsFirstResponder: false,
+            activationToken: 3,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+
+        XCTAssertTrue(view.canBecomeFirstResponder)
+        XCTAssertFalse(view.isFirstResponder)
+
+        view.update(
+            isEnabled: true,
+            wantsFirstResponder: true,
+            activationToken: 3,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+
+        XCTAssertTrue(view.isFirstResponder)
     }
 
     @MainActor
@@ -420,6 +466,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 3,
             sendText: { _ in true },
             sendPaste: { _ in true },
@@ -434,6 +481,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         view.update(
             isEnabled: true,
+            wantsFirstResponder: true,
             activationToken: 3,
             sendText: { _ in true },
             sendPaste: { _ in true },

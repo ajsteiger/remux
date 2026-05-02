@@ -3,6 +3,7 @@ import UIKit
 
 struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
     let isEnabled: Bool
+    let wantsFirstResponder: Bool
     let activationToken: Int
     let sendText: (String) -> Bool
     let sendPaste: (String) -> Bool
@@ -18,6 +19,7 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: GhosttyTerminalResponderUIView, context: Context) {
         uiView.update(
             isEnabled: isEnabled,
+            wantsFirstResponder: wantsFirstResponder,
             activationToken: activationToken,
             sendText: { sendText(GhosttyTerminalInputNormalizer.normalize($0)) },
             sendPaste: sendPaste,
@@ -37,7 +39,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     override var canBecomeFirstResponder: Bool { isInputEnabled }
 
     override var keyCommands: [UIKeyCommand]? {
-        guard isInputEnabled else { return [] }
+        guard isInputEnabled, wantsFirstResponder else { return [] }
         return GhosttyTerminalHardwareCommandMapping.keyCommands(
             target: self,
             action: #selector(handleKeyCommand(_:))
@@ -57,6 +59,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     var enablesReturnKeyAutomatically = false
 
     private var isInputEnabled = false
+    private var wantsFirstResponder = false
     private var activationToken = -1
     private var pendingFirstResponderRequest = false
     private var sendTextHandler: ((String) -> Bool)?
@@ -65,15 +68,17 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
 
     func update(
         isEnabled: Bool,
+        wantsFirstResponder: Bool,
         activationToken: Int,
         sendText: @escaping (String) -> Bool,
         sendPaste: @escaping (String) -> Bool,
         sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool
     ) {
         let wasInputEnabled = self.isInputEnabled
+        let previouslyWantedFirstResponder = self.wantsFirstResponder
         let previousActivationToken = self.activationToken
         GhosttyRuntimeTrace.diagnostics(
-            "responder.update enabled=\(isEnabled) wasEnabled=\(wasInputEnabled) token=\(activationToken) previousToken=\(previousActivationToken) firstResponder=\(isFirstResponder) hasWindow=\(window != nil)"
+            "responder.update enabled=\(isEnabled) wasEnabled=\(wasInputEnabled) wantsFirstResponder=\(wantsFirstResponder) previousWantsFirstResponder=\(previouslyWantedFirstResponder) token=\(activationToken) previousToken=\(previousActivationToken) firstResponder=\(isFirstResponder) hasWindow=\(window != nil)"
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
@@ -84,9 +89,12 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
                 "hasWindow": "\(window != nil)",
                 "token": "\(activationToken)",
                 "wasEnabled": "\(wasInputEnabled)",
+                "wantsFirstResponder": "\(wantsFirstResponder)",
+                "previousWantsFirstResponder": "\(previouslyWantedFirstResponder)",
             ]
         )
         self.isInputEnabled = isEnabled
+        self.wantsFirstResponder = wantsFirstResponder
         self.sendTextHandler = sendText
         self.sendPasteHandler = sendPaste
         self.sendKeyEventHandler = sendKeyEvent
@@ -101,10 +109,21 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             return
         }
 
+        guard wantsFirstResponder else {
+            if isFirstResponder {
+                GhosttyRuntimeTrace.diagnostics("responder.update resign not-wanted token=\(activationToken)")
+                resignFirstResponder()
+            }
+            pendingFirstResponderRequest = false
+            self.activationToken = activationToken
+            return
+        }
+
         let activationChanged = activationToken != self.activationToken
         let enabledChanged = !wasInputEnabled
+        let wantsFirstResponderChanged = wantsFirstResponder != previouslyWantedFirstResponder
         let needsFirstResponderRecovery = !isFirstResponder && !pendingFirstResponderRequest
-        guard activationChanged || enabledChanged || needsFirstResponderRecovery else { return }
+        guard activationChanged || enabledChanged || wantsFirstResponderChanged || needsFirstResponderRecovery else { return }
 
         self.activationToken = activationToken
         pendingFirstResponderRequest = true
@@ -272,64 +291,102 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     private func requestFirstResponderIfNeeded() {
         guard pendingFirstResponderRequest else { return }
         guard isInputEnabled else {
-            GhosttyRuntimeTrace.diagnostics("responder.requestFirstResponder skip-disabled token=\(activationToken)")
+            GhosttyRuntimeTrace.perf("responder.requestFirstResponder skip-disabled token=\(activationToken)")
             return
         }
-        guard window != nil else {
-            GhosttyRuntimeTrace.diagnostics("responder.requestFirstResponder skip-no-window token=\(activationToken)")
-            return
-        }
-        guard !isFirstResponder else {
-            GhosttyRuntimeTrace.diagnostics("responder.requestFirstResponder skip-already token=\(activationToken)")
-            GhosttyRuntimeTrace.flowEventIfActive(
-                "terminal.input",
-                event: "responder.becomeFirstResponder.already",
-                fields: ["token": "\(activationToken)"]
-            )
+        guard wantsFirstResponder else {
+            GhosttyRuntimeTrace.perf("responder.requestFirstResponder skip-not-wanted token=\(activationToken)")
             pendingFirstResponderRequest = false
             return
         }
+        guard window != nil else {
+            GhosttyRuntimeTrace.perf("responder.requestFirstResponder skip-no-window token=\(activationToken)")
+            return
+        }
 
-        GhosttyRuntimeTrace.diagnostics(
-            "responder.requestFirstResponder schedule token=\(activationToken) firstResponder=\(isFirstResponder)"
+        GhosttyRuntimeTrace.perf(
+            "responder.requestFirstResponder immediate token=\(activationToken) firstResponder=\(isFirstResponder)"
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "responder.becomeFirstResponder.scheduled",
-            fields: ["token": "\(activationToken)"]
+            fields: [
+                "route": "immediate",
+                "token": "\(activationToken)",
+            ]
+        )
+        if attemptFirstResponderRequest(route: "immediate") {
+            return
+        }
+
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.becomeFirstResponder.scheduled",
+            fields: [
+                "route": "deferred",
+                "token": "\(activationToken)",
+            ]
         )
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             guard self.pendingFirstResponderRequest else { return }
             guard self.isInputEnabled else { return }
+            guard self.wantsFirstResponder else { return }
 
-            let traceStart = GhosttyRuntimeTrace.flowTraceEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
-            GhosttyRuntimeTrace.flowEventIfActive(
-                "terminal.input",
-                event: "responder.becomeFirstResponder.begin",
-                fields: ["token": "\(self.activationToken)"],
-                at: traceStart
-            )
-            let didBecomeFirstResponder = self.becomeFirstResponder()
-            var fields = [
-                "result": "\(didBecomeFirstResponder)",
-                "token": "\(self.activationToken)",
-            ]
-            if let traceStart {
-                fields["elapsed_ms"] = GhosttyRuntimeTrace.elapsedMilliseconds(from: traceStart)
-            }
-            GhosttyRuntimeTrace.diagnostics(
-                "responder.requestFirstResponder result=\(didBecomeFirstResponder) token=\(self.activationToken) firstResponder=\(self.isFirstResponder)"
-            )
-            GhosttyRuntimeTrace.flowEventIfActive(
-                "terminal.input",
-                event: "responder.becomeFirstResponder.end",
-                fields: fields
-            )
-            if didBecomeFirstResponder {
-                self.pendingFirstResponderRequest = false
-            }
+            _ = self.attemptFirstResponderRequest(route: "deferred")
         }
+    }
+
+    @discardableResult
+    private func attemptFirstResponderRequest(route: String) -> Bool {
+        if isFirstResponder {
+            pendingFirstResponderRequest = false
+            GhosttyRuntimeTrace.perf(
+                "responder.requestFirstResponder result=true route=\(route) token=\(activationToken) firstResponder=true"
+            )
+            GhosttyRuntimeTrace.flowEventIfActive(
+                "terminal.input",
+                event: "responder.becomeFirstResponder.already",
+                fields: [
+                    "route": route,
+                    "token": "\(activationToken)",
+                ]
+            )
+            return true
+        }
+
+        let traceStart = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.becomeFirstResponder.begin",
+            fields: [
+                "route": route,
+                "token": "\(activationToken)",
+            ],
+            at: traceStart
+        )
+        let didBecomeFirstResponder = becomeFirstResponder()
+        let elapsedMilliseconds = GhosttyRuntimeTrace.elapsedMilliseconds(from: traceStart)
+        GhosttyRuntimeTrace.perf(
+            "responder.requestFirstResponder result=\(didBecomeFirstResponder) route=\(route) token=\(activationToken) firstResponder=\(isFirstResponder) elapsed_ms=\(elapsedMilliseconds)"
+        )
+        GhosttyRuntimeTrace.diagnostics(
+            "responder.requestFirstResponder result=\(didBecomeFirstResponder) route=\(route) token=\(activationToken) firstResponder=\(isFirstResponder)"
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.becomeFirstResponder.end",
+            fields: [
+                "elapsed_ms": elapsedMilliseconds,
+                "result": "\(didBecomeFirstResponder)",
+                "route": route,
+                "token": "\(activationToken)",
+            ]
+        )
+        if didBecomeFirstResponder {
+            pendingFirstResponderRequest = false
+        }
+        return didBecomeFirstResponder
     }
 
     private static func sortPressesByTimestamp(_ lhs: UIPress, _ rhs: UIPress) -> Bool {

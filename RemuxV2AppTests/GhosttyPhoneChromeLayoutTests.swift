@@ -269,5 +269,11 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
                 handoffTarget: .system
             )
         )
+        XCTAssertTrue(
+            GhosttyKeyboardChromeReservation.reservesSystemKeyboardReplacement(
+                handoffTarget: nil,
+                isAwaitingSystemKeyboardPresentation: true
+            )
+        )
     }
 }

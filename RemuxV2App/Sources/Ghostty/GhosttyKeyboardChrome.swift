@@ -77,9 +77,10 @@ enum GhosttyKeyboardChromeDisplayMode {
 
 enum GhosttyKeyboardChromeReservation {
     static func reservesSystemKeyboardReplacement(
-        handoffTarget: GhosttyKeyboardChromeMode?
+        handoffTarget: GhosttyKeyboardChromeMode?,
+        isAwaitingSystemKeyboardPresentation: Bool = false
     ) -> Bool {
-        handoffTarget == .system
+        handoffTarget == .system || isAwaitingSystemKeyboardPresentation
     }
 }
 
