@@ -375,6 +375,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
 
     func send(_ data: Data) async throws {
         guard !data.isEmpty else { return }
+        guard !isClosed else { throw SSHTmuxControlTransportError.closed }
 
         let start = GhosttyRuntimeTrace.nowNanos()
         guard let connection else {

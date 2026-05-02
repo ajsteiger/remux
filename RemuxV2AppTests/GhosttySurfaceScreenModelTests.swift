@@ -1024,6 +1024,25 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "key dropped: no focused tmux pane")
     }
 
+    func testModelRejectsInputWhenTransportIsNotRunningEvenWithFocusedSurface() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        var receivedInput: [String] = []
+        let managed = Self.managedSurface(sendInput: {
+            receivedInput.append($0)
+            return true
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertFalse(model.sendInputToFocusedSurface("echo stale\r"))
+        XCTAssertTrue(receivedInput.isEmpty)
+        XCTAssertEqual(model.debugStatus, "input dropped: terminal transport unavailable")
+    }
+
     func testModelPasteWithoutFocusedSurfaceUpdatesDebugStatus() {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),

@@ -228,4 +228,33 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             XCTFail("unexpected error: \(error)")
         }
     }
+
+    func testSendAfterCloseFailsInsteadOfQueueingBytes() async {
+        let server = SavedServer(displayName: "Closed Host", host: "example.com", username: "tester")
+        let trustedHostStore = TrustedHostStore(
+            rootURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        )
+        let transport = SSHTmuxControlTransport(
+            configuration: SSHTmuxControlConfiguration(
+                host: server.host,
+                authenticationMethod: {
+                    .passwordBased(username: server.username, password: "pw")
+                },
+                hostKeyValidator: trustedHostStore.validator(for: server),
+                sessionName: "base"
+            )
+        )
+
+        await transport.close()
+
+        do {
+            try await transport.send(Data("send-keys -t %1 a\n".utf8))
+            XCTFail("expected closed transport failure")
+        } catch let error as SSHTmuxControlTransportError {
+            XCTAssertEqual(error, .closed)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
 }

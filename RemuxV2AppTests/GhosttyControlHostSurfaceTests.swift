@@ -118,6 +118,28 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         sequencer.close()
     }
 
+    func testWriteSequencerFailureClosesTransportAndRejectsLaterWrites() async {
+        let transport = RecordingTmuxControlTransport(sendError: .disconnected)
+        let failureSink = RecordingFailureSink()
+        let sequencer = TmuxControlWriteSequencer(
+            transport: transport,
+            onFailure: { error in
+                await failureSink.record(error)
+            }
+        )
+
+        XCTAssertTrue(sequencer.enqueue(Data("send-keys -t %1 a\n".utf8)))
+
+        let failed = await waitUntilAsync {
+            let recordedErrors = await failureSink.recordedErrors()
+            let closeCount = await transport.closeCount()
+            return recordedErrors == [.disconnected] && closeCount == 1
+        }
+
+        XCTAssertTrue(failed)
+        XCTAssertFalse(sequencer.enqueue(Data("send-keys -t %1 b\n".utf8)))
+    }
+
     func testLatencyProbeStoreDetectsMarkersSplitAcrossChunks() {
         let store = GhosttyLatencyProbeStore()
 
@@ -264,6 +286,24 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertEqual(host.lastError as? TestTransportError, .disconnected)
     }
 
+    func testOutboundWriteFailureStopsPumpWithoutMarkingBackingExited() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let host = GhosttyControlHostSurface(
+            transport: transport,
+            surface: surface
+        )
+
+        host.start()
+        host.failOutboundWrite(TestTransportError.disconnected)
+        await transport.emit(Data("%output %1 ignored\r\n".utf8))
+
+        XCTAssertFalse(host.isRunning)
+        XCTAssertEqual(host.lastError as? TestTransportError, .disconnected)
+        XCTAssertTrue(surface.backingExited.isEmpty)
+        XCTAssertTrue(surface.processedOutput.isEmpty)
+    }
+
     func testDeterministicTransportFeedsHostSurfaceThroughProductionContract() async {
         let first = Data("Remux native Ghostty surface\n".utf8)
         let second = Data("full libghostty: online\n".utf8)
@@ -315,11 +355,25 @@ private enum TestTransportError: Error, Equatable {
     case disconnected
 }
 
+private actor RecordingFailureSink {
+    private var errors: [TestTransportError] = []
+
+    func record(_ error: any Error) {
+        guard let error = error as? TestTransportError else { return }
+        errors.append(error)
+    }
+
+    func recordedErrors() -> [TestTransportError] {
+        errors
+    }
+}
+
 private actor RecordingTmuxControlTransport: TmuxControlTransport {
     nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
 
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
     private let sendDelay: Duration?
+    private let sendError: TestTransportError?
     private var commands: [Data] = []
     private var resizes: [ResizeEvent] = []
     private var closes = 0
@@ -331,8 +385,9 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
         let height: UInt32
     }
 
-    init(sendDelay: Duration? = nil) {
+    init(sendDelay: Duration? = nil, sendError: TestTransportError? = nil) {
         self.sendDelay = sendDelay
+        self.sendError = sendError
         var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
         receivedBytes = AsyncThrowingStream { continuation in
             capturedContinuation = continuation
@@ -347,6 +402,9 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
     func send(_ data: Data) async throws {
         if let sendDelay {
             try await Task.sleep(for: sendDelay)
+        }
+        if let sendError {
+            throw sendError
         }
         commands.append(data)
     }

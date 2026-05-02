@@ -542,7 +542,7 @@ protocol GhosttyControlSurface: AnyObject {
 }
 
 final class TmuxControlWriteSequencer: @unchecked Sendable {
-    typealias FailureHandler = @Sendable (_ error: any Error) -> Void
+    typealias FailureHandler = @Sendable (_ error: any Error) async -> Void
 
     private let transport: any TmuxControlTransport
     private let onFailure: FailureHandler?
@@ -565,26 +565,26 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
         guard !data.isEmpty else { return true }
 
         let enqueueStart = GhosttyRuntimeTrace.nowNanos()
-        let shouldStartDrain: Bool = withLockedState {
-            guard !isClosed else { return false }
+        let enqueueResult: (accepted: Bool, shouldStartDrain: Bool) = withLockedState {
+            guard !isClosed else { return (false, false) }
 
             pendingWrites.append(data)
-            guard !isDraining else { return false }
+            guard !isDraining else { return (true, false) }
 
             isDraining = true
-            return true
+            return (true, true)
         }
         GhosttyRuntimeTrace.latency(
-            "writeSequencer.enqueue bytes=\(data.count) startDrain=\(shouldStartDrain) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: enqueueStart)) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+            "writeSequencer.enqueue bytes=\(data.count) accepted=\(enqueueResult.accepted) startDrain=\(enqueueResult.shouldStartDrain) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: enqueueStart)) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )
 
-        if shouldStartDrain {
+        if enqueueResult.shouldStartDrain {
             Task { [weak self] in
                 await self?.drain()
             }
         }
 
-        return true
+        return enqueueResult.accepted
     }
 
     func close() {
@@ -611,7 +611,7 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
                     "writeSequencer.send failed bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart)) error=\(String(describing: error))"
                 )
                 close()
-                onFailure?(error)
+                await onFailure?(error)
                 await transport.close()
                 return
             }
@@ -648,6 +648,7 @@ final class GhosttyControlHostSurface {
     private var pumpTask: Task<Void, Never>?
     private var receivedByteCount = 0
     private var capturedFirstChunk = false
+    private var didComplete = false
 
     private(set) var isRunning = false
     private(set) var lastError: (any Error)?
@@ -667,6 +668,7 @@ final class GhosttyControlHostSurface {
 
         isRunning = true
         lastError = nil
+        didComplete = false
         pumpTask = Task { [weak self] in
             guard let self else { return }
 
@@ -745,10 +747,17 @@ final class GhosttyControlHostSurface {
         }
     }
 
+    func failOutboundWrite(_ error: any Error) {
+        pumpTask?.cancel()
+        pumpTask = nil
+        complete(error: error, markBackingExited: false)
+    }
+
     func stop(finalCommand: Data? = nil) {
         pumpTask?.cancel()
         pumpTask = nil
         isRunning = false
+        didComplete = true
         surface?.setBackingExited(true)
 
         Task { [transport, finalCommand] in
@@ -767,6 +776,8 @@ final class GhosttyControlHostSurface {
         error: (any Error)?,
         markBackingExited: Bool = true
     ) {
+        guard !didComplete else { return }
+        didComplete = true
         lastError = error
         isRunning = false
         pumpTask = nil

@@ -130,8 +130,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 transport: transport,
                 onFailure: { [weak self] error in
                     NSLog("Remux Ghostty transport write failed: %@", String(describing: error))
-                    Task { @MainActor [weak self] in
-                        self?.debugStatus = "tmux transport write failed: \(String(describing: error))"
+                    await MainActor.run { [weak self] in
+                        self?.handleTransportWriteFailure(error)
                     }
                 }
             )
@@ -246,6 +246,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
+            debugStatus = "input dropped: no focused tmux pane"
+            GhosttyRuntimeTrace.latency(
+                "model.sendInput rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            return false
+        }
+        guard canSendTerminalInput(kind: "input") else {
+            GhosttyRuntimeTrace.latency(
+                "model.sendInput rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            return false
+        }
         let accepted = surfaceRegistry.sendInputToFocusedSurface(text)
         if !accepted {
             debugStatus = "input dropped: no focused tmux pane"
@@ -277,6 +290,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
+            debugStatus = "paste dropped: no focused tmux pane"
+            GhosttyRuntimeTrace.latency(
+                "model.sendPaste rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            return false
+        }
+        guard canSendTerminalInput(kind: "paste") else {
+            GhosttyRuntimeTrace.latency(
+                "model.sendPaste rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            return false
+        }
         let accepted = surfaceRegistry.sendPasteToFocusedSurface(text)
         if !accepted {
             debugStatus = "paste dropped: no focused tmux pane"
@@ -310,6 +336,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendKey begin event=\(event) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
+            debugStatus = "key dropped: no focused tmux pane"
+            GhosttyRuntimeTrace.latency(
+                "model.sendKey rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            return false
+        }
+        guard canSendTerminalInput(kind: "key") else {
+            GhosttyRuntimeTrace.latency(
+                "model.sendKey rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            )
+            return false
+        }
         let accepted = surfaceRegistry.sendKeyEventToFocusedSurface(event)
         if !accepted {
             debugStatus = "key dropped: no focused tmux pane"
@@ -667,6 +706,32 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
         state = .failed(String(describing: error))
         debugStatus = String(describing: error)
+    }
+
+    private func handleTransportWriteFailure(_ error: any Error) {
+        guard state != .idle else { return }
+
+        let message = "tmux transport write failed: \(String(describing: error))"
+        GhosttyRuntimeTrace.flowEnd(
+            sessionOpenFlowID,
+            event: "model.transport.writeFailed",
+            fields: ["error": String(describing: error)]
+        )
+        transportStartToken &+= 1
+        transportWriteSequencer?.close()
+        transportWriteSequencer = nil
+        transport = nil
+        hostSurface?.failOutboundWrite(error)
+        state = .failed(message)
+        debugStatus = message
+    }
+
+    private func canSendTerminalInput(kind: String) -> Bool {
+        guard state == .running, transportWriteSequencer != nil else {
+            debugStatus = "\(kind) dropped: terminal transport unavailable"
+            return false
+        }
+        return true
     }
 
     private func updateHostDisplay(
