@@ -61,6 +61,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var isPanGestureActive = false
     private var didNavigateForActivePan = false
     private var activeSelectionSurfaceID: UUID?
+    private var presentationOverlayView: UIView?
+    private var presentationOverlayPendingSurfaceID: UUID?
     private var selectionCopyMenuSourcePoint = CGPoint.zero
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
@@ -98,6 +100,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     ) {
         let previousTopLevel = self.topLevel
         let previousRegistry = self.registry
+        updatePresentationOverlay(
+            pendingSurfaceID: registry.pendingPhonePresentationSurfaceIDForView
+        )
         self.topLevel = topLevel
         self.registry = registry
         self.onSurfaceTap = onSurfaceTap
@@ -107,6 +112,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(topLevel?.id)) \(registry.diagnosticSelectionSummary())"
         )
         syncAttachedViews()
+        layoutPresentationOverlay()
         if previousTopLevel != topLevel || previousRegistry !== registry {
             setNeedsLayout()
         }
@@ -117,6 +123,38 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         syncAttachedViews()
         layoutVisibleTree()
+        layoutPresentationOverlay()
+    }
+
+    private func updatePresentationOverlay(pendingSurfaceID: UUID?) {
+        guard let pendingSurfaceID else {
+            clearPresentationOverlay()
+            return
+        }
+        guard presentationOverlayPendingSurfaceID != pendingSurfaceID else { return }
+
+        clearPresentationOverlay()
+        guard bounds.width > 1, bounds.height > 1 else { return }
+        guard let snapshot = snapshotView(afterScreenUpdates: false) else { return }
+
+        snapshot.frame = bounds
+        snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        snapshot.isUserInteractionEnabled = false
+        addSubview(snapshot)
+        presentationOverlayView = snapshot
+        presentationOverlayPendingSurfaceID = pendingSurfaceID
+    }
+
+    private func clearPresentationOverlay() {
+        presentationOverlayView?.removeFromSuperview()
+        presentationOverlayView = nil
+        presentationOverlayPendingSurfaceID = nil
+    }
+
+    private func layoutPresentationOverlay() {
+        guard let presentationOverlayView else { return }
+        presentationOverlayView.frame = bounds
+        bringSubviewToFront(presentationOverlayView)
     }
 
     private func syncAttachedViews() {
@@ -180,7 +218,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     private func layoutVisibleTree() {
         guard let registry, let topLevel else { return }
-        let focusedSurfaceID = topLevel.resolvedFocusedLeafID
+        let focusedSurfaceID = registry.selectedActiveLeafID
         layout(
             node: topLevel.phonePresentedTree.root,
             in: bounds,

@@ -431,6 +431,33 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     }
 
     @MainActor
+    func hasRenderablePreviewText(maxColumns: UInt16 = 120, maxRows: UInt16 = 8) -> Bool {
+        var snapshot = ghostty_surface_preview_snapshot_s()
+        let options = ghostty_surface_preview_options_s(
+            max_cols: maxColumns,
+            max_rows: maxRows
+        )
+        guard ghostty_surface_preview_snapshot(storage.surface, options, &snapshot) else {
+            return false
+        }
+        defer {
+            ghostty_surface_free_preview_snapshot(storage.surface, &snapshot)
+        }
+
+        guard snapshot.text_len > 0, let text = snapshot.text else {
+            return false
+        }
+
+        let bytes = UnsafeBufferPointer(
+            start: UnsafeRawPointer(text).assumingMemoryBound(to: UInt8.self),
+            count: Int(snapshot.text_len)
+        )
+        return bytes.contains { byte in
+            byte > 0x20 && byte != 0x7F
+        }
+    }
+
+    @MainActor
     func setFocused(_ focused: Bool) {
         GhosttyRuntimeTrace.diagnostics(
             "control.setFocused handle=\(String(describing: storage.surface)) focused=\(focused) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"

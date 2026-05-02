@@ -68,6 +68,9 @@ func ghosttyDiagnosticSurfaceSize(_ size: ghostty_surface_size_s) -> String {
 
 @MainActor
 final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
+    private static let phonePresentationRefreshRetryDelay: Duration = .milliseconds(16)
+    private static let phonePresentationRefreshMaxAttempts = 125
+
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
     @Published private(set) var selectedTopLevelID: UUID?
     @Published private(set) var debugSummary = "runtime callbacks: none"
@@ -80,10 +83,26 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
     private var interactiveReadinessTracker = GhosttyInteractiveReadinessTracker()
+    private var pendingPhonePresentationSurfaceID: UUID? {
+        didSet {
+            guard oldValue != pendingPhonePresentationSurfaceID else { return }
+            pendingPhonePresentationRefreshTask?.cancel()
+            pendingPhonePresentationRefreshTask = nil
+            pendingPhonePresentationRefreshAttempt = 0
+        }
+    }
+    private var pendingPhonePresentationRefreshTask: Task<Void, Never>?
+    private var pendingPhonePresentationRefreshAttempt = 0
+    private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
+    private var contentReadySurfaceIDs: Set<UUID> = []
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
         guard let selectedTopLevelID else { return nil }
         return topLevels.first(where: { $0.id == selectedTopLevelID })
+    }
+
+    var pendingPhonePresentationSurfaceIDForView: UUID? {
+        pendingPhonePresentationSurfaceID
     }
 
     var selectedTopLevelIndex: Int? {
@@ -100,6 +119,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
         interactiveReadinessTracker.reset()
+        pendingPhonePresentationSurfaceID = nil
+        pendingPhonePresentationTrace = nil
+        contentReadySurfaceIDs = []
         notifyChanged()
     }
 
@@ -107,13 +129,20 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.diagnostics(
             "selectTopLevel begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
         )
-        guard topLevels.contains(where: { $0.id == id }) else {
+        guard let target = topLevels.first(where: { $0.id == id }) else {
             GhosttyRuntimeTrace.diagnostics(
                 "selectTopLevel missing reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
             )
             return
         }
+        let previousPresentation = currentPhonePresentationTarget()
         selectedTopLevelID = id
+        if let targetLeafID = target.resolvedFocusedLeafID {
+            stagePhonePresentationIfNeeded(
+                targetSurfaceID: targetLeafID,
+                previousPresentation: previousPresentation
+            )
+        }
         GhosttyRuntimeTrace.diagnostics(
             "selectTopLevel end reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
         )
@@ -134,7 +163,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             from: currentIndex,
             count: topLevels.count
         )
+        let previousPresentation = currentPhonePresentationTarget()
         selectedTopLevelID = topLevels[nextIndex].id
+        if let targetLeafID = topLevels[nextIndex].resolvedFocusedLeafID {
+            stagePhonePresentationIfNeeded(
+                targetSurfaceID: targetLeafID,
+                previousPresentation: previousPresentation
+            )
+        }
         GhosttyRuntimeTrace.diagnostics(
             "selectAdjacentTopLevel end reason=\(reason) current=\(currentIndex) next=\(nextIndex) \(diagnosticSelectionSummary())"
         )
@@ -146,10 +182,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.diagnostics(
             "selectSurface begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
         )
+        let previousPresentation = currentPhonePresentationTarget()
         for index in topLevels.indices {
             guard topLevels[index].tree.contains(id) else { continue }
             topLevels[index].focusedLeafID = id
             selectedTopLevelID = topLevels[index].id
+            stagePhonePresentationIfNeeded(
+                targetSurfaceID: id,
+                previousPresentation: previousPresentation
+            )
             GhosttyRuntimeTrace.diagnostics(
                 "selectSurface end reason=\(reason) target=\(shortID(id)) topIndex=\(index) \(diagnosticSelectionSummary())"
             )
@@ -176,7 +217,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             count: leafIDs.count
         )
 
+        let previousPresentation = currentPhonePresentationTarget()
         topLevels[topLevelIndex].focusedLeafID = leafIDs[nextIndex]
+        stagePhonePresentationIfNeeded(
+            targetSurfaceID: leafIDs[nextIndex],
+            previousPresentation: previousPresentation
+        )
         notifyChanged()
         return true
     }
@@ -193,6 +239,282 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         selectedTopLevel?.resolvedFocusedLeafID
     }
 
+    private struct PhonePresentationTarget {
+        let leafID: UUID
+    }
+
+    private struct PendingPhonePresentationTrace {
+        let operation: String
+        let flowStartedAt: UInt64
+        let pendingStartedAt: UInt64
+        let previousSurfaceID: UUID
+        let targetSurfaceID: UUID
+    }
+
+    private func currentPhonePresentationTarget() -> PhonePresentationTarget? {
+        guard let leafID = selectedTopLevel?.resolvedFocusedLeafID else { return nil }
+
+        return PhonePresentationTarget(leafID: leafID)
+    }
+
+    private func stagePhonePresentationIfNeeded(
+        targetSurfaceID: UUID,
+        previousPresentation: PhonePresentationTarget?
+    ) {
+        guard topLevels.contains(where: { $0.tree.contains(targetSurfaceID) }) else {
+            clearPendingPhonePresentation()
+            return
+        }
+
+        if surfaceHasRenderableContent(targetSurfaceID) {
+            if pendingPhonePresentationSurfaceID == targetSurfaceID {
+                tracePendingPhonePresentation(
+                    event: "ready",
+                    surfaceID: targetSurfaceID,
+                    reason: "selection.renderable"
+                )
+            }
+            clearPendingPhonePresentation()
+            return
+        }
+
+        if previousPresentation == nil {
+            clearPendingPhonePresentation()
+            return
+        }
+
+        guard let previousPresentation else { return }
+        if previousPresentation.leafID == targetSurfaceID {
+            if pendingPhonePresentationSurfaceID == targetSurfaceID {
+                schedulePendingPhonePresentationRefresh(
+                    surfaceID: targetSurfaceID,
+                    reason: "selection.repeat"
+                )
+            } else {
+                clearPendingPhonePresentation()
+            }
+            return
+        }
+
+        pendingPhonePresentationTrace = makePendingPhonePresentationTrace(
+            previousSurfaceID: previousPresentation.leafID,
+            targetSurfaceID: targetSurfaceID
+        )
+        pendingPhonePresentationSurfaceID = targetSurfaceID
+        tracePendingPhonePresentation(
+            event: "pending",
+            surfaceID: targetSurfaceID,
+            reason: "presentation.pending"
+        )
+
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.newWindow",
+            event: "ui.presentation.pending",
+            fields: [
+                "previous": ghosttyDiagnosticShortID(previousPresentation.leafID),
+                "target": ghosttyDiagnosticShortID(targetSurfaceID),
+            ]
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.splitPane",
+            event: "ui.presentation.pending",
+            fields: [
+                "previous": ghosttyDiagnosticShortID(previousPresentation.leafID),
+                "target": ghosttyDiagnosticShortID(targetSurfaceID),
+            ]
+        )
+        schedulePendingPhonePresentationRefresh(
+            surfaceID: targetSurfaceID,
+            reason: "presentation.pending"
+        )
+    }
+
+    private func clearPendingPhonePresentation() {
+        pendingPhonePresentationSurfaceID = nil
+        pendingPhonePresentationTrace = nil
+    }
+
+    private func makePendingPhonePresentationTrace(
+        previousSurfaceID: UUID,
+        targetSurfaceID: UUID
+    ) -> PendingPhonePresentationTrace {
+        let now = GhosttyRuntimeTrace.nowNanos()
+        if let startedAt = GhosttyRuntimeTrace.flowStartIfActive("tmux.splitPane") {
+            return PendingPhonePresentationTrace(
+                operation: "tmux.splitPane",
+                flowStartedAt: startedAt,
+                pendingStartedAt: now,
+                previousSurfaceID: previousSurfaceID,
+                targetSurfaceID: targetSurfaceID
+            )
+        }
+        if let startedAt = GhosttyRuntimeTrace.flowStartIfActive("tmux.newWindow") {
+            return PendingPhonePresentationTrace(
+                operation: "tmux.newWindow",
+                flowStartedAt: startedAt,
+                pendingStartedAt: now,
+                previousSurfaceID: previousSurfaceID,
+                targetSurfaceID: targetSurfaceID
+            )
+        }
+
+        return PendingPhonePresentationTrace(
+            operation: "selection",
+            flowStartedAt: now,
+            pendingStartedAt: now,
+            previousSurfaceID: previousSurfaceID,
+            targetSurfaceID: targetSurfaceID
+        )
+    }
+
+    private func tracePendingPhonePresentation(
+        event: String,
+        surfaceID: UUID,
+        reason: String
+    ) {
+        guard let trace = pendingPhonePresentationTrace,
+              trace.targetSurfaceID == surfaceID
+        else {
+            return
+        }
+
+        let now = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.flowEventSince(
+            "ui.presentation",
+            event: event,
+            startedAt: trace.flowStartedAt,
+            fields: [
+                "operation": trace.operation,
+                "pending_ms": GhosttyRuntimeTrace.elapsedMilliseconds(
+                    from: trace.pendingStartedAt,
+                    to: now
+                ),
+                "previous": ghosttyDiagnosticShortID(trace.previousSurfaceID),
+                "reason": reason,
+                "target": ghosttyDiagnosticShortID(trace.targetSurfaceID),
+            ],
+            at: now
+        )
+    }
+
+    private func surfaceHasRenderableContent(_ surfaceID: UUID) -> Bool {
+        if contentReadySurfaceIDs.contains(surfaceID) { return true }
+        guard let surface = managedSurfaces[surfaceID] else { return false }
+        guard surface.hasRenderableContent() else { return false }
+
+        contentReadySurfaceIDs.insert(surfaceID)
+        return true
+    }
+
+    @discardableResult
+    private func promotePendingPhonePresentationIfReady(
+        surfaceID: UUID,
+        reason: String
+    ) -> Bool {
+        guard pendingPhonePresentationSurfaceID == surfaceID else { return true }
+        guard selectedActiveLeafID == surfaceID else {
+            clearPendingPhonePresentation()
+            return true
+        }
+        guard topLevels.contains(where: { $0.tree.contains(surfaceID) }) else {
+            clearPendingPhonePresentation()
+            return true
+        }
+        guard surfaceHasRenderableContent(surfaceID) else { return false }
+
+        tracePendingPhonePresentation(
+            event: "ready",
+            surfaceID: surfaceID,
+            reason: reason
+        )
+        clearPendingPhonePresentation()
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.newWindow",
+            event: "ui.presentation.ready",
+            fields: [
+                "reason": reason,
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.splitPane",
+            event: "ui.presentation.ready",
+            fields: [
+                "reason": reason,
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
+        notifyChanged()
+        return true
+    }
+
+    private func schedulePendingPhonePresentationRefresh(
+        surfaceID: UUID,
+        reason: String
+    ) {
+        guard pendingPhonePresentationSurfaceID == surfaceID else { return }
+
+        pendingPhonePresentationRefreshTask?.cancel()
+        pendingPhonePresentationRefreshTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+
+            self.pendingPhonePresentationRefreshTask = nil
+            let didPromote = self.promotePendingPhonePresentationIfReady(
+                surfaceID: surfaceID,
+                reason: reason
+            )
+            guard !didPromote, self.pendingPhonePresentationSurfaceID == surfaceID else { return }
+
+            self.pendingPhonePresentationRefreshAttempt += 1
+            guard self.pendingPhonePresentationRefreshAttempt <= Self.phonePresentationRefreshMaxAttempts else {
+                self.completePendingPhonePresentationAfterTimeout(
+                    surfaceID: surfaceID,
+                    reason: reason
+                )
+                return
+            }
+
+            try? await Task.sleep(for: Self.phonePresentationRefreshRetryDelay)
+            guard !Task.isCancelled else { return }
+
+            self.schedulePendingPhonePresentationRefresh(
+                surfaceID: surfaceID,
+                reason: "content.retry"
+            )
+        }
+    }
+
+    private func completePendingPhonePresentationAfterTimeout(
+        surfaceID: UUID,
+        reason: String
+    ) {
+        guard pendingPhonePresentationSurfaceID == surfaceID else { return }
+
+        tracePendingPhonePresentation(
+            event: "timeout",
+            surfaceID: surfaceID,
+            reason: reason
+        )
+        clearPendingPhonePresentation()
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.newWindow",
+            event: "ui.presentation.timeout",
+            fields: [
+                "reason": reason,
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.splitPane",
+            event: "ui.presentation.timeout",
+            fields: [
+                "reason": reason,
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
+        notifyChanged()
+    }
+
     func diagnosticSelectionSummary() -> String {
         let selectedIndex = selectedTopLevelIndex.map(String.init) ?? "nil"
         let topLevelSummary = topLevels.enumerated().map { index, topLevel in
@@ -206,7 +528,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return "\(selectedMarker)#\(index):\(ghosttyDiagnosticShortID(topLevel.id)) focus=\(ghosttyDiagnosticShortID(topLevel.focusedLeafID)) resolved=\(ghosttyDiagnosticShortID(topLevel.resolvedFocusedLeafID)) leaves=[\(leafSummary)]"
         }.joined(separator: " | ")
 
-        return "selectedIndex=\(selectedIndex) selectedTop=\(ghosttyDiagnosticShortID(selectedTopLevelID)) activeLeaf=\(ghosttyDiagnosticShortID(selectedActiveLeafID)) topCount=\(topLevels.count) {\(topLevelSummary)}"
+        return "selectedIndex=\(selectedIndex) selectedTop=\(ghosttyDiagnosticShortID(selectedTopLevelID)) activeLeaf=\(ghosttyDiagnosticShortID(selectedActiveLeafID)) pendingPresentation=\(ghosttyDiagnosticShortID(pendingPhonePresentationSurfaceID)) topCount=\(topLevels.count) {\(topLevelSummary)}"
     }
 
     private func shortID(_ id: UUID?) -> String {
@@ -429,6 +751,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             updateDebugSummary("create_surface failed")
             return nil
         }
+        let previousPresentation = currentPhonePresentationTarget()
 
         switch configPtr.pointee.context {
         case GHOSTTY_SURFACE_CONTEXT_WINDOW, GHOSTTY_SURFACE_CONTEXT_TAB:
@@ -439,6 +762,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
             topLevels.append(topLevel)
             selectedTopLevelID = topLevel.id
+            stagePhonePresentationIfNeeded(
+                targetSurfaceID: managed.id,
+                previousPresentation: previousPresentation
+            )
             traceTopologyReady(
                 "tmux.newWindow",
                 event: "registry.createSurface.window",
@@ -703,6 +1030,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
 
         switch action.tag {
+        case GHOSTTY_ACTION_RENDER:
+            schedulePendingPhonePresentationRefresh(
+                surfaceID: id,
+                reason: "runtime.render"
+            )
+
         case GHOSTTY_ACTION_SCROLLBAR:
             let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
             surface.updateScrollState(state)
@@ -720,6 +1053,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
 #if DEBUG
     func registerManagedSurfaceForTesting(_ managed: GhosttyManagedSurface) {
+        let previousPresentation = currentPhonePresentationTarget()
         register([managed])
         let topLevel = GhosttyTopLevelSurface(
             tree: .init(root: .leaf(managed.id)),
@@ -727,6 +1061,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
         topLevels.append(topLevel)
         selectedTopLevelID = topLevel.id
+        stagePhonePresentationIfNeeded(
+            targetSurfaceID: managed.id,
+            previousPresentation: previousPresentation
+        )
         updateDebugSummary("test surface registered")
     }
 
@@ -754,6 +1092,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         selectedTopLevelID = id
     }
 
+    func refreshPhonePresentationReadinessForTesting(surfaceID: UUID) {
+        promotePendingPhonePresentationIfReady(
+            surfaceID: surfaceID,
+            reason: "test"
+        )
+    }
+
     func managedSurfaceIDForTesting(handle: ghostty_surface_t?) -> UUID? {
         guard let handle else { return nil }
         return surfaceIDsByHandle[handle]
@@ -768,6 +1113,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         replacingTopLevelID: UUID?
     ) {
         let previousSelectedTopLevelID = selectedTopLevelID
+        let previousPresentation = currentPhonePresentationTarget()
         register(leafSurfaces)
 
         if let parentSurfaceID,
@@ -786,6 +1132,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 replacedTopLevelID: updatedTopLevels[index].id,
                 previousSelectedTopLevelID: previousSelectedTopLevelID
             )
+            if selectedTopLevelID == updatedTopLevels[index].id,
+               let targetSurfaceID = updatedTopLevels[index].resolvedFocusedLeafID {
+                stagePhonePresentationIfNeeded(
+                    targetSurfaceID: targetSurfaceID,
+                    previousPresentation: previousPresentation
+                )
+            }
             updateDebugSummary("replaced surface tree")
             return
         }
@@ -806,6 +1159,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 replacedTopLevelID: updatedTopLevels[index].id,
                 previousSelectedTopLevelID: previousSelectedTopLevelID
             )
+            if selectedTopLevelID == updatedTopLevels[index].id,
+               let targetSurfaceID = updatedTopLevels[index].resolvedFocusedLeafID {
+                stagePhonePresentationIfNeeded(
+                    targetSurfaceID: targetSurfaceID,
+                    previousPresentation: previousPresentation
+                )
+            }
             updateDebugSummary("replaced surface tree")
             return
         }
@@ -819,6 +1179,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             preferredID: previousSelectedTopLevelID,
             fallbackID: topLevel.id
         )
+        if selectedTopLevelID == topLevel.id,
+           let targetSurfaceID = topLevel.resolvedFocusedLeafID {
+            stagePhonePresentationIfNeeded(
+                targetSurfaceID: targetSurfaceID,
+                previousPresentation: previousPresentation
+            )
+        }
         updateDebugSummary("created surface tree")
     }
 
@@ -907,12 +1274,17 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 return false
             }
 
+            let previousPresentation = currentPhonePresentationTarget()
             register([managed])
             topLevels[index].tree = tree
             topLevels[index].focusedLeafID = managed.id
             selectedTopLevelID = normalizedSelectionID(
                 preferredID: selectedTopLevelID,
                 fallbackID: topLevels[index].id
+            )
+            stagePhonePresentationIfNeeded(
+                targetSurfaceID: managed.id,
+                previousPresentation: previousPresentation
             )
             notifyChanged()
             return true
@@ -1019,6 +1391,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
+        schedulePendingPhonePresentationRefresh(
+            surfaceID: surfaceID,
+            reason: "display.update"
+        )
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
         guard let surface = managedSurfaces[surfaceID] else { return }
         let completions = interactiveReadinessTracker.recordRender(
@@ -1139,6 +1515,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     private func removeManagedSurface(_ id: UUID) {
         guard let removed = managedSurfaces.removeValue(forKey: id) else { return }
+        contentReadySurfaceIDs.remove(id)
+        if pendingPhonePresentationSurfaceID == id {
+            clearPendingPhonePresentation()
+        }
 #if DEBUG
         NSLog(
             "Remux removing managed surface id=%@ managed=%d top=%d",
@@ -1174,7 +1554,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             previousSelectedTopLevelID: previousSelectedTopLevelID,
             previousSelectedIndex: previousSelectedIndex
         )
-
         _ = removed
         updateDebugSummary("managed surfaces=\(managedSurfaces.count)")
     }
@@ -1230,6 +1609,7 @@ final class GhosttyManagedSurface {
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
     private let tmuxClosePaneHandler: (@MainActor () -> Bool)?
     private let tmuxCloseWindowHandler: (@MainActor () -> Bool)?
+    private let hasRenderableContentHandler: (@MainActor () -> Bool)?
     private var displayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
@@ -1252,7 +1632,8 @@ final class GhosttyManagedSurface {
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
         tmuxClosePane: (@MainActor () -> Bool)? = nil,
-        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
+        tmuxCloseWindow: (@MainActor () -> Bool)? = nil,
+        hasRenderableContent: (@MainActor () -> Bool)? = nil
     ) {
         self.id = id
         self.view = view
@@ -1274,6 +1655,7 @@ final class GhosttyManagedSurface {
         self.tmuxSplitHandler = tmuxSplit
         self.tmuxClosePaneHandler = tmuxClosePane
         self.tmuxCloseWindowHandler = tmuxCloseWindow
+        self.hasRenderableContentHandler = hasRenderableContent
     }
 
     @MainActor
@@ -1322,6 +1704,15 @@ final class GhosttyManagedSurface {
             onDisplayUpdate?(self, size, scale)
         }
         return true
+    }
+
+    @MainActor
+    func hasRenderableContent() -> Bool {
+        if let hasRenderableContentHandler {
+            return hasRenderableContentHandler()
+        }
+
+        return controlSurface.hasRenderablePreviewText()
     }
 
     @MainActor

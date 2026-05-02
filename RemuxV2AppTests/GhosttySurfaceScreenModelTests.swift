@@ -244,6 +244,107 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(firstInput, ["echo fallback\r"])
     }
 
+    func testPhonePresentationStagesPaneOverlayUntilFocusedPaneHasContent() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var secondReady = false
+        var secondInput: [String] = []
+        let first = Self.managedSurface(hasRenderableContent: { true })
+        let second = Self.managedSurface(
+            sendInput: {
+                secondInput.append($0)
+                return true
+            },
+            hasRenderableContent: { secondReady }
+        )
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [first, second],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .leaf(second.id)
+                )
+            ),
+            focusedLeafID: first.id
+        )
+
+        registry.selectSurface(second.id)
+
+        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+        XCTAssertTrue(registry.sendInputToFocusedSurface("echo pending\r"))
+        XCTAssertEqual(secondInput, ["echo pending\r"])
+
+        secondReady = true
+        registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
+
+        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+    }
+
+    func testPhonePresentationKeepsPaneOverlayAcrossDuplicateSelectionUntilContent() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var secondReady = false
+        let first = Self.managedSurface(hasRenderableContent: { true })
+        let second = Self.managedSurface(hasRenderableContent: { secondReady })
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [first, second],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .leaf(second.id)
+                )
+            ),
+            focusedLeafID: first.id
+        )
+
+        registry.selectSurface(second.id)
+        registry.selectSurface(second.id)
+
+        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        secondReady = true
+        registry.selectSurface(second.id)
+
+        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+    }
+
+    func testPhonePresentationStagesWindowOverlayUntilSelectedWindowHasContent() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var secondReady = false
+        let first = Self.managedSurface(hasRenderableContent: { true })
+        let second = Self.managedSurface(hasRenderableContent: { secondReady })
+
+        registry.registerManagedSurfaceForTesting(first)
+        let firstTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
+
+        registry.registerManagedSurfaceForTesting(second)
+        let secondTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
+
+        XCTAssertNotEqual(firstTopLevelID, secondTopLevelID)
+        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.selectedTopLevel?.id, secondTopLevelID)
+        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        secondReady = true
+        registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
+
+        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.selectedTopLevel?.id, secondTopLevelID)
+        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+    }
+
     func testInputDoesNotFallbackToFirstWindowWhenSelectedTopLevelIsInvalid() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var firstInput: [String] = []
@@ -1358,7 +1459,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
         tmuxClosePane: (@MainActor () -> Bool)? = nil,
-        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
+        tmuxCloseWindow: (@MainActor () -> Bool)? = nil,
+        hasRenderableContent: (@MainActor () -> Bool)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: UUID(),
@@ -1381,7 +1483,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tmuxFocus: tmuxFocus ?? { false },
             tmuxSplit: tmuxSplit ?? { _ in false },
             tmuxClosePane: tmuxClosePane ?? { false },
-            tmuxCloseWindow: tmuxCloseWindow ?? { false }
+            tmuxCloseWindow: tmuxCloseWindow ?? { false },
+            hasRenderableContent: hasRenderableContent ?? { true }
         )
     }
 }
