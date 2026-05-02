@@ -15,6 +15,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         case failed(String)
     }
 
+    enum AppLifecyclePhase: Equatable {
+        case active
+        case inactive
+        case background
+    }
+
     @Published private(set) var state: State = .idle
     @Published private(set) var debugStatus = "not started"
     @Published private(set) var surfaceRegistryRevision = 0
@@ -187,6 +193,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 surface: surface,
                 onDebugEvent: { [weak self] event in
                     self?.debugStatus = event
+                },
+                onCompletion: { [weak self] completion in
+                    self?.handleTransportCompletion(completion)
                 }
             )
 
@@ -235,6 +244,21 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surfaceRegistry.reset()
         state = .idle
         debugStatus = "stopped"
+    }
+
+    func handleAppLifecyclePhase(_ phase: AppLifecyclePhase) {
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.lifecycle",
+            event: "model.appLifecycle",
+            fields: [
+                "phase": "\(phase)",
+                "state": "\(state)",
+                "transportAvailable": "\(transportWriteSequencer != nil)",
+            ]
+        )
+
+        guard phase == .active else { return }
+        reconcileTransportAfterForeground()
     }
 
     @discardableResult
@@ -709,21 +733,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private func handleTransportWriteFailure(_ error: any Error) {
-        guard state != .idle else { return }
-
         let message = "tmux transport write failed: \(String(describing: error))"
-        GhosttyRuntimeTrace.flowEnd(
-            sessionOpenFlowID,
+        markTerminalTransportUnavailable(
+            message: message,
             event: "model.transport.writeFailed",
-            fields: ["error": String(describing: error)]
+            error: error
         )
-        transportStartToken &+= 1
-        transportWriteSequencer?.close()
-        transportWriteSequencer = nil
-        transport = nil
         hostSurface?.failOutboundWrite(error)
-        state = .failed(message)
-        debugStatus = message
     }
 
     private func canSendTerminalInput(kind: String) -> Bool {
@@ -732,6 +748,82 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return false
         }
         return true
+    }
+
+    private func handleTransportCompletion(_ completion: GhosttyControlHostSurface.Completion) {
+        guard state == .running || state == .starting else { return }
+
+        let message: String
+        if let error = completion.error {
+            message = "tmux transport ended: \(String(describing: error))"
+        } else {
+            message = "tmux transport disconnected after \(completion.receivedByteCount) bytes"
+        }
+        markTerminalTransportUnavailable(
+            message: message,
+            event: "model.transport.ended",
+            error: completion.error
+        )
+    }
+
+    private func reconcileTransportAfterForeground() {
+        guard state == .running || state == .starting else { return }
+
+        guard let hostSurface else {
+            markTerminalTransportUnavailable(
+                message: "tmux transport unavailable after foreground",
+                event: "model.transport.foregroundMissingHost",
+                error: nil
+            )
+            return
+        }
+
+        guard hostSurface.isRunning else {
+            let message: String
+            if let error = hostSurface.lastError {
+                message = "tmux transport ended before foreground: \(String(describing: error))"
+            } else {
+                message = "tmux transport unavailable after foreground"
+            }
+            markTerminalTransportUnavailable(
+                message: message,
+                event: "model.transport.foregroundEnded",
+                error: hostSurface.lastError
+            )
+            return
+        }
+
+        debugStatus = "transport active after foreground"
+    }
+
+    private func markTerminalTransportUnavailable(
+        message: String,
+        event: String,
+        error: (any Error)?
+    ) {
+        guard state != .idle else { return }
+
+        var fields = ["state": "\(state)"]
+        if let error {
+            fields["error"] = String(describing: error)
+        }
+        GhosttyRuntimeTrace.flowEnd(
+            sessionOpenFlowID,
+            event: event,
+            fields: fields
+        )
+
+        let failedTransport = transport
+        transportStartToken &+= 1
+        transportWriteSequencer?.close()
+        transportWriteSequencer = nil
+        transport = nil
+        state = .failed(message)
+        debugStatus = message
+
+        Task {
+            await failedTransport?.close()
+        }
     }
 
     private func updateHostDisplay(

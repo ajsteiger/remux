@@ -1043,6 +1043,38 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "input dropped: terminal transport unavailable")
     }
 
+    func testModelMarksTransportUnavailableWhenInboundTransportEnds() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugPaneInputSmoke: nil,
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        await transport.fail(ScreenModelTransportError.disconnected)
+
+        let didFail = await waitUntil(timeout: 2) {
+            guard case .failed(let message) = model.state else { return false }
+            return message.contains("tmux transport ended")
+        }
+        let closeCount = await transport.closeCount()
+
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(model.debugStatus, "tmux transport ended: disconnected")
+    }
+
     func testModelPasteWithoutFocusedSurfaceUpdatesDebugStatus() {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
@@ -1549,6 +1581,53 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tmuxCloseWindow: tmuxCloseWindow ?? { false },
             hasRenderableContent: hasRenderableContent ?? { true }
         )
+    }
+}
+
+private enum ScreenModelTransportError: Error {
+    case disconnected
+}
+
+private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
+    nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
+
+    private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private var closes = 0
+
+    init() {
+        var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
+        receivedBytes = AsyncThrowingStream { continuation in
+            capturedContinuation = continuation
+        }
+        continuation = capturedContinuation!
+    }
+
+    func start(initialViewport: TmuxControlViewport?) async throws {
+        _ = initialViewport
+    }
+
+    func send(_ data: Data) async throws {
+        _ = data
+    }
+
+    func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
+        _ = columns
+        _ = rows
+        _ = width
+        _ = height
+    }
+
+    func close() async {
+        closes += 1
+        continuation.finish()
+    }
+
+    func fail(_ error: Error) {
+        continuation.finish(throwing: error)
+    }
+
+    func closeCount() -> Int {
+        closes
     }
 }
 

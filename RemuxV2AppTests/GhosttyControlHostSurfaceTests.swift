@@ -286,6 +286,29 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertEqual(host.lastError as? TestTransportError, .disconnected)
     }
 
+    func testTransportFailureReportsCompletion() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        var completions: [GhosttyControlHostSurface.Completion] = []
+        let host = GhosttyControlHostSurface(
+            transport: transport,
+            surface: surface,
+            onCompletion: { completion in
+                completions.append(completion)
+            }
+        )
+
+        host.start()
+        await transport.fail(TestTransportError.disconnected)
+
+        let completed = await waitUntil { !completions.isEmpty }
+
+        XCTAssertTrue(completed)
+        XCTAssertEqual(completions.count, 1)
+        XCTAssertEqual(completions.first?.error as? TestTransportError, .disconnected)
+        XCTAssertEqual(completions.first?.receivedByteCount, 0)
+    }
+
     func testOutboundWriteFailureStopsPumpWithoutMarkingBackingExited() async {
         let transport = RecordingTmuxControlTransport()
         let surface = RecordingGhosttyControlSurface()

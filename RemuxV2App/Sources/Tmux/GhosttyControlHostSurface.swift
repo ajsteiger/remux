@@ -642,9 +642,15 @@ final class GhosttyControlHostSurface {
         case outputRejected
     }
 
+    struct Completion {
+        let error: (any Error)?
+        let receivedByteCount: Int
+    }
+
     private let transport: any TmuxControlTransport
     private weak var surface: (any GhosttyControlSurface)?
     private let onDebugEvent: ((String) -> Void)?
+    private let onCompletion: ((Completion) -> Void)?
     private var pumpTask: Task<Void, Never>?
     private var receivedByteCount = 0
     private var capturedFirstChunk = false
@@ -656,11 +662,13 @@ final class GhosttyControlHostSurface {
     init(
         transport: any TmuxControlTransport,
         surface: any GhosttyControlSurface,
-        onDebugEvent: ((String) -> Void)? = nil
+        onDebugEvent: ((String) -> Void)? = nil,
+        onCompletion: ((Completion) -> Void)? = nil
     ) {
         self.transport = transport
         self.surface = surface
         self.onDebugEvent = onDebugEvent
+        self.onCompletion = onCompletion
     }
 
     func start() {
@@ -789,6 +797,12 @@ final class GhosttyControlHostSurface {
         if markBackingExited {
             surface?.setBackingExited(true)
         }
+        onCompletion?(
+            Completion(
+                error: error,
+                receivedByteCount: receivedByteCount
+            )
+        )
     }
 
     nonisolated static func preview(_ data: Data, limit: Int = 48) -> String {

@@ -340,6 +340,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     @discardableResult
     private func attemptFirstResponderRequest(route: String) -> Bool {
         if isFirstResponder {
+            reloadInputViews()
             pendingFirstResponderRequest = false
             GhosttyRuntimeTrace.perf(
                 "responder.requestFirstResponder result=true route=\(route) token=\(activationToken) firstResponder=true"

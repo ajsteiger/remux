@@ -3,6 +3,7 @@ import UIKit
 import GhosttyKit
 
 struct GhosttySurfaceScreen: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: GhosttySurfaceScreenModel
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
@@ -241,6 +242,10 @@ struct GhosttySurfaceScreen: View {
                     "workspaceID": target.workspace.id.uuidString,
                 ]
             )
+            handleScenePhaseChange(scenePhase)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            handleScenePhaseChange(newPhase)
         }
         .onDisappear {
             model.stop()
@@ -385,6 +390,13 @@ struct GhosttySurfaceScreen: View {
 
     private func refocusSystemKeyboardIfActive() {
         inputCoordinator.refocusSystemKeyboardIfActive(isInputAvailable: isTerminalInputAvailable)
+    }
+
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        model.handleAppLifecyclePhase(GhosttySurfaceScreenModel.AppLifecyclePhase(scenePhase: phase))
+
+        guard phase == .active else { return }
+        refocusSystemKeyboardIfActive()
     }
 
     private func requestSystemKeyboardRefocusAfterTopologyChange() {
@@ -1308,5 +1320,20 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
     func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
         uiView.isHidden = true
         model.attach(view: uiView, size: size)
+    }
+}
+
+private extension GhosttySurfaceScreenModel.AppLifecyclePhase {
+    init(scenePhase: ScenePhase) {
+        switch scenePhase {
+        case .active:
+            self = .active
+        case .inactive:
+            self = .inactive
+        case .background:
+            self = .background
+        @unknown default:
+            self = .inactive
+        }
     }
 }
