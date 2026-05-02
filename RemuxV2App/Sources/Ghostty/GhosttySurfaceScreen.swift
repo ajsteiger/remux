@@ -706,7 +706,6 @@ struct GhosttySurfaceScreen: View {
                         return
                     }
                     dismissSelectionSheet()
-                    refocusSystemKeyboardIfActive()
                 },
                 onSelect: { id in
                     guard model.focusTmuxTopLevel(id) else { return }
@@ -720,7 +719,6 @@ struct GhosttySurfaceScreen: View {
                         return
                     }
                     dismissSelectionSheet()
-                    refocusSystemKeyboardIfActive()
                 }
             )
 
@@ -743,7 +741,6 @@ struct GhosttySurfaceScreen: View {
                         return
                     }
                     dismissSelectionSheet()
-                    refocusSystemKeyboardIfActive()
                 },
                 onStackPane: {
                     GhosttyRuntimeTrace.flowBegin(
@@ -760,7 +757,6 @@ struct GhosttySurfaceScreen: View {
                         return
                     }
                     dismissSelectionSheet()
-                    refocusSystemKeyboardIfActive()
                 },
                 onSelect: { id in
                     guard model.focusTmuxPane(id) else { return }
@@ -774,7 +770,6 @@ struct GhosttySurfaceScreen: View {
                         return
                     }
                     dismissSelectionSheet()
-                    refocusSystemKeyboardIfActive()
                 }
             )
         }

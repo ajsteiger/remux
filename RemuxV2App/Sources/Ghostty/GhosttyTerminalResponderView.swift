@@ -101,7 +101,11 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             return
         }
 
-        guard activationToken != self.activationToken || !wasInputEnabled else { return }
+        let activationChanged = activationToken != self.activationToken
+        let enabledChanged = !wasInputEnabled
+        let needsFirstResponderRecovery = !isFirstResponder && !pendingFirstResponderRequest
+        guard activationChanged || enabledChanged || needsFirstResponderRecovery else { return }
+
         self.activationToken = activationToken
         pendingFirstResponderRequest = true
         requestFirstResponderIfNeeded()
@@ -130,6 +134,34 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             "responder.didMoveToWindow hasWindow=\(window != nil) enabled=\(isInputEnabled) pending=\(pendingFirstResponderRequest) firstResponder=\(isFirstResponder) token=\(activationToken)"
         )
         requestFirstResponderIfNeeded()
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let didBecomeFirstResponder = super.becomeFirstResponder()
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.becomeFirstResponder.result",
+            fields: [
+                "firstResponder": "\(isFirstResponder)",
+                "result": "\(didBecomeFirstResponder)",
+                "token": "\(activationToken)",
+            ]
+        )
+        return didBecomeFirstResponder
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let didResignFirstResponder = super.resignFirstResponder()
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.resignFirstResponder.result",
+            fields: [
+                "firstResponder": "\(isFirstResponder)",
+                "result": "\(didResignFirstResponder)",
+                "token": "\(activationToken)",
+            ]
+        )
+        return didResignFirstResponder
     }
 
     func deleteBackward() {
@@ -245,6 +277,16 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         }
         guard window != nil else {
             GhosttyRuntimeTrace.diagnostics("responder.requestFirstResponder skip-no-window token=\(activationToken)")
+            return
+        }
+        guard !isFirstResponder else {
+            GhosttyRuntimeTrace.diagnostics("responder.requestFirstResponder skip-already token=\(activationToken)")
+            GhosttyRuntimeTrace.flowEventIfActive(
+                "terminal.input",
+                event: "responder.becomeFirstResponder.already",
+                fields: ["token": "\(activationToken)"]
+            )
+            pendingFirstResponderRequest = false
             return
         }
 

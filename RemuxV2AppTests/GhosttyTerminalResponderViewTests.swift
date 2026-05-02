@@ -379,7 +379,7 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         window.rootViewController?.view.addSubview(view)
         window.makeKeyAndVisible()
         defer {
-            view.resignFirstResponder()
+            _ = view.resignFirstResponder()
             view.removeFromSuperview()
             window.isHidden = true
             window.rootViewController = nil
@@ -402,6 +402,46 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         let becameFirstResponder = await waitUntil { view.isFirstResponder }
         XCTAssertTrue(becameFirstResponder)
+    }
+
+    @MainActor
+    func testResponderRecoversFirstResponderWhenStillEnabledWithSameActivationToken() async {
+        let view = GhosttyTerminalResponderUIView()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        window.rootViewController = UIViewController()
+        window.rootViewController?.view.addSubview(view)
+        window.makeKeyAndVisible()
+        defer {
+            _ = view.resignFirstResponder()
+            view.removeFromSuperview()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        view.update(
+            isEnabled: true,
+            activationToken: 3,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+        let initiallyBecameFirstResponder = await waitUntil { view.isFirstResponder }
+        XCTAssertTrue(initiallyBecameFirstResponder)
+
+        XCTAssertTrue(view.resignFirstResponder())
+        let didResignFirstResponder = await waitUntil { !view.isFirstResponder }
+        XCTAssertTrue(didResignFirstResponder)
+
+        view.update(
+            isEnabled: true,
+            activationToken: 3,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true }
+        )
+
+        let recoveredFirstResponder = await waitUntil { view.isFirstResponder }
+        XCTAssertTrue(recoveredFirstResponder)
     }
 
     @MainActor
