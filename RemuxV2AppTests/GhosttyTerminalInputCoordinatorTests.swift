@@ -144,4 +144,37 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.keyboardMode, .hidden)
         XCTAssertEqual(coordinator.terminalActivationToken, 0)
     }
+
+    func testPendingTopologyInputRefocusConsumesChangedActiveLeafInSystemMode() {
+        let sourceLeafID = UUID()
+        let nextLeafID = UUID()
+        var refocus = GhosttyPendingTopologyInputRefocus()
+
+        refocus.request(from: sourceLeafID, keyboardMode: .system)
+
+        XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: sourceLeafID))
+        XCTAssertTrue(refocus.consumeIfActiveLeafChanged(to: nextLeafID))
+        XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: UUID()))
+    }
+
+    func testPendingTopologyInputRefocusIgnoresNonSystemKeyboardModes() {
+        let sourceLeafID = UUID()
+        var hiddenRefocus = GhosttyPendingTopologyInputRefocus()
+        var customRefocus = GhosttyPendingTopologyInputRefocus()
+
+        hiddenRefocus.request(from: sourceLeafID, keyboardMode: .hidden)
+        customRefocus.request(from: sourceLeafID, keyboardMode: .custom)
+
+        XCTAssertFalse(hiddenRefocus.consumeIfActiveLeafChanged(to: UUID()))
+        XCTAssertFalse(customRefocus.consumeIfActiveLeafChanged(to: UUID()))
+    }
+
+    func testPendingTopologyInputRefocusCancelClearsPendingRequest() {
+        var refocus = GhosttyPendingTopologyInputRefocus()
+
+        refocus.request(from: UUID(), keyboardMode: .system)
+        refocus.cancel()
+
+        XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: UUID()))
+    }
 }

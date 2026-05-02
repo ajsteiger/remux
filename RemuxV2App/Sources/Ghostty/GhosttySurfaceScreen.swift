@@ -15,6 +15,7 @@ struct GhosttySurfaceScreen: View {
     @State private var keyboardHandoffTarget: GhosttyKeyboardChromeMode?
     @State private var isKeyboardViewportTransitionActive = false
     @State private var latestLiveTerminalViewportSize = CGSize(width: 1, height: 1)
+    @State private var pendingTopologyInputRefocus = GhosttyPendingTopologyInputRefocus()
 
     private let target: TmuxConnectionTarget
     private let onEditConnection: () -> Void
@@ -207,6 +208,9 @@ struct GhosttySurfaceScreen: View {
                 }
                 dismissSelectionSheet()
             }
+            .onChange(of: registry.selectedActiveLeafID) { _, activeLeafID in
+                handleActiveLeafChange(activeLeafID)
+            }
             .preferredColorScheme(.dark)
 #if DEBUG
             .task {
@@ -389,6 +393,30 @@ struct GhosttySurfaceScreen: View {
 
     private func refocusSystemKeyboardIfActive() {
         inputCoordinator.refocusSystemKeyboardIfActive(isInputAvailable: isTerminalInputAvailable)
+    }
+
+    private func requestSystemKeyboardRefocusAfterTopologyChange() {
+        pendingTopologyInputRefocus.request(
+            from: registry.selectedActiveLeafID,
+            keyboardMode: inputCoordinator.keyboardMode
+        )
+    }
+
+    private func cancelPendingTopologyInputRefocus() {
+        pendingTopologyInputRefocus.cancel()
+    }
+
+    private func handleActiveLeafChange(_ activeLeafID: UUID?) {
+        guard pendingTopologyInputRefocus.consumeIfActiveLeafChanged(to: activeLeafID) else {
+            return
+        }
+
+        GhosttyRuntimeTrace.flowEvent(
+            "terminal.input",
+            event: "ui.topologySelectionRefocus",
+            fields: terminalInputTraceFields()
+        )
+        inputCoordinator.handleSelectionChange(isInputAvailable: isTerminalInputAvailable)
     }
 
     private func toggleControlModifier() {
@@ -701,7 +729,11 @@ struct GhosttySurfaceScreen: View {
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
-                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT) else { return }
+                    requestSystemKeyboardRefocusAfterTopologyChange()
+                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT) else {
+                        cancelPendingTopologyInputRefocus()
+                        return
+                    }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 },
@@ -714,7 +746,11 @@ struct GhosttySurfaceScreen: View {
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
-                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) else { return }
+                    requestSystemKeyboardRefocusAfterTopologyChange()
+                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) else {
+                        cancelPendingTopologyInputRefocus()
+                        return
+                    }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 },
@@ -724,7 +760,11 @@ struct GhosttySurfaceScreen: View {
                     refocusSystemKeyboardIfActive()
                 },
                 onRemovePane: { id in
-                    guard model.closeTmuxPane(id) else { return }
+                    requestSystemKeyboardRefocusAfterTopologyChange()
+                    guard model.closeTmuxPane(id) else {
+                        cancelPendingTopologyInputRefocus()
+                        return
+                    }
                     dismissSelectionSheet()
                     refocusSystemKeyboardIfActive()
                 }

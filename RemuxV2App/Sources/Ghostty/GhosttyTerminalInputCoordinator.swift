@@ -92,3 +92,24 @@ struct GhosttyTerminalInputCoordinator: Equatable {
         keyboardMode = .hidden
     }
 }
+
+struct GhosttyPendingTopologyInputRefocus: Equatable {
+    private var sourceActiveLeafID: UUID?
+
+    mutating func request(from activeLeafID: UUID?, keyboardMode: GhosttyKeyboardChromeMode) {
+        guard keyboardMode == .system else { return }
+        sourceActiveLeafID = activeLeafID
+    }
+
+    mutating func consumeIfActiveLeafChanged(to activeLeafID: UUID?) -> Bool {
+        guard let sourceActiveLeafID else { return false }
+        guard let activeLeafID, activeLeafID != sourceActiveLeafID else { return false }
+
+        self.sourceActiveLeafID = nil
+        return true
+    }
+
+    mutating func cancel() {
+        sourceActiveLeafID = nil
+    }
+}
