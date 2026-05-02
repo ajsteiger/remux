@@ -21,16 +21,26 @@ struct GhosttySurfaceScreen: View {
     @State private var isAwaitingSystemKeyboardPresentation = false
     @State private var terminalViewportSizeCache = GhosttyTerminalViewportSizeCache()
     @State private var pendingTopologyInputRefocus = GhosttyPendingTopologyInputRefocus()
+    @State private var runtimeStateReportTracker = TerminalRuntimeStateReportTracker()
 
     private let target: TmuxConnectionTarget
+    private let sessionInstanceID: UUID
+    private let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
+    private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
 
     init(
         target: TmuxConnectionTarget,
+        sessionInstanceID: UUID,
         transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
+        onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void
     ) {
         self.target = target
+        self.sessionInstanceID = sessionInstanceID
+        self.onRuntimeStateChange = onRuntimeStateChange
+        self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
         _model = StateObject(
             wrappedValue: GhosttySurfaceScreenModel(
@@ -113,7 +123,8 @@ struct GhosttySurfaceScreen: View {
                     .overlay(alignment: .topLeading) {
                         GhosttySurfaceStatusOverlay(
                             model: model,
-                            registry: registry
+                            registry: registry,
+                            onReconnect: onReconnect
                         )
                         .id(model.surfaceRegistryRevision)
                     }
@@ -213,6 +224,10 @@ struct GhosttySurfaceScreen: View {
             }
             .onChange(of: registry.selectedActiveLeafID) { _, activeLeafID in
                 handleActiveLeafChange(activeLeafID)
+                reportRuntimeStateIfNeeded(source: .readiness)
+            }
+            .onChange(of: model.state) { _, _ in
+                reportRuntimeStateIfNeeded(source: .runtime)
             }
             .preferredColorScheme(.dark)
 #if DEBUG
@@ -243,6 +258,7 @@ struct GhosttySurfaceScreen: View {
                 ]
             )
             handleScenePhaseChange(scenePhase)
+            reportRuntimeStateIfNeeded(source: .readiness)
         }
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
@@ -275,6 +291,24 @@ struct GhosttySurfaceScreen: View {
         model.state == .running && registry.selectedActiveLeafID != nil
     }
 
+    private var currentRuntimeState: TerminalRuntimeState {
+        if isTerminalInputAvailable {
+            return .connected
+        }
+
+        switch model.state {
+        case .idle, .starting, .running:
+            return .connecting
+        case .failed(let message):
+            return .disconnected(
+                model.failureReason ?? TerminalDisconnectReason(
+                    kind: .unknown,
+                    message: message
+                )
+            )
+        }
+    }
+
     private var isTerminalViewportFrozen: Bool {
         selectionSheet != nil || keyboardHandoffTarget != nil || isKeyboardViewportTransitionActive
     }
@@ -300,6 +334,22 @@ struct GhosttySurfaceScreen: View {
     private func showSystemKeyboard() {
         GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.showSystemKeyboard")
         inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
+    }
+
+    private func reportRuntimeStateIfNeeded(source: TerminalRuntimeStateUpdateSource) {
+        let state = currentRuntimeState
+        guard runtimeStateReportTracker.shouldReport(state: state, source: source) else {
+            return
+        }
+
+        onRuntimeStateChange(
+            TerminalRuntimeStateUpdate(
+                workspaceID: target.workspace.id,
+                instanceID: sessionInstanceID,
+                state: state,
+                source: source
+            )
+        )
     }
 
     private func handleSurfaceTap(_ surfaceID: UUID) {
@@ -394,6 +444,9 @@ struct GhosttySurfaceScreen: View {
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         model.handleAppLifecyclePhase(GhosttySurfaceScreenModel.AppLifecyclePhase(scenePhase: phase))
+        if phase == .active {
+            reportRuntimeStateIfNeeded(source: .foreground)
+        }
 
         guard phase == .active else { return }
         refocusSystemKeyboardIfActive()
@@ -1251,6 +1304,7 @@ struct GhosttySoftwareKeyboardVisibility {
 private struct GhosttySurfaceStatusOverlay: View {
     @ObservedObject var model: GhosttySurfaceScreenModel
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
+    let onReconnect: () -> Void
 
     var body: some View {
         switch model.state {
@@ -1289,14 +1343,31 @@ private struct GhosttySurfaceStatusOverlay: View {
             }
 
         case .failed(let message):
-            Text(message)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.red)
-                .padding(10)
-                .background(Color.black.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .padding(10)
-                .accessibilityIdentifier("terminal.status.failed")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Disconnected")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.red)
+
+                Text(message)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.76))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    onReconnect()
+                } label: {
+                    Label("Reconnect", systemImage: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .accessibilityIdentifier("terminal.status.reconnect")
+            }
+            .padding(10)
+            .background(Color.black.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(10)
+            .accessibilityIdentifier("terminal.status.failed")
         }
     }
 }

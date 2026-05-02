@@ -392,6 +392,214 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(harness.model.state, .terminal(base.id))
     }
 
+    func testRuntimeDisconnectMarksActiveSessionDisconnected() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        await harness.model.showLibrary()
+
+        let instanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+        let reason = TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "tmux transport write failed: closed"
+        )
+
+        harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: instanceID,
+                state: .disconnected(reason),
+                source: .runtime
+            )
+        )
+
+        XCTAssertEqual(harness.model.activeSessions.first?.runtimeState, .disconnected(reason))
+        XCTAssertEqual(harness.model.state, .library)
+    }
+
+    func testTappingDisconnectedActiveSessionRecreatesTerminalRuntime() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        await harness.model.showLibrary()
+
+        let oldInstanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+        let reason = TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "tmux transport disconnected after 2048 bytes"
+        )
+        harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: oldInstanceID,
+                state: .disconnected(reason),
+                source: .runtime
+            )
+        )
+
+        harness.model.showActiveSession(workspace.id)
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertNotEqual(session.instanceID, oldInstanceID)
+        XCTAssertEqual(session.runtimeState, .reconnecting(.activeSessionTap))
+        XCTAssertEqual(harness.model.state, .terminal(workspace.id))
+    }
+
+    func testAutomaticTransportReconnectIsBoundedUntilManualReconnect() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let firstInstanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+        let reason = TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "tmux transport ended: closed"
+        )
+        harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: firstInstanceID,
+                state: .disconnected(reason),
+                source: .runtime
+            )
+        )
+
+        var session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertNotEqual(session.instanceID, firstInstanceID)
+        XCTAssertEqual(session.runtimeState, .reconnecting(.transportLoss))
+        XCTAssertTrue(session.automaticReconnectAttemptedSources.contains(.transportLoss))
+
+        let secondInstanceID = session.instanceID
+        harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: secondInstanceID,
+                state: .disconnected(reason),
+                source: .runtime
+            )
+        )
+
+        session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(session.instanceID, secondInstanceID)
+        XCTAssertEqual(session.runtimeState, .disconnected(reason))
+    }
+
+    func testRuntimeStateReportTrackerReportsForegroundDisconnectAfterRuntimeDisconnect() {
+        var tracker = TerminalRuntimeStateReportTracker()
+        let reason = TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "tmux transport ended: closed"
+        )
+        let disconnectedState = TerminalRuntimeState.disconnected(reason)
+
+        XCTAssertTrue(tracker.shouldReport(state: .connecting, source: .readiness))
+        XCTAssertFalse(tracker.shouldReport(state: .connecting, source: .foreground))
+        XCTAssertTrue(tracker.shouldReport(state: disconnectedState, source: .runtime))
+        XCTAssertFalse(tracker.shouldReport(state: disconnectedState, source: .readiness))
+        XCTAssertTrue(tracker.shouldReport(state: disconnectedState, source: .foreground))
+        XCTAssertFalse(tracker.shouldReport(state: disconnectedState, source: .foreground))
+        XCTAssertFalse(tracker.shouldReport(state: disconnectedState, source: .runtime))
+    }
+
+    func testNonAutomaticDisconnectReasonsDoNotAutoReconnect() async throws {
+        let reasons = [
+            TerminalDisconnectReason(kind: .authentication, message: "permission denied"),
+            TerminalDisconnectReason(kind: .hostKey, message: "host key changed"),
+            TerminalDisconnectReason(kind: .profile, message: "invalid profile"),
+            TerminalDisconnectReason(kind: .unsupportedTransport, message: "unsupported transport"),
+            TerminalDisconnectReason(kind: .remoteExit, message: "remote exited"),
+            TerminalDisconnectReason(kind: .runtime, message: "runtime rejected output"),
+            TerminalDisconnectReason(kind: .userClosed, message: "closed by user"),
+            TerminalDisconnectReason(kind: .unknown, message: "unknown failure"),
+        ]
+
+        for reason in reasons {
+            let server = SavedServer(
+                displayName: "Build Host",
+                host: "build.example.test",
+                username: "builder"
+            )
+            let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+            let harness = makeHarness(servers: [server], workspaces: [workspace])
+            try await harness.passwordStore.savePassword("secret", for: server.id)
+            await harness.model.load()
+            await harness.model.connect(to: workspace.id)
+
+            let instanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+            harness.model.handleTerminalRuntimeStateUpdate(
+                TerminalRuntimeStateUpdate(
+                    workspaceID: workspace.id,
+                    instanceID: instanceID,
+                    state: .disconnected(reason),
+                    source: .runtime
+                )
+            )
+
+            let session = try XCTUnwrap(harness.model.activeSessions.first)
+            XCTAssertEqual(session.instanceID, instanceID, "\(reason.kind)")
+            XCTAssertEqual(session.runtimeState, .disconnected(reason), "\(reason.kind)")
+            XCTAssertTrue(session.automaticReconnectAttemptedSources.isEmpty, "\(reason.kind)")
+            XCTAssertEqual(harness.model.state, .terminal(workspace.id), "\(reason.kind)")
+        }
+    }
+
+    func testStaleRuntimeFailureCallbackAfterReconnectIsIgnored() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let oldInstanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+        harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
+        let newInstanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+        XCTAssertNotEqual(newInstanceID, oldInstanceID)
+
+        harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: oldInstanceID,
+                state: .disconnected(
+                    TerminalDisconnectReason(
+                        kind: .transportIO,
+                        message: "stale tmux transport write failed: closed"
+                    )
+                ),
+                source: .runtime
+            )
+        )
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(session.instanceID, newInstanceID)
+        XCTAssertEqual(session.runtimeState, .reconnecting(.manualButton))
+    }
+
     func testConnectPreparesTransportAndTerminalClaimsPreparedTransport() async throws {
         let server = SavedServer(
             displayName: "Build Host",

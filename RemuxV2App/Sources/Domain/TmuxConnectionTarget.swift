@@ -98,6 +98,128 @@ struct TmuxConnectionTarget: Equatable, Sendable {
     }
 }
 
+struct TerminalDisconnectReason: Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
+        case transportIO
+        case authentication
+        case hostKey
+        case profile
+        case unsupportedTransport
+        case remoteExit
+        case runtime
+        case userClosed
+        case unknown
+    }
+
+    let kind: Kind
+    let message: String
+
+    var allowsAutomaticReconnect: Bool {
+        switch kind {
+        case .transportIO:
+            true
+        case .authentication,
+             .hostKey,
+             .profile,
+             .unsupportedTransport,
+             .remoteExit,
+             .runtime,
+             .userClosed,
+             .unknown:
+            false
+        }
+    }
+}
+
+enum TerminalReconnectSource: Equatable, Hashable, Sendable {
+    case activeSessionTap
+    case foreground
+    case manualButton
+    case transportLoss
+
+    var isAutomatic: Bool {
+        switch self {
+        case .foreground, .transportLoss:
+            true
+        case .activeSessionTap, .manualButton:
+            false
+        }
+    }
+
+    var traceLabel: String {
+        switch self {
+        case .activeSessionTap:
+            "active_session_tap"
+        case .foreground:
+            "foreground"
+        case .manualButton:
+            "manual_button"
+        case .transportLoss:
+            "transport_loss"
+        }
+    }
+}
+
+// Root-visible terminal readiness. `connected` means the terminal can accept input,
+// not merely that the underlying SSH/tmux transport is alive.
+enum TerminalRuntimeState: Equatable, Sendable {
+    case connecting
+    case reconnecting(TerminalReconnectSource)
+    case connected
+    case disconnected(TerminalDisconnectReason)
+
+    var isConnected: Bool {
+        if case .connected = self { return true }
+        return false
+    }
+
+    var disconnectedReason: TerminalDisconnectReason? {
+        if case .disconnected(let reason) = self { return reason }
+        return nil
+    }
+}
+
+enum TerminalRuntimeStateUpdateSource: Equatable, Sendable {
+    case foreground
+    case readiness
+    case runtime
+}
+
+struct TerminalRuntimeStateUpdate: Equatable, Sendable {
+    let workspaceID: SavedWorkspace.ID
+    let instanceID: UUID
+    let state: TerminalRuntimeState
+    let source: TerminalRuntimeStateUpdateSource
+}
+
+struct TerminalRuntimeStateReportTracker: Equatable, Sendable {
+    private var lastReportedState: TerminalRuntimeState?
+    private var foregroundReportedDisconnectedState: TerminalRuntimeState?
+
+    mutating func shouldReport(
+        state: TerminalRuntimeState,
+        source: TerminalRuntimeStateUpdateSource
+    ) -> Bool {
+        let stateChanged = lastReportedState != state
+        let isForegroundDisconnect = source == .foreground && state.disconnectedReason != nil
+
+        if stateChanged {
+            lastReportedState = state
+            foregroundReportedDisconnectedState = isForegroundDisconnect ? state : nil
+            return true
+        }
+
+        guard isForegroundDisconnect,
+              foregroundReportedDisconnectedState != state
+        else {
+            return false
+        }
+
+        foregroundReportedDisconnectedState = state
+        return true
+    }
+}
+
 struct TmuxConnectionDraft: Equatable, Sendable {
     var displayName: String = ""
     var host: String = ""

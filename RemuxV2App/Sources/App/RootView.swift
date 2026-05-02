@@ -72,6 +72,10 @@ private struct RemuxWorkspaceShell: View {
                 ActiveTerminalSessionView(
                     session: session,
                     transportFactory: { model.makeTransport(for: $0) },
+                    onRuntimeStateChange: model.handleTerminalRuntimeStateUpdate,
+                    onReconnect: {
+                        model.reconnectActiveSession(session.id, source: .manualButton)
+                    },
                     onShowLibrary: {
                         dismissKeyboard()
                         Task { await model.showLibrary() }
@@ -197,12 +201,17 @@ private struct RemuxWorkspaceShell: View {
 private struct ActiveTerminalSessionView: View {
     let session: ActiveTerminalSession
     let transportFactory: GhosttySurfaceScreenModel.TransportFactory
+    let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
+    let onReconnect: () -> Void
     let onShowLibrary: () -> Void
 
     var body: some View {
         GhosttySurfaceScreen(
             target: session.target,
+            sessionInstanceID: session.instanceID,
             transportFactory: transportFactory,
+            onRuntimeStateChange: onRuntimeStateChange,
+            onReconnect: onReconnect,
             onEditConnection: onShowLibrary
         )
     }
@@ -276,7 +285,7 @@ private struct ConnectionLibraryView: View {
     @ViewBuilder
     private var activeSessionsSection: some View {
         if !sortedActiveSessions.isEmpty {
-            Section("Connected Sessions") {
+            Section("Active Sessions") {
                 ForEach(visibleConnectedSessions) { session in
                     Button {
                         onShowActiveSession(session.id)
@@ -321,7 +330,7 @@ private struct ConnectionLibraryView: View {
                             SessionLibraryRow(
                                 server: server,
                                 workspace: workspace,
-                                isConnected: false,
+                                runtimeState: nil,
                                 subtitleMode: .serverAndLastOpened
                             )
                             .accessibilityIdentifier("library.session.resume")
@@ -464,7 +473,9 @@ private struct ConnectionLibraryView: View {
     }
 
     private func connectedSessionCount(for serverID: SavedServer.ID) -> Int {
-        activeSessions.filter { $0.target.server.id == serverID }.count
+        activeSessions.filter {
+            $0.target.server.id == serverID && $0.runtimeState.isConnected
+        }.count
     }
 }
 
@@ -497,7 +508,7 @@ private struct ServerDetailView: View {
                     Text(
                         serverSummary(
                             sessionCount: workspaces.count,
-                            connectedSessionCount: activeSessions.count,
+                            connectedSessionCount: activeSessions.filter { $0.runtimeState.isConnected }.count,
                             latestWorkspace: nil
                         )
                     )
@@ -523,7 +534,7 @@ private struct ServerDetailView: View {
                             SessionLibraryRow(
                                 server: server,
                                 workspace: workspace,
-                                isConnected: activeWorkspaceIDs.contains(workspace.id),
+                                runtimeState: activeSession(for: workspace.id)?.runtimeState,
                                 subtitleMode: .lastOpenedOnly
                             )
                             .accessibilityIdentifier("library.session.resume")
@@ -568,6 +579,10 @@ private struct ServerDetailView: View {
 
     private var activeWorkspaceIDs: Set<SavedWorkspace.ID> {
         Set(activeSessions.map(\.id))
+    }
+
+    private func activeSession(for workspaceID: SavedWorkspace.ID) -> ActiveTerminalSession? {
+        activeSessions.first { $0.id == workspaceID }
     }
 }
 
@@ -642,7 +657,7 @@ private struct ActiveSessionLibraryRow: View {
 
             Spacer()
 
-            ConnectedStateIndicator()
+            RuntimeStateIndicator(state: session.runtimeState)
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
@@ -663,7 +678,7 @@ private struct SessionLibraryRow: View {
 
     let server: SavedServer
     let workspace: SavedWorkspace
-    let isConnected: Bool
+    let runtimeState: TerminalRuntimeState?
     let subtitleMode: SubtitleMode
 
     var body: some View {
@@ -684,8 +699,8 @@ private struct SessionLibraryRow: View {
 
             Spacer()
 
-            if isConnected {
-                ConnectedStateIndicator()
+            if let runtimeState {
+                RuntimeStateIndicator(state: runtimeState)
             }
 
             if subtitleMode == .serverAndLastOpened {
@@ -770,17 +785,45 @@ private struct ServerLibraryRow: View {
     }
 }
 
-private struct ConnectedStateIndicator: View {
+private struct RuntimeStateIndicator: View {
+    let state: TerminalRuntimeState
+
     var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(.green)
+                .fill(color)
                 .frame(width: 6, height: 6)
-            Text("Connected")
+            Text(label)
                 .font(.caption.weight(.medium))
         }
-        .foregroundStyle(.green)
+        .foregroundStyle(color)
         .accessibilityElement(children: .combine)
+    }
+
+    private var label: String {
+        switch state {
+        case .connecting:
+            "Connecting"
+        case .reconnecting:
+            "Reconnecting"
+        case .connected:
+            "Connected"
+        case .disconnected:
+            "Disconnected"
+        }
+    }
+
+    private var color: Color {
+        switch state {
+        case .connecting:
+            .blue
+        case .reconnecting:
+            .orange
+        case .connected:
+            .green
+        case .disconnected:
+            .red
+        }
     }
 }
 

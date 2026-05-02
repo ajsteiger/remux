@@ -24,6 +24,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var debugStatus = "not started"
     @Published private(set) var surfaceRegistryRevision = 0
+    @Published private(set) var failureReason: TerminalDisconnectReason?
 
     let surfaceRegistry: GhosttyRuntimeSurfaceRegistry
 
@@ -118,6 +119,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         state = .starting
         debugStatus = "creating Ghostty runtime"
+        failureReason = nil
         hostDisplayUpdateTracker.reset()
         hostAttachmentTracker.reset()
         hostControlStateTracker.reset()
@@ -216,8 +218,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 event: "model.attach.failed",
                 fields: ["error": String(describing: error)]
             )
-            state = .failed(String(describing: error))
-            debugStatus = String(describing: error)
+            let reason = terminalRuntimeFailureReason(error)
+            state = .failed(reason.message)
+            failureReason = reason
+            debugStatus = reason.message
         }
     }
 
@@ -244,6 +248,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surfaceRegistry.reset()
         state = .idle
         debugStatus = "stopped"
+        failureReason = nil
     }
 
     func handleAppLifecyclePhase(_ phase: AppLifecyclePhase) {
@@ -712,6 +717,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         state = .running
         debugStatus = "transport started"
+        failureReason = nil
         submitDebugPaneInputSmokeIfReady()
         scheduleDebugLatencyProbeIfNeeded()
         submitDebugLatencyProbeIfReady()
@@ -728,14 +734,63 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             event: "model.transport.failed",
             fields: ["error": String(describing: error)]
         )
-        state = .failed(String(describing: error))
-        debugStatus = String(describing: error)
+        let reason = terminalTransportStartFailureReason(error)
+        state = .failed(reason.message)
+        failureReason = reason
+        debugStatus = reason.message
+    }
+
+    private func terminalRuntimeFailureReason(_ error: any Error) -> TerminalDisconnectReason {
+        TerminalDisconnectReason(
+            kind: .runtime,
+            message: String(describing: error)
+        )
+    }
+
+    private func terminalTransportStartFailureReason(_ error: any Error) -> TerminalDisconnectReason {
+        let message = String(describing: error)
+
+        if let transportAvailability = error as? TmuxTransportAvailabilityError {
+            switch transportAvailability {
+            case .unsupportedTransport:
+                return TerminalDisconnectReason(kind: .unsupportedTransport, message: message)
+            }
+        }
+
+        if let trustedHostError = error as? TrustedHostStoreError {
+            switch trustedHostError {
+            case .hostKeyChanged, .invalidHostKey:
+                return TerminalDisconnectReason(kind: .hostKey, message: message)
+            }
+        }
+
+        if let sshError = error as? SSHTmuxControlTransportError {
+            switch sshError {
+            case .remoteExit:
+                return TerminalDisconnectReason(kind: .remoteExit, message: message)
+            case .closed:
+                return TerminalDisconnectReason(kind: .transportIO, message: message)
+            case .alreadyStarted, .unsupportedInboundChannel:
+                return TerminalDisconnectReason(kind: .profile, message: message)
+            }
+        }
+
+        let lowercasedMessage = message.lowercased()
+        if lowercasedMessage.contains("auth") ||
+            lowercasedMessage.contains("password") ||
+            lowercasedMessage.contains("permission denied") {
+            return TerminalDisconnectReason(kind: .authentication, message: message)
+        }
+
+        return TerminalDisconnectReason(kind: .unknown, message: message)
     }
 
     private func handleTransportWriteFailure(_ error: any Error) {
-        let message = "tmux transport write failed: \(String(describing: error))"
         markTerminalTransportUnavailable(
-            message: message,
+            reason: TerminalDisconnectReason(
+                kind: .transportIO,
+                message: "tmux transport write failed: \(String(describing: error))"
+            ),
             event: "model.transport.writeFailed",
             error: error
         )
@@ -753,14 +808,23 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private func handleTransportCompletion(_ completion: GhosttyControlHostSurface.Completion) {
         guard state == .running || state == .starting else { return }
 
-        let message: String
+        let reason: TerminalDisconnectReason
         if let error = completion.error {
-            message = "tmux transport ended: \(String(describing: error))"
+            let message = "tmux transport ended: \(String(describing: error))"
+            if let hostFailure = error as? GhosttyControlHostSurface.Failure,
+               hostFailure == .outputRejected {
+                reason = TerminalDisconnectReason(kind: .runtime, message: message)
+            } else {
+                reason = TerminalDisconnectReason(kind: .transportIO, message: message)
+            }
         } else {
-            message = "tmux transport disconnected after \(completion.receivedByteCount) bytes"
+            reason = TerminalDisconnectReason(
+                kind: .transportIO,
+                message: "tmux transport disconnected after \(completion.receivedByteCount) bytes"
+            )
         }
         markTerminalTransportUnavailable(
-            message: message,
+            reason: reason,
             event: "model.transport.ended",
             error: completion.error
         )
@@ -771,7 +835,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         guard let hostSurface else {
             markTerminalTransportUnavailable(
-                message: "tmux transport unavailable after foreground",
+                reason: TerminalDisconnectReason(
+                    kind: .transportIO,
+                    message: "tmux transport unavailable after foreground"
+                ),
                 event: "model.transport.foregroundMissingHost",
                 error: nil
             )
@@ -779,14 +846,20 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
 
         guard hostSurface.isRunning else {
-            let message: String
+            let reason: TerminalDisconnectReason
             if let error = hostSurface.lastError {
-                message = "tmux transport ended before foreground: \(String(describing: error))"
+                reason = TerminalDisconnectReason(
+                    kind: .transportIO,
+                    message: "tmux transport ended before foreground: \(String(describing: error))"
+                )
             } else {
-                message = "tmux transport unavailable after foreground"
+                reason = TerminalDisconnectReason(
+                    kind: .transportIO,
+                    message: "tmux transport unavailable after foreground"
+                )
             }
             markTerminalTransportUnavailable(
-                message: message,
+                reason: reason,
                 event: "model.transport.foregroundEnded",
                 error: hostSurface.lastError
             )
@@ -797,7 +870,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private func markTerminalTransportUnavailable(
-        message: String,
+        reason: TerminalDisconnectReason,
         event: String,
         error: (any Error)?
     ) {
@@ -818,8 +891,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         transportWriteSequencer?.close()
         transportWriteSequencer = nil
         transport = nil
-        state = .failed(message)
-        debugStatus = message
+        state = .failed(reason.message)
+        failureReason = reason
+        debugStatus = reason.message
 
         Task {
             await failedTransport?.close()

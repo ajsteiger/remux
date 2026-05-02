@@ -4,11 +4,40 @@ struct ActiveTerminalSession: Identifiable, Equatable, Sendable {
     let id: SavedWorkspace.ID
     var target: TmuxConnectionTarget
     var instanceID: UUID
+    var runtimeState: TerminalRuntimeState
+    var automaticReconnectAttemptedSources: Set<TerminalReconnectSource>
 
-    init(target: TmuxConnectionTarget, instanceID: UUID = UUID()) {
+    init(
+        target: TmuxConnectionTarget,
+        instanceID: UUID = UUID(),
+        runtimeState: TerminalRuntimeState = .connecting,
+        automaticReconnectAttemptedSources: Set<TerminalReconnectSource> = []
+    ) {
         self.id = target.workspace.id
         self.target = target
         self.instanceID = instanceID
+        self.runtimeState = runtimeState
+        self.automaticReconnectAttemptedSources = automaticReconnectAttemptedSources
+    }
+
+    mutating func replaceRuntime(source: TerminalReconnectSource) {
+        instanceID = UUID()
+        runtimeState = .reconnecting(source)
+        if !source.isAutomatic {
+            automaticReconnectAttemptedSources.removeAll()
+        }
+    }
+
+    mutating func applyRuntimeState(_ state: TerminalRuntimeState) {
+        runtimeState = state
+        if state.isConnected {
+            automaticReconnectAttemptedSources.removeAll()
+        }
+    }
+
+    mutating func markAutomaticReconnectAttempted(source: TerminalReconnectSource) -> Bool {
+        guard source.isAutomatic else { return true }
+        return automaticReconnectAttemptedSources.insert(source).inserted
     }
 }
 
@@ -374,12 +403,101 @@ final class RemuxRootModel: ObservableObject {
             return
         }
 
+        if activeSessions.first(where: { $0.id == id })?.runtimeState.disconnectedReason != nil {
+            reconnectActiveSession(id, source: .activeSessionTap)
+            GhosttyRuntimeTrace.flowEnd(
+                sessionShowFlowID(id),
+                event: "model.showActiveSession.reconnect",
+                fields: ["workspaceID": id.uuidString]
+            )
+            return
+        }
+
         state = .terminal(id)
         GhosttyRuntimeTrace.flowEnd(
             sessionShowFlowID(id),
             event: "model.showActiveSession.end",
             fields: ["workspaceID": id.uuidString]
         )
+    }
+
+    func reconnectActiveSession(
+        _ id: SavedWorkspace.ID,
+        source: TerminalReconnectSource
+    ) {
+        guard let index = activeSessions.firstIndex(where: { $0.id == id }) else {
+            state = .library
+            return
+        }
+
+        var session = activeSessions[index]
+        GhosttyRuntimeTrace.flowBegin(
+            sessionReconnectFlowID(id),
+            event: "model.reconnect.begin",
+            fields: [
+                "source": source.traceLabel,
+                "workspaceID": id.uuidString,
+            ]
+        )
+        closePreparedTransport(for: id)
+        session.replaceRuntime(source: source)
+        activeSessions[index] = session
+        prepareTransport(for: session.target, reason: "reconnect")
+        state = .terminal(id)
+        GhosttyRuntimeTrace.flowEvent(
+            sessionReconnectFlowID(id),
+            event: "model.reconnect.recreated",
+            fields: [
+                "instanceID": session.instanceID.uuidString,
+                "source": source.traceLabel,
+                "workspaceID": id.uuidString,
+            ]
+        )
+    }
+
+    func handleTerminalRuntimeStateUpdate(_ update: TerminalRuntimeStateUpdate) {
+        guard let index = activeSessions.firstIndex(where: { $0.id == update.workspaceID }) else {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                sessionOpenFlowID(update.workspaceID),
+                event: "model.runtimeState.missingSession",
+                fields: ["instanceID": update.instanceID.uuidString]
+            )
+            return
+        }
+        guard activeSessions[index].instanceID == update.instanceID else {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                sessionOpenFlowID(update.workspaceID),
+                event: "model.runtimeState.stale",
+                fields: [
+                    "currentInstanceID": activeSessions[index].instanceID.uuidString,
+                    "staleInstanceID": update.instanceID.uuidString,
+                ]
+            )
+            return
+        }
+
+        let nextState = resolvedRuntimeState(
+            update.state,
+            current: activeSessions[index].runtimeState
+        )
+        activeSessions[index].applyRuntimeState(nextState)
+        GhosttyRuntimeTrace.flowEventIfActive(
+            sessionOpenFlowID(update.workspaceID),
+            event: "model.runtimeState.applied",
+            fields: [
+                "instanceID": update.instanceID.uuidString,
+                "source": "\(update.source)",
+                "state": "\(nextState)",
+                "workspaceID": update.workspaceID.uuidString,
+            ]
+        )
+
+        if let reconnectSource = automaticReconnectSource(for: update) {
+            attemptAutomaticReconnectIfEligible(
+                update.workspaceID,
+                source: reconnectSource
+            )
+        }
     }
 
     func closeActiveSession(_ id: SavedWorkspace.ID) {
@@ -533,6 +651,61 @@ final class RemuxRootModel: ObservableObject {
             password: password,
             terminalSettings: terminalSettings
         )
+    }
+
+    private func resolvedRuntimeState(
+        _ nextState: TerminalRuntimeState,
+        current: TerminalRuntimeState
+    ) -> TerminalRuntimeState {
+        if case .connecting = nextState,
+           case .reconnecting = current {
+            return current
+        }
+        return nextState
+    }
+
+    private func automaticReconnectSource(
+        for update: TerminalRuntimeStateUpdate
+    ) -> TerminalReconnectSource? {
+        guard case .terminal(let selectedID) = state, selectedID == update.workspaceID else {
+            return nil
+        }
+        guard let reason = update.state.disconnectedReason,
+              reason.allowsAutomaticReconnect else {
+            return nil
+        }
+
+        switch update.source {
+        case .foreground:
+            return .foreground
+        case .runtime:
+            return .transportLoss
+        case .readiness:
+            return nil
+        }
+    }
+
+    private func attemptAutomaticReconnectIfEligible(
+        _ id: SavedWorkspace.ID,
+        source: TerminalReconnectSource
+    ) {
+        guard let index = activeSessions.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        guard activeSessions[index].markAutomaticReconnectAttempted(source: source) else {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                sessionReconnectFlowID(id),
+                event: "model.reconnect.autoSkipped",
+                fields: [
+                    "reason": "already_attempted",
+                    "source": source.traceLabel,
+                    "workspaceID": id.uuidString,
+                ]
+            )
+            return
+        }
+
+        reconnectActiveSession(id, source: source)
     }
 
     private func prepareTransport(
@@ -709,6 +882,10 @@ final class RemuxRootModel: ObservableObject {
 
     private func sessionShowFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
         "session.show.\(workspaceID.uuidString)"
+    }
+
+    private func sessionReconnectFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
+        "session.reconnect.\(workspaceID.uuidString)"
     }
 }
 
