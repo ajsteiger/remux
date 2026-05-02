@@ -121,7 +121,6 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     override func layoutSubviews() {
         super.layoutSubviews()
 
-        syncAttachedViews()
         layoutVisibleTree()
         layoutPresentationOverlay()
     }

@@ -209,6 +209,43 @@ final class GhosttyKitControlSurfaceTests: XCTestCase {
         XCTAssertTrue(tracker.record(view: view, size: size, scale: 3))
     }
 
+    func testHostControlStateTrackerSuppressesUnchangedState() {
+        var tracker = GhosttyHostControlStateTracker()
+
+        let initialChanges = tracker.record(visible: false, focused: false)
+        XCTAssertTrue(initialChanges.visibleChanged)
+        XCTAssertTrue(initialChanges.focusedChanged)
+
+        let repeatedChanges = tracker.record(visible: false, focused: false)
+        XCTAssertFalse(repeatedChanges.visibleChanged)
+        XCTAssertFalse(repeatedChanges.focusedChanged)
+    }
+
+    func testHostControlStateTrackerReportsIndependentChanges() {
+        var tracker = GhosttyHostControlStateTracker()
+        _ = tracker.record(visible: false, focused: false)
+
+        let focusedChanges = tracker.record(visible: false, focused: true)
+        XCTAssertFalse(focusedChanges.visibleChanged)
+        XCTAssertTrue(focusedChanges.focusedChanged)
+
+        let visibleChanges = tracker.record(visible: true, focused: true)
+        XCTAssertTrue(visibleChanges.visibleChanged)
+        XCTAssertFalse(visibleChanges.focusedChanged)
+    }
+
+    func testHostControlStateTrackerResetAllowsSameStateAgain() {
+        var tracker = GhosttyHostControlStateTracker()
+        _ = tracker.record(visible: false, focused: false)
+        _ = tracker.record(visible: false, focused: false)
+
+        tracker.reset()
+
+        let changes = tracker.record(visible: false, focused: false)
+        XCTAssertTrue(changes.visibleChanged)
+        XCTAssertTrue(changes.focusedChanged)
+    }
+
     func testDecodeGhosttyTextReturnsEmptyStringForMissingBuffer() {
         XCTAssertEqual(
             GhosttyKitControlSurface.decodeGhosttyText(

@@ -316,7 +316,24 @@ final class RemuxV2AppUITests: XCTestCase {
             app.launchEnvironment["REMUX_TRACE_LATENCY"] = "1"
             app.launchEnvironment["REMUX_TRACE_PERF"] = "1"
         }
+        forwardTraceEnvironment()
         app.launch()
+    }
+
+    private func forwardTraceEnvironment() {
+        for key in [
+            "REMUX_TRACE_PERF",
+            "REMUX_TRACE_LATENCY",
+            "REMUX_TRACE_GHOSTTY_IO",
+            "REMUX_TRACE_GHOSTTY_DIAGNOSTICS",
+            "REMUX_DEBUG_LATENCY_PROBE",
+            "REMUX_DEBUG_LATENCY_PROBE_DELAY_MS",
+        ] {
+            guard let value = ProcessInfo.processInfo.environment[key] else {
+                continue
+            }
+            app.launchEnvironment[key] = value
+        }
     }
 
     private func liveSSHConfiguration() throws -> LiveSSHConfiguration {

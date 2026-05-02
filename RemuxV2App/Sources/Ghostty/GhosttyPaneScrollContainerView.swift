@@ -134,7 +134,6 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         super.layoutSubviews()
         scrollView.frame = bounds
         synchronizeFromSurface()
-        synchronizeSurfaceFrame()
     }
 
     func detachSurfaceIfNeeded(_ surface: GhosttyManagedSurface) {
@@ -247,7 +246,10 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
 
         let viewportSize = CGSize(width: max(bounds.width, 1), height: max(bounds.height, 1))
         let origin = CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y)
-        surface.view.frame = CGRect(origin: origin, size: viewportSize)
+        let targetFrame = CGRect(origin: origin, size: viewportSize)
+        if surface.view.frame != targetFrame {
+            surface.view.frame = targetFrame
+        }
         GhosttyRuntimeTrace.diagnostics(
             "scroll.surfaceFrame surface=\(ghosttyDiagnosticShortID(surface.id)) viewport=\(viewportSize.width)x\(viewportSize.height) offset=\(origin.x),\(origin.y) scale=\(displayScale) before={\(surface.diagnosticSummary())}"
         )

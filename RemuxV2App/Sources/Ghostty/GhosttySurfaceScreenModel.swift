@@ -40,6 +40,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var transportWriteSequencer: TmuxControlWriteSequencer?
     private var hostDisplayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
     private var hostAttachmentTracker = GhosttyHostAttachmentTracker()
+    private var hostControlStateTracker = GhosttyHostControlStateTracker()
     private var didTraceTerminalReady = false
     private var transportStartToken: UInt64 = 0
 
@@ -113,6 +114,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         debugStatus = "creating Ghostty runtime"
         hostDisplayUpdateTracker.reset()
         hostAttachmentTracker.reset()
+        hostControlStateTracker.reset()
 
         do {
             surfaceRegistry.reset()
@@ -229,6 +231,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         runtime = nil
         hostDisplayUpdateTracker.reset()
         hostAttachmentTracker.reset()
+        hostControlStateTracker.reset()
         surfaceRegistry.reset()
         state = .idle
         debugStatus = "stopped"
@@ -688,8 +691,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     ) {
         view.alignGhosttyRendererSublayers()
         updateHostDisplay(surface, size: size, scale: view.contentScaleFactor)
-        surface.setVisible(false)
-        surface.setFocused(false)
+        let controlStateChanges = hostControlStateTracker.record(visible: false, focused: false)
+        if controlStateChanges.visibleChanged {
+            surface.setVisible(false)
+        }
+        if controlStateChanges.focusedChanged {
+            surface.setFocused(false)
+        }
     }
 
     private func precreateRuntimeIfNeeded() {
@@ -926,6 +934,27 @@ struct GhosttyHostAttachmentTracker: Equatable {
     mutating func reset() {
         viewID = nil
         metrics = nil
+    }
+}
+
+struct GhosttyHostControlStateTracker: Equatable {
+    private var isVisible: Bool?
+    private var isFocused: Bool?
+
+    mutating func record(
+        visible nextVisible: Bool,
+        focused nextFocused: Bool
+    ) -> (visibleChanged: Bool, focusedChanged: Bool) {
+        let visibleChanged = isVisible != nextVisible
+        let focusedChanged = isFocused != nextFocused
+        isVisible = nextVisible
+        isFocused = nextFocused
+        return (visibleChanged, focusedChanged)
+    }
+
+    mutating func reset() {
+        isVisible = nil
+        isFocused = nil
     }
 }
 

@@ -175,7 +175,9 @@ struct GhosttySurfaceScreen: View {
                 }
             }
             .onPreferenceChange(GhosttyBottomChromeHeightPreferenceKey.self) { newHeight in
-                bottomChromeHeight = GhosttySelectionSheetSizing.normalizedHeight(newHeight)
+                let normalizedHeight = GhosttySelectionSheetSizing.normalizedHeight(newHeight)
+                guard bottomChromeHeight != normalizedHeight else { return }
+                bottomChromeHeight = normalizedHeight
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
                 GhosttyRuntimeTrace.perf("kbd.willChangeFrame")
@@ -563,9 +565,11 @@ struct GhosttySurfaceScreen: View {
             frameEnd: frameEnd,
             screenBounds: UIScreen.main.bounds
         )
-        let nextOverlapHeight = GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
-            frameEnd: frameEnd,
-            screenBounds: UIScreen.main.bounds
+        let nextOverlapHeight = GhosttySelectionSheetSizing.normalizedHeight(
+            GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
+                frameEnd: frameEnd,
+                screenBounds: UIScreen.main.bounds
+            )
         )
         let fallbackDelay = keyboardTransitionFallbackDelay(for: notification)
         let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
@@ -614,7 +618,11 @@ struct GhosttySurfaceScreen: View {
                 isAwaitingSystemKeyboardPresentation = false
             }
 
-            inputCoordinator.updateSoftwareKeyboardVisibility(isVisible)
+            var updatedCoordinator = inputCoordinator
+            updatedCoordinator.updateSoftwareKeyboardVisibility(isVisible)
+            if updatedCoordinator != inputCoordinator {
+                inputCoordinator = updatedCoordinator
+            }
         }
     }
 
@@ -1033,6 +1041,7 @@ struct GhosttyTerminalViewportStabilizer: Equatable {
         let normalizedSize = Self.normalized(size)
         guard normalizedSize.width > 1, normalizedSize.height > 1 else { return }
         guard !isViewportFrozen else { return }
+        guard lastLiveSize != normalizedSize else { return }
 
         lastLiveSize = normalizedSize
     }
@@ -1298,7 +1307,6 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 
     func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
         uiView.isHidden = true
-        uiView.alignGhosttyRendererSublayers()
         model.attach(view: uiView, size: size)
     }
 }
