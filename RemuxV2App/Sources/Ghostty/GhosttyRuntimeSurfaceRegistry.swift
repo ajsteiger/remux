@@ -275,6 +275,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 )
             }
             clearPendingPhonePresentation()
+            completeInteractiveReadinessIfNeeded(
+                surfaceID: targetSurfaceID,
+                reason: "selection.renderable"
+            )
             return
         }
 
@@ -428,6 +432,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             reason: reason
         )
         clearPendingPhonePresentation()
+        completeInteractiveReadinessIfNeeded(surfaceID: surfaceID, reason: reason)
         GhosttyRuntimeTrace.flowEventIfActive(
             "tmux.newWindow",
             event: "ui.presentation.ready",
@@ -1035,6 +1040,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 surfaceID: id,
                 reason: "runtime.render"
             )
+            completeInteractiveReadinessIfNeeded(
+                surfaceID: id,
+                reason: "runtime.render",
+                surface: surface
+            )
 
         case GHOSTTY_ACTION_SCROLLBAR:
             let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
@@ -1460,7 +1470,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyInteractiveSurfaceReadinessState(
             selected: selectedActiveLeafID == surface.id,
             visible: surface.isVisible,
-            focused: surface.isFocused
+            focused: surface.isFocused,
+            contentReady: surfaceHasRenderableContent(surface.id),
+            presentationReady: pendingPhonePresentationSurfaceID != surface.id
         )
     }
 
@@ -1470,7 +1482,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         scale: CGFloat?
     ) {
         var fields = [
+            "contentReady": "\(completion.state.contentReady)",
             "focused": "\(completion.state.focused)",
+            "presentationReady": "\(completion.state.presentationReady)",
             "reason": reason,
             "rendered": "\(completion.rendered)",
             "selected": "\(completion.state.selected)",
@@ -1495,7 +1509,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         let state = interactiveReadinessState(for: surface)
         let renderStatus = interactiveReadinessTracker.renderStatus(for: surfaceID)
         var fields = [
+            "contentReady": "\(state.contentReady)",
             "focused": "\(state.focused)",
+            "presentationReady": "\(state.presentationReady)",
             "reason": reason,
             "rendered": "\(renderStatus.rendered)",
             "selected": "\(state.selected)",
@@ -1877,9 +1893,11 @@ struct GhosttyInteractiveSurfaceReadinessState: Equatable {
     let selected: Bool
     let visible: Bool
     let focused: Bool
+    let contentReady: Bool
+    let presentationReady: Bool
 
     var isInteractive: Bool {
-        selected && visible && focused
+        selected && visible && focused && contentReady && presentationReady
     }
 }
 

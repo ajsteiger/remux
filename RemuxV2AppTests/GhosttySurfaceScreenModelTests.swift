@@ -833,18 +833,36 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("input rejected"))
     }
 
-    func testInteractiveReadinessWaitsForRenderedFocusedVisibleSelectedSurface() {
+    func testInteractiveReadinessWaitsForRenderedFocusedVisibleSelectedContentReadySurface() {
         let tracker = GhosttyInteractiveReadinessTracker()
         let surfaceID = UUID()
         let notSelected = GhosttyInteractiveSurfaceReadinessState(
             selected: false,
             visible: true,
-            focused: true
+            focused: true,
+            contentReady: true,
+            presentationReady: true
+        )
+        let waitingForContent = GhosttyInteractiveSurfaceReadinessState(
+            selected: true,
+            visible: true,
+            focused: true,
+            contentReady: false,
+            presentationReady: true
+        )
+        let waitingForPresentation = GhosttyInteractiveSurfaceReadinessState(
+            selected: true,
+            visible: true,
+            focused: true,
+            contentReady: true,
+            presentationReady: false
         )
         let ready = GhosttyInteractiveSurfaceReadinessState(
             selected: true,
             visible: true,
-            focused: true
+            focused: true,
+            contentReady: true,
+            presentationReady: true
         )
 
         tracker.begin(flow: "tmux.splitPane", surfaceID: surfaceID)
@@ -861,6 +879,18 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 surfaceID: surfaceID,
                 size: CGSize(width: 200, height: 300),
                 state: notSelected
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            tracker.updatePresentation(
+                surfaceID: surfaceID,
+                state: waitingForContent
+            ).isEmpty
+        )
+        XCTAssertTrue(
+            tracker.updatePresentation(
+                surfaceID: surfaceID,
+                state: waitingForPresentation
             ).isEmpty
         )
 
