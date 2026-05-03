@@ -134,6 +134,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         super.layoutSubviews()
         scrollView.frame = bounds
         synchronizeFromSurface()
+        synchronizeSurfaceFrame()
     }
 
     func detachSurfaceIfNeeded(_ surface: GhosttyManagedSurface) {
@@ -145,7 +146,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        synchronizeSurfaceFrame()
+        pinSurfaceToVisibleBounds()
         guard !isApplyingProgrammaticUpdate else { return }
         guard surface?.scrollRoute == .viewport else { return }
 
@@ -237,7 +238,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
                 maxContentOffsetY: maxOffsetY
             )
             applyProgrammaticContentOffset(CGPoint(x: 0, y: offsetY))
-            synchronizeSurfaceFrame()
+            pinSurfaceToVisibleBounds()
         }
     }
 
@@ -245,13 +246,9 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         guard let surface else { return }
 
         let viewportSize = CGSize(width: max(bounds.width, 1), height: max(bounds.height, 1))
-        let origin = CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y)
-        let targetFrame = CGRect(origin: origin, size: viewportSize)
-        if surface.view.frame != targetFrame {
-            surface.view.frame = targetFrame
-        }
+        pinSurfaceToVisibleBounds(surface: surface, viewportSize: viewportSize)
         GhosttyRuntimeTrace.diagnostics(
-            "scroll.surfaceFrame surface=\(ghosttyDiagnosticShortID(surface.id)) viewport=\(viewportSize.width)x\(viewportSize.height) offset=\(origin.x),\(origin.y) scale=\(displayScale) before={\(surface.diagnosticSummary())}"
+            "scroll.surfaceFrame surface=\(ghosttyDiagnosticShortID(surface.id)) viewport=\(viewportSize.width)x\(viewportSize.height) offset=\(scrollView.contentOffset.x),\(scrollView.contentOffset.y) scale=\(displayScale) before={\(surface.diagnosticSummary())}"
         )
         if surface.updateDisplay(size: viewportSize, scale: displayScale) {
             surface.view.alignGhosttyRendererSublayers()
@@ -259,6 +256,23 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         GhosttyRuntimeTrace.diagnostics(
             "scroll.surfaceFrame applied surface={\(surface.diagnosticSummary())}"
         )
+    }
+
+    private func pinSurfaceToVisibleBounds() {
+        guard let surface else { return }
+
+        let viewportSize = CGSize(width: max(bounds.width, 1), height: max(bounds.height, 1))
+        pinSurfaceToVisibleBounds(surface: surface, viewportSize: viewportSize)
+    }
+
+    private func pinSurfaceToVisibleBounds(
+        surface: GhosttyManagedSurface,
+        viewportSize: CGSize
+    ) {
+        let origin = CGPoint(x: scrollView.contentOffset.x, y: scrollView.contentOffset.y)
+        let frame = CGRect(origin: origin, size: viewportSize)
+        guard surface.view.frame != frame else { return }
+        surface.view.frame = frame
     }
 
     private func applyProgrammaticContentOffset(_ offset: CGPoint) {
