@@ -39,6 +39,26 @@ final class PanePreviewLayoutTests: XCTestCase {
         XCTAssertEqual(metrics.sheetDetent, .large)
     }
 
+    func testWindowGridUsesTwoColumnTileBudget() {
+        let metrics = PanePreviewLayout.windowMetrics(cellCount: 2, availableWidth: 361)
+
+        XCTAssertEqual(metrics.columnCount, 2)
+        XCTAssertEqual(metrics.tilePointSize, CGSize(width: 175, height: 156))
+        XCTAssertEqual(metrics.previewPointSize, CGSize(width: 159, height: 120))
+        XCTAssertEqual(metrics.sheetDetent, .fixed(252))
+    }
+
+    func testWindowGridUsesLargeDetentAfterThreeRows() {
+        XCTAssertEqual(
+            PanePreviewLayout.windowMetrics(cellCount: 6, availableWidth: 361).sheetDetent,
+            .fixed(584)
+        )
+        XCTAssertEqual(
+            PanePreviewLayout.windowMetrics(cellCount: 7, availableWidth: 361).sheetDetent,
+            .large
+        )
+    }
+
     func testPhysicalPixelBudgetTracksLayoutMetrics() {
         let budget = PanePreviewLayout.physicalPixelBudget(
             paneCount: 1,
@@ -48,5 +68,15 @@ final class PanePreviewLayoutTests: XCTestCase {
 
         XCTAssertEqual(budget.width, 1035)
         XCTAssertEqual(budget.height, 777)
+    }
+
+    func testWindowPhysicalPixelBudgetTracksWindowGridMetrics() {
+        let budget = PanePreviewLayout.windowPhysicalPixelBudget(
+            availableWidth: 361,
+            scale: 3
+        )
+
+        XCTAssertEqual(budget.width, 477)
+        XCTAssertEqual(budget.height, 360)
     }
 }

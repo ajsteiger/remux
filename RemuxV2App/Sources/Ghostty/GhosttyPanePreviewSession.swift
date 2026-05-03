@@ -2,21 +2,21 @@ import CoreGraphics
 import Foundation
 import GhosttyKit
 
-/// Manages the lifetime of pane-preview image requests for a single open
-/// instance of the panes sheet.
+/// Manages the lifetime of pane-preview image requests for one open picker
+/// sheet. A pane picker previews every pane in one window; the window picker
+/// previews the focused pane for each top-level window.
 ///
-/// Owned by the parent (`GhosttySurfaceScreen`), created at the moment of
-/// `showPanes()` tap, and explicitly torn down via `cancelAll()` from the
-/// sheet's dismissal path. Accepted request handles are also carried by the
-/// callback userdata so the Ghostty callback can release them if the Swift
-/// session disappears before completion.
+/// Owned by the parent (`GhosttySurfaceScreen`), created when a picker opens,
+/// and explicitly torn down via `cancelAll()` from the sheet's dismissal path.
+/// Accepted request handles are also carried by the callback userdata so the
+/// Ghostty callback can release them if the Swift session disappears before
+/// completion.
 ///
 /// Architecture invariants for preview request ownership:
 ///
-/// - The session is frozen to the **opening logical top-level**. Pane
-///   membership within that top-level may update via `reconcile(leafIDs:)`
-///   from the sheet. If that top-level disappears, the parent dismisses the
-///   sheet rather than retargeting it by timing or selection.
+/// - The session owns only preview request lifetime and image state. The pane
+///   sheet owns its frozen top-level separately; the window sheet owns its
+///   focused-leaf set separately.
 /// - The C preview request handle is held by the session for each pane in
 ///   `.pending` state. Every transition out of `.pending` (deliver / cancel /
 ///   reconcile-removal) releases that handle exactly once via
@@ -56,6 +56,21 @@ final class GhosttyPanePreviewSession: ObservableObject {
         let release: @MainActor (ghostty_surface_preview_request_t) -> Void
     }
 
+    enum PreviewSizing: Equatable {
+        case paneGrid(availableWidth: CGFloat)
+        case windowGrid(availableWidth: CGFloat)
+
+        @MainActor
+        static var paneGridForCurrentScreen: PreviewSizing {
+            .paneGrid(availableWidth: PanePreviewLayout.currentSheetContentWidth())
+        }
+
+        @MainActor
+        static var windowGridForCurrentScreen: PreviewSizing {
+            .windowGrid(availableWidth: PanePreviewLayout.currentSheetContentWidth())
+        }
+    }
+
     /// Per-pane preview state observed by the panes sheet. The `failed` case
     /// preserves the raw Ghostty status so future UI can disambiguate
     /// surface-closed vs invalid-options vs render-failed.
@@ -67,13 +82,11 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
     let id = UUID()
 
-    /// Top-level (window) this session is currently bound to.
-    @Published private(set) var topLevelID: UUID
-
     @Published private(set) var imagesByPaneID: [UUID: PreviewState] = [:]
 
     private weak var registry: GhosttyRuntimeSurfaceRegistry?
     private let displayScale: CGFloat
+    private let previewSizing: PreviewSizing
     private let previewRequestClient: PreviewRequestClient?
     private let retryDelay: Duration
     private var pendingRequests: [UUID: PreviewRequestLease] = [:]
@@ -81,29 +94,29 @@ final class GhosttyPanePreviewSession: ObservableObject {
     private var generation: UInt64 = 0
 
     init(
-        topLevelID: UUID,
         leafIDs: [UUID],
         registry: GhosttyRuntimeSurfaceRegistry,
-        scale: CGFloat = PanePreviewLayout.currentScale()
+        scale: CGFloat = PanePreviewLayout.currentScale(),
+        previewSizing: PreviewSizing? = nil
     ) {
-        self.topLevelID = topLevelID
         self.registry = registry
         self.displayScale = scale
+        self.previewSizing = previewSizing ?? .paneGridForCurrentScreen
         self.previewRequestClient = nil
         self.retryDelay = Self.transientRetryDelay
         startInitialRequests(leafIDs: leafIDs)
     }
 
     init(
-        topLevelID: UUID,
         leafIDs: [UUID],
         scale: CGFloat = PanePreviewLayout.currentScale(),
+        previewSizing: PreviewSizing? = nil,
         retryDelay: Duration? = nil,
         previewRequestClient: PreviewRequestClient
     ) {
-        self.topLevelID = topLevelID
         self.registry = nil
         self.displayScale = scale
+        self.previewSizing = previewSizing ?? .paneGridForCurrentScreen
         self.previewRequestClient = previewRequestClient
         self.retryDelay = retryDelay ?? Self.transientRetryDelay
         startInitialRequests(leafIDs: leafIDs)
@@ -113,7 +126,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
         for paneID in leafIDs {
             startRequest(
                 for: paneID,
-                paneCount: max(1, leafIDs.count),
+                previewItemCount: max(1, leafIDs.count),
                 remainingRetryAttempts: Self.transientRetryAttempts
             )
         }
@@ -144,14 +157,14 @@ final class GhosttyPanePreviewSession: ObservableObject {
             guard shouldRetryPreview(for: retainedID) else { continue }
             startRequest(
                 for: retainedID,
-                paneCount: paneCount,
+                previewItemCount: paneCount,
                 remainingRetryAttempts: Self.transientRetryAttempts
             )
         }
         for addedID in newSet.subtracting(currentSet) {
             startRequest(
                 for: addedID,
-                paneCount: paneCount,
+                previewItemCount: paneCount,
                 remainingRetryAttempts: Self.transientRetryAttempts
             )
         }
@@ -177,16 +190,13 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
     private func startRequest(
         for paneID: UUID,
-        paneCount: Int,
+        previewItemCount: Int,
         remainingRetryAttempts: Int
     ) {
         guard pendingRequests[paneID] == nil else { return }
         cancelRetry(for: paneID)
 
-        let pixelBudget = PanePreviewLayout.physicalPixelBudget(
-            paneCount: paneCount,
-            scale: displayScale
-        )
+        let pixelBudget = physicalPixelBudget(previewItemCount: previewItemCount)
 
         let options = ghostty_surface_preview_image_options_s(
             max_width_px: pixelBudget.width,
@@ -201,7 +211,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
             session: self,
             paneID: paneID,
             generation: generation,
-            paneCount: paneCount,
+            previewItemCount: previewItemCount,
             remainingRetryAttempts: remainingRetryAttempts,
             requestLease: requestLease
         )
@@ -222,7 +232,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
             imagesByPaneID[paneID] = .failed(GHOSTTY_SURFACE_PREVIEW_STATUS_SURFACE_CLOSED)
             scheduleRetry(
                 for: paneID,
-                paneCount: paneCount,
+                previewItemCount: previewItemCount,
                 remainingRetryAttempts: remainingRetryAttempts
             )
 
@@ -233,8 +243,27 @@ final class GhosttyPanePreviewSession: ObservableObject {
             imagesByPaneID[paneID] = .failed(GHOSTTY_SURFACE_PREVIEW_STATUS_RENDER_FAILED)
             scheduleRetry(
                 for: paneID,
-                paneCount: paneCount,
+                previewItemCount: previewItemCount,
                 remainingRetryAttempts: remainingRetryAttempts
+            )
+        }
+    }
+
+    private func physicalPixelBudget(
+        previewItemCount: Int
+    ) -> (width: UInt32, height: UInt32) {
+        switch previewSizing {
+        case .paneGrid(let availableWidth):
+            return PanePreviewLayout.physicalPixelBudget(
+                paneCount: previewItemCount,
+                availableWidth: availableWidth,
+                scale: displayScale
+            )
+
+        case .windowGrid(let availableWidth):
+            return PanePreviewLayout.windowPhysicalPixelBudget(
+                availableWidth: availableWidth,
+                scale: displayScale
             )
         }
     }
@@ -258,7 +287,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
         generation: UInt64,
         status: ghostty_surface_preview_status_e,
         image: CGImage?,
-        paneCount: Int,
+        previewItemCount: Int,
         remainingRetryAttempts: Int,
         requestLease: PreviewRequestLease
     ) {
@@ -274,7 +303,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
             guard isTransientPreviewFailure(failureStatus) else { return }
             scheduleRetry(
                 for: paneID,
-                paneCount: paneCount,
+                previewItemCount: previewItemCount,
                 remainingRetryAttempts: remainingRetryAttempts
             )
         }
@@ -296,7 +325,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
     private func scheduleRetry(
         for paneID: UUID,
-        paneCount: Int,
+        previewItemCount: Int,
         remainingRetryAttempts: Int
     ) {
         guard remainingRetryAttempts > 0 else { return }
@@ -318,7 +347,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
             startRequest(
                 for: paneID,
-                paneCount: max(paneCount, imagesByPaneID.count),
+                previewItemCount: max(previewItemCount, imagesByPaneID.count),
                 remainingRetryAttempts: remainingRetryAttempts - 1
             )
         }
@@ -450,7 +479,7 @@ private final class PreviewCallbackBox: @unchecked Sendable {
     weak var session: GhosttyPanePreviewSession?
     let paneID: UUID
     let generation: UInt64
-    let paneCount: Int
+    let previewItemCount: Int
     let remainingRetryAttempts: Int
     let requestLease: PreviewRequestLease
 
@@ -458,14 +487,14 @@ private final class PreviewCallbackBox: @unchecked Sendable {
         session: GhosttyPanePreviewSession,
         paneID: UUID,
         generation: UInt64,
-        paneCount: Int,
+        previewItemCount: Int,
         remainingRetryAttempts: Int,
         requestLease: PreviewRequestLease
     ) {
         self.session = session
         self.paneID = paneID
         self.generation = generation
-        self.paneCount = paneCount
+        self.previewItemCount = previewItemCount
         self.remainingRetryAttempts = remainingRetryAttempts
         self.requestLease = requestLease
     }
@@ -509,7 +538,7 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
     let capturedPixelBuffer = SendablePixelBuffer(pointer: pixelCopy)
     let capturedPaneID = box.paneID
     let capturedGeneration = box.generation
-    let capturedPaneCount = box.paneCount
+    let capturedPreviewItemCount = box.previewItemCount
     let capturedRetryAttempts = box.remainingRetryAttempts
     let capturedRequestLease = box.requestLease
 
@@ -550,7 +579,7 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
             generation: capturedGeneration,
             status: pixelStatus,
             image: cgImage,
-            paneCount: capturedPaneCount,
+            previewItemCount: capturedPreviewItemCount,
             remainingRetryAttempts: capturedRetryAttempts,
             requestLease: capturedRequestLease
         )

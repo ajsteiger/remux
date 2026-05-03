@@ -1,35 +1,32 @@
 import SwiftUI
 
 enum GhosttySurfaceSelectionSheet: Identifiable {
-    case windows
-    case panes(GhosttyPanePreviewSession)
+    case windows(GhosttyPanePreviewSession)
+    case panes(topLevelID: UUID, previews: GhosttyPanePreviewSession)
 
     var id: String {
         switch self {
-        case .windows:
+        case .windows(_):
             "windows"
-        case .panes(let session):
-            "panes-\(session.id.uuidString)"
+        case .panes(let topLevelID, let previews):
+            "panes-\(topLevelID.uuidString)-\(previews.id.uuidString)"
         }
     }
 }
 
 private enum GhosttySheetPalette {
-    static let background = GhosttyPhoneChromePalette.screenBackground
     static let row = Color(red: 0.23, green: 0.25, blue: 0.30)
     static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.14)
     static let stroke = Color.white.opacity(0.08)
-    static let strokeSelected = GhosttyPhoneChromePalette.accent.opacity(0.65)
     static let primary = Color.white.opacity(0.92)
     static let secondary = Color.white.opacity(0.52)
     static let tertiary = Color.white.opacity(0.38)
     static let accent = GhosttyPhoneChromePalette.accent
-    static let indexSurface = Color.white.opacity(0.12)
-    static let indexSelectedSurface = GhosttyPhoneChromePalette.accent
 }
 
 struct GhosttyWindowSelectionSheet: View {
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
+    @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyWindowRemovalRequest?
 
     let sessionName: String
@@ -38,67 +35,33 @@ struct GhosttyWindowSelectionSheet: View {
     let onRemoveWindow: (UUID) -> Void
 
     var body: some View {
+        let topLevels = registry.topLevels
+        let selectedID = registry.selectedTopLevel?.id
+        let cellCount = topLevels.count + 1
+        let layout = PanePreviewLayout.windowMetricsForCurrentScreen(cellCount: cellCount)
+
         VStack(alignment: .leading, spacing: 14) {
             sheetHeader(caption: "SESSION", title: sessionName)
 
-            List {
-                ForEach(Array(registry.topLevels.enumerated()), id: \.element.id) { index, topLevel in
-                    let request = GhosttyWindowRemovalRequest(
-                        id: topLevel.id,
-                        displayIndex: index + 1,
-                        paneCount: topLevel.leafIDs.count
-                    )
-                    Button {
-                        Haptic.selection()
-                        onSelect(topLevel.id)
-                    } label: {
-                        GhosttyWindowSelectionRow(
-                            index: index,
-                            topLevel: topLevel,
-                            isSelected: topLevel.id == registry.selectedTopLevel?.id
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button {
-                            Haptic.warning()
-                            pendingRemoval = request
-                        } label: {
-                            Label("Remove", systemImage: "trash")
-                        }
-                        .tint(.red)
-                    }
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            Haptic.warning()
-                            pendingRemoval = request
-                        } label: {
-                            Label("Remove Window \(index + 1)", systemImage: "trash")
-                        }
-                    }
-                }
+            ScrollView(showsIndicators: false) {
+                windowGrid(
+                    topLevels: topLevels,
+                    selectedID: selectedID,
+                    layout: layout
+                )
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-            GhosttySheetBottomActionBar {
-                HStack(spacing: 10) {
-                    GhosttySheetActionButton(
-                        title: "New Window",
-                        systemName: "plus",
-                        action: onCreateWindow
-                    )
-                }
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
+        .task(id: focusedLeafSignature(topLevels)) {
+            session.reconcile(leafIDs: focusedLeafIDs(topLevels))
+        }
+        .onChange(of: focusedLeafSignature(topLevels)) { _, _ in
+            session.reconcile(leafIDs: focusedLeafIDs(topLevels))
+        }
         .confirmationDialog(
             "Remove Window?",
             isPresented: pendingRemovalBinding,
@@ -112,6 +75,70 @@ struct GhosttyWindowSelectionSheet: View {
         } message: { request in
             Text(windowRemovalMessage(for: request))
         }
+    }
+
+    private func windowGrid(
+        topLevels: [GhosttyTopLevelSurface],
+        selectedID: UUID?,
+        layout: PanePreviewLayout.Metrics
+    ) -> some View {
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.fixed(layout.tilePointSize.width), spacing: layout.gridSpacing),
+                count: layout.columnCount
+            ),
+            alignment: .center,
+            spacing: layout.gridSpacing
+        ) {
+            ForEach(Array(topLevels.enumerated()), id: \.element.id) { index, topLevel in
+                Button {
+                    Haptic.selection()
+                    onSelect(topLevel.id)
+                } label: {
+                    GhosttyWindowSelectionTile(
+                        index: index,
+                        totalCount: topLevels.count,
+                        topLevel: topLevel,
+                        isSelected: topLevel.id == selectedID,
+                        previewState: topLevel.resolvedFocusedLeafID
+                            .flatMap { session.imagesByPaneID[$0] },
+                        layout: layout
+                    )
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button(role: .destructive) {
+                        Haptic.warning()
+                        pendingRemoval = GhosttyWindowRemovalRequest(
+                            id: topLevel.id,
+                            displayIndex: index + 1,
+                            paneCount: topLevel.leafIDs.count
+                        )
+                    } label: {
+                        Label("Remove Window \(index + 1)", systemImage: "trash")
+                    }
+                }
+            }
+
+            Button {
+                Haptic.tap()
+                onCreateWindow?()
+            } label: {
+                GhosttyWindowNewTile(layout: layout)
+            }
+            .buttonStyle(.plain)
+            .disabled(onCreateWindow == nil)
+            .opacity(onCreateWindow == nil ? 0.5 : 1.0)
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private func focusedLeafIDs(_ topLevels: [GhosttyTopLevelSurface]) -> [UUID] {
+        topLevels.compactMap(\.resolvedFocusedLeafID)
+    }
+
+    private func focusedLeafSignature(_ topLevels: [GhosttyTopLevelSurface]) -> [UUID] {
+        focusedLeafIDs(topLevels)
     }
 
     private var pendingRemovalBinding: Binding<Bool> {
@@ -135,6 +162,7 @@ struct GhosttyPaneSelectionSheet: View {
     @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyPaneRemovalRequest?
 
+    let topLevelID: UUID
     let onSplitPane: (() -> Void)?
     let onStackPane: (() -> Void)?
     let onSelect: (UUID) -> Void
@@ -146,7 +174,7 @@ struct GhosttyPaneSelectionSheet: View {
     /// tapping panes). If the frozen top-level is gone from the registry
     /// entirely, leafIDs is empty and the parent will dismiss.
     private var frozenTopLevel: GhosttyTopLevelSurface? {
-        registry.topLevels.first(where: { $0.id == session.topLevelID })
+        registry.topLevels.first(where: { $0.id == topLevelID })
     }
 
     var body: some View {
@@ -196,7 +224,7 @@ struct GhosttyPaneSelectionSheet: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
-        .task(id: session.topLevelID) {
+        .task(id: topLevelID) {
             // First-render reconcile closes the gap between tap-time session
             // creation and the sheet's initial body render. If pane
             // membership changed during presentation, the session must align
@@ -242,6 +270,7 @@ struct GhosttyPaneSelectionSheet: View {
                 } label: {
                     GhosttyPaneSelectionTile(
                         index: index,
+                        totalCount: leafIDs.count,
                         isSelected: paneID == selectedLeafID,
                         state: session.imagesByPaneID[paneID],
                         layout: layout
@@ -368,52 +397,157 @@ private struct GhosttySheetActionButton: View {
     }
 }
 
-private struct GhosttyWindowSelectionRow: View {
+private struct GhosttyWindowSelectionTile: View {
     let index: Int
+    let totalCount: Int
     let topLevel: GhosttyTopLevelSurface
     let isSelected: Bool
+    let previewState: GhosttyPanePreviewSession.PreviewState?
+    let layout: PanePreviewLayout.Metrics
 
     var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isSelected ? GhosttySheetPalette.indexSelectedSurface : GhosttySheetPalette.indexSurface)
-                .frame(width: 30, height: 30)
-                .overlay {
-                    Text("\(index + 1)")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(isSelected ? Color.black.opacity(0.78) : GhosttySheetPalette.primary)
-                }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Window \(index + 1)")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(GhosttySheetPalette.primary)
-
-                Text("\(topLevel.leafIDs.count) \(topLevel.leafIDs.count == 1 ? "pane" : "panes")")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(GhosttySheetPalette.secondary)
-            }
-
-            Spacer(minLength: 0)
-
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(GhosttySheetPalette.accent)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            previewSurface
+            captionRow
         }
-        .padding(12)
+        .padding(layout.tilePadding)
+        .frame(
+            width: layout.tilePointSize.width,
+            height: layout.tilePointSize.height,
+            alignment: .topLeading
+        )
         .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isSelected ? GhosttySheetPalette.strokeSelected : GhosttySheetPalette.stroke, lineWidth: 1)
+                .strokeBorder(
+                    isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.stroke,
+                    lineWidth: isSelected ? 1.5 : 1
+                )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    @ViewBuilder
+    private var previewSurface: some View {
+        switch previewState {
+        case .ready(let cgImage):
+            Image(decorative: cgImage, scale: PanePreviewLayout.currentScale())
+                .resizable()
+                .scaledToFill()
+                .frame(
+                    width: layout.previewPointSize.width,
+                    height: layout.previewPointSize.height,
+                    alignment: .topLeading
+                )
+                .background(Color.black.opacity(0.30))
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+        case .pending, .none, .failed:
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.black.opacity(0.30))
+                .frame(
+                    width: layout.previewPointSize.width,
+                    height: layout.previewPointSize.height
+                )
+        }
+    }
+
+    private var captionRow: some View {
+        HStack(spacing: 6) {
+            Text("\(index + 1)")
+                .font(.system(size: 11, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(GhosttySheetPalette.tertiary)
+
+            Text(paneCountLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(GhosttySheetPalette.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            if isSelected {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(GhosttySheetPalette.accent)
+                        .frame(width: 6, height: 6)
+
+                    Text("active")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(GhosttySheetPalette.accent)
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private var paneCountLabel: String {
+        let count = topLevel.leafIDs.count
+        return "\(count) \(count == 1 ? "pane" : "panes")"
+    }
+
+    private var accessibilityLabel: String {
+        let count = topLevel.leafIDs.count
+        let paneText = "\(count) \(count == 1 ? "pane" : "panes")"
+        let positional = "Window \(index + 1) of \(totalCount)"
+        if isSelected {
+            return "\(positional), \(paneText), active"
+        }
+        return "\(positional), \(paneText)"
+    }
+}
+
+private struct GhosttyWindowNewTile: View {
+    let layout: PanePreviewLayout.Metrics
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
+                    .frame(
+                        width: layout.previewPointSize.width,
+                        height: layout.previewPointSize.height
+                    )
+
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(GhosttySheetPalette.primary)
+            }
+
+            HStack {
+                Text("New Window")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(GhosttySheetPalette.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 2)
+        }
+        .padding(layout.tilePadding)
+        .frame(
+            width: layout.tilePointSize.width,
+            height: layout.tilePointSize.height,
+            alignment: .topLeading
+        )
+        .background(GhosttySheetPalette.row.opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(
+                    GhosttySheetPalette.stroke,
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                )
         }
     }
 }
 
 private struct GhosttyPaneSelectionTile: View {
     let index: Int
+    let totalCount: Int
     let isSelected: Bool
     let state: GhosttyPanePreviewSession.PreviewState?
     let layout: PanePreviewLayout.Metrics
@@ -438,6 +572,14 @@ private struct GhosttyPaneSelectionTile: View {
                     lineWidth: isSelected ? 1.5 : 1
                 )
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private var accessibilityLabel: String {
+        let positional = "Pane \(index + 1) of \(totalCount)"
+        return isSelected ? "\(positional), active" : positional
     }
 
     @ViewBuilder
@@ -478,11 +620,6 @@ private struct GhosttyPaneSelectionTile: View {
 
     private var captionRow: some View {
         HStack(spacing: 6) {
-            Text("\(index + 1)")
-                .font(.system(size: 11, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.tertiary)
-
             Spacer(minLength: 0)
 
             if isSelected {

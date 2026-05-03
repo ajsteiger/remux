@@ -214,10 +214,10 @@ struct GhosttySurfaceScreen: View {
                     .presentationBackground(.regularMaterial)
             }
             .onChange(of: registry.topLevels.map(\.id)) { _, topLevelIDs in
-                guard case .panes(let session) = selectionSheet else {
+                guard case .panes(let topLevelID, _) = selectionSheet else {
                     return
                 }
-                guard !topLevelIDs.contains(session.topLevelID) else {
+                guard !topLevelIDs.contains(topLevelID) else {
                     return
                 }
                 dismissSelectionSheet()
@@ -276,7 +276,10 @@ struct GhosttySurfaceScreen: View {
         Binding(
             get: { selectionSheet },
             set: { newValue in
-                if newValue == nil, case .panes(let session) = selectionSheet {
+                if newValue == nil, case .windows(let session) = selectionSheet {
+                    session.cancelAll()
+                }
+                if newValue == nil, case .panes(_, let session) = selectionSheet {
                     session.cancelAll()
                 }
                 selectionSheet = newValue
@@ -487,12 +490,23 @@ struct GhosttySurfaceScreen: View {
         guard !registry.topLevels.isEmpty else { return }
         GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "ui.showWindows")
         captureSelectionSheetBottomReplacementHeight()
-        selectionSheet = .windows
+        selectionSheet = .windows(makeWindowPreviewSession())
+    }
+
+    private func makeWindowPreviewSession() -> GhosttyPanePreviewSession {
+        GhosttyPanePreviewSession(
+            leafIDs: registry.topLevels.compactMap(\.resolvedFocusedLeafID),
+            registry: registry,
+            previewSizing: .windowGridForCurrentScreen
+        )
     }
 
     private func dismissSelectionSheet() {
-        if case .panes(let session) = selectionSheet {
+        switch selectionSheet {
+        case .windows(let session), .panes(_, let session):
             session.cancelAll()
+        case .none:
+            break
         }
         selectionSheet = nil
         selectionSheetBottomReplacementHeight = 0
@@ -502,18 +516,24 @@ struct GhosttySurfaceScreen: View {
         for sheet: GhosttySurfaceSelectionSheet
     ) -> Set<PresentationDetent> {
         switch sheet {
-        case .windows:
-            return [
-                .height(
-                    GhosttySelectionSheetSizing.fixedDetentHeight(
-                        preferredHeight: GhosttySelectionSheetSizing.windowPreferredHeight,
-                        bottomReplacementHeight: selectionSheetBottomReplacementHeight
-                    )
-                ),
-            ]
+        case .windows(_):
+            let cellCount = registry.topLevels.count + 1
+            switch PanePreviewLayout.windowMetricsForCurrentScreen(cellCount: cellCount).sheetDetent {
+            case .fixed(let height):
+                return [
+                    .height(
+                        GhosttySelectionSheetSizing.fixedDetentHeight(
+                            preferredHeight: height,
+                            bottomReplacementHeight: selectionSheetBottomReplacementHeight
+                        )
+                    ),
+                ]
+            case .large:
+                return [.large]
+            }
 
-        case .panes(let session):
-            let paneCount = registry.topLevels.first(where: { $0.id == session.topLevelID })?.leafIDs.count ?? 0
+        case .panes(let topLevelID, _):
+            let paneCount = registry.topLevels.first(where: { $0.id == topLevelID })?.leafIDs.count ?? 0
             switch PanePreviewLayout.metricsForCurrentScreen(for: paneCount).sheetDetent {
             case .fixed(let height):
                 return [
@@ -539,10 +559,11 @@ struct GhosttySurfaceScreen: View {
         // the presentation transaction.
         captureSelectionSheetBottomReplacementHeight()
         selectionSheet = .panes(
-            GhosttyPanePreviewSession(
-                topLevelID: topLevel.id,
+            topLevelID: topLevel.id,
+            previews: GhosttyPanePreviewSession(
                 leafIDs: topLevel.leafIDs,
-                registry: registry
+                registry: registry,
+                previewSizing: .paneGridForCurrentScreen
             )
         )
     }
@@ -968,9 +989,10 @@ struct GhosttySurfaceScreen: View {
     @ViewBuilder
     private func selectionSheetContent(_ sheet: GhosttySurfaceSelectionSheet) -> some View {
         switch sheet {
-        case .windows:
+        case .windows(let session):
             GhosttyWindowSelectionSheet(
                 registry: registry,
+                session: session,
                 sessionName: target.workspace.sessionName,
                 onCreateWindow: {
                     GhosttyRuntimeTrace.flowBegin(
@@ -1003,10 +1025,11 @@ struct GhosttySurfaceScreen: View {
                 }
             )
 
-        case .panes(let session):
+        case .panes(let topLevelID, let session):
             GhosttyPaneSelectionSheet(
                 registry: registry,
                 session: session,
+                topLevelID: topLevelID,
                 onSplitPane: {
                     GhosttyRuntimeTrace.flowBegin(
                         "tmux.splitPane",

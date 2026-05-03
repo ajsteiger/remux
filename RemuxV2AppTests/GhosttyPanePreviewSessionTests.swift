@@ -5,6 +5,32 @@ import XCTest
 
 @MainActor
 final class GhosttyPanePreviewSessionTests: XCTestCase {
+    func testWindowGridPreviewSizingUsesWindowTileBudget() {
+        let paneID = UUID()
+        let request: ghostty_surface_preview_request_t = OpaquePointer(bitPattern: 0x5051)!
+        var capturedOptions: ghostty_surface_preview_image_options_s?
+
+        let client = GhosttyPanePreviewSession.PreviewRequestClient(
+            start: { _, options, _, _ in
+                capturedOptions = options
+                return .started(request)
+            },
+            cancel: { _ in },
+            release: { _ in }
+        )
+
+        let session = GhosttyPanePreviewSession(
+            leafIDs: [paneID],
+            scale: 3,
+            previewSizing: .windowGrid(availableWidth: 361),
+            previewRequestClient: client
+        )
+
+        XCTAssertEqual(capturedOptions?.max_width_px, 477)
+        XCTAssertEqual(capturedOptions?.max_height_px, 360)
+        session.cancelAll()
+    }
+
     func testTransientUnavailableSurfaceRetriesPreviewStart() async {
         let paneID = UUID()
         let fakeRequest: ghostty_surface_preview_request_t = OpaquePointer(bitPattern: 0x5151)!
@@ -23,7 +49,6 @@ final class GhosttyPanePreviewSessionTests: XCTestCase {
         )
 
         let session = GhosttyPanePreviewSession(
-            topLevelID: UUID(),
             leafIDs: [paneID],
             scale: 1,
             retryDelay: .milliseconds(1),
@@ -68,7 +93,6 @@ final class GhosttyPanePreviewSessionTests: XCTestCase {
         )
 
         let session = GhosttyPanePreviewSession(
-            topLevelID: UUID(),
             leafIDs: [paneID],
             scale: 1,
             retryDelay: .milliseconds(1),
@@ -112,7 +136,6 @@ final class GhosttyPanePreviewSessionTests: XCTestCase {
         )
 
         var session: GhosttyPanePreviewSession? = GhosttyPanePreviewSession(
-            topLevelID: UUID(),
             leafIDs: [paneID],
             scale: 1,
             previewRequestClient: client
@@ -151,7 +174,6 @@ final class GhosttyPanePreviewSessionTests: XCTestCase {
         )
 
         let session = GhosttyPanePreviewSession(
-            topLevelID: UUID(),
             leafIDs: [paneID],
             scale: 1,
             retryDelay: .milliseconds(500),
@@ -206,7 +228,6 @@ final class GhosttyPanePreviewSessionTests: XCTestCase {
         )
 
         let session = GhosttyPanePreviewSession(
-            topLevelID: UUID(),
             leafIDs: [retainedPaneID, removedPaneID],
             scale: 1,
             previewRequestClient: client
@@ -252,7 +273,6 @@ final class GhosttyPanePreviewSessionTests: XCTestCase {
         )
 
         let session = GhosttyPanePreviewSession(
-            topLevelID: UUID(),
             leafIDs: [paneID],
             scale: 1,
             previewRequestClient: client
