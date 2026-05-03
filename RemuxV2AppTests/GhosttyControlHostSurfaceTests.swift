@@ -140,6 +140,60 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertFalse(sequencer.enqueue(Data("send-keys -t %1 b\n".utf8)))
     }
 
+    func testCommandFailureObserverReportsNoSpaceErrors() {
+        var observer = TmuxControlCommandFailureObserver()
+
+        let failures = observer.observe(
+            Data("%begin 1 2 1\nno space for new pane\n%error 1 2 1\n".utf8)
+        )
+
+        XCTAssertEqual(
+            failures,
+            [
+                TmuxControlCommandFailure(
+                    reason: .noSpaceForNewPane,
+                    message: "no space for new pane"
+                ),
+            ]
+        )
+    }
+
+    func testCommandFailureObserverHandlesSplitErrorAcrossChunks() {
+        var observer = TmuxControlCommandFailureObserver()
+
+        XCTAssertTrue(observer.observe(Data("%begin 1 2 1\nno space ".utf8)).isEmpty)
+        let failures = observer.observe(Data("for new pane\n%error 1 2 1\n".utf8))
+
+        XCTAssertEqual(failures.first?.reason, .noSpaceForNewPane)
+        XCTAssertEqual(failures.first?.message, "no space for new pane")
+    }
+
+    func testHostSurfaceReportsCommandFailuresWithoutStoppingPump() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        var failures: [TmuxControlCommandFailure] = []
+        let host = GhosttyControlHostSurface(
+            transport: transport,
+            surface: surface,
+            onCommandFailure: { failure in
+                failures.append(failure)
+            }
+        )
+
+        host.start()
+        let bytes = Data("%begin 1 2 1\nno space for new pane\n%error 1 2 1\n".utf8)
+        await transport.emit(bytes)
+
+        let reported = await waitUntil {
+            failures.count == 1 && surface.processedOutput == [bytes]
+        }
+
+        XCTAssertTrue(reported)
+        XCTAssertEqual(failures.first?.reason, .noSpaceForNewPane)
+        XCTAssertTrue(host.isRunning)
+        XCTAssertNil(host.lastError)
+    }
+
     func testLatencyProbeStoreDetectsMarkersSplitAcrossChunks() {
         let store = GhosttyLatencyProbeStore()
 

@@ -1105,6 +1105,36 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux transport ended: disconnected")
     }
 
+    func testModelSurfacesTmuxNoSpaceCommandFailureWithoutDisconnecting() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugPaneInputSmoke: nil,
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        await transport.emit(Data("%begin 1 2 1\nno space for new pane\n%error 1 2 1\n".utf8))
+
+        let didReportFailure = await waitUntil(timeout: 2) {
+            model.commandFailureMessage == "No space for another pane."
+        }
+
+        XCTAssertTrue(didReportFailure)
+        XCTAssertEqual(model.debugStatus, "No space for another pane.")
+        XCTAssertEqual(model.state, .running)
+    }
+
     func testModelPasteWithoutFocusedSurfaceUpdatesDebugStatus() {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
@@ -1650,6 +1680,10 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
     func close() async {
         closes += 1
         continuation.finish()
+    }
+
+    func emit(_ data: Data) {
+        continuation.yield(data)
     }
 
     func fail(_ error: Error) {

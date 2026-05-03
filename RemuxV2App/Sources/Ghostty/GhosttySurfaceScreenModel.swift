@@ -24,6 +24,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var debugStatus = "not started"
     @Published private(set) var surfaceRegistryRevision = 0
+    @Published private(set) var commandFailureMessage: String?
     @Published private(set) var failureReason: TerminalDisconnectReason?
 
     let surfaceRegistry: GhosttyRuntimeSurfaceRegistry
@@ -50,6 +51,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var hostControlStateTracker = GhosttyHostControlStateTracker()
     private var didTraceTerminalReady = false
     private var transportStartToken: UInt64 = 0
+    private var commandFailureMessageToken: UInt64 = 0
 
     init(
         target: TmuxConnectionTarget,
@@ -119,6 +121,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         state = .starting
         debugStatus = "creating Ghostty runtime"
+        clearCommandFailureMessage()
         failureReason = nil
         hostDisplayUpdateTracker.reset()
         hostAttachmentTracker.reset()
@@ -196,6 +199,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 onDebugEvent: { [weak self] event in
                     self?.debugStatus = event
                 },
+                onCommandFailure: { [weak self] failure in
+                    self?.handleTmuxCommandFailure(failure)
+                },
                 onCompletion: { [weak self] completion in
                     self?.handleTransportCompletion(completion)
                 }
@@ -227,6 +233,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func stop() {
         GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.stop")
+        clearCommandFailureMessage()
         let finalCommand = DebugGeneratedTmuxSessionCleanup.finalCommand(
             for: target.workspace.sessionName
         )
@@ -503,6 +510,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @discardableResult
     func createTmuxWindow() -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
+        clearCommandFailureMessage()
         GhosttyRuntimeTrace.latency("model.createTmuxWindow begin")
         GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "model.createTmuxWindow.begin")
         guard let controlSurface else {
@@ -534,6 +542,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @discardableResult
     func splitFocusedTmuxPane(_ direction: ghostty_action_split_direction_e) -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
+        clearCommandFailureMessage()
         GhosttyRuntimeTrace.latency(
             "model.splitFocusedTmuxPane begin direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
@@ -795,6 +804,57 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             error: error
         )
         hostSurface?.failOutboundWrite(error)
+    }
+
+    private func handleTmuxCommandFailure(_ failure: TmuxControlCommandFailure) {
+        let message: String
+        let traceReason: String
+        switch failure.reason {
+        case .noSpaceForNewPane:
+            message = "No space for another pane."
+            traceReason = "no_space_for_new_pane"
+        case .tmuxError:
+            message = "tmux command failed: \(failure.message)"
+            traceReason = "tmux_error"
+        }
+
+        debugStatus = message
+        presentCommandFailureMessage(message)
+        GhosttyRuntimeTrace.flowEndIfActive(
+            "tmux.splitPane",
+            event: "tmux.command.failed",
+            fields: [
+                "message": failure.message,
+                "reason": traceReason,
+            ]
+        )
+        GhosttyRuntimeTrace.flowEndIfActive(
+            "tmux.newWindow",
+            event: "tmux.command.failed",
+            fields: [
+                "message": failure.message,
+                "reason": traceReason,
+            ]
+        )
+    }
+
+    private func presentCommandFailureMessage(_ message: String) {
+        commandFailureMessageToken &+= 1
+        let token = commandFailureMessageToken
+        commandFailureMessage = message
+
+        Task { [weak self, token] in
+            try? await Task.sleep(for: .seconds(3))
+            await MainActor.run {
+                guard self?.commandFailureMessageToken == token else { return }
+                self?.commandFailureMessage = nil
+            }
+        }
+    }
+
+    private func clearCommandFailureMessage() {
+        commandFailureMessageToken &+= 1
+        commandFailureMessage = nil
     }
 
     private func canSendTerminalInput(kind: String) -> Bool {

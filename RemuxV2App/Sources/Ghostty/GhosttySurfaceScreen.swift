@@ -1356,7 +1356,17 @@ private struct GhosttySurfaceStatusOverlay: View {
                 .accessibilityIdentifier("terminal.status.starting")
 
         case .running:
-            if registry.topLevels.isEmpty {
+            if let commandFailureMessage = model.commandFailureMessage {
+                Text(commandFailureMessage)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.88))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.62))
+                    .clipShape(Capsule())
+                    .padding(10)
+                    .accessibilityIdentifier("terminal.command.failure")
+            } else if registry.topLevels.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("waiting for tmux panes")
                     Text(model.debugStatus)
