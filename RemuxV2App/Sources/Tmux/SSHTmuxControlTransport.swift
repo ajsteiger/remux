@@ -325,10 +325,11 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
             preparedControlSession = readyPreparedControlSession
             self.preparedControlSession = nil
             guard !isClosed else { throw SSHTmuxControlTransportError.closed }
+            let startupViewport = resizeState.latestViewport
             establishedConnection = try await SSHTmuxControlBootstrap.activateControlSession(
                 using: readyPreparedControlSession,
-                viewport: resizeState.latestViewport,
-                command: tmuxAttachCommand(),
+                viewport: startupViewport,
+                command: tmuxAttachCommand(viewport: startupViewport),
                 trace: startupTrace,
                 onOutput: { [inboundStream] data in
                     inboundStream.yield(data)
@@ -340,16 +341,17 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
             startedConnection = establishedConnection
             preparedControlSession = nil
             guard !isClosed else { throw SSHTmuxControlTransportError.closed }
+            connection = establishedConnection
+            resizeState.markApplied(startupViewport)
+            try await drainResizeQueueIfNeeded(using: establishedConnection)
             startedConnection = nil
         } catch {
             self.preparedControlSession = nil
+            self.connection = nil
             await startedConnection?.close()
             await preparedControlSession?.close(disposition: .invalidated)
             throw error
         }
-
-        connection = establishedConnection
-        resizeState.markApplied(resizeState.latestViewport)
 
         let queuedWrites = pendingWrites
         pendingWrites.removeAll(keepingCapacity: true)
@@ -530,10 +532,11 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         }
     }
 
-    private func tmuxAttachCommand() -> String {
+    private func tmuxAttachCommand(viewport: TmuxControlViewport) -> String {
         SSHTmuxControlCommandBuilder.attachOrCreateControlSessionCommand(
             tmuxExecutable: configuration.tmuxExecutable,
-            sessionName: configuration.sessionName
+            sessionName: configuration.sessionName,
+            initialViewport: viewport
         )
     }
 }
@@ -543,13 +546,14 @@ enum SSHTmuxControlCommandBuilder {
 
     static func attachOrCreateControlSessionCommand(
         tmuxExecutable: String,
-        sessionName: String
+        sessionName: String,
+        initialViewport: TmuxControlViewport
     ) -> String {
         let tmux = shellEscape(tmuxExecutable)
         let session = shellEscape(sessionName)
 
         return """
-        export PATH=\(remotePath) TERM=xterm-256color; exec \(tmux) -CC new-session -A -s \(session)
+        export PATH=\(remotePath) TERM=xterm-256color; exec \(tmux) -CC new-session -A -s \(session) -x \(initialViewport.columns) -y \(initialViewport.rows)
         """
     }
 
@@ -598,6 +602,8 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
         GhosttyRuntimeTrace.latency(
             "ssh.resize begin columns=\(viewport.columns) rows=\(viewport.rows) px=\(viewport.pixelWidth)x\(viewport.pixelHeight)"
         )
+        // Only report PTY geometry at the SSH layer here. tmux control commands
+        // must be emitted by Ghostty so its command-response FIFO stays owned.
         try await sessionChannel.triggerUserOutboundEvent(
             SSHChannelRequestEvent.WindowChangeRequest(
                 terminalCharacterWidth: Int(viewport.columns),
