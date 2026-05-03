@@ -99,14 +99,20 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
         var firstConfig = Self.manualRuntimeTreeConfig(
-            context: GHOSTTY_SURFACE_CONTEXT_TAB,
-            userdata: UnsafeMutableRawPointer(bitPattern: 0x7001)!
+            context: GHOSTTY_SURFACE_CONTEXT_TAB
         )
         var secondConfig = Self.manualRuntimeTreeConfig(
-            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-            userdata: UnsafeMutableRawPointer(bitPattern: 0x7002)!
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT
         )
         var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
+        defer {
+            for handle in leafSurfaces {
+                if let handle {
+                    ghostty_surface_set_backing_exited(handle, true)
+                    ghostty_surface_free(handle)
+                }
+            }
+        }
 
         let created = try withRuntimeTreeRequest(
             firstConfig: &firstConfig,
@@ -131,12 +137,10 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
         var firstConfig = Self.manualRuntimeTreeConfig(
-            context: GHOSTTY_SURFACE_CONTEXT_TAB,
-            userdata: UnsafeMutableRawPointer(bitPattern: 0x7101)!
+            context: GHOSTTY_SURFACE_CONTEXT_TAB
         )
         var secondConfig = Self.manualRuntimeTreeConfig(
-            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
-            userdata: UnsafeMutableRawPointer(bitPattern: 0x7102)!
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT
         )
         var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
 
@@ -175,13 +179,11 @@ final class GhosttyKitRuntimeTests: XCTestCase {
     }
 
     private static func manualRuntimeTreeConfig(
-        context: ghostty_surface_context_e,
-        userdata: UnsafeMutableRawPointer
+        context: ghostty_surface_context_e
     ) -> ghostty_surface_config_s {
         var config = ghostty_surface_config_new()
         config.context = context
         config.backing = GHOSTTY_SURFACE_BACKING_MANUAL
-        config.manual_userdata = userdata
         config.manual_write = runtimeTreeManualWrite
         return config
     }
