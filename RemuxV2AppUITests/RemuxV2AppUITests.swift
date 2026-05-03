@@ -308,9 +308,6 @@ final class RemuxV2AppUITests: XCTestCase {
         app.launchEnvironment["REMUX_DEBUG_SERVER_TRANSPORT"] = "ssh"
         app.launchEnvironment["REMUX_DEBUG_SERVER_PASSWORD"] = configuration.password
         app.launchEnvironment["REMUX_DEBUG_TMUX_SESSION"] = sessionName
-        if sessionName.hasPrefix("remux-latency-") {
-            app.launchEnvironment["REMUX_DEBUG_KILL_GENERATED_TMUX_SESSION_ON_STOP"] = "1"
-        }
         if traceRuntime {
             app.launchEnvironment["REMUX_TRACE_FLOWS"] = "1"
             app.launchEnvironment["REMUX_TRACE_LATENCY"] = "1"

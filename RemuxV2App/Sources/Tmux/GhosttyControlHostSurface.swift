@@ -823,51 +823,20 @@ final class GhosttyControlHostSurface {
         }
     }
 
-    @discardableResult
-    func sendCommandToTmux(_ command: Data) async -> Bool {
-        guard !command.isEmpty else { return true }
-
-        let sendStart = GhosttyRuntimeTrace.nowNanos()
-        GhosttyRuntimeTrace.latency(
-            "host.sendCommand begin bytes=\(command.count) preview=\(GhosttyRuntimeTrace.preview(command, limit: 160))"
-        )
-        do {
-            try await transport.send(command)
-            GhosttyRuntimeTrace.latency(
-                "host.sendCommand end accepted=true bytes=\(command.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart))"
-            )
-            return true
-        } catch {
-            GhosttyRuntimeTrace.latency(
-                "host.sendCommand failed bytes=\(command.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart)) error=\(String(describing: error))"
-            )
-            await transport.close()
-            complete(error: error)
-            return false
-        }
-    }
-
     func failOutboundWrite(_ error: any Error) {
         pumpTask?.cancel()
         pumpTask = nil
         complete(error: error, markBackingExited: false)
     }
 
-    func stop(finalCommand: Data? = nil) {
+    func stop() {
         pumpTask?.cancel()
         pumpTask = nil
         isRunning = false
         didComplete = true
         surface?.setBackingExited(true)
 
-        Task { [transport, finalCommand] in
-            if let finalCommand {
-                do {
-                    try await transport.send(finalCommand)
-                } catch {
-                    NSLog("Remux final tmux command failed: %@", String(describing: error))
-                }
-            }
+        Task { [transport] in
             await transport.close()
         }
     }
