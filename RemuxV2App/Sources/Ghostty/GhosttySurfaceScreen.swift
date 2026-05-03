@@ -1016,12 +1016,19 @@ struct GhosttySurfaceScreen: View {
                     refocusSystemKeyboardIfActive()
                 },
                 onRemoveWindow: { id in
-                    requestSystemKeyboardRefocusAfterTopologyChange()
+                    let removesLastWindow = registry.topLevels.count <= 1
+                    if removesLastWindow {
+                        requestSystemKeyboardRefocusAfterTopologyChange()
+                    }
                     guard model.closeTmuxWindow(id) else {
-                        cancelPendingTopologyInputRefocus()
+                        if removesLastWindow {
+                            cancelPendingTopologyInputRefocus()
+                        }
                         return
                     }
-                    dismissSelectionSheet()
+                    if removesLastWindow {
+                        dismissSelectionSheet()
+                    }
                 }
             )
 
@@ -1068,12 +1075,18 @@ struct GhosttySurfaceScreen: View {
                     refocusSystemKeyboardIfActive()
                 },
                 onRemovePane: { id in
-                    requestSystemKeyboardRefocusAfterTopologyChange()
+                    let removesOnlyPane = registry.topLevels
+                        .first(where: { $0.id == topLevelID })?
+                        .leafIDs.count == 1
+                    if removesOnlyPane {
+                        requestSystemKeyboardRefocusAfterTopologyChange()
+                    }
                     guard model.closeTmuxPane(id) else {
-                        cancelPendingTopologyInputRefocus()
+                        if removesOnlyPane {
+                            cancelPendingTopologyInputRefocus()
+                        }
                         return
                     }
-                    dismissSelectionSheet()
                 }
             )
         }
