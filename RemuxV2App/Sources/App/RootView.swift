@@ -1028,7 +1028,7 @@ private struct ConnectionSetupView: View {
                         .accessibilityIdentifier("connection.transport")
                     }
                     validationMessage(
-                        validation.transportKind,
+                        transportValidationMessage,
                         accessibilityIdentifier: "connection.transport.validation"
                     )
                 } header: {
@@ -1045,13 +1045,14 @@ private struct ConnectionSetupView: View {
             if showsAuthenticationFields {
                 Section {
                     LabeledContent("Password") {
-                        SSHPasswordField(
-                            text: binding(for: \.password),
-                            placeholder: "Required",
-                            isFocused: passwordFocusBinding,
-                            returnKey: showsSessionFields ? .next : .go,
-                            onSubmit: { advance(from: .password) }
-                        )
+                        SecureField("Required", text: binding(for: \.password))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .textContentType(.oneTimeCode)
+                            .multilineTextAlignment(.trailing)
+                            .focused($focusedField, equals: .password)
+                            .submitLabel(showsSessionFields ? .next : .go)
+                            .onSubmit { advance(from: .password) }
                             .frame(minHeight: 28)
                             .accessibilityIdentifier("connection.password")
                     }
@@ -1130,19 +1131,6 @@ private struct ConnectionSetupView: View {
         } else {
             focusedField = nil
         }
-    }
-
-    private var passwordFocusBinding: Binding<Bool> {
-        Binding(
-            get: { focusedField == .password },
-            set: { isFocused in
-                if isFocused {
-                    focusedField = .password
-                } else if focusedField == .password {
-                    focusedField = nil
-                }
-            }
-        )
     }
 
     private func advance(from field: Field) {
@@ -1309,6 +1297,10 @@ private struct ConnectionSetupView: View {
         )
     }
 
+    private var transportValidationMessage: String? {
+        validation.transportKind ?? draft.transportKind.connectionDraftValidationMessage
+    }
+
     private func binding(for keyPath: WritableKeyPath<TmuxConnectionDraft, String>) -> Binding<String> {
         Binding(
             get: { draft[keyPath: keyPath] },
@@ -1362,93 +1354,6 @@ private struct ConnectionServerSummaryRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-    }
-}
-
-private struct SSHPasswordField: UIViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    @Binding var isFocused: Bool
-    var returnKey: UIReturnKeyType = .done
-    var onSubmit: () -> Void = {}
-
-    func makeUIView(context: Context) -> UITextField {
-        let textField = UITextField(frame: .zero)
-        textField.placeholder = placeholder
-        textField.isSecureTextEntry = true
-        textField.textContentType = .oneTimeCode
-        textField.autocapitalizationType = .none
-        textField.autocorrectionType = .no
-        textField.spellCheckingType = .no
-        textField.clearButtonMode = .whileEditing
-        textField.textAlignment = .right
-        textField.returnKeyType = returnKey
-        textField.accessibilityIdentifier = "connection.password"
-        textField.delegate = context.coordinator
-        textField.addTarget(
-            context.coordinator,
-            action: #selector(Coordinator.textDidChange(_:)),
-            for: .editingChanged
-        )
-        return textField
-    }
-
-    func updateUIView(_ textField: UITextField, context: Context) {
-        if textField.text != text {
-            textField.text = text
-        }
-        if textField.returnKeyType != returnKey {
-            textField.returnKeyType = returnKey
-        }
-        context.coordinator.onSubmit = onSubmit
-        context.coordinator.isFocused = $isFocused
-
-        if isFocused, !textField.isFirstResponder {
-            DispatchQueue.main.async { textField.becomeFirstResponder() }
-        } else if !isFocused, textField.isFirstResponder {
-            DispatchQueue.main.async { textField.resignFirstResponder() }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isFocused: $isFocused, onSubmit: onSubmit)
-    }
-
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        private let text: Binding<String>
-        var isFocused: Binding<Bool>
-        var onSubmit: () -> Void
-
-        init(text: Binding<String>, isFocused: Binding<Bool>, onSubmit: @escaping () -> Void) {
-            self.text = text
-            self.isFocused = isFocused
-            self.onSubmit = onSubmit
-        }
-
-        @objc func textDidChange(_ sender: UITextField) {
-            text.wrappedValue = sender.text ?? ""
-        }
-
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            if !isFocused.wrappedValue {
-                DispatchQueue.main.async { [weak self] in
-                    self?.isFocused.wrappedValue = true
-                }
-            }
-        }
-
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            if isFocused.wrappedValue {
-                DispatchQueue.main.async { [weak self] in
-                    self?.isFocused.wrappedValue = false
-                }
-            }
-        }
-
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            onSubmit()
-            return false
-        }
     }
 }
 

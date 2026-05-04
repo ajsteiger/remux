@@ -70,11 +70,10 @@ final class RemuxV2AppUITests: XCTestCase {
         XCTAssertTrue(transport.waitForExistence(timeout: 2))
         transport.buttons["Mosh"].tap()
 
-        app.buttons["connection.save"].tap()
-
         XCTAssertTrue(
             app.staticTexts["connection.transport.validation"].waitForExistence(timeout: 2)
         )
+        XCTAssertFalse(app.buttons["connection.save"].isEnabled)
     }
 
     func testSettingsExposeFontAndThemeControls() {
@@ -382,9 +381,8 @@ final class RemuxV2AppUITests: XCTestCase {
         app.textFields["connection.host"].typeText("127.0.0.1")
 
         app.textFields["connection.username"].tap()
-        app.textFields["connection.username"].typeText("demo")
+        app.textFields["connection.username"].typeText("demo\n")
 
-        app.secureTextFields["connection.password"].tap()
         app.secureTextFields["connection.password"].typeText("demo-password")
 
         app.swipeUp()

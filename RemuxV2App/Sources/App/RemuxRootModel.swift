@@ -871,7 +871,7 @@ final class RemuxRootModel: ObservableObject {
         case .ssh:
             break
         case .mosh:
-            validation.transportKind = "Mosh needs a native mosh client integration before it can connect."
+            validation.transportKind = transportKind.connectionDraftValidationMessage
         }
         return validation
     }

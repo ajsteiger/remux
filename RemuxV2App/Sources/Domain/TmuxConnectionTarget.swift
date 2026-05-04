@@ -14,6 +14,15 @@ enum ServerTransportKind: String, CaseIterable, Codable, Identifiable, Sendable 
             "Mosh"
         }
     }
+
+    var connectionDraftValidationMessage: String? {
+        switch self {
+        case .ssh:
+            nil
+        case .mosh:
+            "Mosh needs a native mosh client integration before it can connect."
+        }
+    }
 }
 
 struct SavedServer: Identifiable, Equatable, Codable, Sendable {
@@ -363,8 +372,8 @@ enum TmuxConnectionDraftValidator {
             validation.username = "Username is required."
         }
 
-        if draft.transportKind == .mosh {
-            validation.transportKind = "Mosh needs a native mosh client integration before it can connect."
+        if let transportValidationMessage = draft.transportKind.connectionDraftValidationMessage {
+            validation.transportKind = transportValidationMessage
         }
 
         if password.isEmpty {
