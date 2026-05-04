@@ -158,8 +158,16 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     private func syncAttachedViews() {
         guard let registry else { return }
+        let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
 
         let visibleIDs = Set(topLevel?.phonePresentedLeafIDs ?? [])
+        defer {
+            if let perfStartedAt {
+                GhosttyRuntimeTrace.perf(
+                    "tree.sync managed=\(registry.allManagedSurfaces().count) visible=\(visibleIDs.count) containers=\(scrollContainersBySurfaceID.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
+                )
+            }
+        }
         let visibleSummary = visibleIDs
             .map(ghosttyDiagnosticShortID)
             .sorted()
@@ -217,6 +225,14 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     private func layoutVisibleTree() {
         guard let registry, let topLevel else { return }
+        let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        defer {
+            if let perfStartedAt {
+                GhosttyRuntimeTrace.perf(
+                    "tree.layoutVisible leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
+                )
+            }
+        }
         let focusedSurfaceID = registry.selectedActiveLeafID
         layout(
             node: topLevel.phonePresentedTree.root,
@@ -533,10 +549,33 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         }
 
         didNavigateForActivePan = true
+        let traceStartedAt = GhosttyRuntimeTrace.flowTraceEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        if let traceStartedAt {
+            GhosttyRuntimeTrace.flowBegin(
+                "tmux.windowSwipe",
+                event: "ui.swipe.threshold",
+                fields: [
+                    "direction": "\(direction.runtimeSelectionDirection)",
+                    "topLevels": "\(registry.topLevels.count)",
+                    "translation": "\(Int(translation.x)),\(Int(translation.y))",
+                    "velocity": "\(Int(velocity.x)),\(Int(velocity.y))",
+                ],
+                startedAt: traceStartedAt
+            )
+        }
         GhosttyRuntimeTrace.diagnostics(
             "tree.horizontalNavigation direction=\(direction.runtimeSelectionDirection) translation=\(translation.x),\(translation.y) velocity=\(velocity.x),\(velocity.y) \(registry.diagnosticSelectionSummary())"
         )
         onWindowSwipe?(direction.runtimeSelectionDirection)
+        if let traceStartedAt {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                "tmux.windowSwipe",
+                event: "ui.swipe.handlerReturned",
+                fields: [
+                    "elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: traceStartedAt),
+                ]
+            )
+        }
         setNeedsLayout()
     }
 

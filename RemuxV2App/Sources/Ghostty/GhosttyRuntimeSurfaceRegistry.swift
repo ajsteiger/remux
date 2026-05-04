@@ -70,6 +70,7 @@ func ghosttyDiagnosticSurfaceSize(_ size: ghostty_surface_size_s) -> String {
 final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
     private static let phonePresentationRefreshRetryDelay: Duration = .milliseconds(16)
     private static let phonePresentationRefreshMaxAttempts = 125
+    private static let windowSwipeFlow = "tmux.windowSwipe"
 
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
     @Published private(set) var selectedTopLevelID: UUID?
@@ -187,6 +188,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             guard topLevels[index].tree.contains(id) else { continue }
             topLevels[index].focusedLeafID = id
             selectedTopLevelID = topLevels[index].id
+            trackWindowSwipeReadinessIfNeeded(surfaceID: id, reason: reason)
             stagePhonePresentationIfNeeded(
                 targetSurfaceID: id,
                 previousPresentation: previousPresentation
@@ -327,6 +329,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "target": ghosttyDiagnosticShortID(targetSurfaceID),
             ]
         )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            Self.windowSwipeFlow,
+            event: "ui.presentation.pending",
+            fields: [
+                "previous": ghosttyDiagnosticShortID(previousPresentation.leafID),
+                "target": ghosttyDiagnosticShortID(targetSurfaceID),
+            ]
+        )
         schedulePendingPhonePresentationRefresh(
             surfaceID: targetSurfaceID,
             reason: "presentation.pending"
@@ -343,6 +353,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         targetSurfaceID: UUID
     ) -> PendingPhonePresentationTrace {
         let now = GhosttyRuntimeTrace.nowNanos()
+        if let startedAt = GhosttyRuntimeTrace.flowStartIfActive(Self.windowSwipeFlow) {
+            return PendingPhonePresentationTrace(
+                operation: Self.windowSwipeFlow,
+                flowStartedAt: startedAt,
+                pendingStartedAt: now,
+                previousSurfaceID: previousSurfaceID,
+                targetSurfaceID: targetSurfaceID
+            )
+        }
         if let startedAt = GhosttyRuntimeTrace.flowStartIfActive("tmux.splitPane") {
             return PendingPhonePresentationTrace(
                 operation: "tmux.splitPane",
@@ -449,6 +468,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "surface": ghosttyDiagnosticShortID(surfaceID),
             ]
         )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            Self.windowSwipeFlow,
+            event: "ui.presentation.ready",
+            fields: [
+                "reason": reason,
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
         notifyChanged()
         return true
     }
@@ -517,7 +544,29 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "surface": ghosttyDiagnosticShortID(surfaceID),
             ]
         )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            Self.windowSwipeFlow,
+            event: "ui.presentation.timeout",
+            fields: [
+                "reason": reason,
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
         notifyChanged()
+    }
+
+    private func trackWindowSwipeReadinessIfNeeded(surfaceID: UUID, reason: String) {
+        guard GhosttyRuntimeTrace.isFlowActive(Self.windowSwipeFlow) else { return }
+
+        interactiveReadinessTracker.begin(flow: Self.windowSwipeFlow, surfaceID: surfaceID)
+        GhosttyRuntimeTrace.flowEventIfActive(
+            Self.windowSwipeFlow,
+            event: "interactive.tracking",
+            fields: [
+                "reason": reason,
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
     }
 
     func diagnosticSelectionSummary() -> String {
@@ -1036,15 +1085,19 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         switch action.tag {
         case GHOSTTY_ACTION_RENDER:
-            schedulePendingPhonePresentationRefresh(
-                surfaceID: id,
-                reason: "runtime.render"
-            )
-            completeInteractiveReadinessIfNeeded(
-                surfaceID: id,
-                reason: "runtime.render",
-                surface: surface
-            )
+            contentReadySurfaceIDs.insert(id)
+            if pendingPhonePresentationSurfaceID == id {
+                _ = promotePendingPhonePresentationIfReady(
+                    surfaceID: id,
+                    reason: "runtime.render"
+                )
+            } else {
+                completeInteractiveReadinessIfNeeded(
+                    surfaceID: id,
+                    reason: "runtime.render",
+                    surface: surface
+                )
+            }
 
         case GHOSTTY_ACTION_SCROLLBAR:
             let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
@@ -1107,6 +1160,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             surfaceID: surfaceID,
             reason: "test"
         )
+    }
+
+    func recordSurfaceDisplayUpdateForTesting(surfaceID: UUID, size: CGSize, scale: CGFloat) {
+        recordSurfaceDisplayUpdate(surfaceID: surfaceID, size: size, scale: scale)
     }
 
     func managedSurfaceIDForTesting(handle: ghostty_surface_t?) -> UUID? {
@@ -1401,6 +1458,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
+        if size.width > 1, size.height > 1 {
+            contentReadySurfaceIDs.insert(surfaceID)
+        }
         schedulePendingPhonePresentationRefresh(
             surfaceID: surfaceID,
             reason: "display.update"
@@ -1727,9 +1787,7 @@ final class GhosttyManagedSurface {
                 controlSurface.updateDisplay(metrics: metrics)
             }
         }
-        if GhosttyRuntimeTrace.flowTraceEnabled {
-            onDisplayUpdate?(self, size, scale)
-        }
+        onDisplayUpdate?(self, size, scale)
         return true
     }
 

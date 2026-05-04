@@ -374,7 +374,26 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func handleWindowSwipe(_ direction: GhosttyRuntimeSelectionDirection) {
-        _ = model.focusAdjacentTmuxTopLevel(direction)
+        let traceStartedAt = GhosttyRuntimeTrace.flowTraceEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        let didFocus = model.focusAdjacentTmuxTopLevel(direction)
+        if let traceStartedAt {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                "tmux.windowSwipe",
+                event: "ui.swipe.modelReturned",
+                fields: [
+                    "direction": "\(direction)",
+                    "focused": "\(didFocus)",
+                    "elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: traceStartedAt),
+                ]
+            )
+        }
+        if !didFocus, traceStartedAt != nil {
+            GhosttyRuntimeTrace.flowEndIfActive(
+                "tmux.windowSwipe",
+                event: "ui.swipe.rejected",
+                fields: ["direction": "\(direction)"]
+            )
+        }
         inputCoordinator.handleSelectionChange(isInputAvailable: isTerminalInputAvailable)
     }
 

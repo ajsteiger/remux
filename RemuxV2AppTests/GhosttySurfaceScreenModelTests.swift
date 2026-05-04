@@ -389,6 +389,48 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
+    func testRuntimeRenderMarksPendingWindowPresentationReadyWithoutPreviewText() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let firstHandle = UnsafeMutableRawPointer(bitPattern: 0x101)!
+        let secondHandle = UnsafeMutableRawPointer(bitPattern: 0x102)!
+        let first = Self.managedSurface(handle: firstHandle, hasRenderableContent: { true })
+        let second = Self.managedSurface(handle: secondHandle, hasRenderableContent: { false })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        var target = ghostty_target_s()
+        target.tag = GHOSTTY_TARGET_SURFACE
+        target.target.surface = secondHandle
+        var action = ghostty_action_s()
+        action.tag = GHOSTTY_ACTION_RENDER
+
+        XCTAssertTrue(registry.runtimeAction(app: nil, target: target, action: action))
+        XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+    }
+
+    func testDisplayUpdateMarksPendingWindowPresentationReadyWithoutPreviewText() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(hasRenderableContent: { true })
+        let second = Self.managedSurface(hasRenderableContent: { false })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        registry.recordSurfaceDisplayUpdateForTesting(
+            surfaceID: second.id,
+            size: CGSize(width: 390, height: 641),
+            scale: 3
+        )
+        registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
+
+        XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+    }
+
     func testInputDoesNotFallbackToFirstWindowWhenSelectedTopLevelIsInvalid() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var firstInput: [String] = []
