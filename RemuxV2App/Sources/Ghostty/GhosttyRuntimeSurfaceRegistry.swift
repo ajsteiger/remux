@@ -1621,6 +1621,8 @@ final class GhosttyManagedSurface {
     private let sendMouseScrollHandler: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)?
     private let sendMousePressureHandler: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)?
     private let isMouseCapturedHandler: (@MainActor () -> Bool)?
+    private let setFocusedHandler: (@MainActor (Bool) -> Void)?
+    private let updateDisplayHandler: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)?
     private let tmuxFocusHandler: (@MainActor () -> Bool)?
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
     private let tmuxClosePaneHandler: (@MainActor () -> Bool)?
@@ -1645,6 +1647,8 @@ final class GhosttyManagedSurface {
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
         sendMousePressure: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
+        setFocused: (@MainActor (Bool) -> Void)? = nil,
+        updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
         tmuxClosePane: (@MainActor () -> Bool)? = nil,
@@ -1667,6 +1671,8 @@ final class GhosttyManagedSurface {
         self.sendMouseScrollHandler = sendMouseScroll
         self.sendMousePressureHandler = sendMousePressure
         self.isMouseCapturedHandler = isMouseCaptured
+        self.setFocusedHandler = setFocused
+        self.updateDisplayHandler = updateDisplay
         self.tmuxFocusHandler = tmuxFocus
         self.tmuxSplitHandler = tmuxSplit
         self.tmuxClosePaneHandler = tmuxClosePane
@@ -1695,9 +1701,10 @@ final class GhosttyManagedSurface {
     func setFocused(_ focused: Bool) {
         guard focused != isFocused else { return }
         isFocused = focused
-        controlSurface.setFocused(focused)
-        if focused {
-            displayUpdateTracker.reset()
+        if let setFocusedHandler {
+            setFocusedHandler(focused)
+        } else {
+            controlSurface.setFocused(focused)
         }
     }
 
@@ -1714,7 +1721,11 @@ final class GhosttyManagedSurface {
         GhosttyRuntimeTrace.perfMeasure(
             "managed.updateDisplay outcome=hit size=\(Int(size.width))x\(Int(size.height)) scale=\(scale)"
         ) {
-            controlSurface.updateDisplay(metrics: metrics)
+            if let updateDisplayHandler {
+                updateDisplayHandler(metrics)
+            } else {
+                controlSurface.updateDisplay(metrics: metrics)
+            }
         }
         if GhosttyRuntimeTrace.flowTraceEnabled {
             onDisplayUpdate?(self, size, scale)

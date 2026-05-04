@@ -1336,6 +1336,39 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
     }
 
+    func testManagedSurfaceFocusDoesNotInvalidateDisplayMetrics() {
+        var focusedValues: [Bool] = []
+        var displayMetrics: [GhosttySurfaceDisplayMetrics] = []
+        let managed = Self.managedSurface(
+            setFocused: {
+                focusedValues.append($0)
+            },
+            updateDisplay: {
+                displayMetrics.append($0)
+            }
+        )
+        let size = CGSize(width: 390, height: 641)
+
+        XCTAssertTrue(managed.updateDisplay(size: size, scale: 3))
+        XCTAssertFalse(managed.updateDisplay(size: size, scale: 3))
+
+        managed.setFocused(true)
+
+        XCTAssertEqual(focusedValues, [true])
+        XCTAssertFalse(managed.updateDisplay(size: size, scale: 3))
+        XCTAssertEqual(
+            displayMetrics,
+            [
+                GhosttySurfaceDisplayMetrics(
+                    contentScale: 3,
+                    pixelWidth: 1170,
+                    pixelHeight: 1923
+                ),
+            ]
+        )
+        XCTAssertTrue(managed.updateDisplay(size: CGSize(width: 390, height: 640.5), scale: 3))
+    }
+
     func testModelSplitFocusedTmuxPaneRoutesToManagedSurface() {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
@@ -1611,6 +1644,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         sendMouseScroll: (@MainActor (GhosttySurfaceMouseScrollEvent) -> Void)? = nil,
         sendMousePressure: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
+        setFocused: (@MainActor (Bool) -> Void)? = nil,
+        updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
         tmuxClosePane: (@MainActor () -> Bool)? = nil,
@@ -1635,6 +1670,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             sendMouseScroll: sendMouseScroll,
             sendMousePressure: sendMousePressure,
             isMouseCaptured: isMouseCaptured,
+            setFocused: setFocused,
+            updateDisplay: updateDisplay,
             tmuxFocus: tmuxFocus ?? { false },
             tmuxSplit: tmuxSplit ?? { _ in false },
             tmuxClosePane: tmuxClosePane ?? { false },
