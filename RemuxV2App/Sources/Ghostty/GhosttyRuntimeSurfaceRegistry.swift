@@ -69,7 +69,7 @@ func ghosttyDiagnosticSurfaceSize(_ size: ghostty_surface_size_s) -> String {
 @MainActor
 final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
     private static let phonePresentationRefreshRetryDelay: Duration = .milliseconds(16)
-    private static let phonePresentationRefreshMaxAttempts = 125
+    private static let phonePresentationRefreshMaxAttempts = 16
     private static let windowSwipeFlow = "tmux.windowSwipe"
 
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
@@ -268,7 +268,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return
         }
 
-        if surfaceHasRenderableContent(targetSurfaceID) {
+        if surfaceHasPresentedContent(targetSurfaceID) {
             if pendingPhonePresentationSurfaceID == targetSurfaceID {
                 tracePendingPhonePresentation(
                     event: "ready",
@@ -420,13 +420,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
     }
 
-    private func surfaceHasRenderableContent(_ surfaceID: UUID) -> Bool {
-        if contentReadySurfaceIDs.contains(surfaceID) { return true }
-        guard let surface = managedSurfaces[surfaceID] else { return false }
-        guard surface.hasRenderableContent() else { return false }
-
-        contentReadySurfaceIDs.insert(surfaceID)
-        return true
+    private func surfaceHasPresentedContent(_ surfaceID: UUID) -> Bool {
+        contentReadySurfaceIDs.contains(surfaceID)
     }
 
     @discardableResult
@@ -443,7 +438,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             clearPendingPhonePresentation()
             return true
         }
-        guard surfaceHasRenderableContent(surfaceID) else { return false }
+        guard surfaceHasPresentedContent(surfaceID) else { return false }
 
         tracePendingPhonePresentation(
             event: "ready",
@@ -488,31 +483,33 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         pendingPhonePresentationRefreshTask?.cancel()
         pendingPhonePresentationRefreshTask = Task { @MainActor [weak self] in
-            guard let self, !Task.isCancelled else { return }
+            var nextReason = reason
 
-            self.pendingPhonePresentationRefreshTask = nil
-            let didPromote = self.promotePendingPhonePresentationIfReady(
-                surfaceID: surfaceID,
-                reason: reason
-            )
-            guard !didPromote, self.pendingPhonePresentationSurfaceID == surfaceID else { return }
+            while true {
+                guard let self, !Task.isCancelled else { return }
 
-            self.pendingPhonePresentationRefreshAttempt += 1
-            guard self.pendingPhonePresentationRefreshAttempt <= Self.phonePresentationRefreshMaxAttempts else {
-                self.completePendingPhonePresentationAfterTimeout(
+                let didPromote = self.promotePendingPhonePresentationIfReady(
                     surfaceID: surfaceID,
-                    reason: reason
+                    reason: nextReason
                 )
-                return
+                guard !didPromote, self.pendingPhonePresentationSurfaceID == surfaceID else { return }
+
+                self.pendingPhonePresentationRefreshAttempt += 1
+                guard self.pendingPhonePresentationRefreshAttempt <= Self.phonePresentationRefreshMaxAttempts else {
+                    self.completePendingPhonePresentationAfterTimeout(
+                        surfaceID: surfaceID,
+                        reason: nextReason
+                    )
+                    return
+                }
+
+                do {
+                    try await Task.sleep(for: Self.phonePresentationRefreshRetryDelay)
+                } catch {
+                    return
+                }
+                nextReason = "content.retry"
             }
-
-            try? await Task.sleep(for: Self.phonePresentationRefreshRetryDelay)
-            guard !Task.isCancelled else { return }
-
-            self.schedulePendingPhonePresentationRefresh(
-                surfaceID: surfaceID,
-                reason: "content.retry"
-            )
         }
     }
 
@@ -1531,7 +1528,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             selected: selectedActiveLeafID == surface.id,
             visible: surface.isVisible,
             focused: surface.isFocused,
-            contentReady: surfaceHasRenderableContent(surface.id),
+            contentReady: surfaceHasPresentedContent(surface.id),
             presentationReady: pendingPhonePresentationSurfaceID != surface.id
         )
     }
@@ -1687,7 +1684,6 @@ final class GhosttyManagedSurface {
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
     private let tmuxClosePaneHandler: (@MainActor () -> Bool)?
     private let tmuxCloseWindowHandler: (@MainActor () -> Bool)?
-    private let hasRenderableContentHandler: (@MainActor () -> Bool)?
     private var displayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
@@ -1712,8 +1708,7 @@ final class GhosttyManagedSurface {
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
         tmuxClosePane: (@MainActor () -> Bool)? = nil,
-        tmuxCloseWindow: (@MainActor () -> Bool)? = nil,
-        hasRenderableContent: (@MainActor () -> Bool)? = nil
+        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
     ) {
         self.id = id
         self.view = view
@@ -1737,7 +1732,6 @@ final class GhosttyManagedSurface {
         self.tmuxSplitHandler = tmuxSplit
         self.tmuxClosePaneHandler = tmuxClosePane
         self.tmuxCloseWindowHandler = tmuxCloseWindow
-        self.hasRenderableContentHandler = hasRenderableContent
     }
 
     @MainActor
@@ -1789,15 +1783,6 @@ final class GhosttyManagedSurface {
         }
         onDisplayUpdate?(self, size, scale)
         return true
-    }
-
-    @MainActor
-    func hasRenderableContent() -> Bool {
-        if let hasRenderableContentHandler {
-            return hasRenderableContentHandler()
-        }
-
-        return controlSurface.hasRenderablePreviewText()
     }
 
     @MainActor

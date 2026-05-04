@@ -288,17 +288,15 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(firstInput, ["echo fallback\r"])
     }
 
-    func testPhonePresentationStagesPaneOverlayUntilFocusedPaneHasContent() {
+    func testPhonePresentationStagesPaneOverlayUntilFocusedPaneHasDisplay() {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        var secondReady = false
         var secondInput: [String] = []
-        let first = Self.managedSurface(hasRenderableContent: { true })
+        let first = Self.managedSurface()
         let second = Self.managedSurface(
             sendInput: {
                 secondInput.append($0)
                 return true
-            },
-            hasRenderableContent: { secondReady }
+            }
         )
 
         registry.registerManagedSurfaceTreeForTesting(
@@ -322,7 +320,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.sendInputToFocusedSurface("echo pending\r"))
         XCTAssertEqual(secondInput, ["echo pending\r"])
 
-        secondReady = true
+        registry.recordSurfaceDisplayUpdateForTesting(
+            surfaceID: second.id,
+            size: CGSize(width: 390, height: 641),
+            scale: 3
+        )
         registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
 
         XCTAssertEqual(registry.selectedActiveLeafID, second.id)
@@ -330,11 +332,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
-    func testPhonePresentationKeepsPaneOverlayAcrossDuplicateSelectionUntilContent() {
+    func testPhonePresentationKeepsPaneOverlayAcrossDuplicateSelectionUntilDisplay() {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        var secondReady = false
-        let first = Self.managedSurface(hasRenderableContent: { true })
-        let second = Self.managedSurface(hasRenderableContent: { secondReady })
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
 
         registry.registerManagedSurfaceTreeForTesting(
             [first, second],
@@ -355,18 +356,21 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.selectedActiveLeafID, second.id)
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
-        secondReady = true
+        registry.recordSurfaceDisplayUpdateForTesting(
+            surfaceID: second.id,
+            size: CGSize(width: 390, height: 641),
+            scale: 3
+        )
         registry.selectSurface(second.id)
 
         XCTAssertEqual(registry.selectedActiveLeafID, second.id)
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
-    func testPhonePresentationStagesWindowOverlayUntilSelectedWindowHasContent() throws {
+    func testPhonePresentationStagesWindowOverlayUntilSelectedWindowHasDisplay() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        var secondReady = false
-        let first = Self.managedSurface(hasRenderableContent: { true })
-        let second = Self.managedSurface(hasRenderableContent: { secondReady })
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
 
         registry.registerManagedSurfaceForTesting(first)
         let firstTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
@@ -380,7 +384,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
-        secondReady = true
+        registry.recordSurfaceDisplayUpdateForTesting(
+            surfaceID: second.id,
+            size: CGSize(width: 390, height: 641),
+            scale: 3
+        )
         registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
 
         XCTAssertEqual(registry.selectedActiveLeafID, second.id)
@@ -393,8 +401,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let firstHandle = UnsafeMutableRawPointer(bitPattern: 0x101)!
         let secondHandle = UnsafeMutableRawPointer(bitPattern: 0x102)!
-        let first = Self.managedSurface(handle: firstHandle, hasRenderableContent: { true })
-        let second = Self.managedSurface(handle: secondHandle, hasRenderableContent: { false })
+        let first = Self.managedSurface(handle: firstHandle)
+        let second = Self.managedSurface(handle: secondHandle)
 
         registry.registerManagedSurfaceForTesting(first)
         registry.registerManagedSurfaceForTesting(second)
@@ -413,8 +421,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testDisplayUpdateMarksPendingWindowPresentationReadyWithoutPreviewText() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        let first = Self.managedSurface(hasRenderableContent: { true })
-        let second = Self.managedSurface(hasRenderableContent: { false })
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
 
         registry.registerManagedSurfaceForTesting(first)
         registry.registerManagedSurfaceForTesting(second)
@@ -1691,8 +1699,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         tmuxFocus: (@MainActor () -> Bool)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
         tmuxClosePane: (@MainActor () -> Bool)? = nil,
-        tmuxCloseWindow: (@MainActor () -> Bool)? = nil,
-        hasRenderableContent: (@MainActor () -> Bool)? = nil
+        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: UUID(),
@@ -1717,8 +1724,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tmuxFocus: tmuxFocus ?? { false },
             tmuxSplit: tmuxSplit ?? { _ in false },
             tmuxClosePane: tmuxClosePane ?? { false },
-            tmuxCloseWindow: tmuxCloseWindow ?? { false },
-            hasRenderableContent: hasRenderableContent ?? { true }
+            tmuxCloseWindow: tmuxCloseWindow ?? { false }
         )
     }
 }
