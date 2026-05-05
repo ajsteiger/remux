@@ -92,6 +92,90 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertFalse(sequencer.enqueue(Data("send-keys -t %1 b\n".utf8)))
     }
 
+    func testTmuxProtocolTraceAccumulatorClassifiesInboundOutputAcrossChunks() {
+        var accumulator = TmuxControlProtocolTraceAccumulator()
+
+        let firstChunk = accumulator.append(
+            Data("%output %1 hello".utf8),
+            direction: .inbound,
+            previewLimit: 80
+        )
+        XCTAssertTrue(firstChunk.isEmpty)
+        XCTAssertEqual(accumulator.pendingByteCount, 16)
+
+        let records = accumulator.append(
+            Data(" world\n%window-pane-changed %1\n".utf8),
+            direction: .inbound,
+            previewLimit: 80
+        )
+
+        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records[0].sequence, 1)
+        XCTAssertEqual(records[0].category, "%output")
+        XCTAssertEqual(records[0].target, "%1")
+        XCTAssertEqual(records[0].payloadByteCount, 11)
+        XCTAssertEqual(records[0].preview, "%output %1 hello world")
+        XCTAssertEqual(records[1].sequence, 2)
+        XCTAssertEqual(records[1].category, "%window-pane-changed")
+        XCTAssertEqual(records[1].target, "%1")
+        XCTAssertNil(records[1].payloadByteCount)
+        XCTAssertEqual(accumulator.pendingByteCount, 0)
+    }
+
+    func testTmuxProtocolTraceAccumulatorClassifiesBinaryOutputPayload() {
+        var accumulator = TmuxControlProtocolTraceAccumulator()
+
+        let records = accumulator.append(
+            Data([0x25, 0x6F, 0x75, 0x74, 0x70, 0x75, 0x74, 0x20, 0x25, 0x31, 0x20, 0xE2, 0x0A]),
+            direction: .inbound,
+            previewLimit: 80
+        )
+
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].category, "%output")
+        XCTAssertEqual(records[0].target, "%1")
+        XCTAssertEqual(records[0].payloadByteCount, 1)
+        XCTAssertEqual(records[0].preview, "%output %1 \\xE2")
+    }
+
+    func testTmuxProtocolTraceAccumulatorNormalizesInitialControlModePrefix() {
+        var accumulator = TmuxControlProtocolTraceAccumulator()
+        var bytes = Data([0x1B])
+        bytes.append(Data("P1000p%begin 1 0\n".utf8))
+
+        let records = accumulator.append(
+            bytes,
+            direction: .inbound,
+            previewLimit: 80
+        )
+
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].category, "%begin")
+        XCTAssertNil(records[0].target)
+        XCTAssertNil(records[0].payloadByteCount)
+        XCTAssertEqual(records[0].preview, "\\x1BP1000p%begin 1 0")
+    }
+
+    func testTmuxProtocolTraceAccumulatorClassifiesOutboundCommandsAndTargets() {
+        var accumulator = TmuxControlProtocolTraceAccumulator()
+
+        let records = accumulator.append(
+            Data("resize-pane -t %1 -x 45 -y 37\nsend-keys -H -t %1 61\n".utf8),
+            direction: .outbound,
+            previewLimit: 80
+        )
+
+        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records[0].sequence, 1)
+        XCTAssertEqual(records[0].category, "resize-pane")
+        XCTAssertEqual(records[0].target, "%1")
+        XCTAssertNil(records[0].payloadByteCount)
+        XCTAssertEqual(records[1].sequence, 2)
+        XCTAssertEqual(records[1].category, "send-keys")
+        XCTAssertEqual(records[1].target, "%1")
+        XCTAssertNil(records[1].payloadByteCount)
+    }
+
     func testCommandFailureObserverReportsNoSpaceErrors() {
         var observer = TmuxControlCommandFailureObserver()
 

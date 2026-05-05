@@ -326,6 +326,9 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
             self.preparedControlSession = nil
             guard !isClosed else { throw SSHTmuxControlTransportError.closed }
             let startupViewport = resizeState.latestViewport
+            GhosttyRuntimeTrace.tmuxViewport(
+                "startup.attach session=\(configuration.sessionName) viewport=\(GhosttyRuntimeTrace.viewportDescription(startupViewport)) initialProvided=\(initialViewport != nil)"
+            )
             establishedConnection = try await SSHTmuxControlBootstrap.activateControlSession(
                 using: readyPreparedControlSession,
                 viewport: startupViewport,
@@ -562,27 +565,84 @@ enum SSHTmuxControlCommandBuilder {
     }
 }
 
+private final class SSHTmuxControlViewportTraceState: @unchecked Sendable {
+    private let lock = NIOLock()
+    private var viewport: TmuxControlViewport
+
+    init(viewport: TmuxControlViewport) {
+        self.viewport = viewport
+    }
+
+    func update(_ viewport: TmuxControlViewport) {
+        lock.withLock {
+            self.viewport = viewport
+        }
+    }
+
+    func description() -> String {
+        lock.withLock {
+            GhosttyRuntimeTrace.viewportDescription(viewport)
+        }
+    }
+}
+
+private func traceTmuxControlProtocolChunk(
+    _ data: Data,
+    direction: TmuxControlProtocolTraceDirection,
+    source: String,
+    viewportDescription: String,
+    accumulator: inout TmuxControlProtocolTraceAccumulator
+) {
+    guard GhosttyRuntimeTrace.tmuxViewportEnabled, !data.isEmpty else { return }
+
+    let previewLimit = GhosttyRuntimeTrace.tmuxViewportFullIOEnabled ? 4096 : 220
+    let records = accumulator.append(
+        data,
+        direction: direction,
+        previewLimit: previewLimit
+    )
+    GhosttyRuntimeTrace.tmuxViewport(
+        "io.chunk dir=\(direction.rawValue) source=\(source) chunkBytes=\(data.count) lines=\(records.count) pendingLineBytes=\(accumulator.pendingByteCount) viewport=\(viewportDescription)"
+    )
+    for record in records {
+        GhosttyRuntimeTrace.tmuxViewport(
+            "io.line dir=\(direction.rawValue) source=\(source) seq=\(record.sequence) category=\(record.category) target=\(record.target ?? "-") lineBytes=\(record.lineByteCount) payloadBytes=\(record.payloadByteCount.map(String.init) ?? "-") viewport=\(viewportDescription) preview=\(record.preview)"
+        )
+    }
+}
+
 private final class SSHTmuxControlConnection: @unchecked Sendable {
     private let authenticatedConnection: SSHTmuxAuthenticatedConnection
     private let authenticatedConnectionLease: SSHTmuxAuthenticatedConnectionLease?
     private let sessionChannel: Channel
+    private let viewportTraceState: SSHTmuxControlViewportTraceState
     private let allocator = ByteBufferAllocator()
     private let closeLock = NIOLock()
+    private var outboundProtocolTrace = TmuxControlProtocolTraceAccumulator()
     private var didClose = false
 
     init(
         authenticatedConnection: SSHTmuxAuthenticatedConnection,
         authenticatedConnectionLease: SSHTmuxAuthenticatedConnectionLease?,
-        sessionChannel: Channel
+        sessionChannel: Channel,
+        viewportTraceState: SSHTmuxControlViewportTraceState
     ) {
         self.authenticatedConnection = authenticatedConnection
         self.authenticatedConnectionLease = authenticatedConnectionLease
         self.sessionChannel = sessionChannel
+        self.viewportTraceState = viewportTraceState
     }
 
     func write(_ data: Data) async throws {
         guard !data.isEmpty else { return }
 
+        traceTmuxControlProtocolChunk(
+            data,
+            direction: .outbound,
+            source: "ssh.writeAndFlush",
+            viewportDescription: viewportTraceState.description(),
+            accumulator: &outboundProtocolTrace
+        )
         var buffer = allocator.buffer(capacity: data.count)
         buffer.writeBytes(data)
         let start = GhosttyRuntimeTrace.nowNanos()
@@ -602,6 +662,9 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
         GhosttyRuntimeTrace.latency(
             "ssh.resize begin columns=\(viewport.columns) rows=\(viewport.rows) px=\(viewport.pixelWidth)x\(viewport.pixelHeight)"
         )
+        GhosttyRuntimeTrace.tmuxViewport(
+            "ssh.resize begin viewport=\(GhosttyRuntimeTrace.viewportDescription(viewport)) previous=\(viewportTraceState.description())"
+        )
         // Only report PTY geometry at the SSH layer here. tmux control commands
         // must be emitted by Ghostty so its command-response FIFO stays owned.
         try await sessionChannel.triggerUserOutboundEvent(
@@ -611,6 +674,10 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
                 terminalPixelWidth: Int(viewport.pixelWidth),
                 terminalPixelHeight: Int(viewport.pixelHeight)
             )
+        )
+        viewportTraceState.update(viewport)
+        GhosttyRuntimeTrace.tmuxViewport(
+            "ssh.resize end viewport=\(GhosttyRuntimeTrace.viewportDescription(viewport))"
         )
         GhosttyRuntimeTrace.latency(
             "ssh.resize end elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
@@ -1241,7 +1308,9 @@ private enum SSHTmuxControlBootstrap {
         onFinish: @escaping @Sendable (Error?) -> Void
     ) async throws -> SSHTmuxControlConnection {
         let childChannel = preparedSession.sessionChannel
+        let viewportTraceState = SSHTmuxControlViewportTraceState(viewport: viewport)
         let handler = SSHTmuxControlChannelHandler(
+            viewportTraceState: viewportTraceState,
             onFirstOutput: { data in
                 trace.event(
                     "firstOutput",
@@ -1268,6 +1337,9 @@ private enum SSHTmuxControlBootstrap {
                 "pixelWidth": "\(viewport.pixelWidth)",
             ]
         ) {
+            GhosttyRuntimeTrace.tmuxViewport(
+                "startup.pty.request viewport=\(GhosttyRuntimeTrace.viewportDescription(viewport))"
+            )
             try await childChannel.triggerUserOutboundEvent(
                 SSHChannelRequestEvent.PseudoTerminalRequest(
                     wantReply: true,
@@ -1284,6 +1356,9 @@ private enum SSHTmuxControlBootstrap {
             "exec.request",
             fields: ["commandBytes": "\(command.lengthOfBytes(using: .utf8))"]
         ) {
+            GhosttyRuntimeTrace.tmuxViewport(
+                "startup.exec.request viewport=\(GhosttyRuntimeTrace.viewportDescription(viewport)) commandBytes=\(command.lengthOfBytes(using: .utf8)) preview=\(GhosttyRuntimeTrace.preview(Data(command.utf8), limit: 220))"
+            )
             try await childChannel.triggerUserOutboundEvent(
                 SSHChannelRequestEvent.ExecRequest(command: command, wantReply: true)
             )
@@ -1293,7 +1368,8 @@ private enum SSHTmuxControlBootstrap {
         return SSHTmuxControlConnection(
             authenticatedConnection: preparedSession.claimedConnection.authenticatedConnection,
             authenticatedConnectionLease: preparedSession.claimedConnection.lease,
-            sessionChannel: childChannel
+            sessionChannel: childChannel,
+            viewportTraceState: viewportTraceState
         )
     }
 
@@ -1370,20 +1446,24 @@ private final class SSHTmuxControlHandshakeHandler: ChannelInboundHandler, Senda
 private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = SSHChannelData
 
+    private let viewportTraceState: SSHTmuxControlViewportTraceState
     private let onFirstOutput: @Sendable (Data) -> Void
     private let onOutput: @Sendable (Data) -> Void
     private let onFinish: @Sendable (Error?) -> Void
     private let lock = NIOLock()
+    private var inboundProtocolTrace = TmuxControlProtocolTraceAccumulator()
 
     private var didFinish = false
     private var didReportFirstOutput = false
     private var exitStatus: Int?
 
     init(
+        viewportTraceState: SSHTmuxControlViewportTraceState,
         onFirstOutput: @escaping @Sendable (Data) -> Void,
         onOutput: @escaping @Sendable (Data) -> Void,
         onFinish: @escaping @Sendable (Error?) -> Void
     ) {
+        self.viewportTraceState = viewportTraceState
         self.onFirstOutput = onFirstOutput
         self.onOutput = onOutput
         self.onFinish = onFinish
@@ -1420,6 +1500,13 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
         }
 
         let data = Data(bytes)
+        traceTmuxControlProtocolChunk(
+            data,
+            direction: .inbound,
+            source: "ssh.channelRead",
+            viewportDescription: viewportTraceState.description(),
+            accumulator: &inboundProtocolTrace
+        )
         GhosttyRuntimeTrace.latency(
             "ssh.channelRead bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )

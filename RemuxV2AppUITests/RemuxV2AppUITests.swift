@@ -272,6 +272,7 @@ final class RemuxV2AppUITests: XCTestCase {
             app.launchEnvironment["REMUX_TRACE_FLOWS"] = "1"
             app.launchEnvironment["REMUX_TRACE_LATENCY"] = "1"
             app.launchEnvironment["REMUX_TRACE_PERF"] = "1"
+            app.launchEnvironment["REMUX_TRACE_TMUX_VIEWPORT"] = "1"
         }
         forwardTraceEnvironment()
         app.launch()
@@ -283,6 +284,8 @@ final class RemuxV2AppUITests: XCTestCase {
             "REMUX_TRACE_LATENCY",
             "REMUX_TRACE_GHOSTTY_IO",
             "REMUX_TRACE_GHOSTTY_DIAGNOSTICS",
+            "REMUX_TRACE_TMUX_VIEWPORT",
+            "REMUX_TRACE_TMUX_VIEWPORT_FULL",
             "REMUX_DEBUG_LATENCY_PROBE",
             "REMUX_DEBUG_LATENCY_PROBE_DELAY_MS",
         ] {
