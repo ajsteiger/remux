@@ -3,10 +3,9 @@ import XCTest
 @testable import RemuxV2
 
 final class GhosttyPhoneChromeLayoutTests: XCTestCase {
-    func testPortraitWithoutKeyboardUsesExpandedChrome() {
+    func testPortraitUsesStableExpandedChrome() {
         let layout = GhosttyPhoneChromeLayout(
-            screenSize: CGSize(width: 390, height: 844),
-            isSoftwareKeyboardVisible: false
+            screenSize: CGSize(width: 390, height: 844)
         )
 
         XCTAssertFalse(layout.isCompact)
@@ -14,21 +13,9 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
         XCTAssertEqual(layout.bottomPadding, 4)
     }
 
-    func testKeyboardForcesCompactChromeInPortrait() {
-        let layout = GhosttyPhoneChromeLayout(
-            screenSize: CGSize(width: 390, height: 844),
-            isSoftwareKeyboardVisible: true
-        )
-
-        XCTAssertTrue(layout.isCompact)
-        XCTAssertEqual(layout.surfaceHorizontalPadding, 8)
-        XCTAssertEqual(layout.bottomPadding, 2)
-    }
-
     func testLandscapeUsesCompactChromeWithoutKeyboard() {
         let layout = GhosttyPhoneChromeLayout(
-            screenSize: CGSize(width: 844, height: 390),
-            isSoftwareKeyboardVisible: false
+            screenSize: CGSize(width: 844, height: 390)
         )
 
         XCTAssertTrue(layout.isLandscape)
@@ -122,56 +109,6 @@ final class GhosttyPhoneChromeLayoutTests: XCTestCase {
             ),
             385
         )
-    }
-
-    func testKeyboardChromeSystemPanelUsesAccessoryHeightOnly() {
-        let keyboardReplacement = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
-            keyboardOverlapHeight: 308,
-            bottomSafeAreaHeight: 34
-        )
-        let systemPanel = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
-            for: .system,
-            reservedKeyboardReplacementHeight: keyboardReplacement
-        )
-
-        XCTAssertEqual(systemPanel, GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight)
-    }
-
-    func testKeyboardChromeSystemPanelReservesOnlyUncoveredKeyboardHeightDuringPresentation() {
-        let keyboardReplacement = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
-            keyboardOverlapHeight: 308,
-            bottomSafeAreaHeight: 34
-        )
-        let currentReplacement = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
-            keyboardOverlapHeight: 134,
-            bottomSafeAreaHeight: 34
-        )
-        let pendingSystemPanel = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
-            for: .system,
-            reservedKeyboardReplacementHeight: keyboardReplacement,
-            currentKeyboardReplacementHeight: currentReplacement,
-            reservesSystemKeyboardReplacement: true
-        )
-
-        XCTAssertEqual(
-            pendingSystemPanel,
-            GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight + keyboardReplacement - currentReplacement
-        )
-    }
-
-    func testKeyboardChromeSystemPanelDropsPresentationReservationWhenKeyboardCatchesUp() {
-        let keyboardReplacement = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
-            keyboardOverlapHeight: 308,
-            bottomSafeAreaHeight: 34
-        )
-        let pendingSystemPanel = GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
-            for: .system,
-            reservedKeyboardReplacementHeight: keyboardReplacement,
-            currentKeyboardReplacementHeight: keyboardReplacement,
-            reservesSystemKeyboardReplacement: true
-        )
-
-        XCTAssertEqual(pendingSystemPanel, GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight)
     }
 
     func testKeyboardChromeReplacementHeightExcludesBottomSafeArea() {

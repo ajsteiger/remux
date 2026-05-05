@@ -21,8 +21,8 @@ final class GhosttyKeyboardChromeModeTests: XCTestCase {
         )
     }
 
-    func testAuxiliaryControlsAreOnlyVisibleInSystemMode() {
-        XCTAssertFalse(GhosttyKeyboardChromeMode.hidden.showsAuxiliaryControls)
-        XCTAssertTrue(GhosttyKeyboardChromeMode.system.showsAuxiliaryControls)
+    func testKeyboardModeOnlyControlsKeyboardIntent() {
+        XCTAssertFalse(GhosttyKeyboardChromeMode.hidden.enablesSystemKeyboard)
+        XCTAssertTrue(GhosttyKeyboardChromeMode.system.enablesSystemKeyboard)
     }
 }

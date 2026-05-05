@@ -1,15 +1,10 @@
 import SwiftUI
-import UIKit
 
 enum GhosttyKeyboardChromeMode: Equatable {
     case hidden
     case system
 
     var enablesSystemKeyboard: Bool {
-        self == .system
-    }
-
-    var showsAuxiliaryControls: Bool {
         self == .system
     }
 
@@ -36,36 +31,8 @@ enum GhosttyKeyboardChromeMode: Equatable {
 }
 
 enum GhosttyKeyboardChromeSizing {
-    static let rowSpacing: CGFloat = 6
-    static let keyHeight: CGFloat = 34
-    static let keyVerticalPadding: CGFloat = 3
-    static let systemAccessoryPadding: CGFloat = 4
-
-    static var systemAccessoryPanelHeight: CGFloat {
-        keyHeight + keyVerticalPadding * 2 + systemAccessoryPadding * 2
-    }
-
-    static func auxiliaryPanelHeight(
-        for mode: GhosttyKeyboardChromeMode,
-        reservedKeyboardReplacementHeight: CGFloat,
-        currentKeyboardReplacementHeight: CGFloat = 0,
-        reservesSystemKeyboardReplacement: Bool = false
-    ) -> CGFloat {
-        switch mode {
-        case .hidden:
-            return 0
-        case .system:
-            return systemAccessoryPanelHeight
-                + (
-                    reservesSystemKeyboardReplacement
-                        ? remainingKeyboardReplacementHeight(
-                            reservedKeyboardReplacementHeight: reservedKeyboardReplacementHeight,
-                            currentKeyboardReplacementHeight: currentKeyboardReplacementHeight
-                        )
-                        : 0
-                )
-        }
-    }
+    static let dockButtonHeight: CGFloat = 36
+    static let dockButtonWidth: CGFloat = 34
 
     static func keyboardReplacementHeight(
         keyboardOverlapHeight: CGFloat,
@@ -77,27 +44,10 @@ enum GhosttyKeyboardChromeSizing {
         let safeAreaHeight = bottomSafeAreaHeight.isFinite ? max(0, bottomSafeAreaHeight) : 0
         return ceil(max(0, keyboardOverlapHeight - safeAreaHeight))
     }
-
-    private static func remainingKeyboardReplacementHeight(
-        reservedKeyboardReplacementHeight: CGFloat,
-        currentKeyboardReplacementHeight: CGFloat
-    ) -> CGFloat {
-        guard reservedKeyboardReplacementHeight.isFinite, reservedKeyboardReplacementHeight > 0 else {
-            return 0
-        }
-
-        let currentHeight = currentKeyboardReplacementHeight.isFinite
-            ? max(0, currentKeyboardReplacementHeight)
-            : 0
-        return ceil(max(0, reservedKeyboardReplacementHeight - currentHeight))
-    }
 }
 
 struct GhosttyKeyboardChrome: View {
     let keyboardMode: GhosttyKeyboardChromeMode
-    let reservedKeyboardReplacementHeight: CGFloat
-    let currentKeyboardReplacementHeight: CGFloat
-    let reservesSystemKeyboardReplacement: Bool
     let isEnabled: Bool
     let isCompact: Bool
     let isControlArmed: Bool
@@ -110,158 +60,131 @@ struct GhosttyKeyboardChrome: View {
     let onShowPanes: () -> Void
     let onToggleKeyboard: () -> Void
     let onToggleControl: () -> Void
-    let copySelection: () -> Bool
-    let sendPaste: (String) -> Bool
     let sendKey: (GhosttySurfaceKeyEvent) -> Bool
 
-    private var showsAuxiliaryControls: Bool {
-        keyboardMode.showsAuxiliaryControls
-    }
-
-    private var auxiliaryPanelHeight: CGFloat {
-        GhosttyKeyboardChromeSizing.auxiliaryPanelHeight(
-            for: keyboardMode,
-            reservedKeyboardReplacementHeight: reservedKeyboardReplacementHeight,
-            currentKeyboardReplacementHeight: currentKeyboardReplacementHeight,
-            reservesSystemKeyboardReplacement: reservesSystemKeyboardReplacement
-        )
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: showsAuxiliaryControls ? GhosttyKeyboardChromeSizing.rowSpacing : 0) {
-            selectorRow
-                .transaction { transaction in
-                    transaction.animation = nil
-                }
-
-            if showsAuxiliaryControls {
-                auxiliaryContainer
+        selectorRow
+            .transaction { transaction in
+                transaction.animation = nil
             }
-        }
-        .transaction { transaction in
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
-    }
-
-    @ViewBuilder
-    private var auxiliaryContainer: some View {
-        ZStack(alignment: .top) {
-            switch keyboardMode {
-            case .hidden:
-                EmptyView()
-            case .system:
-                systemAccessoryRow
+            .transaction { transaction in
+                transaction.animation = nil
+                transaction.disablesAnimations = true
             }
-        }
-        .frame(height: auxiliaryPanelHeight, alignment: .top)
-        .clipped()
     }
 
     private var selectorRow: some View {
-        HStack(spacing: 5) {
-            GhosttyKeyboardChromeDockButton(
-                systemName: "house",
-                badge: nil,
-                accessibilityLabel: "Home",
-                accessibilityHint: "Return to the Remux session library.",
-                accessibilityIdentifier: "terminal.home",
-                isActive: false,
-                isEnabled: true,
-                action: onShowHome
-            )
-
-            GhosttyKeyboardChromeDockButton(
-                systemName: "rectangle.on.rectangle",
-                badge: windowBadge,
-                accessibilityLabel: windowAccessibilityLabel,
-                accessibilityHint: windowDetail,
-                accessibilityIdentifier: "terminal.windows",
-                isActive: false,
-                isEnabled: isEnabled && windowCount > 0,
-                action: onShowWindows
-            )
-
-            GhosttyKeyboardChromeDockButton(
-                systemName: "square.split.2x1",
-                badge: paneBadge,
-                accessibilityLabel: paneAccessibilityLabel,
-                accessibilityHint: paneDetail,
-                accessibilityIdentifier: "terminal.panes",
-                isActive: false,
-                isEnabled: isEnabled && paneCount > 0,
-                action: onShowPanes
-            )
-
-            GhosttyKeyboardChromeDockButton(
-                systemName: "keyboard",
-                badge: nil,
-                accessibilityLabel: keyboardMode == .hidden ? "Show keyboard controls" : "Hide keyboard controls",
-                accessibilityHint: nil,
-                accessibilityIdentifier: "terminal.keyboard",
-                isActive: keyboardMode != .hidden,
-                isEnabled: isEnabled,
-                action: onToggleKeyboard
-            )
-        }
-        .padding(4)
-        .background(GhosttyPhoneChromePalette.dock)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        HStack(spacing: isCompact ? 6 : 8) {
+            navigationControls
+            terminalKeyControls
+            inputControls
         }
         .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    private var systemAccessoryRow: some View {
-        HStack(spacing: 6) {
-            primaryAccessoryKeys
-        }
-        .padding(4)
-        .frame(height: GhosttyKeyboardChromeSizing.systemAccessoryPanelHeight, alignment: .center)
-        .background(GhosttyPhoneChromePalette.tray)
-        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: isCompact ? 14 : 16, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+    private var navigationControls: some View {
+        controlGroup {
+            HStack(spacing: 4) {
+                GhosttyKeyboardChromeDockButton(
+                    systemName: "house",
+                    badge: nil,
+                    accessibilityLabel: "Home",
+                    accessibilityHint: "Return to the Remux session library.",
+                    accessibilityIdentifier: "terminal.home",
+                    isActive: false,
+                    isEnabled: true,
+                    action: onShowHome
+                )
+
+                GhosttyKeyboardChromeDockButton(
+                    systemName: "rectangle.on.rectangle",
+                    badge: windowBadge,
+                    accessibilityLabel: windowAccessibilityLabel,
+                    accessibilityHint: windowDetail,
+                    accessibilityIdentifier: "terminal.windows",
+                    isActive: false,
+                    isEnabled: isEnabled && windowCount > 0,
+                    action: onShowWindows
+                )
+
+                GhosttyKeyboardChromeDockButton(
+                    systemName: "square.split.2x1",
+                    badge: paneBadge,
+                    accessibilityLabel: paneAccessibilityLabel,
+                    accessibilityHint: paneDetail,
+                    accessibilityIdentifier: "terminal.panes",
+                    isActive: false,
+                    isEnabled: isEnabled && paneCount > 0,
+                    action: onShowPanes
+                )
+            }
         }
     }
 
-    private var primaryAccessoryKeys: some View {
-        HStack(spacing: 6) {
-            accessoryKey(title: "ctrl", isActive: isControlArmed) {
-                onToggleControl()
-                return true
+    private var terminalKeyControls: some View {
+        controlGroup {
+            HStack(spacing: 4) {
+                accessoryKey(title: "ctrl", accessibilityIdentifier: "terminal.ctrl", isActive: isControlArmed) {
+                    onToggleControl()
+                    return true
+                }
+                accessoryKey(title: "esc", accessibilityIdentifier: "terminal.esc") {
+                    sendKey(.init(keyCode: .escape))
+                }
+                accessoryKey(title: "tab", accessibilityIdentifier: "terminal.tab") {
+                    sendKey(.init(keyCode: .tab))
+                }
             }
-            accessoryKey(title: "esc") { sendKey(.init(keyCode: .escape)) }
-            accessoryKey(title: "tab") { sendKey(.init(keyCode: .tab)) }
-            accessoryKey(title: "copy", action: copySelection)
-            accessoryKey(title: "paste", action: sendClipboardPaste)
         }
+    }
+
+    private var inputControls: some View {
+        controlGroup {
+            HStack(spacing: 4) {
+                GhosttyKeyboardChromeDockButton(
+                    systemName: "keyboard",
+                    badge: nil,
+                    accessibilityLabel: keyboardMode == .hidden ? "Show keyboard controls" : "Hide keyboard controls",
+                    accessibilityHint: nil,
+                    accessibilityIdentifier: "terminal.keyboard",
+                    isActive: keyboardMode != .hidden,
+                    isEnabled: isEnabled,
+                    action: onToggleKeyboard
+                )
+            }
+        }
+    }
+
+    private func controlGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(4)
+            .background(GhosttyPhoneChromePalette.groupSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(0.14), radius: 8, y: 4)
     }
 
     private func accessoryKey(
         title: String,
+        accessibilityIdentifier: String,
         isActive: Bool = false,
         action: @escaping () -> Bool
     ) -> some View {
         GhosttyKeyboardKeyButton(
             title: title,
+            accessibilityIdentifier: accessibilityIdentifier,
             fontSize: 12,
-            minWidth: 32,
-            minHeight: GhosttyKeyboardChromeSizing.keyHeight,
-            horizontalPadding: 4,
+            minWidth: isCompact ? 30 : 33,
+            minHeight: GhosttyKeyboardChromeSizing.dockButtonHeight,
+            horizontalPadding: isCompact ? 3 : 4,
             verticalPadding: 3,
             isActive: isActive,
             isEnabled: isEnabled,
             action: action
         )
-    }
-
-    private func sendClipboardPaste() -> Bool {
-        guard let text = UIPasteboard.general.string, !text.isEmpty else { return false }
-        return sendPaste(text)
     }
 
     private var windowDetail: String? {
@@ -311,7 +234,7 @@ private struct GhosttyKeyboardChromeDockButton: View {
         Button(action: action) {
             ZStack {
                 Image(systemName: systemName)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 16.5, weight: .semibold))
                     .symbolRenderingMode(.monochrome)
 
                 if let badge {
@@ -319,8 +242,11 @@ private struct GhosttyKeyboardChromeDockButton: View {
                 }
             }
             .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.86))
-            .frame(width: 46, height: 36)
-            .background(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.055))
+            .frame(
+                width: GhosttyKeyboardChromeSizing.dockButtonWidth,
+                height: GhosttyKeyboardChromeSizing.dockButtonHeight
+            )
+            .background(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.065))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -363,6 +289,7 @@ private struct GhosttyKeyboardChromeDockButton: View {
 
 private struct GhosttyKeyboardKeyButton: View {
     let title: String
+    let accessibilityIdentifier: String
     var fontSize: CGFloat = 13
     var minWidth: CGFloat = 42
     var minHeight: CGFloat = 36
@@ -395,6 +322,8 @@ private struct GhosttyKeyboardKeyButton: View {
         }
         .frame(maxWidth: fillsWidth ? .infinity : nil)
         .disabled(!isEnabled)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 
@@ -402,8 +331,9 @@ enum GhosttyPhoneChromePalette {
     static let screenBackground = Color(red: 0.18, green: 0.20, blue: 0.24)
     static let tray = screenBackground
     static let dock = Color(red: 0.15, green: 0.16, blue: 0.20)
+    static let groupSurface = Color(red: 0.14, green: 0.15, blue: 0.19)
     static let pill = Color(red: 0.23, green: 0.25, blue: 0.30)
-    static let keySurface = Color(red: 0.25, green: 0.27, blue: 0.33)
+    static let keySurface = Color(red: 0.22, green: 0.24, blue: 0.30)
     static let accent = Color(red: 0.43, green: 1.0, blue: 0.78)
 
     static let uiBackground = UIColor(

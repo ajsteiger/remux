@@ -602,19 +602,19 @@ final class RemuxV2AppUITests: XCTestCase {
         attach(name: "22-windows-sheet")
         dismissTopSheetIfPresent()
 
-        // Bring up the system iOS keyboard via the chrome toggle, then capture.
+        // Toggle the keyboard mode in the grouped terminal dock, then capture.
         let keyboard = app.buttons["terminal.keyboard"]
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
         if keyboard.isHittable { keyboard.tap() }
         sleep(3)
-        attach(name: "23-system-keyboard-accessory")
+        attach(name: "23-grouped-terminal-dock-keyboard")
 
-        // Capture the retained accessory row with ctrl armed (modifier feedback).
-        let ctrlButton = app.buttons.matching(NSPredicate(format: "label == %@", "ctrl")).firstMatch
+        // Capture the grouped dock with ctrl armed (modifier feedback).
+        let ctrlButton = app.buttons["terminal.ctrl"]
         if ctrlButton.exists, ctrlButton.isHittable {
             ctrlButton.tap()
             sleep(1)
-            attach(name: "24-system-keyboard-ctrl-armed")
+            attach(name: "24-grouped-terminal-dock-ctrl-armed")
         }
 
         let home = app.buttons["terminal.home"]

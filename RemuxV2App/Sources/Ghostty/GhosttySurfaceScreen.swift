@@ -53,18 +53,8 @@ struct GhosttySurfaceScreen: View {
     var body: some View {
         GeometryReader { screenProxy in
             let renderedKeyboardMode = inputCoordinator.keyboardMode
-            let showsAuxiliaryControls = renderedKeyboardMode.showsAuxiliaryControls
             let chrome = GhosttyPhoneChromeLayout(
-                screenSize: screenProxy.size,
-                isSoftwareKeyboardVisible: showsAuxiliaryControls
-            )
-            let keyboardReplacementHeight = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
-                keyboardOverlapHeight: lastSoftwareKeyboardOverlapHeight,
-                bottomSafeAreaHeight: screenProxy.safeAreaInsets.bottom
-            )
-            let currentKeyboardReplacementHeight = GhosttyKeyboardChromeSizing.keyboardReplacementHeight(
-                keyboardOverlapHeight: softwareKeyboardOverlapHeight,
-                bottomSafeAreaHeight: screenProxy.safeAreaInsets.bottom
+                screenSize: screenProxy.size
             )
 
             ZStack {
@@ -142,9 +132,6 @@ struct GhosttySurfaceScreen: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 GhosttyKeyboardChrome(
                     keyboardMode: renderedKeyboardMode,
-                    reservedKeyboardReplacementHeight: keyboardReplacementHeight,
-                    currentKeyboardReplacementHeight: currentKeyboardReplacementHeight,
-                    reservesSystemKeyboardReplacement: isAwaitingSystemKeyboardPresentation,
                     isEnabled: isTerminalInputAvailable,
                     isCompact: chrome.isCompact,
                     isControlArmed: modifierState.isControlArmed,
@@ -157,12 +144,10 @@ struct GhosttySurfaceScreen: View {
                     onShowPanes: showPanes,
                     onToggleKeyboard: toggleKeyboardChrome,
                     onToggleControl: toggleControlModifier,
-                    copySelection: copyTerminalSelection,
-                    sendPaste: sendTerminalPaste,
                     sendKey: sendTerminalKeyEvent
                 )
                 .padding(.horizontal, chrome.surfaceHorizontalPadding)
-                .padding(.top, showsAuxiliaryControls ? 6 : 4)
+                .padding(.top, 4)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
                 .background(target.terminalSettings.theme.swiftUIBackground)
@@ -1203,14 +1188,13 @@ private final class GhosttyTerminalViewportSizeCache {
 
 struct GhosttyPhoneChromeLayout: Equatable {
     let screenSize: CGSize
-    let isSoftwareKeyboardVisible: Bool
 
     var isLandscape: Bool {
         screenSize.width > screenSize.height
     }
 
     var isCompact: Bool {
-        isLandscape || isSoftwareKeyboardVisible
+        isLandscape
     }
 
     var surfaceHorizontalPadding: CGFloat {
