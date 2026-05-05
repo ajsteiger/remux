@@ -67,22 +67,41 @@ struct GhosttyTerminalInputCoordinator: Equatable {
 }
 
 struct GhosttyPendingTopologyInputRefocus: Equatable {
+    private var isPending = false
     private var sourceActiveLeafID: UUID?
+    private(set) var ownsKeyboardTransition = false
 
-    mutating func request(from activeLeafID: UUID?, keyboardMode: GhosttyKeyboardChromeMode) {
-        guard keyboardMode == .system else { return }
+    var isActive: Bool {
+        isPending
+    }
+
+    @discardableResult
+    mutating func request(from activeLeafID: UUID?, keyboardMode: GhosttyKeyboardChromeMode) -> Bool {
+        guard keyboardMode == .system else { return false }
+        isPending = true
         sourceActiveLeafID = activeLeafID
+        ownsKeyboardTransition = false
+        return true
+    }
+
+    mutating func markKeyboardTransitionOwned() {
+        guard isActive else { return }
+        ownsKeyboardTransition = true
     }
 
     mutating func consumeIfActiveLeafChanged(to activeLeafID: UUID?) -> Bool {
-        guard let sourceActiveLeafID else { return false }
-        guard let activeLeafID, activeLeafID != sourceActiveLeafID else { return false }
+        guard isPending else { return false }
+        guard activeLeafID != sourceActiveLeafID else { return false }
 
+        isPending = false
         self.sourceActiveLeafID = nil
+        ownsKeyboardTransition = false
         return true
     }
 
     mutating func cancel() {
+        isPending = false
         sourceActiveLeafID = nil
+        ownsKeyboardTransition = false
     }
 }

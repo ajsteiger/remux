@@ -137,10 +137,12 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         let nextLeafID = UUID()
         var refocus = GhosttyPendingTopologyInputRefocus()
 
-        refocus.request(from: sourceLeafID, keyboardMode: .system)
+        XCTAssertTrue(refocus.request(from: sourceLeafID, keyboardMode: .system))
+        XCTAssertTrue(refocus.isActive)
 
         XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: sourceLeafID))
         XCTAssertTrue(refocus.consumeIfActiveLeafChanged(to: nextLeafID))
+        XCTAssertFalse(refocus.isActive)
         XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: UUID()))
     }
 
@@ -148,8 +150,9 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         let sourceLeafID = UUID()
         var refocus = GhosttyPendingTopologyInputRefocus()
 
-        refocus.request(from: sourceLeafID, keyboardMode: .hidden)
+        XCTAssertFalse(refocus.request(from: sourceLeafID, keyboardMode: .hidden))
 
+        XCTAssertFalse(refocus.isActive)
         XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: UUID()))
     }
 
@@ -157,8 +160,74 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         var refocus = GhosttyPendingTopologyInputRefocus()
 
         refocus.request(from: UUID(), keyboardMode: .system)
+        refocus.markKeyboardTransitionOwned()
         refocus.cancel()
 
+        XCTAssertFalse(refocus.isActive)
+        XCTAssertFalse(refocus.ownsKeyboardTransition)
         XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: UUID()))
+    }
+
+    func testPendingTopologyInputRefocusCanStartFromNilActiveLeaf() {
+        let nextLeafID = UUID()
+        var refocus = GhosttyPendingTopologyInputRefocus()
+
+        XCTAssertTrue(refocus.request(from: nil, keyboardMode: .system))
+        XCTAssertTrue(refocus.isActive)
+        XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: nil))
+        XCTAssertTrue(refocus.consumeIfActiveLeafChanged(to: nextLeafID))
+        XCTAssertFalse(refocus.isActive)
+    }
+
+    func testPendingTopologyInputRefocusConsumesNilDestinationWhenSourceWasLeaf() {
+        let sourceLeafID = UUID()
+        var refocus = GhosttyPendingTopologyInputRefocus()
+
+        XCTAssertTrue(refocus.request(from: sourceLeafID, keyboardMode: .system))
+        refocus.markKeyboardTransitionOwned()
+
+        XCTAssertTrue(refocus.consumeIfActiveLeafChanged(to: nil))
+        XCTAssertFalse(refocus.isActive)
+        XCTAssertFalse(refocus.ownsKeyboardTransition)
+    }
+
+    func testPendingTopologyInputRefocusDoesNotConsumeNilDestinationFromNilSource() {
+        var refocus = GhosttyPendingTopologyInputRefocus()
+
+        XCTAssertTrue(refocus.request(from: nil, keyboardMode: .system))
+
+        XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: nil))
+        XCTAssertTrue(refocus.isActive)
+    }
+
+    func testPendingTopologyInputRefocusNilSourceCancelClearsOwnership() {
+        var refocus = GhosttyPendingTopologyInputRefocus()
+
+        XCTAssertTrue(refocus.request(from: nil, keyboardMode: .system))
+        refocus.markKeyboardTransitionOwned()
+        XCTAssertTrue(refocus.ownsKeyboardTransition)
+
+        refocus.cancel()
+
+        XCTAssertFalse(refocus.isActive)
+        XCTAssertFalse(refocus.ownsKeyboardTransition)
+    }
+
+    func testPendingTopologyInputRefocusTracksKeyboardTransitionOwnership() {
+        let sourceLeafID = UUID()
+        let nextLeafID = UUID()
+        var refocus = GhosttyPendingTopologyInputRefocus()
+
+        refocus.markKeyboardTransitionOwned()
+        XCTAssertFalse(refocus.ownsKeyboardTransition)
+
+        XCTAssertTrue(refocus.request(from: sourceLeafID, keyboardMode: .system))
+        XCTAssertFalse(refocus.ownsKeyboardTransition)
+
+        refocus.markKeyboardTransitionOwned()
+        XCTAssertTrue(refocus.ownsKeyboardTransition)
+
+        XCTAssertTrue(refocus.consumeIfActiveLeafChanged(to: nextLeafID))
+        XCTAssertFalse(refocus.ownsKeyboardTransition)
     }
 }
