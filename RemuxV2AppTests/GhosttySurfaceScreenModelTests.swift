@@ -82,7 +82,26 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
                 notificationTarget: .hidden,
                 keyboardMode: .system,
-                handoffTarget: nil,
+                isDismissSystemKeyboardRequested: false
+            )
+        )
+    }
+
+    func testKeyboardViewportTransitionPolicyAllowsRequestedSystemKeyboardShow() {
+        XCTAssertTrue(
+            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+                notificationTarget: .shown,
+                keyboardMode: .system,
+                isDismissSystemKeyboardRequested: false
+            )
+        )
+    }
+
+    func testKeyboardViewportTransitionPolicyIgnoresShowWhenKeyboardIsHidden() {
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+                notificationTarget: .shown,
+                keyboardMode: .hidden,
                 isDismissSystemKeyboardRequested: false
             )
         )
@@ -93,30 +112,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
                 notificationTarget: .hidden,
                 keyboardMode: .hidden,
-                handoffTarget: nil,
                 isDismissSystemKeyboardRequested: true
-            )
-        )
-    }
-
-    func testKeyboardViewportTransitionPolicyIgnoresHideDuringCustomToSystemHandoff() {
-        XCTAssertFalse(
-            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
-                notificationTarget: .hidden,
-                keyboardMode: .system,
-                handoffTarget: .system,
-                isDismissSystemKeyboardRequested: false
-            )
-        )
-    }
-
-    func testKeyboardViewportTransitionPolicyAllowsSystemToCustomHandoffHide() {
-        XCTAssertTrue(
-            GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
-                notificationTarget: .hidden,
-                keyboardMode: .custom,
-                handoffTarget: .custom,
-                isDismissSystemKeyboardRequested: false
             )
         )
     }

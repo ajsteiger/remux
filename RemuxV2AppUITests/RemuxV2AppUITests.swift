@@ -117,16 +117,6 @@ final class RemuxV2AppUITests: XCTestCase {
             waitForKeyboardPresence(true, label: "initial system show")
         )
 
-        tapCustomKeyboardToggle()
-        XCTAssertNotNil(
-            waitForKeyboardPresence(false, label: "system to custom hide")
-        )
-
-        tapSystemKeyboardToggleFromCustomKeyboard()
-        XCTAssertNotNil(
-            waitForKeyboardPresence(true, label: "custom to system show")
-        )
-
         app.typeText("echo remux-keyboard-resize\r")
         keyboard.tap()
         XCTAssertNotNil(
@@ -231,35 +221,6 @@ final class RemuxV2AppUITests: XCTestCase {
 
         close.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(2))
-    }
-
-    private func tapCustomKeyboardToggle() {
-        let customByImage = app.buttons.matching(identifier: "square.grid.2x2").firstMatch
-        let customByLabel = app.buttons.matching(
-            NSPredicate(
-                format: "label == %@ OR label CONTAINS[c] %@",
-                "square.grid.2x2",
-                "custom keyboard"
-            )
-        ).firstMatch
-
-        if customByImage.waitForExistence(timeout: 1), customByImage.isHittable {
-            customByImage.tap()
-        } else if customByLabel.exists, customByLabel.isHittable {
-            customByLabel.tap()
-        } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.55)).tap()
-        }
-    }
-
-    private func tapSystemKeyboardToggleFromCustomKeyboard() {
-        let abcButton = app.buttons.matching(NSPredicate(format: "label == %@", "abc")).firstMatch
-        XCTAssertTrue(abcButton.waitForExistence(timeout: 5))
-        if abcButton.isHittable {
-            abcButton.tap()
-        } else {
-            abcButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
     }
 
     @discardableResult
@@ -648,32 +609,12 @@ final class RemuxV2AppUITests: XCTestCase {
         sleep(3)
         attach(name: "23-system-keyboard-accessory")
 
-        // The "show custom keyboard" toggle is the trailing SF Symbol button
-        // on the accessory row. SwiftUI exposes it as a button labeled by its
-        // SF Symbol; match by image. As a fallback tap a coordinate near the
-        // accessory row's right edge.
-        let customByImage = app.buttons.matching(identifier: "square.grid.2x2").firstMatch
-        let customByLabel = app.buttons.matching(NSPredicate(format: "label == %@ OR label CONTAINS[c] %@",
-                                                              "square.grid.2x2",
-                                                              "custom keyboard")).firstMatch
-        if customByImage.exists, customByImage.isHittable {
-            customByImage.tap()
-        } else if customByLabel.exists, customByLabel.isHittable {
-            customByLabel.tap()
-        } else {
-            // Tap rightmost portion of the accessory row, which sits just above
-            // the keyboard. The dock + accessory occupy the bottom portion.
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.55)).tap()
-        }
-        sleep(3)
-        attach(name: "24-custom-keyboard")
-
-        // Capture custom keyboard with ctrl armed (modifier feedback).
+        // Capture the retained accessory row with ctrl armed (modifier feedback).
         let ctrlButton = app.buttons.matching(NSPredicate(format: "label == %@", "ctrl")).firstMatch
         if ctrlButton.exists, ctrlButton.isHittable {
             ctrlButton.tap()
             sleep(1)
-            attach(name: "25-custom-keyboard-ctrl-armed")
+            attach(name: "24-system-keyboard-ctrl-armed")
         }
 
         let home = app.buttons["terminal.home"]

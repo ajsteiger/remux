@@ -6,22 +6,8 @@ final class GhosttyKeyboardChromeModeTests: XCTestCase {
         XCTAssertEqual(GhosttyKeyboardChromeMode.hidden.toggledKeyboard(), .system)
     }
 
-    func testKeyboardToggleHidesKeyboardFromActiveModes() {
+    func testKeyboardToggleHidesSystemKeyboard() {
         XCTAssertEqual(GhosttyKeyboardChromeMode.system.toggledKeyboard(), .hidden)
-        XCTAssertEqual(GhosttyKeyboardChromeMode.custom.toggledKeyboard(), .hidden)
-    }
-
-    func testCustomKeyboardToggleSwitchesBetweenCustomAndSystemModes() {
-        XCTAssertEqual(GhosttyKeyboardChromeMode.hidden.toggledCustomKeyboard(), .custom)
-        XCTAssertEqual(GhosttyKeyboardChromeMode.system.toggledCustomKeyboard(), .custom)
-        XCTAssertEqual(GhosttyKeyboardChromeMode.custom.toggledCustomKeyboard(), .system)
-    }
-
-    func testSystemKeyboardVisibilityDoesNotCollapseCustomKeyboard() {
-        XCTAssertEqual(
-            GhosttyKeyboardChromeMode.custom.applyingSystemKeyboardVisibility(false),
-            .custom
-        )
     }
 
     func testSystemKeyboardVisibilitySyncsHiddenAndSystemModes() {
@@ -35,27 +21,8 @@ final class GhosttyKeyboardChromeModeTests: XCTestCase {
         )
     }
 
-    func testAuxiliaryControlsStayVisibleInSystemModeWithoutSoftwareKeyboardFrame() {
-        XCTAssertTrue(
-            GhosttyKeyboardChromeMode.system.showsAuxiliaryControls(
-                isSoftwareKeyboardVisible: false
-            )
-        )
-    }
-
-    func testAuxiliaryControlsStayVisibleWhenSoftwareKeyboardIsVisible() {
-        XCTAssertTrue(
-            GhosttyKeyboardChromeMode.system.showsAuxiliaryControls(
-                isSoftwareKeyboardVisible: true
-            )
-        )
-    }
-
-    func testAuxiliaryControlsRemainVisibleForCustomKeyboard() {
-        XCTAssertTrue(
-            GhosttyKeyboardChromeMode.custom.showsAuxiliaryControls(
-                isSoftwareKeyboardVisible: false
-            )
-        )
+    func testAuxiliaryControlsAreOnlyVisibleInSystemMode() {
+        XCTAssertFalse(GhosttyKeyboardChromeMode.hidden.showsAuxiliaryControls)
+        XCTAssertTrue(GhosttyKeyboardChromeMode.system.showsAuxiliaryControls)
     }
 }

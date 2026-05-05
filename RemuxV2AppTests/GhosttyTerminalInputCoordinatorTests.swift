@@ -30,24 +30,33 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.terminalActivationToken, 1)
     }
 
-    func testSurfaceTapPreservesCustomKeyboardMode() {
+    func testSurfaceTapFromSystemRequestsFreshActivation() {
         var coordinator = GhosttyTerminalInputCoordinator()
-        coordinator.toggleCustomKeyboard(isInputAvailable: true)
+        coordinator.showSystemKeyboard(isInputAvailable: true)
 
         coordinator.handleSurfaceTap(isInputAvailable: true)
 
-        XCTAssertEqual(coordinator.keyboardMode, .custom)
-        XCTAssertEqual(coordinator.terminalActivationToken, 0)
+        XCTAssertEqual(coordinator.keyboardMode, .system)
+        XCTAssertEqual(coordinator.terminalActivationToken, 2)
         XCTAssertFalse(coordinator.isDismissSystemKeyboardRequested)
     }
 
-    func testToggleKeyboardFromCustomHidesWithoutDismissRequest() {
+    func testToggleKeyboardFromHiddenShowsSystemKeyboard() {
         var coordinator = GhosttyTerminalInputCoordinator()
-        coordinator.toggleCustomKeyboard(isInputAvailable: true)
 
         coordinator.toggleKeyboard(isInputAvailable: true)
 
+        XCTAssertEqual(coordinator.keyboardMode, .system)
+        XCTAssertEqual(coordinator.terminalActivationToken, 1)
+    }
+
+    func testToggleKeyboardFromHiddenIsIgnoredWhenInputIsUnavailable() {
+        var coordinator = GhosttyTerminalInputCoordinator()
+
+        coordinator.toggleKeyboard(isInputAvailable: false)
+
         XCTAssertEqual(coordinator.keyboardMode, .hidden)
+        XCTAssertEqual(coordinator.terminalActivationToken, 0)
         XCTAssertFalse(coordinator.isDismissSystemKeyboardRequested)
     }
 
@@ -85,16 +94,6 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.isSoftwareKeyboardVisible)
     }
 
-    func testKeyboardVisibilityHideDoesNotCollapseCustomKeyboard() {
-        var coordinator = GhosttyTerminalInputCoordinator()
-        coordinator.toggleCustomKeyboard(isInputAvailable: true)
-
-        coordinator.updateSoftwareKeyboardVisibility(false)
-
-        XCTAssertEqual(coordinator.keyboardMode, .custom)
-        XCTAssertFalse(coordinator.isDismissSystemKeyboardRequested)
-    }
-
     func testRefocusSystemKeyboardIfActiveRequestsFreshActivation() {
         var coordinator = GhosttyTerminalInputCoordinator()
         coordinator.showSystemKeyboard(isInputAvailable: true)
@@ -105,13 +104,12 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.terminalActivationToken, 2)
     }
 
-    func testRefocusSystemKeyboardIfActiveDoesNothingOutsideSystemMode() {
+    func testRefocusSystemKeyboardIfActiveDoesNothingWhenHidden() {
         var coordinator = GhosttyTerminalInputCoordinator()
-        coordinator.toggleCustomKeyboard(isInputAvailable: true)
 
         coordinator.refocusSystemKeyboardIfActive(isInputAvailable: true)
 
-        XCTAssertEqual(coordinator.keyboardMode, .custom)
+        XCTAssertEqual(coordinator.keyboardMode, .hidden)
         XCTAssertEqual(coordinator.terminalActivationToken, 0)
     }
 
@@ -123,17 +121,6 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.keyboardMode, .system)
         XCTAssertEqual(coordinator.terminalActivationToken, 2)
-    }
-
-    func testSelectionChangePreservesCustomKeyboardMode() {
-        var coordinator = GhosttyTerminalInputCoordinator()
-        coordinator.toggleCustomKeyboard(isInputAvailable: true)
-
-        coordinator.handleSelectionChange(isInputAvailable: true)
-
-        XCTAssertEqual(coordinator.keyboardMode, .custom)
-        XCTAssertEqual(coordinator.terminalActivationToken, 0)
-        XCTAssertFalse(coordinator.isDismissSystemKeyboardRequested)
     }
 
     func testSelectionChangeKeepsHiddenModeHidden() {
@@ -157,16 +144,13 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: UUID()))
     }
 
-    func testPendingTopologyInputRefocusIgnoresNonSystemKeyboardModes() {
+    func testPendingTopologyInputRefocusIgnoresHiddenKeyboardMode() {
         let sourceLeafID = UUID()
-        var hiddenRefocus = GhosttyPendingTopologyInputRefocus()
-        var customRefocus = GhosttyPendingTopologyInputRefocus()
+        var refocus = GhosttyPendingTopologyInputRefocus()
 
-        hiddenRefocus.request(from: sourceLeafID, keyboardMode: .hidden)
-        customRefocus.request(from: sourceLeafID, keyboardMode: .custom)
+        refocus.request(from: sourceLeafID, keyboardMode: .hidden)
 
-        XCTAssertFalse(hiddenRefocus.consumeIfActiveLeafChanged(to: UUID()))
-        XCTAssertFalse(customRefocus.consumeIfActiveLeafChanged(to: UUID()))
+        XCTAssertFalse(refocus.consumeIfActiveLeafChanged(to: UUID()))
     }
 
     func testPendingTopologyInputRefocusCancelClearsPendingRequest() {

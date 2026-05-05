@@ -15,34 +15,13 @@ struct GhosttyTerminalInputCoordinator: Equatable {
 
     mutating func handleSurfaceTap(isInputAvailable: Bool) {
         guard isInputAvailable else { return }
-
-        switch keyboardMode {
-        case .hidden, .system:
-            showSystemKeyboard(isInputAvailable: true)
-        case .custom:
-            isDismissSystemKeyboardRequested = false
-        }
+        showSystemKeyboard(isInputAvailable: true)
     }
 
     mutating func toggleKeyboard(isInputAvailable: Bool) {
         switch keyboardMode.toggledKeyboard() {
         case .system:
             showSystemKeyboard(isInputAvailable: isInputAvailable)
-        case .hidden:
-            hideKeyboard()
-        case .custom:
-            showCustomKeyboard(isInputAvailable: isInputAvailable)
-        }
-    }
-
-    mutating func toggleCustomKeyboard(isInputAvailable: Bool) {
-        guard isInputAvailable else { return }
-
-        switch keyboardMode.toggledCustomKeyboard() {
-        case .system:
-            showSystemKeyboard(isInputAvailable: true)
-        case .custom:
-            showCustomKeyboard(isInputAvailable: true)
         case .hidden:
             hideKeyboard()
         }
@@ -57,7 +36,7 @@ struct GhosttyTerminalInputCoordinator: Equatable {
         switch keyboardMode {
         case .system:
             showSystemKeyboard(isInputAvailable: isInputAvailable)
-        case .hidden, .custom:
+        case .hidden:
             isDismissSystemKeyboardRequested = false
         }
     }
@@ -75,12 +54,6 @@ struct GhosttyTerminalInputCoordinator: Equatable {
             keyboardMode = keyboardMode.applyingSystemKeyboardVisibility(false)
         }
         isDismissSystemKeyboardRequested = false
-    }
-
-    private mutating func showCustomKeyboard(isInputAvailable: Bool) {
-        guard isInputAvailable else { return }
-        isDismissSystemKeyboardRequested = false
-        keyboardMode = .custom
     }
 
     private mutating func hideKeyboard() {
