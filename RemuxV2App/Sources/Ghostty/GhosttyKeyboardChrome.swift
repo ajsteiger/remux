@@ -33,6 +33,7 @@ enum GhosttyKeyboardChromeMode: Equatable {
 enum GhosttyKeyboardChromeSizing {
     static let dockButtonHeight: CGFloat = 36
     static let dockButtonWidth: CGFloat = 34
+    static let dockButtonCornerRadius: CGFloat = 14
 
     static func keyboardReplacementHeight(
         keyboardOverlapHeight: CGFloat,
@@ -177,10 +178,8 @@ struct GhosttyKeyboardChrome: View {
             title: title,
             accessibilityIdentifier: accessibilityIdentifier,
             fontSize: 12,
-            minWidth: isCompact ? 30 : 33,
-            minHeight: GhosttyKeyboardChromeSizing.dockButtonHeight,
-            horizontalPadding: isCompact ? 3 : 4,
-            verticalPadding: 3,
+            width: GhosttyKeyboardChromeSizing.dockButtonWidth,
+            height: GhosttyKeyboardChromeSizing.dockButtonHeight,
             isActive: isActive,
             isEnabled: isEnabled,
             action: action
@@ -247,9 +246,17 @@ private struct GhosttyKeyboardChromeDockButton: View {
                 height: GhosttyKeyboardChromeSizing.dockButtonHeight
             )
             .background(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.065))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
+                    style: .continuous
+                )
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(
+                    cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
+                    style: .continuous
+                )
                     .stroke(Color.white.opacity(isActive ? 0 : 0.08), lineWidth: 1)
             }
             .opacity(isEnabled ? 1 : 0.42)
@@ -291,11 +298,8 @@ private struct GhosttyKeyboardKeyButton: View {
     let title: String
     let accessibilityIdentifier: String
     var fontSize: CGFloat = 13
-    var minWidth: CGFloat = 42
-    var minHeight: CGFloat = 36
-    var horizontalPadding: CGFloat = 6
-    var verticalPadding: CGFloat = 6
-    var fillsWidth = false
+    var width: CGFloat = GhosttyKeyboardChromeSizing.dockButtonWidth
+    var height: CGFloat = GhosttyKeyboardChromeSizing.dockButtonHeight
     var isActive = false
     let isEnabled: Bool
     let action: () -> Bool
@@ -310,17 +314,18 @@ private struct GhosttyKeyboardKeyButton: View {
                 .minimumScaleFactor(0.8)
                 .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))
                 .frame(
-                    minWidth: minWidth,
-                    maxWidth: fillsWidth ? .infinity : nil,
-                    minHeight: minHeight
+                    width: width,
+                    height: height
                 )
-                .padding(.horizontal, horizontalPadding)
-                .padding(.vertical, verticalPadding)
                 .background(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.keySurface)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(
+                    RoundedRectangle(
+                        cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
+                        style: .continuous
+                    )
+                )
                 .opacity(isEnabled ? 1 : 0.42)
         }
-        .frame(maxWidth: fillsWidth ? .infinity : nil)
         .disabled(!isEnabled)
         .accessibilityLabel(title)
         .accessibilityIdentifier(accessibilityIdentifier)
