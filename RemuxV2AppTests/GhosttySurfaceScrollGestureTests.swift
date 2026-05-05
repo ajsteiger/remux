@@ -3,6 +3,20 @@ import XCTest
 @testable import RemuxV2
 
 final class GhosttySurfaceScrollGestureTests: XCTestCase {
+    func testPaneScrollGeometryRejectsUnsizedDisplayViewport() {
+        XCTAssertNil(GhosttyPaneScrollGeometry.displayViewportSize(for: .zero))
+        XCTAssertNil(GhosttyPaneScrollGeometry.displayViewportSize(for: CGRect(x: 0, y: 0, width: 120, height: 0)))
+        XCTAssertNil(GhosttyPaneScrollGeometry.displayViewportSize(for: CGRect(x: 0, y: 0, width: 0, height: 240)))
+        XCTAssertNil(GhosttyPaneScrollGeometry.displayViewportSize(for: CGRect(x: 0, y: 0, width: CGFloat.infinity, height: 240)))
+    }
+
+    func testPaneScrollGeometryReturnsPositiveDisplayViewport() {
+        XCTAssertEqual(
+            GhosttyPaneScrollGeometry.displayViewportSize(for: CGRect(x: 0, y: 0, width: 120, height: 240)),
+            CGSize(width: 120, height: 240)
+        )
+    }
+
     func testVerticalDominantVelocityAllowsRouteForwardingPanToBegin() {
         XCTAssertTrue(GhosttySurfacePanGesture.verticalScrollShouldBegin(forVelocity: CGPoint(x: 30, y: 80)))
         XCTAssertFalse(GhosttySurfacePanGesture.horizontalNavigationShouldBegin(forVelocity: CGPoint(x: 30, y: 80)))

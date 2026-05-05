@@ -8,6 +8,12 @@ struct GhosttyPaneScrollPosition: Equatable {
 }
 
 enum GhosttyPaneScrollGeometry {
+    static func displayViewportSize(for bounds: CGRect) -> CGSize? {
+        guard bounds.width.isFinite, bounds.height.isFinite else { return nil }
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+        return CGSize(width: bounds.width, height: bounds.height)
+    }
+
     static func documentHeight(
         viewportHeight: CGFloat,
         cellHeight: CGFloat,
@@ -244,15 +250,27 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
 
     private func synchronizeSurfaceFrame() {
         guard let surface else { return }
+        guard let viewportSize = GhosttyPaneScrollGeometry.displayViewportSize(for: bounds) else {
+            GhosttyRuntimeTrace.tmuxViewport(
+                "scroll.surfaceFrame skipped_unsized surface=\(ghosttyDiagnosticShortID(surface.id)) bounds=\(ghosttyDiagnosticRect(bounds)) before=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
+            )
+            return
+        }
 
-        let viewportSize = CGSize(width: max(bounds.width, 1), height: max(bounds.height, 1))
         pinSurfaceToVisibleBounds(surface: surface, viewportSize: viewportSize)
+        GhosttyRuntimeTrace.tmuxViewport(
+            "scroll.surfaceFrame begin surface=\(ghosttyDiagnosticShortID(surface.id)) viewport=\(Int(viewportSize.width))x\(Int(viewportSize.height)) offset=\(scrollView.contentOffset.x),\(scrollView.contentOffset.y) scale=\(displayScale) before=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
+        )
         GhosttyRuntimeTrace.diagnostics(
             "scroll.surfaceFrame surface=\(ghosttyDiagnosticShortID(surface.id)) viewport=\(viewportSize.width)x\(viewportSize.height) offset=\(scrollView.contentOffset.x),\(scrollView.contentOffset.y) scale=\(displayScale) before={\(surface.diagnosticSummary())}"
         )
-        if surface.updateDisplay(size: viewportSize, scale: displayScale) {
+        let didUpdateDisplay = surface.updateDisplay(size: viewportSize, scale: displayScale)
+        if didUpdateDisplay {
             surface.view.alignGhosttyRendererSublayers()
         }
+        GhosttyRuntimeTrace.tmuxViewport(
+            "scroll.surfaceFrame end surface=\(ghosttyDiagnosticShortID(surface.id)) didUpdateDisplay=\(didUpdateDisplay) after=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
+        )
         GhosttyRuntimeTrace.diagnostics(
             "scroll.surfaceFrame applied surface={\(surface.diagnosticSummary())}"
         )
@@ -260,8 +278,8 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
 
     private func pinSurfaceToVisibleBounds() {
         guard let surface else { return }
+        guard let viewportSize = GhosttyPaneScrollGeometry.displayViewportSize(for: bounds) else { return }
 
-        let viewportSize = CGSize(width: max(bounds.width, 1), height: max(bounds.height, 1))
         pinSurfaceToVisibleBounds(surface: surface, viewportSize: viewportSize)
     }
 
