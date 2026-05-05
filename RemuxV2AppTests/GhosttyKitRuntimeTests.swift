@@ -98,6 +98,9 @@ final class GhosttyKitRuntimeTests: XCTestCase {
     func testRuntimeCreateSurfaceTreeUsesFocusedLeafIndex() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        defer {
+            registry.prepareForRuntimeTeardown()
+        }
         var firstConfig = Self.manualRuntimeTreeConfig(
             context: GHOSTTY_SURFACE_CONTEXT_TAB
         )
@@ -105,14 +108,6 @@ final class GhosttyKitRuntimeTests: XCTestCase {
             context: GHOSTTY_SURFACE_CONTEXT_SPLIT
         )
         var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
-        defer {
-            for handle in leafSurfaces {
-                if let handle {
-                    ghostty_surface_set_backing_exited(handle, true)
-                    ghostty_surface_free(handle)
-                }
-            }
-        }
 
         let created = try withRuntimeTreeRequest(
             firstConfig: &firstConfig,
@@ -131,6 +126,69 @@ final class GhosttyKitRuntimeTests: XCTestCase {
             registry.managedSurfaceIDForTesting(handle: leafSurfaces[1])
         )
         XCTAssertEqual(registry.selectedActiveLeafID, secondID)
+
+        registry.prepareForRuntimeTeardown()
+    }
+
+    func testRuntimeCloseSurfaceReleasesSurfaceBeforeRuntimeDeinit() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        var firstConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_TAB
+        )
+        var secondConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT
+        )
+        var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
+
+        let created = try withRuntimeTreeRequest(
+            firstConfig: &firstConfig,
+            secondConfig: &secondConfig,
+            leafSurfaces: &leafSurfaces,
+            focusedLeafIndex: 0
+        ) { request in
+            registry.runtimeCreateSurfaceTree(
+                app: runtime.appHandleForTesting,
+                request: request
+            )
+        }
+
+        XCTAssertTrue(created)
+        let firstID = try XCTUnwrap(
+            registry.managedSurfaceIDForTesting(handle: leafSurfaces[0])
+        )
+        let secondID = try XCTUnwrap(
+            registry.managedSurfaceIDForTesting(handle: leafSurfaces[1])
+        )
+
+        registry.runtimeCloseSurface(id: firstID, processAlive: false)
+        registry.runtimeCloseSurface(id: secondID, processAlive: false)
+
+        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertNil(registry.managedSurface(for: firstID))
+        XCTAssertNil(registry.managedSurface(for: secondID))
+    }
+
+    func testRuntimeCreateSurfaceReleasesSurfaceWhenSplitInsertFails() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        var config = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT
+        )
+
+        let surface = withUnsafePointer(to: &config) { configPtr in
+            registry.runtimeCreateSurface(
+                app: runtime.appHandleForTesting,
+                request: ghostty_runtime_create_surface_s(
+                    parent: nil,
+                    split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
+                    config: configPtr
+                )
+            )
+        }
+
+        XCTAssertNil(surface)
+        XCTAssertTrue(registry.topLevels.isEmpty)
     }
 
     func testRuntimeCreateSurfaceTreeRejectsInvalidFocusedLeafIndexBeforeInstall() throws {

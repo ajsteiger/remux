@@ -1706,7 +1706,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600)),
             controlSurface: GhosttyKitControlSurface(
                 surface: handle,
-                ownsSurface: false
+                ownership: .borrowed
             ),
             manualUserdata: manualUserdata,
             sendInput: sendInput,

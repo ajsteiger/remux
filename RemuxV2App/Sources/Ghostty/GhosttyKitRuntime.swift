@@ -211,7 +211,7 @@ final class GhosttyKitRuntime {
 
         return GhosttyKitControlSurface(
             surface: surface,
-            ownsSurface: true,
+            ownership: .storageOwned,
             retainedObjects: [state, callbacks]
         )
     }

@@ -126,6 +126,12 @@ extension TmuxControlViewport {
     }
 }
 
+enum GhosttyKitControlSurfaceOwnership {
+    case borrowed
+    case storageOwned
+    case runtimeAppOwned
+}
+
 final class GhosttyKitControlSurface: GhosttyControlSurface {
     private let storage: GhosttyKitControlSurfaceStorage
 
@@ -135,12 +141,12 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     init(
         surface: ghostty_surface_t,
-        ownsSurface: Bool = false,
+        ownership: GhosttyKitControlSurfaceOwnership = .borrowed,
         retainedObjects: [AnyObject] = []
     ) {
         self.storage = GhosttyKitControlSurfaceStorage(
             surface: surface,
-            ownsSurface: ownsSurface,
+            ownership: ownership,
             retainedObjects: retainedObjects
         )
     }
@@ -160,6 +166,11 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     func setBackingExited(_ exited: Bool) {
         ghostty_surface_set_backing_exited(storage.surface, exited)
+    }
+
+    @MainActor
+    func releaseRuntimeManagedSurface() {
+        storage.releaseRuntimeManagedSurface()
     }
 
     @MainActor
@@ -470,23 +481,44 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 private final class GhosttyKitControlSurfaceStorage: @unchecked Sendable {
     let surface: ghostty_surface_t
 
-    private let ownsSurface: Bool
+    private let ownership: GhosttyKitControlSurfaceOwnership
     private let retainedObjects: [AnyObject]
+    private var runtimeManagedSurfaceReleased = false
 
     init(
         surface: ghostty_surface_t,
-        ownsSurface: Bool,
+        ownership: GhosttyKitControlSurfaceOwnership,
         retainedObjects: [AnyObject]
     ) {
         self.surface = surface
-        self.ownsSurface = ownsSurface
+        self.ownership = ownership
         self.retainedObjects = retainedObjects
     }
 
     deinit {
-        if ownsSurface {
+        if ownership == .storageOwned {
             ghostty_surface_free(surface)
         }
+#if DEBUG
+        if ownership == .runtimeAppOwned && !runtimeManagedSurfaceReleased {
+            assertionFailure("runtime-managed surfaces must be released before dropping storage")
+        }
+#endif
         _ = retainedObjects
+    }
+
+    @MainActor
+    func releaseRuntimeManagedSurface() {
+        guard ownership == .runtimeAppOwned else {
+            if ownership == .storageOwned {
+                assertionFailure("storage-owned surfaces are freed by GhosttyKitControlSurfaceStorage.deinit")
+            }
+            return
+        }
+        guard !runtimeManagedSurfaceReleased else { return }
+
+        runtimeManagedSurfaceReleased = true
+        ghostty_surface_set_backing_exited(surface, true)
+        ghostty_surface_free(surface)
     }
 }

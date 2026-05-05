@@ -126,6 +126,18 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         notifyChanged()
     }
 
+    func prepareForRuntimeTeardown() {
+        pendingPhonePresentationSurfaceID = nil
+        pendingPhonePresentationTrace = nil
+        contentReadySurfaceIDs = []
+
+        // Release all surfaces still tracked by Remux before the Ghostty app is
+        // freed. Surfaces removed earlier are released at the removal boundary.
+        for surface in Array(managedSurfaces.values) {
+            surface.releaseBeforePermanentRemoval()
+        }
+    }
+
     func selectTopLevel(_ id: UUID, reason: String = "selectTopLevel") {
         GhosttyRuntimeTrace.diagnostics(
             "selectTopLevel begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
@@ -798,6 +810,17 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         updateDebugSummary("create_surface context=\(String(describing: request.config?.pointee.context))")
 
         guard let configPtr = request.config else { return nil }
+        switch configPtr.pointee.context {
+        case GHOSTTY_SURFACE_CONTEXT_WINDOW,
+             GHOSTTY_SURFACE_CONTEXT_TAB,
+             GHOSTTY_SURFACE_CONTEXT_SPLIT:
+            break
+
+        default:
+            updateDebugSummary("create_surface unsupported context=\(String(describing: configPtr.pointee.context))")
+            return nil
+        }
+
         guard let managed = createManagedSurface(app: app, baseConfig: configPtr.pointee) else {
             updateDebugSummary("create_surface failed")
             return nil
@@ -838,6 +861,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 parentHandle: request.parent,
                 direction: request.split_direction
             ) else {
+                managed.releaseBeforePermanentRemoval()
                 updateDebugSummary("create_surface split insert failed")
                 return nil
             }
@@ -857,6 +881,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return managed.controlSurface.handle
 
         default:
+            managed.releaseBeforePermanentRemoval()
             updateDebugSummary("create_surface unsupported context=\(String(describing: configPtr.pointee.context))")
             return nil
         }
@@ -903,6 +928,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
 
         var leafSurfaces: [GhosttyManagedSurface] = []
+        var installedLeafSurfaces = false
+        defer {
+            if !installedLeafSurfaces {
+                for surface in leafSurfaces {
+                    surface.releaseBeforePermanentRemoval()
+                }
+            }
+        }
 
         func buildNode(_ index: Int) -> GhosttySurfaceTree.Node? {
             guard nodes.indices.contains(index) else { return nil }
@@ -985,6 +1018,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             replacingTopLevelContaining: replacingParentSurfaceID,
             replacingTopLevelID: replacingTopLevelID
         )
+        installedLeafSurfaces = true
         if GhosttyRuntimeTrace.isEnabled {
             NSLog(
                 "Remux create_surface_tree registered managed=%d top=%d selected=%@",
@@ -1411,7 +1445,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             // Runtime-created pane surfaces are owned by the Ghostty app.
             // The registry owns the UIKit view/binding, not the underlying
             // ghostty_surface_t lifetime.
-            ownsSurface: false,
+            ownership: .runtimeAppOwned,
             retainedObjects: [lifecycle]
         )
         controlSurface.setVisible(false)
@@ -1601,6 +1635,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
 #endif
         surfaceIDsByHandle.removeValue(forKey: removed.controlSurface.handle)
+        removed.releaseBeforePermanentRemoval()
 
         let previousSelectedTopLevelID = selectedTopLevelID
         let previousSelectedIndex = selectedTopLevelIndex
@@ -1760,6 +1795,11 @@ final class GhosttyManagedSurface {
         } else {
             controlSurface.setFocused(focused)
         }
+    }
+
+    @MainActor
+    func releaseBeforePermanentRemoval() {
+        controlSurface.releaseRuntimeManagedSurface()
     }
 
     @MainActor

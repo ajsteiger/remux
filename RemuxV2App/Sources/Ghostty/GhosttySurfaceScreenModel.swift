@@ -245,6 +245,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         controlSurface = nil
         transport = nil
         transportStartToken &+= 1
+        surfaceRegistry.prepareForRuntimeTeardown()
         runtime = nil
         hostDisplayUpdateTracker.reset()
         hostAttachmentTracker.reset()
