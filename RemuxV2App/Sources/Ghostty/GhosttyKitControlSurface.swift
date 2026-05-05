@@ -389,11 +389,17 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     func updateDisplay(metrics: GhosttySurfaceDisplayMetrics) {
         let before = currentSize()
+        GhosttyRuntimeTrace.tmuxViewport(
+            "control.updateDisplay begin handle=\(String(describing: storage.surface)) before=\(ghosttyDiagnosticSurfaceSize(before)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(metrics.contentScale)"
+        )
         GhosttyRuntimeTrace.diagnostics(
             "control.updateDisplay handle=\(String(describing: storage.surface)) before=\(ghosttyDiagnosticSurfaceSize(before)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(metrics.contentScale)"
         )
         ghostty_surface_set_content_scale(storage.surface, metrics.contentScale, metrics.contentScale)
         ghostty_surface_set_size(storage.surface, metrics.pixelWidth, metrics.pixelHeight)
+        GhosttyRuntimeTrace.tmuxViewport(
+            "control.updateDisplay end handle=\(String(describing: storage.surface)) after=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+        )
         GhosttyRuntimeTrace.diagnostics(
             "control.updateDisplay applied handle=\(String(describing: storage.surface)) after=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )

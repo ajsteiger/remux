@@ -226,7 +226,16 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func layoutVisibleTree() {
         guard let registry, let topLevel else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        let viewportTraceStartedAt = GhosttyRuntimeTrace.tmuxViewportEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        GhosttyRuntimeTrace.tmuxViewport(
+            "tree.layoutVisible begin leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) selected=\(ghosttyDiagnosticShortID(registry.selectedActiveLeafID))"
+        )
         defer {
+            if let viewportTraceStartedAt {
+                GhosttyRuntimeTrace.tmuxViewport(
+                    "tree.layoutVisible end leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: viewportTraceStartedAt))"
+                )
+            }
             if let perfStartedAt {
                 GhosttyRuntimeTrace.perf(
                     "tree.layoutVisible leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
@@ -259,6 +268,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 container.frame = targetFrame
             }
             let didChangeContainer = container.update(surface: surface, displayScale: effectiveScale)
+            GhosttyRuntimeTrace.tmuxViewport(
+                "tree.layout leaf=\(ghosttyDiagnosticShortID(surfaceID)) rect=\(diagnosticRect(rect)) targetFrame=\(diagnosticRect(targetFrame)) didFrame=\(didChangeFrame) didContainer=\(didChangeContainer) focused=\(surfaceID == focusedSurfaceID) before=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
+            )
             if didChangeFrame || didChangeContainer {
                 container.layoutIfNeeded()
             }
@@ -268,6 +280,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             surface.setVisible(true)
             surface.setFocused(surfaceID == focusedSurfaceID)
             registry.recordSurfacePresentation(surfaceID, reason: "tree.layout")
+            GhosttyRuntimeTrace.tmuxViewport(
+                "tree.layout applied leaf=\(ghosttyDiagnosticShortID(surfaceID)) visible=true focused=\(surfaceID == focusedSurfaceID) after=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
+            )
             GhosttyRuntimeTrace.diagnostics(
                 "tree.layout applied leaf=\(ghosttyDiagnosticShortID(surfaceID)) afterSurface={\(surface.diagnosticSummary())}"
             )

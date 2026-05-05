@@ -892,6 +892,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         request: ghostty_runtime_create_surface_tree_s
     ) -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.tmuxViewport(
+            "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index) parent=\(String(describing: request.parent))"
+        )
         GhosttyRuntimeTrace.latency(
             "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index)"
         )
@@ -958,6 +961,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                     NSLog("Remux failed to create managed surface for leaf node[%d]", index)
                     return nil
                 }
+                GhosttyRuntimeTrace.tmuxViewport(
+                    "registry.runtimeCreateSurfaceTree leaf index=\(leafSurfaces.count) surface=\(ghosttyDiagnosticShortID(managed.id)) initial=\(ghosttyDiagnosticSurfaceSize(managed.controlSurface.currentSize()))"
+                )
 
                 leafSurfaces.append(managed)
                 return .leaf(managed.id)
@@ -1030,8 +1036,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         for (index, surface) in leafSurfaces.enumerated() {
             leafSurfacePtr[index] = surface.controlSurface.handle
+            GhosttyRuntimeTrace.tmuxViewport(
+                "registry.runtimeCreateSurfaceTree leafHandle index=\(index) surface=\(ghosttyDiagnosticShortID(surface.id)) size=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize())) focused=\(surface.id == focusedLeafID)"
+            )
         }
 
+        GhosttyRuntimeTrace.tmuxViewport(
+            "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
+        )
         GhosttyRuntimeTrace.latency(
             "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
         )
@@ -1806,12 +1818,18 @@ final class GhosttyManagedSurface {
     @discardableResult
     func updateDisplay(size: CGSize, scale: CGFloat) -> Bool {
         guard let metrics = displayUpdateTracker.nextMetrics(size: size, scale: scale) else {
+            GhosttyRuntimeTrace.tmuxViewport(
+                "managed.updateDisplay skip surface=\(ghosttyDiagnosticShortID(id)) visible=\(isVisible) focused=\(isFocused) points=\(Int(size.width))x\(Int(size.height)) scale=\(scale) current=\(ghosttyDiagnosticSurfaceSize(controlSurface.currentSize()))"
+            )
             GhosttyRuntimeTrace.perf(
                 "managed.updateDisplay outcome=skip size=\(Int(size.width))x\(Int(size.height)) scale=\(scale)"
             )
             return false
         }
 
+        GhosttyRuntimeTrace.tmuxViewport(
+            "managed.updateDisplay hit surface=\(ghosttyDiagnosticShortID(id)) visible=\(isVisible) focused=\(isFocused) points=\(Int(size.width))x\(Int(size.height)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(scale) before=\(ghosttyDiagnosticSurfaceSize(controlSurface.currentSize()))"
+        )
         GhosttyRuntimeTrace.perfMeasure(
             "managed.updateDisplay outcome=hit size=\(Int(size.width))x\(Int(size.height)) scale=\(scale)"
         ) {
@@ -1821,6 +1839,9 @@ final class GhosttyManagedSurface {
                 controlSurface.updateDisplay(metrics: metrics)
             }
         }
+        GhosttyRuntimeTrace.tmuxViewport(
+            "managed.updateDisplay applied surface=\(ghosttyDiagnosticShortID(id)) visible=\(isVisible) focused=\(isFocused) after=\(ghosttyDiagnosticSurfaceSize(controlSurface.currentSize()))"
+        )
         onDisplayUpdate?(self, size, scale)
         return true
     }
