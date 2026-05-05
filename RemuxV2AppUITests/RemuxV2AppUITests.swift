@@ -313,15 +313,22 @@ final class RemuxV2AppUITests: XCTestCase {
             .matching(identifier: "terminal.screen")
             .matching(NSPredicate(format: "label == %@", "terminal ready"))
             .firstMatch
-        let failedStatus = app.staticTexts["terminal.status.failed"]
+        let failedStatuses = app.staticTexts.matching(identifier: "terminal.status.failed")
 
         while Date() < deadline {
             if readyStatus.exists || inheritedReadyStatus.exists {
                 return
             }
 
-            if failedStatus.exists {
-                XCTFail(failedStatus.label)
+            if failedStatuses.firstMatch.exists {
+                let messages = failedStatuses.allElementsBoundByIndex
+                    .map { $0.label }
+                    .filter { !$0.isEmpty }
+                XCTFail(
+                    messages.isEmpty
+                        ? "Live SSH terminal failed before becoming ready."
+                        : messages.joined(separator: " / ")
+                )
                 return
             }
 
@@ -347,7 +354,9 @@ final class RemuxV2AppUITests: XCTestCase {
         app.textFields["connection.username"].tap()
         app.textFields["connection.username"].typeText("demo\n")
 
-        app.secureTextFields["connection.password"].typeText("demo-password")
+        let password = app.secureTextFields["connection.password"]
+        XCTAssertTrue(password.waitForExistence(timeout: 2))
+        password.typeText("demo-password")
 
         app.swipeUp()
         XCTAssertTrue(app.buttons["connection.save"].waitForExistence(timeout: 2))
@@ -557,10 +566,10 @@ final class RemuxV2AppUITests: XCTestCase {
 
         let user = app.textFields["connection.username"]
         user.tap()
-        user.typeText("demo")
+        user.typeText("demo\n")
 
         let pwd = app.secureTextFields["connection.password"]
-        pwd.tap()
+        XCTAssertTrue(pwd.waitForExistence(timeout: 2))
         pwd.typeText("demo-password")
         sleep(1)
         attach(name: "13-connection-setup-filled")
