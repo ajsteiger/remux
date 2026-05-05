@@ -5,74 +5,111 @@ import XCTest
 
 @MainActor
 final class GhosttySurfaceScreenModelTests: XCTestCase {
-    func testTerminalViewportStabilizerFreezesLiveSizeWhileSheetIsPresented() {
-        var stabilizer = GhosttyTerminalViewportStabilizer()
+    func testTerminalViewportCoordinatorFreezesLiveSizeWhileSheetIsPresented() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
         let keyboardSize = CGSize(width: 402, height: 673)
         let sheetTransientSize = CGSize(width: 402, height: 727)
 
-        stabilizer.updateLiveSize(keyboardSize, isViewportFrozen: false)
-        stabilizer.sheetPresentationChanged(isPresented: true, liveSize: keyboardSize)
-        stabilizer.updateLiveSize(sheetTransientSize, isViewportFrozen: true)
+        XCTAssertTrue(coordinator.observeLiveSize(keyboardSize))
+        coordinator.setSheetPresented(true, liveSize: keyboardSize)
+        XCTAssertFalse(coordinator.observeLiveSize(sheetTransientSize))
 
-        XCTAssertEqual(stabilizer.effectiveSize(liveSize: sheetTransientSize), keyboardSize)
-        XCTAssertEqual(stabilizer.lastLiveSize, keyboardSize)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: sheetTransientSize), keyboardSize)
+        XCTAssertEqual(coordinator.lastStableSize, keyboardSize)
     }
 
-    func testTerminalViewportStabilizerResumesLiveSizeAfterSheetDismissal() {
-        var stabilizer = GhosttyTerminalViewportStabilizer()
+    func testTerminalViewportCoordinatorResumesLiveSizeAfterSheetDismissal() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
         let keyboardSize = CGSize(width: 402, height: 673)
         let restoredSize = CGSize(width: 402, height: 727)
 
-        stabilizer.updateLiveSize(keyboardSize, isViewportFrozen: false)
-        stabilizer.sheetPresentationChanged(isPresented: true, liveSize: keyboardSize)
-        stabilizer.sheetPresentationChanged(isPresented: false, liveSize: restoredSize)
+        XCTAssertTrue(coordinator.observeLiveSize(keyboardSize))
+        coordinator.setSheetPresented(true, liveSize: keyboardSize)
+        coordinator.setSheetPresented(false, liveSize: restoredSize)
 
-        XCTAssertEqual(stabilizer.effectiveSize(liveSize: restoredSize), restoredSize)
-        XCTAssertEqual(stabilizer.lastLiveSize, restoredSize)
-        XCTAssertNil(stabilizer.frozenSize)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: restoredSize), restoredSize)
+        XCTAssertEqual(coordinator.lastStableSize, restoredSize)
+        XCTAssertNil(coordinator.frozenSize)
     }
 
-    func testTerminalViewportStabilizerFreezesLiveSizeDuringKeyboardTransition() {
-        var stabilizer = GhosttyTerminalViewportStabilizer()
+    func testTerminalViewportCoordinatorKeepsSheetFreezeWhenDismissalWaitsForKeyboardTransition() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let keyboardSize = CGSize(width: 402, height: 399)
+        let sheetDismissedSize = CGSize(width: 402, height: 673)
+        let finalKeyboardSize = CGSize(width: 402, height: 399)
+
+        XCTAssertTrue(coordinator.observeLiveSize(keyboardSize))
+        coordinator.setSheetPresented(true, liveSize: keyboardSize)
+        coordinator.beginKeyboardTransition(
+            target: .shown,
+            allowsTargetOverride: true,
+            allowsLiveSizeCompletion: false,
+            liveSize: sheetDismissedSize
+        )
+        coordinator.setSheetPresented(false, liveSize: sheetDismissedSize)
+
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: sheetDismissedSize), keyboardSize)
+        XCTAssertEqual(coordinator.lastStableSize, keyboardSize)
+        XCTAssertEqual(coordinator.frozenSize, keyboardSize)
+
+        coordinator.completeKeyboardTransition(liveSize: finalKeyboardSize)
+
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: finalKeyboardSize), finalKeyboardSize)
+        XCTAssertEqual(coordinator.lastStableSize, finalKeyboardSize)
+        XCTAssertNil(coordinator.frozenSize)
+    }
+
+    func testTerminalViewportCoordinatorFreezesLiveSizeDuringKeyboardTransition() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
         let stableSize = CGSize(width: 402, height: 399)
         let transientSize = CGSize(width: 402, height: 91)
 
-        stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
-        stabilizer.keyboardTransitionStarted()
-        stabilizer.updateLiveSize(transientSize, isViewportFrozen: true)
+        XCTAssertTrue(coordinator.observeLiveSize(stableSize))
+        coordinator.beginKeyboardTransition(
+            target: .hidden,
+            allowsTargetOverride: true,
+            allowsLiveSizeCompletion: false,
+            liveSize: stableSize
+        )
+        XCTAssertFalse(coordinator.observeLiveSize(transientSize))
 
-        XCTAssertEqual(stabilizer.effectiveSize(liveSize: transientSize), stableSize)
-        XCTAssertEqual(stabilizer.lastLiveSize, stableSize)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: transientSize), stableSize)
+        XCTAssertEqual(coordinator.lastStableSize, stableSize)
     }
 
-    func testTerminalViewportStabilizerResumesAfterKeyboardTransitionWithFinalLiveSize() {
-        var stabilizer = GhosttyTerminalViewportStabilizer()
+    func testTerminalViewportCoordinatorResumesAfterKeyboardTransitionWithFinalLiveSize() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
         let stableSize = CGSize(width: 402, height: 399)
         let transientSize = CGSize(width: 402, height: 91)
         let finalSize = CGSize(width: 402, height: 674)
 
-        stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
-        stabilizer.keyboardTransitionStarted()
-        stabilizer.updateLiveSize(transientSize, isViewportFrozen: true)
-        stabilizer.keyboardTransitionEnded(liveSize: finalSize)
+        XCTAssertTrue(coordinator.observeLiveSize(stableSize))
+        coordinator.beginKeyboardTransition(
+            target: .hidden,
+            allowsTargetOverride: true,
+            allowsLiveSizeCompletion: false,
+            liveSize: stableSize
+        )
+        XCTAssertFalse(coordinator.observeLiveSize(transientSize))
+        coordinator.completeKeyboardTransition(liveSize: finalSize)
 
-        XCTAssertEqual(stabilizer.effectiveSize(liveSize: finalSize), finalSize)
-        XCTAssertEqual(stabilizer.lastLiveSize, finalSize)
-        XCTAssertNil(stabilizer.frozenSize)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: finalSize), finalSize)
+        XCTAssertEqual(coordinator.lastStableSize, finalSize)
+        XCTAssertNil(coordinator.frozenSize)
     }
 
-    func testTerminalViewportStabilizerKeepsLastUsableSizeDuringTransientInvalidGeometry() {
-        var stabilizer = GhosttyTerminalViewportStabilizer()
+    func testTerminalViewportCoordinatorKeepsLastUsableSizeDuringTransientInvalidGeometry() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
         let stableSize = CGSize(width: 402, height: 674)
 
-        stabilizer.updateLiveSize(stableSize, isViewportFrozen: false)
+        XCTAssertTrue(coordinator.observeLiveSize(stableSize))
 
         XCTAssertEqual(
-            stabilizer.effectiveSize(liveSize: CGSize(width: 0, height: 0)),
+            coordinator.effectiveSize(liveSize: CGSize(width: 0, height: 0)),
             stableSize
         )
         XCTAssertEqual(
-            stabilizer.effectiveSize(liveSize: CGSize(width: 402, height: 0.5)),
+            coordinator.effectiveSize(liveSize: CGSize(width: 402, height: 0.5)),
             stableSize
         )
     }
@@ -1174,10 +1211,22 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         let didReportFailure = await waitUntil(timeout: 2) {
             model.commandFailureMessage == "No space for another pane."
+                && model.commandFailureEvent?.reason == .noSpaceForNewPane
         }
 
         XCTAssertTrue(didReportFailure)
         XCTAssertEqual(model.debugStatus, "No space for another pane.")
+        XCTAssertEqual(model.commandFailureEvent?.token, 1)
+        XCTAssertEqual(model.commandFailureEvent?.message, "no space for new pane")
+        XCTAssertEqual(model.state, .running)
+
+        await transport.emit(Data("%begin 1 2 1\nno space for new pane\n%error 1 2 1\n".utf8))
+        let didPublishSecondFailure = await waitUntil(timeout: 2) {
+            model.commandFailureEvent?.token == 2
+        }
+
+        XCTAssertTrue(didPublishSecondFailure)
+        XCTAssertEqual(model.commandFailureEvent?.reason, .noSpaceForNewPane)
         XCTAssertEqual(model.state, .running)
     }
 

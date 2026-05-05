@@ -3,6 +3,12 @@ import Foundation
 import GhosttyKit
 import UIKit
 
+struct GhosttyTmuxCommandFailureEvent: Equatable {
+    let token: UInt64
+    let reason: TmuxControlCommandFailureReason
+    let message: String
+}
+
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
@@ -25,6 +31,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @Published private(set) var debugStatus = "not started"
     @Published private(set) var surfaceRegistryRevision = 0
     @Published private(set) var commandFailureMessage: String?
+    @Published private(set) var commandFailureEvent: GhosttyTmuxCommandFailureEvent?
     @Published private(set) var failureReason: TerminalDisconnectReason?
 
     let surfaceRegistry: GhosttyRuntimeSurfaceRegistry
@@ -52,6 +59,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var didTraceTerminalReady = false
     private var transportStartToken: UInt64 = 0
     private var commandFailureMessageToken: UInt64 = 0
+    private var commandFailureEventToken: UInt64 = 0
 
     init(
         target: TmuxConnectionTarget,
@@ -646,6 +654,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     ) {
         let currentSize = surface.currentSize()
         if currentSize.columns > 0, currentSize.rows > 0 {
+            GhosttyRuntimeTrace.tmuxViewport(
+                "model.surfaceSize.ready source=initial size=\(ghosttyDiagnosticSurfaceSize(currentSize))"
+            )
             traceSurfaceSized(currentSize)
             beginTransportStart(transport, surfaceSize: currentSize)
             return
@@ -655,17 +666,26 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             for attempt in 0..<Self.surfaceSizeReadinessMaxAttempts {
                 let size = surface.currentSize()
                 if size.columns > 0, size.rows > 0 {
+                    GhosttyRuntimeTrace.tmuxViewport(
+                        "model.surfaceSize.ready source=poll attempt=\(attempt) size=\(ghosttyDiagnosticSurfaceSize(size))"
+                    )
                     traceSurfaceSized(size)
                     beginTransportStart(transport, surfaceSize: size)
                     return
                 }
 
                 if attempt == 0 {
+                    GhosttyRuntimeTrace.tmuxViewport(
+                        "model.surfaceSize.waiting size=\(ghosttyDiagnosticSurfaceSize(size))"
+                    )
                     GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.surfaceSize.waiting")
                 }
                 try? await Task.sleep(for: Self.surfaceSizeReadinessRetryDelay)
             }
 
+            GhosttyRuntimeTrace.tmuxViewport(
+                "model.surfaceSize.timeoutFallback size=\(ghosttyDiagnosticSurfaceSize(surface.currentSize()))"
+            )
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.surfaceSize.timeoutFallback")
             beginTransportStart(transport, surfaceSize: surface.currentSize())
         }
@@ -688,6 +708,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         let flowID = sessionOpenFlowID
         let initialViewport = TmuxControlViewport(ghosttySurfaceSize: surfaceSize)
         if let initialViewport {
+            GhosttyRuntimeTrace.tmuxViewport(
+                "model.transport.startViewport viewport=\(GhosttyRuntimeTrace.viewportDescription(initialViewport)) surfaceSize=\(ghosttyDiagnosticSurfaceSize(surfaceSize))"
+            )
             GhosttyRuntimeTrace.flowEvent(
                 flowID,
                 event: "model.transport.startViewport",
@@ -695,6 +718,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     "columns": "\(initialViewport.columns)",
                     "rows": "\(initialViewport.rows)",
                 ]
+            )
+        } else {
+            GhosttyRuntimeTrace.tmuxViewport(
+                "model.transport.startViewport missing surfaceSize=\(ghosttyDiagnosticSurfaceSize(surfaceSize))"
             )
         }
         GhosttyRuntimeTrace.flowEvent(flowID, event: "model.transport.start.begin")
@@ -817,6 +844,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
 
         debugStatus = message
+        publishCommandFailureEvent(failure)
         presentCommandFailureMessage(message)
         GhosttyRuntimeTrace.flowEndIfActive(
             "tmux.splitPane",
@@ -833,6 +861,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 "message": failure.message,
                 "reason": traceReason,
             ]
+        )
+    }
+
+    private func publishCommandFailureEvent(_ failure: TmuxControlCommandFailure) {
+        commandFailureEventToken &+= 1
+        commandFailureEvent = GhosttyTmuxCommandFailureEvent(
+            token: commandFailureEventToken,
+            reason: failure.reason,
+            message: failure.message
         )
     }
 
