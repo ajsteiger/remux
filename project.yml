@@ -1,11 +1,11 @@
 name: Remux
 options:
-  bundleIdPrefix: dev.remux.v2
+  bundleIdPrefix: dev.remux
   deploymentTarget:
     iOS: "18.0"
 settings:
   base:
-    PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.app
+    PRODUCT_BUNDLE_IDENTIFIER: dev.remux.app
     PRODUCT_NAME: Remux
     SWIFT_VERSION: 6.0
     IPHONEOS_DEPLOYMENT_TARGET: 18.0
@@ -53,7 +53,7 @@ targets:
         embed: false
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.appTests
+        PRODUCT_BUNDLE_IDENTIFIER: dev.remux.appTests
         PRODUCT_NAME: RemuxTests
         PRODUCT_MODULE_NAME: RemuxTests
         GENERATE_INFOPLIST_FILE: YES
@@ -67,7 +67,7 @@ targets:
       - target: Remux
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.appUITests
+        PRODUCT_BUNDLE_IDENTIFIER: dev.remux.appUITests
         PRODUCT_NAME: RemuxUITests
         PRODUCT_MODULE_NAME: RemuxUITests
         GENERATE_INFOPLIST_FILE: YES

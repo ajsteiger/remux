@@ -16,7 +16,7 @@ enum ApplicationStorage {
                     appropriateFor: nil,
                     create: true
                 )
-                .appendingPathComponent("RemuxV2", isDirectory: true)
+                .appendingPathComponent("Remux", isDirectory: true)
         }
 
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)

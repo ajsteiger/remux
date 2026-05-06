@@ -28,7 +28,7 @@ protocol PasswordStore: Sendable {
 }
 
 actor KeychainPasswordStore: PasswordStore {
-    static let defaultService = "dev.remux.v2.server-passwords"
+    static let defaultService = "dev.remux.server-passwords"
 
     private let service: String
 

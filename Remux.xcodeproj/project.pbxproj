@@ -546,7 +546,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.appUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.appUITests;
 				PRODUCT_MODULE_NAME = RemuxUITests;
 				PRODUCT_NAME = RemuxUITests;
 				SDKROOT = iphoneos;
@@ -614,7 +614,7 @@
 				OTHER_LDFLAGS = (
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.app;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.app;
 				PRODUCT_NAME = Remux;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -640,7 +640,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.appTests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.appTests;
 				PRODUCT_MODULE_NAME = RemuxTests;
 				PRODUCT_NAME = RemuxTests;
 				SDKROOT = iphoneos;
@@ -664,7 +664,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.appTests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.appTests;
 				PRODUCT_MODULE_NAME = RemuxTests;
 				PRODUCT_NAME = RemuxTests;
 				SDKROOT = iphoneos;
@@ -725,7 +725,7 @@
 				OTHER_LDFLAGS = (
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.app;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.app;
 				PRODUCT_NAME = Remux;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -767,7 +767,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.v2.appUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.remux.appUITests;
 				PRODUCT_MODULE_NAME = RemuxUITests;
 				PRODUCT_NAME = RemuxUITests;
 				SDKROOT = iphoneos;
