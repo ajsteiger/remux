@@ -192,6 +192,36 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         )
     }
 
+    func testChannelRequestReplyTrackerMatchesFailuresToOldestPendingReply() {
+        var tracker = SSHTmuxControlChannelRequestReplyTracker()
+
+        tracker.expectReply(for: .pseudoTerminal)
+        tracker.expectReply(for: .exec)
+
+        XCTAssertEqual(tracker.pendingCount, 2)
+        XCTAssertEqual(tracker.acknowledgeSuccess(), .pseudoTerminal)
+        XCTAssertEqual(tracker.acknowledgeFailure(), .exec)
+        XCTAssertEqual(tracker.pendingCount, 0)
+    }
+
+    func testChannelRequestReplyTrackerReportsUnknownFailureWithoutPendingReply() {
+        var tracker = SSHTmuxControlChannelRequestReplyTracker()
+
+        XCTAssertEqual(tracker.acknowledgeFailure(), .unknown)
+        XCTAssertEqual(tracker.pendingCount, 0)
+    }
+
+    func testChannelRequestFailureDescriptionNamesRejectedRequest() {
+        XCTAssertEqual(
+            String(describing: SSHTmuxControlTransportError.channelRequestFailed(.exec)),
+            "SSH exec request failed"
+        )
+        XCTAssertEqual(
+            String(describing: SSHTmuxControlTransportError.channelRequestFailed(.pseudoTerminal)),
+            "SSH pseudo-terminal request failed"
+        )
+    }
+
     func testControlSessionCommandAttachesOrCreatesNamedSession() {
         let command = SSHTmuxControlCommandBuilder.attachOrCreateControlSessionCommand(
             tmuxExecutable: "tmux",

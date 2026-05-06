@@ -243,16 +243,34 @@ final class SSHTmuxControlInboundStream: @unchecked Sendable {
     }
 }
 
-enum SSHTmuxControlTransportError: LocalizedError, Equatable {
+enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConvertible {
     case remoteExit(Int)
+    case channelRequestFailed(SSHTmuxControlChannelRequestKind)
     case unsupportedInboundChannel
     case alreadyStarted
     case closed
+
+    var description: String {
+        switch self {
+        case .remoteExit(let code):
+            return "remoteExit(\(code))"
+        case .channelRequestFailed(let request):
+            return "SSH \(request.description) request failed"
+        case .unsupportedInboundChannel:
+            return "unsupportedInboundChannel"
+        case .alreadyStarted:
+            return "alreadyStarted"
+        case .closed:
+            return "closed"
+        }
+    }
 
     var errorDescription: String? {
         switch self {
         case .remoteExit(let code):
             return "The remote tmux control session exited with status \(code)."
+        case .channelRequestFailed(let request):
+            return "The SSH server rejected the \(request.description) request."
         case .unsupportedInboundChannel:
             return "Remux received an unexpected SSH channel type."
         case .alreadyStarted:
@@ -260,6 +278,44 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable {
         case .closed:
             return "The tmux control transport has already been closed."
         }
+    }
+}
+
+enum SSHTmuxControlChannelRequestKind: Equatable, Sendable, CustomStringConvertible {
+    case pseudoTerminal
+    case exec
+    case unknown
+
+    var description: String {
+        switch self {
+        case .pseudoTerminal:
+            return "pseudo-terminal"
+        case .exec:
+            return "exec"
+        case .unknown:
+            return "channel"
+        }
+    }
+}
+
+struct SSHTmuxControlChannelRequestReplyTracker {
+    private var pendingRequests: [SSHTmuxControlChannelRequestKind] = []
+
+    var pendingCount: Int {
+        pendingRequests.count
+    }
+
+    mutating func expectReply(for request: SSHTmuxControlChannelRequestKind) {
+        pendingRequests.append(request)
+    }
+
+    mutating func acknowledgeSuccess() -> SSHTmuxControlChannelRequestKind? {
+        guard !pendingRequests.isEmpty else { return nil }
+        return pendingRequests.removeFirst()
+    }
+
+    mutating func acknowledgeFailure() -> SSHTmuxControlChannelRequestKind {
+        acknowledgeSuccess() ?? .unknown
     }
 }
 
@@ -1340,6 +1396,7 @@ private enum SSHTmuxControlBootstrap {
             GhosttyRuntimeTrace.tmuxViewport(
                 "startup.pty.request viewport=\(GhosttyRuntimeTrace.viewportDescription(viewport))"
             )
+            handler.expectReply(for: .pseudoTerminal)
             try await childChannel.triggerUserOutboundEvent(
                 SSHChannelRequestEvent.PseudoTerminalRequest(
                     wantReply: true,
@@ -1359,6 +1416,7 @@ private enum SSHTmuxControlBootstrap {
             GhosttyRuntimeTrace.tmuxViewport(
                 "startup.exec.request viewport=\(GhosttyRuntimeTrace.viewportDescription(viewport)) commandBytes=\(command.lengthOfBytes(using: .utf8)) preview=\(GhosttyRuntimeTrace.preview(Data(command.utf8), limit: 220))"
             )
+            handler.expectReply(for: .exec)
             try await childChannel.triggerUserOutboundEvent(
                 SSHChannelRequestEvent.ExecRequest(command: command, wantReply: true)
             )
@@ -1452,6 +1510,7 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
     private let onFinish: @Sendable (Error?) -> Void
     private let lock = NIOLock()
     private var inboundProtocolTrace = TmuxControlProtocolTraceAccumulator()
+    private var requestReplyTracker = SSHTmuxControlChannelRequestReplyTracker()
 
     private var didFinish = false
     private var didReportFirstOutput = false
@@ -1469,6 +1528,12 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
         self.onFinish = onFinish
     }
 
+    func expectReply(for request: SSHTmuxControlChannelRequestKind) {
+        lock.withLock {
+            requestReplyTracker.expectReply(for: request)
+        }
+    }
+
     func handlerAdded(context: ChannelHandlerContext) {
         context.channel.setOption(ChannelOptions.allowRemoteHalfClosure, value: true).whenFailure { [weak self] error in
             self?.finish(error)
@@ -1481,8 +1546,15 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
             lock.withLock {
                 exitStatus = Int(status.exitStatus)
             }
+        case is ChannelSuccessEvent:
+            lock.withLock {
+                _ = requestReplyTracker.acknowledgeSuccess()
+            }
         case is NIOSSH.ChannelFailureEvent:
-            finish(ChannelError.ioOnClosedChannel)
+            let request = lock.withLock {
+                requestReplyTracker.acknowledgeFailure()
+            }
+            finish(SSHTmuxControlTransportError.channelRequestFailed(request))
         default:
             context.fireUserInboundEventTriggered(event)
         }

@@ -802,6 +802,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             switch sshError {
             case .remoteExit:
                 return TerminalDisconnectReason(kind: .remoteExit, message: message)
+            case .channelRequestFailed:
+                return TerminalDisconnectReason(kind: .profile, message: message)
             case .closed:
                 return TerminalDisconnectReason(kind: .transportIO, message: message)
             case .alreadyStarted, .unsupportedInboundChannel:
@@ -909,6 +911,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             if let hostFailure = error as? GhosttyControlHostSurface.Failure,
                hostFailure == .outputRejected {
                 reason = TerminalDisconnectReason(kind: .runtime, message: message)
+            } else if let sshError = error as? SSHTmuxControlTransportError,
+                      case .channelRequestFailed = sshError {
+                reason = TerminalDisconnectReason(kind: .profile, message: message)
             } else {
                 reason = TerminalDisconnectReason(kind: .transportIO, message: message)
             }
