@@ -76,8 +76,8 @@ struct GhosttyKeyboardChrome: View {
 
     private var selectorRow: some View {
         HStack(spacing: isCompact ? 6 : 8) {
-            navigationControls
             terminalKeyControls
+            navigationControls
             inputControls
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -150,6 +150,7 @@ struct GhosttyKeyboardChrome: View {
                     accessibilityIdentifier: "terminal.keyboard",
                     isActive: keyboardMode != .hidden,
                     isEnabled: isEnabled,
+                    inactiveBackground: GhosttyPhoneChromePalette.keySurface,
                     action: onToggleKeyboard
                 )
             }
@@ -227,6 +228,7 @@ private struct GhosttyKeyboardChromeDockButton: View {
     let accessibilityIdentifier: String
     let isActive: Bool
     let isEnabled: Bool
+    var inactiveBackground = Color.white.opacity(0.065)
     let action: () -> Void
 
     var body: some View {
@@ -245,7 +247,7 @@ private struct GhosttyKeyboardChromeDockButton: View {
                 width: GhosttyKeyboardChromeSizing.dockButtonWidth,
                 height: GhosttyKeyboardChromeSizing.dockButtonHeight
             )
-            .background(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.065))
+            .background(isActive ? GhosttyPhoneChromePalette.accent : inactiveBackground)
             .clipShape(
                 RoundedRectangle(
                     cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
