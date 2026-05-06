@@ -1,4 +1,4 @@
-name: RemuxV2
+name: Remux
 options:
   bundleIdPrefix: dev.remux.v2
   deploymentTarget:
@@ -6,7 +6,7 @@ options:
 settings:
   base:
     PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.app
-    PRODUCT_NAME: RemuxV2
+    PRODUCT_NAME: Remux
     SWIFT_VERSION: 6.0
     IPHONEOS_DEPLOYMENT_TARGET: 18.0
     TARGETED_DEVICE_FAMILY: 1
@@ -19,20 +19,20 @@ packages:
     url: https://github.com/orlandos-nl/Citadel.git
     exactVersion: 0.12.1
 targets:
-  RemuxV2:
+  Remux:
     type: application
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: RemuxV2App/Sources
+      - path: RemuxApp/Sources
     dependencies:
       - framework: ../ghostty-remux-track3/macos/GhosttyKit.xcframework
         embed: false
       - package: Citadel
     info:
-      path: RemuxV2App/Info.plist
+      path: RemuxApp/Info.plist
       properties:
-        CFBundleDisplayName: Remux V2
+        CFBundleDisplayName: Remux
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations:
@@ -41,44 +41,44 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
-  RemuxV2Tests:
+  RemuxTests:
     type: bundle.unit-test
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: RemuxV2AppTests
+      - path: RemuxAppTests
     dependencies:
-      - target: RemuxV2
+      - target: Remux
       - framework: ../ghostty-remux-track3/macos/GhosttyKit.xcframework
         embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.appTests
-        PRODUCT_NAME: RemuxV2Tests
-        PRODUCT_MODULE_NAME: RemuxV2Tests
+        PRODUCT_NAME: RemuxTests
+        PRODUCT_MODULE_NAME: RemuxTests
         GENERATE_INFOPLIST_FILE: YES
-  RemuxV2UITests:
+  RemuxUITests:
     type: bundle.ui-testing
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: RemuxV2AppUITests
+      - path: RemuxAppUITests
     dependencies:
-      - target: RemuxV2
+      - target: Remux
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.remux.v2.appUITests
-        PRODUCT_NAME: RemuxV2UITests
-        PRODUCT_MODULE_NAME: RemuxV2UITests
+        PRODUCT_NAME: RemuxUITests
+        PRODUCT_MODULE_NAME: RemuxUITests
         GENERATE_INFOPLIST_FILE: YES
 schemes:
-  RemuxV2:
+  Remux:
     build:
       targets:
-        RemuxV2: all
-        RemuxV2Tests: [test]
-        RemuxV2UITests: [test]
+        Remux: all
+        RemuxTests: [test]
+        RemuxUITests: [test]
     test:
       targets:
-        - RemuxV2Tests
-        - RemuxV2UITests
+        - RemuxTests
+        - RemuxUITests
