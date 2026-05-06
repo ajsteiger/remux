@@ -50,8 +50,8 @@ Build:
 
 ```bash
 xcodebuild build \
-  -project RemuxV2.xcodeproj \
-  -scheme RemuxV2 \
+  -project Remux.xcodeproj \
+  -scheme Remux \
   -destination 'generic/platform=iOS Simulator'
 ```
 
@@ -59,16 +59,16 @@ Test:
 
 ```bash
 xcodebuild test \
-  -project RemuxV2.xcodeproj \
-  -scheme RemuxV2 \
+  -project Remux.xcodeproj \
+  -scheme Remux \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest'
 ```
 
 ## Repository Layout
 
-- [RemuxV2App](RemuxV2App): iOS app source
-- [RemuxV2AppTests](RemuxV2AppTests): unit and integration-style tests
-- [RemuxV2AppUITests](RemuxV2AppUITests): UI tests
+- [RemuxApp](RemuxApp): iOS app source
+- [RemuxAppTests](RemuxAppTests): unit and integration-style tests
+- [RemuxAppUITests](RemuxAppUITests): UI tests
 - [docs](docs): project documentation
 - [project.yml](project.yml): XcodeGen project definition
 

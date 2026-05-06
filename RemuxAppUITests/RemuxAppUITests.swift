@@ -297,9 +297,9 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     private func liveSSHConfiguration() throws -> LiveSSHConfiguration {
-        let configurationURL = URL(fileURLWithPath: "/tmp/remux-v2-live-ssh.json")
+        let configurationURL = URL(fileURLWithPath: "/tmp/remux-live-ssh.json")
         guard FileManager.default.fileExists(atPath: configurationURL.path) else {
-            throw XCTSkip("Create /tmp/remux-v2-live-ssh.json inside the simulator to run live SSH UI testing.")
+            throw XCTSkip("Create /tmp/remux-live-ssh.json inside the simulator to run live SSH UI testing.")
         }
 
         let data = try Data(contentsOf: configurationURL)

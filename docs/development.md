@@ -21,8 +21,8 @@ Run this after changing [project.yml](../project.yml).
 
 ```bash
 xcodebuild build \
-  -project RemuxV2.xcodeproj \
-  -scheme RemuxV2 \
+  -project Remux.xcodeproj \
+  -scheme Remux \
   -destination 'generic/platform=iOS Simulator'
 ```
 
@@ -30,8 +30,8 @@ xcodebuild build \
 
 ```bash
 xcodebuild test \
-  -project RemuxV2.xcodeproj \
-  -scheme RemuxV2 \
+  -project Remux.xcodeproj \
+  -scheme Remux \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest'
 ```
 
