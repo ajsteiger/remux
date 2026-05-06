@@ -18,6 +18,7 @@ final class RemuxAppUITests: XCTestCase {
         continueAfterFailure = false
 
         app = XCUIApplication()
+        installSystemPromptMonitor()
     }
 
     func testCreatesSSHServerAndOpensTerminalWithSimulatorTransport() {
@@ -443,20 +444,37 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     private func dismissPasswordManagerPromptIfPresent() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let springboardNotNowButton = springboard.buttons["Not Now"]
-        if springboardNotNowButton.waitForExistence(timeout: 1) {
-            springboardNotNowButton.tap()
-            return
-        }
-
         let appNotNowButton = app.buttons["Not Now"]
         if appNotNowButton.waitForExistence(timeout: 1) {
             appNotNowButton.tap()
             return
         }
 
+        app.tap()
+        if appNotNowButton.waitForExistence(timeout: 1) {
+            appNotNowButton.tap()
+            return
+        }
+
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.32, dy: 0.63)).tap()
+    }
+
+    private func installSystemPromptMonitor() {
+        addUIInterruptionMonitor(withDescription: "Dismiss optional system prompt") { alert in
+            let notNow = alert.buttons["Not Now"]
+            if notNow.exists {
+                notNow.tap()
+                return true
+            }
+
+            let cancel = alert.buttons["Cancel"]
+            if cancel.exists {
+                cancel.tap()
+                return true
+            }
+
+            return false
+        }
     }
 
     private func openFirstSavedSession() {
