@@ -147,7 +147,7 @@ struct RemuxAppDependencies: Sendable {
 #if DEBUG
     static func uiTesting() throws -> RemuxAppDependencies {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("RemuxV2UITesting", isDirectory: true)
+            .appendingPathComponent("RemuxUITesting", isDirectory: true)
 
         return RemuxAppDependencies(
             profileRepository: InMemoryConnectionProfileRepository(),
