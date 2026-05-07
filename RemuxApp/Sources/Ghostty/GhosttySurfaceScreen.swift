@@ -17,6 +17,7 @@ struct GhosttySurfaceScreen: View {
     @State private var isAwaitingSystemKeyboardPresentation = false
     @State private var pendingTopologyInputRefocus = GhosttyPendingTopologyInputRefocus()
     @State private var runtimeStateReportTracker = TerminalRuntimeStateReportTracker()
+    @State private var trackpadHUDState = GhosttyKeyboardCursorTrackpad.HUDState.hidden
 
     private let target: TmuxConnectionTarget
     private let sessionInstanceID: UUID
@@ -106,7 +107,8 @@ struct GhosttySurfaceScreen: View {
                             activationToken: inputCoordinator.terminalActivationToken,
                             sendText: sendTerminalText,
                             sendPaste: sendTerminalPaste,
-                            sendKeyEvent: sendTerminalKeyEvent
+                            sendKeyEvent: sendTerminalKeyEvent,
+                            onTrackpadStateChange: { trackpadHUDState = $0 }
                         )
                         .frame(
                             width: terminalViewportSize.width,
@@ -124,6 +126,11 @@ struct GhosttySurfaceScreen: View {
                             onReconnect: onReconnect
                         )
                         .id(model.surfaceRegistryRevision)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        GhosttyKeyboardCursorTrackpadHUD(state: trackpadHUDState)
+                            .padding(.top, 12)
+                            .padding(.trailing, 12)
                     }
                     .onAppear {
                         traceTerminalViewportSnapshot(

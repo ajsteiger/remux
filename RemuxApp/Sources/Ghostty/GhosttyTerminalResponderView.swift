@@ -8,6 +8,7 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
     let sendText: (String) -> Bool
     let sendPaste: (String) -> Bool
     let sendKeyEvent: (GhosttySurfaceKeyEvent) -> Bool
+    let onTrackpadStateChange: (GhosttyKeyboardCursorTrackpad.HUDState) -> Void
 
     func makeUIView(context: Context) -> GhosttyTerminalResponderUIView {
         let view = GhosttyTerminalResponderUIView()
@@ -23,8 +24,17 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
             activationToken: activationToken,
             sendText: { sendText(GhosttyTerminalInputNormalizer.normalize($0)) },
             sendPaste: sendPaste,
-            sendKeyEvent: sendKeyEvent
+            sendKeyEvent: sendKeyEvent,
+            onTrackpadStateChange: onTrackpadStateChange
         )
+    }
+
+    static func dismantleUIView(_ uiView: GhosttyTerminalResponderUIView, coordinator: ()) {
+        // SwiftUI is dropping this representable while a trackpad gesture may
+        // still be live (surface revision, screen transition, disconnect).
+        // Make sure the floating-cursor HUD state observer downstream goes
+        // hidden so it doesn't strand on a parent view.
+        uiView.cancelTrackpadGestureIfActive(reason: "dismantle")
     }
 }
 
@@ -65,6 +75,11 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     private var sendTextHandler: ((String) -> Bool)?
     private var sendPasteHandler: ((String) -> Bool)?
     private var sendKeyEventHandler: ((GhosttySurfaceKeyEvent) -> Bool)?
+    var trackpadStateHandler: ((GhosttyKeyboardCursorTrackpad.HUDState) -> Void)?
+    private var trackpad: GhosttyKeyboardCursorTrackpad?
+    lazy var floatingCursorTokenizer: UITextInputTokenizer =
+        UITextInputStringTokenizer(textInput: self)
+    weak var inputDelegate: UITextInputDelegate?
 
     func update(
         isEnabled: Bool,
@@ -72,7 +87,8 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         activationToken: Int,
         sendText: @escaping (String) -> Bool,
         sendPaste: @escaping (String) -> Bool,
-        sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool
+        sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool,
+        onTrackpadStateChange: @escaping (GhosttyKeyboardCursorTrackpad.HUDState) -> Void
     ) {
         let wasInputEnabled = self.isInputEnabled
         let previouslyWantedFirstResponder = self.wantsFirstResponder
@@ -98,8 +114,10 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         self.sendTextHandler = sendText
         self.sendPasteHandler = sendPaste
         self.sendKeyEventHandler = sendKeyEvent
+        self.trackpadStateHandler = onTrackpadStateChange
 
         if !isEnabled {
+            cancelTrackpadGestureIfActive(reason: "disabled")
             if isFirstResponder {
                 GhosttyRuntimeTrace.diagnostics("responder.update resign disabled token=\(activationToken)")
                 resignFirstResponder()
@@ -152,6 +170,12 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         GhosttyRuntimeTrace.diagnostics(
             "responder.didMoveToWindow hasWindow=\(window != nil) enabled=\(isInputEnabled) pending=\(pendingFirstResponderRequest) firstResponder=\(isFirstResponder) token=\(activationToken)"
         )
+        if window == nil {
+            // Detached from the view hierarchy mid-flight: end any active
+            // trackpad gesture so the SwiftUI HUD observer doesn't strand
+            // visible after the surface this responder belonged to is gone.
+            cancelTrackpadGestureIfActive(reason: "didMoveToWindow.nil")
+        }
         requestFirstResponderIfNeeded()
     }
 
@@ -170,6 +194,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     }
 
     override func resignFirstResponder() -> Bool {
+        cancelTrackpadGestureIfActive(reason: "resignFirstResponder")
         let didResignFirstResponder = super.resignFirstResponder()
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
@@ -181,6 +206,94 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             ]
         )
         return didResignFirstResponder
+    }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        // Now that this view conforms to UITextInput, UIKit otherwise advertises
+        // the standard text edit menu (Select / Select All / Copy / Cut). The
+        // terminal has no editable selection, so suppress those and keep paste
+        // wired through the existing handler.
+        switch action {
+        case #selector(UIResponderStandardEditActions.select(_:)),
+             #selector(UIResponderStandardEditActions.selectAll(_:)),
+             #selector(UIResponderStandardEditActions.copy(_:)),
+             #selector(UIResponderStandardEditActions.cut(_:)):
+            return false
+        default:
+            return super.canPerformAction(action, withSender: sender)
+        }
+    }
+
+    func beginFloatingCursor(at point: CGPoint) {
+        guard isInputEnabled else { return }
+        var trackpad = GhosttyKeyboardCursorTrackpad()
+        let hud = trackpad.begin(at: point)
+        self.trackpad = trackpad
+        trackpadStateHandler?(hud)
+        Haptic.tap(.soft)
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.trackpad.begin",
+            fields: [
+                "firstResponder": "\(isFirstResponder)",
+                "token": "\(activationToken)",
+            ]
+        )
+    }
+
+    func updateFloatingCursor(at point: CGPoint) {
+        guard isInputEnabled, var trackpad else { return }
+        let traceStart = GhosttyRuntimeTrace.nowNanos()
+        let outcome = trackpad.update(at: point)
+        self.trackpad = trackpad
+
+        for step in outcome.steps {
+            let event = GhosttySurfaceKeyEvent(keyCode: step.direction.keyCode)
+            _ = sendKeyEventHandler?(event)
+        }
+
+        if outcome.didLockAxis {
+            Haptic.selection()
+        }
+        trackpadStateHandler?(outcome.hud)
+
+        if !outcome.steps.isEmpty || outcome.didLockAxis {
+            GhosttyRuntimeTrace.perf(
+                "input.trackpad.steps count=\(outcome.steps.count) intensity=\(String(format: "%.2f", Double(outcome.hud.intensity))) lockedAxis=\(outcome.didLockAxis) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: traceStart))"
+            )
+        }
+    }
+
+    func endFloatingCursor() {
+        guard trackpad != nil else { return }
+        var trackpad = self.trackpad!
+        let hud = trackpad.end()
+        self.trackpad = nil
+        trackpadStateHandler?(hud)
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.trackpad.end",
+            fields: [
+                "firstResponder": "\(isFirstResponder)",
+                "token": "\(activationToken)",
+            ]
+        )
+    }
+
+    func cancelTrackpadGestureIfActive(reason: String) {
+        guard trackpad != nil else { return }
+        var trackpad = self.trackpad!
+        let hud = trackpad.end()
+        self.trackpad = nil
+        trackpadStateHandler?(hud)
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.trackpad.cancel",
+            fields: [
+                "reason": reason,
+                "token": "\(activationToken)",
+            ]
+        )
     }
 
     func deleteBackward() {
@@ -528,5 +641,16 @@ enum GhosttyTerminalHardwareCommandMapping {
         if modifiers.contains(.alphaShift) { result.insert(.caps) }
 
         return result
+    }
+}
+
+private extension GhosttyKeyboardCursorTrackpad.Direction {
+    var keyCode: GhosttySurfaceKeyEvent.KeyCode {
+        switch self {
+        case .up: return .arrowUp
+        case .down: return .arrowDown
+        case .left: return .arrowLeft
+        case .right: return .arrowRight
+        }
     }
 }
