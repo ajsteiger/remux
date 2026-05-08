@@ -72,7 +72,9 @@ private struct RemuxWorkspaceShell: View {
                 ActiveTerminalSessionView(
                     session: session,
                     transportFactory: { model.makeTransport(for: $0) },
-                    onRuntimeStateChange: model.handleTerminalRuntimeStateUpdate,
+                    onRuntimeStateChange: { update in
+                        _ = model.handleTerminalRuntimeStateUpdate(update)
+                    },
                     onReconnect: {
                         model.reconnectActiveSession(session.id, source: .manualButton)
                     },

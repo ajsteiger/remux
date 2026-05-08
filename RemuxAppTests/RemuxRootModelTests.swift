@@ -411,7 +411,7 @@ final class RemuxRootModelTests: XCTestCase {
             message: "tmux transport write failed: closed"
         )
 
-        harness.model.handleTerminalRuntimeStateUpdate(
+        let outcome = harness.model.handleTerminalRuntimeStateUpdate(
             TerminalRuntimeStateUpdate(
                 workspaceID: workspace.id,
                 instanceID: instanceID,
@@ -420,8 +420,53 @@ final class RemuxRootModelTests: XCTestCase {
             )
         )
 
+        XCTAssertEqual(outcome, .applied(.disconnected(reason)))
         XCTAssertEqual(harness.model.activeSessions.first?.runtimeState, .disconnected(reason))
         XCTAssertEqual(harness.model.state, .library)
+    }
+
+    func testRuntimeUpdateOutcomeReportsMissingSessionWithoutMutation() {
+        let harness = makeHarness()
+        let update = TerminalRuntimeStateUpdate(
+            workspaceID: UUID(),
+            instanceID: UUID(),
+            state: .connected,
+            source: .readiness
+        )
+
+        let outcome = harness.model.handleTerminalRuntimeStateUpdate(update)
+
+        XCTAssertEqual(outcome, .missingSession)
+        XCTAssertTrue(harness.model.activeSessions.isEmpty)
+        XCTAssertEqual(harness.model.state, .loading)
+    }
+
+    func testConnectingRuntimeUpdatePreservesReconnectingState() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
+        let instanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+
+        let outcome = harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: instanceID,
+                state: .connecting,
+                source: .runtime
+            )
+        )
+
+        XCTAssertEqual(outcome, .applied(.reconnecting(.manualButton)))
+        XCTAssertEqual(harness.model.activeSessions.first?.runtimeState, .reconnecting(.manualButton))
     }
 
     func testTappingDisconnectedActiveSessionRecreatesTerminalRuntime() async throws {
@@ -476,7 +521,7 @@ final class RemuxRootModelTests: XCTestCase {
             kind: .transportIO,
             message: "tmux transport ended: closed"
         )
-        harness.model.handleTerminalRuntimeStateUpdate(
+        let firstOutcome = harness.model.handleTerminalRuntimeStateUpdate(
             TerminalRuntimeStateUpdate(
                 workspaceID: workspace.id,
                 instanceID: firstInstanceID,
@@ -486,12 +531,16 @@ final class RemuxRootModelTests: XCTestCase {
         )
 
         var session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(
+            firstOutcome,
+            .automaticReconnectStarted(source: .transportLoss, state: .disconnected(reason))
+        )
         XCTAssertNotEqual(session.instanceID, firstInstanceID)
         XCTAssertEqual(session.runtimeState, .reconnecting(.transportLoss))
         XCTAssertTrue(session.automaticReconnectAttemptedSources.contains(.transportLoss))
 
         let secondInstanceID = session.instanceID
-        harness.model.handleTerminalRuntimeStateUpdate(
+        let secondOutcome = harness.model.handleTerminalRuntimeStateUpdate(
             TerminalRuntimeStateUpdate(
                 workspaceID: workspace.id,
                 instanceID: secondInstanceID,
@@ -501,8 +550,81 @@ final class RemuxRootModelTests: XCTestCase {
         )
 
         session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(
+            secondOutcome,
+            .automaticReconnectSkipped(source: .transportLoss, state: .disconnected(reason))
+        )
         XCTAssertEqual(session.instanceID, secondInstanceID)
         XCTAssertEqual(session.runtimeState, .disconnected(reason))
+    }
+
+    func testForegroundDisconnectRequestsForegroundReconnect() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let instanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+        let reason = TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "tmux transport unavailable after foreground"
+        )
+        let outcome = harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: instanceID,
+                state: .disconnected(reason),
+                source: .foreground
+            )
+        )
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(
+            outcome,
+            .automaticReconnectStarted(source: .foreground, state: .disconnected(reason))
+        )
+        XCTAssertNotEqual(session.instanceID, instanceID)
+        XCTAssertEqual(session.runtimeState, .reconnecting(.foreground))
+        XCTAssertTrue(session.automaticReconnectAttemptedSources.contains(.foreground))
+    }
+
+    func testReadinessDisconnectDoesNotRequestAutomaticReconnect() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let instanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
+        let reason = TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "readiness observed disconnected"
+        )
+        let outcome = harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: instanceID,
+                state: .disconnected(reason),
+                source: .readiness
+            )
+        )
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(outcome, .applied(.disconnected(reason)))
+        XCTAssertEqual(session.instanceID, instanceID)
+        XCTAssertEqual(session.runtimeState, .disconnected(reason))
+        XCTAssertTrue(session.automaticReconnectAttemptedSources.isEmpty)
     }
 
     func testRuntimeStateReportTrackerReportsForegroundDisconnectAfterRuntimeDisconnect() {
@@ -581,7 +703,7 @@ final class RemuxRootModelTests: XCTestCase {
         let newInstanceID = try XCTUnwrap(harness.model.activeSessions.first?.instanceID)
         XCTAssertNotEqual(newInstanceID, oldInstanceID)
 
-        harness.model.handleTerminalRuntimeStateUpdate(
+        let outcome = harness.model.handleTerminalRuntimeStateUpdate(
             TerminalRuntimeStateUpdate(
                 workspaceID: workspace.id,
                 instanceID: oldInstanceID,
@@ -596,6 +718,7 @@ final class RemuxRootModelTests: XCTestCase {
         )
 
         let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(outcome, .staleInstance(current: newInstanceID, stale: oldInstanceID))
         XCTAssertEqual(session.instanceID, newInstanceID)
         XCTAssertEqual(session.runtimeState, .reconnecting(.manualButton))
     }
