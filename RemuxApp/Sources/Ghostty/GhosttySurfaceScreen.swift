@@ -444,6 +444,29 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
+    private func prepareTopologyActionInteraction(
+        _ effect: GhosttyTmuxTopologyActionInteractionEffect
+    ) {
+        guard effect.requestsInputRefocus else { return }
+        requestSystemKeyboardRefocusAfterTopologyChange()
+    }
+
+    private func completeTopologyActionInteraction(
+        _ effect: GhosttyTmuxTopologyActionInteractionEffect,
+        outcome: GhosttyTmuxModelActionOutcome
+    ) {
+        guard outcome.isQueued else {
+            if effect.requestsInputRefocus {
+                cancelPendingTopologyInputRefocus()
+            }
+            return
+        }
+
+        if effect.dismissesSelectionSheetOnQueued {
+            dismissSelectionSheet()
+        }
+    }
+
     private func cancelPendingTopologyInputRefocus() {
         let ownsKeyboardTransition = pendingTopologyInputRefocus.ownsKeyboardTransition
         pendingTopologyInputRefocus.cancel()
@@ -1032,12 +1055,9 @@ struct GhosttySurfaceScreen: View {
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
-                    requestSystemKeyboardRefocusAfterTopologyChange()
-                    guard model.createTmuxWindow().isQueued else {
-                        cancelPendingTopologyInputRefocus()
-                        return
-                    }
-                    dismissSelectionSheet()
+                    let effect = model.createTmuxWindowInteractionEffect()
+                    prepareTopologyActionInteraction(effect)
+                    completeTopologyActionInteraction(effect, outcome: model.createTmuxWindow())
                 },
                 onSelect: { id in
                     guard model.focusTmuxTopLevel(id).isHandled else { return }
@@ -1045,19 +1065,9 @@ struct GhosttySurfaceScreen: View {
                     refocusSystemKeyboardIfActive()
                 },
                 onRemoveWindow: { id in
-                    let removesLastWindow = registry.topLevels.count <= 1
-                    if removesLastWindow {
-                        requestSystemKeyboardRefocusAfterTopologyChange()
-                    }
-                    guard model.closeTmuxWindow(id).isQueued else {
-                        if removesLastWindow {
-                            cancelPendingTopologyInputRefocus()
-                        }
-                        return
-                    }
-                    if removesLastWindow {
-                        dismissSelectionSheet()
-                    }
+                    let effect = model.closeTmuxWindowInteractionEffect(id)
+                    prepareTopologyActionInteraction(effect)
+                    completeTopologyActionInteraction(effect, outcome: model.closeTmuxWindow(id))
                 }
             )
 
@@ -1075,12 +1085,12 @@ struct GhosttySurfaceScreen: View {
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
-                    requestSystemKeyboardRefocusAfterTopologyChange()
-                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT).isQueued else {
-                        cancelPendingTopologyInputRefocus()
-                        return
-                    }
-                    dismissSelectionSheet()
+                    let effect = model.splitFocusedTmuxPaneInteractionEffect()
+                    prepareTopologyActionInteraction(effect)
+                    completeTopologyActionInteraction(
+                        effect,
+                        outcome: model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT)
+                    )
                 },
                 onStackPane: {
                     GhosttyRuntimeTrace.flowBegin(
@@ -1091,12 +1101,12 @@ struct GhosttySurfaceScreen: View {
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
-                    requestSystemKeyboardRefocusAfterTopologyChange()
-                    guard model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN).isQueued else {
-                        cancelPendingTopologyInputRefocus()
-                        return
-                    }
-                    dismissSelectionSheet()
+                    let effect = model.splitFocusedTmuxPaneInteractionEffect()
+                    prepareTopologyActionInteraction(effect)
+                    completeTopologyActionInteraction(
+                        effect,
+                        outcome: model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN)
+                    )
                 },
                 onSelect: { id in
                     guard model.focusTmuxPane(id).isHandled else { return }
@@ -1104,18 +1114,9 @@ struct GhosttySurfaceScreen: View {
                     refocusSystemKeyboardIfActive()
                 },
                 onRemovePane: { id in
-                    let removesOnlyPane = registry.topLevels
-                        .first(where: { $0.id == topLevelID })?
-                        .leafIDs.count == 1
-                    if removesOnlyPane {
-                        requestSystemKeyboardRefocusAfterTopologyChange()
-                    }
-                    guard model.closeTmuxPane(id).isQueued else {
-                        if removesOnlyPane {
-                            cancelPendingTopologyInputRefocus()
-                        }
-                        return
-                    }
+                    let effect = model.closeTmuxPaneInteractionEffect(id, inTopLevel: topLevelID)
+                    prepareTopologyActionInteraction(effect)
+                    completeTopologyActionInteraction(effect, outcome: model.closeTmuxPane(id))
                 }
             )
         }

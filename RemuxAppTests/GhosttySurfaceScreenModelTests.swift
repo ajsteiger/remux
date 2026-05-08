@@ -1787,6 +1787,102 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
+    func testTopologyActionInteractionEffectRequestsRefocusForCreateWindowAndSplit() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+
+        XCTAssertEqual(model.createTmuxWindowInteractionEffect(), .refocusAndDismissOnQueued)
+        XCTAssertEqual(model.splitFocusedTmuxPaneInteractionEffect(), .refocusAndDismissOnQueued)
+    }
+
+    func testCloseWindowInteractionEffectDistinguishesLastWindow() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertEqual(
+            model.closeTmuxWindowInteractionEffect(firstTopLevelID),
+            .refocusAndDismissOnQueued
+        )
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertEqual(model.closeTmuxWindowInteractionEffect(firstTopLevelID), .none)
+        XCTAssertEqual(model.closeTmuxWindowInteractionEffect(secondTopLevelID), .none)
+    }
+
+    func testCloseWindowInteractionEffectIgnoresMissingWindow() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+
+        XCTAssertEqual(model.closeTmuxWindowInteractionEffect(UUID()), .none)
+    }
+
+    func testClosePaneInteractionEffectDistinguishesOnlyPane() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let onlyPane = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(onlyPane)
+        let singlePaneTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertEqual(
+            model.closeTmuxPaneInteractionEffect(onlyPane.id, inTopLevel: singlePaneTopLevelID),
+            .refocusOnly
+        )
+
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [first, second],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .leaf(second.id)
+                )
+            )
+        )
+        let multiPaneTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertEqual(
+            model.closeTmuxPaneInteractionEffect(first.id, inTopLevel: multiPaneTopLevelID),
+            .none
+        )
+        XCTAssertEqual(
+            model.closeTmuxPaneInteractionEffect(second.id, inTopLevel: multiPaneTopLevelID),
+            .none
+        )
+    }
+
+    func testClosePaneInteractionEffectIgnoresMissingPaneOrTopLevel() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertEqual(model.closeTmuxPaneInteractionEffect(UUID(), inTopLevel: topLevelID), .none)
+        XCTAssertEqual(model.closeTmuxPaneInteractionEffect(managed.id, inTopLevel: UUID()), .none)
+    }
+
     func testMouseButtonRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var received: [GhosttySurfaceMouseButtonEvent] = []

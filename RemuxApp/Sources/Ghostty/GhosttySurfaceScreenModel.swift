@@ -66,6 +66,25 @@ struct GhosttyTerminalInteractionProjection: Equatable, Sendable {
     let isWaitingForPanes: Bool
 }
 
+enum GhosttyTmuxTopologyActionInteractionEffect: Equatable, Sendable {
+    case none
+    case refocusOnly
+    case refocusAndDismissOnQueued
+
+    var requestsInputRefocus: Bool {
+        switch self {
+        case .none:
+            false
+        case .refocusOnly, .refocusAndDismissOnQueued:
+            true
+        }
+    }
+
+    var dismissesSelectionSheetOnQueued: Bool {
+        self == .refocusAndDismissOnQueued
+    }
+}
+
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
@@ -460,6 +479,36 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func focusedSelectionAvailability() -> GhosttyTerminalSelectionAvailabilityOutcome {
         surfaceRegistry.focusedSelectionAvailability()
+    }
+
+    func createTmuxWindowInteractionEffect() -> GhosttyTmuxTopologyActionInteractionEffect {
+        .refocusAndDismissOnQueued
+    }
+
+    func splitFocusedTmuxPaneInteractionEffect() -> GhosttyTmuxTopologyActionInteractionEffect {
+        .refocusAndDismissOnQueued
+    }
+
+    func closeTmuxWindowInteractionEffect(_ id: UUID) -> GhosttyTmuxTopologyActionInteractionEffect {
+        guard surfaceRegistry.topLevels.contains(where: { $0.id == id }) else {
+            return .none
+        }
+
+        return surfaceRegistry.topLevels.count <= 1 ? .refocusAndDismissOnQueued : .none
+    }
+
+    func closeTmuxPaneInteractionEffect(
+        _ id: UUID,
+        inTopLevel topLevelID: UUID
+    ) -> GhosttyTmuxTopologyActionInteractionEffect {
+        guard
+            let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == topLevelID }),
+            topLevel.leafIDs.contains(id)
+        else {
+            return .none
+        }
+
+        return topLevel.leafIDs.count == 1 ? .refocusOnly : .none
     }
 
     @discardableResult
