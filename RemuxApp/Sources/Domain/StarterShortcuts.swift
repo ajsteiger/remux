@@ -61,11 +61,11 @@ enum StarterShortcuts {
 
     static let claude: [StarterShortcut] = [
         StarterShortcut(
-            id: "claude.clear",
+            id: "claude.resume",
             collection: .claude,
-            title: "/clear",
+            title: "/resume",
             hint: nil,
-            sequence: .text("/clear", submit: true),
+            sequence: .text("/resume", submit: true),
             sortIndex: 0
         ),
         StarterShortcut(
@@ -77,39 +77,63 @@ enum StarterShortcuts {
             sortIndex: 1
         ),
         StarterShortcut(
+            id: "claude.clear",
+            collection: .claude,
+            title: "/clear",
+            hint: nil,
+            sequence: .text("/clear", submit: true),
+            sortIndex: 2
+        ),
+        StarterShortcut(
             id: "claude.model",
             collection: .claude,
             title: "/model",
             hint: nil,
             sequence: .text("/model", submit: true),
-            sortIndex: 2
+            sortIndex: 3
         ),
         StarterShortcut(
-            id: "claude.resume",
+            id: "claude.effort",
             collection: .claude,
-            title: "/resume",
+            title: "/effort",
             hint: nil,
-            sequence: .text("/resume", submit: true),
-            sortIndex: 3
+            sequence: .text("/effort", submit: true),
+            sortIndex: 4
+        ),
+        StarterShortcut(
+            id: "claude.usage",
+            collection: .claude,
+            title: "/usage",
+            hint: nil,
+            sequence: .text("/usage", submit: true),
+            sortIndex: 5
+        ),
+        StarterShortcut(
+            id: "claude.status",
+            collection: .claude,
+            title: "/status",
+            hint: nil,
+            sequence: .text("/status", submit: true),
+            sortIndex: 6
+        ),
+        StarterShortcut(
+            id: "claude.fast",
+            collection: .claude,
+            title: "/fast",
+            hint: nil,
+            sequence: .text("/fast", submit: true),
+            sortIndex: 7
         ),
     ]
 
     static let codex: [StarterShortcut] = [
         StarterShortcut(
-            id: "codex.new",
+            id: "codex.resume",
             collection: .codex,
-            title: "/new",
+            title: "/resume",
             hint: nil,
-            sequence: .text("/new", submit: true),
+            sequence: .text("/resume", submit: true),
             sortIndex: 0
-        ),
-        StarterShortcut(
-            id: "codex.compact",
-            collection: .codex,
-            title: "/compact",
-            hint: nil,
-            sequence: .text("/compact", submit: true),
-            sortIndex: 1
         ),
         StarterShortcut(
             id: "codex.model",
@@ -117,7 +141,31 @@ enum StarterShortcuts {
             title: "/model",
             hint: nil,
             sequence: .text("/model", submit: true),
+            sortIndex: 1
+        ),
+        StarterShortcut(
+            id: "codex.compact",
+            collection: .codex,
+            title: "/compact",
+            hint: nil,
+            sequence: .text("/compact", submit: true),
             sortIndex: 2
+        ),
+        StarterShortcut(
+            id: "codex.clear",
+            collection: .codex,
+            title: "/clear",
+            hint: nil,
+            sequence: .text("/clear", submit: true),
+            sortIndex: 3
+        ),
+        StarterShortcut(
+            id: "codex.memories",
+            collection: .codex,
+            title: "/memories",
+            hint: nil,
+            sequence: .text("/memories", submit: true),
+            sortIndex: 4
         ),
         StarterShortcut(
             id: "codex.status",
@@ -125,23 +173,31 @@ enum StarterShortcuts {
             title: "/status",
             hint: nil,
             sequence: .text("/status", submit: true),
-            sortIndex: 3
-        ),
-        StarterShortcut(
-            id: "codex.review",
-            collection: .codex,
-            title: "/review",
-            hint: nil,
-            sequence: .text("/review", submit: true),
-            sortIndex: 4
-        ),
-        StarterShortcut(
-            id: "codex.yes",
-            collection: .codex,
-            title: "y⏎",
-            hint: "approve",
-            sequence: .text("y", submit: true),
             sortIndex: 5
+        ),
+        StarterShortcut(
+            id: "codex.permissions",
+            collection: .codex,
+            title: "/permissions",
+            hint: nil,
+            sequence: .text("/permissions", submit: true),
+            sortIndex: 6
+        ),
+        StarterShortcut(
+            id: "codex.fast",
+            collection: .codex,
+            title: "/fast",
+            hint: nil,
+            sequence: .text("/fast", submit: true),
+            sortIndex: 7
+        ),
+        StarterShortcut(
+            id: "codex.experimental",
+            collection: .codex,
+            title: "/experimental",
+            hint: nil,
+            sequence: .text("/experimental", submit: true),
+            sortIndex: 8
         ),
     ]
 }
