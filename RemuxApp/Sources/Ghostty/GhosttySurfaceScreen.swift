@@ -90,6 +90,9 @@ struct GhosttySurfaceScreen: View {
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,
                             onCopySelection: copyTerminalSelection,
+                            selectionAvailability: {
+                                model.focusedSelectionAvailability()
+                            },
                             selectSurface: { surfaceID, reason in
                                 model.selectTerminalSurface(surfaceID, reason: reason)
                             },
@@ -658,7 +661,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func copyTerminalSelection() -> Bool {
-        guard let selection = model.readSelectionFromFocusedSurface() else {
+        guard case .text(let selection) = model.readSelectionFromFocusedSurface() else {
             return false
         }
 

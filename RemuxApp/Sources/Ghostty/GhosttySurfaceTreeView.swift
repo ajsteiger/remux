@@ -10,6 +10,7 @@ struct GhosttyRuntimePaneTreeView: View {
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
+    let selectionAvailability: () -> GhosttyTerminalSelectionAvailabilityOutcome
     let selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome
     let isMouseCaptured: (UUID) -> Bool
     let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
@@ -24,6 +25,7 @@ struct GhosttyRuntimePaneTreeView: View {
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
             onCopySelection: onCopySelection,
+            selectionAvailability: selectionAvailability,
             selectSurface: selectSurface,
             isMouseCaptured: isMouseCaptured,
             submitMouseButton: submitMouseButton,
@@ -41,6 +43,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
+    let selectionAvailability: () -> GhosttyTerminalSelectionAvailabilityOutcome
     let selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome
     let isMouseCaptured: (UUID) -> Bool
     let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
@@ -62,6 +65,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
             onCopySelection: onCopySelection,
+            selectionAvailability: selectionAvailability,
             selectSurface: selectSurface,
             isMouseCaptured: isMouseCaptured,
             submitMouseButton: submitMouseButton,
@@ -78,6 +82,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     private var onCopySelection: (() -> Bool)?
+    private var selectionAvailability: () -> GhosttyTerminalSelectionAvailabilityOutcome = { .noFocusedSurface }
     private var selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome = { surfaceID, _ in
         .missingSurface(surfaceID)
     }
@@ -129,6 +134,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         onSurfaceTap: ((UUID) -> Void)?,
         onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
         onCopySelection: (() -> Bool)?,
+        selectionAvailability: @escaping () -> GhosttyTerminalSelectionAvailabilityOutcome,
         selectSurface: @escaping (UUID, String) -> GhosttySurfaceSelectionOutcome,
         isMouseCaptured: @escaping (UUID) -> Bool,
         submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?,
@@ -146,6 +152,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         self.onSurfaceTap = onSurfaceTap
         self.onWindowSwipe = onWindowSwipe
         self.onCopySelection = onCopySelection
+        self.selectionAvailability = selectionAvailability
         self.selectSurface = selectSurface
         self.isMouseCaptured = isMouseCaptured
         self.submitMouseButton = submitMouseButton
@@ -469,7 +476,6 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         if phase == .ended {
             presentSelectionCopyMenuIfAvailable(
-                registry: registry,
                 sourcePoint: recognizer.location(in: self)
             )
         }
@@ -482,11 +488,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func presentSelectionCopyMenuIfAvailable(
-        registry: GhosttyRuntimeSurfaceRegistry,
         sourcePoint: CGPoint
     ) {
         guard onCopySelection != nil else { return }
-        guard registry.hasSelectionInFocusedSurface() else { return }
+        guard selectionAvailability().isAvailable else { return }
 
         selectionCopyMenuSourcePoint = sourcePoint
         selectionEditMenuInteraction.presentEditMenu(

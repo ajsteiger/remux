@@ -62,6 +62,31 @@ enum GhosttyMouseInputSubmissionOutcome: Equatable, Sendable {
     }
 }
 
+enum GhosttyTerminalSelectionAvailabilityOutcome: Equatable, Sendable {
+    case available
+    case noFocusedSurface
+    case emptySelection
+
+    var isAvailable: Bool {
+        self == .available
+    }
+}
+
+enum GhosttyTerminalSelectionReadOutcome: Equatable, Sendable {
+    case text(String)
+    case noFocusedSurface
+    case emptySelection
+
+    var selectedText: String? {
+        switch self {
+        case .text(let value):
+            value
+        case .noFocusedSurface, .emptySelection:
+            nil
+        }
+    }
+}
+
 @MainActor
 protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     func runtimeCreateSurface(
@@ -736,31 +761,31 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     @MainActor
-    func readSelectionFromFocusedSurface() -> String? {
+    func readSelectionFromFocusedSurface() -> GhosttyTerminalSelectionReadOutcome {
         guard let surface = selectedActiveSurface else {
             updateDebugSummary("copy dropped: no focused surface")
-            return nil
+            return .noFocusedSurface
         }
 
         guard let selection = surface.readSelection(), !selection.isEmpty else {
             updateDebugSummary("copy dropped: empty selection")
-            return nil
+            return .emptySelection
         }
 
         updateDebugSummary("read selection bytes=\(selection.lengthOfBytes(using: .utf8))")
-        return selection
+        return .text(selection)
     }
 
     @MainActor
-    func hasSelectionInFocusedSurface() -> Bool {
+    func focusedSelectionAvailability() -> GhosttyTerminalSelectionAvailabilityOutcome {
         guard let surface = selectedActiveSurface else {
             updateDebugSummary("selection check dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         let hasSelection = surface.hasSelection()
         updateDebugSummary(hasSelection ? "selection available" : "selection unavailable")
-        return hasSelection
+        return hasSelection ? .available : .emptySelection
     }
 
     @MainActor

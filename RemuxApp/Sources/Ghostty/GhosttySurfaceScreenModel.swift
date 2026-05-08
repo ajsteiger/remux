@@ -417,17 +417,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return result
     }
 
-    func readSelectionFromFocusedSurface() -> String? {
-        let selection = surfaceRegistry.readSelectionFromFocusedSurface()
-        if selection == nil {
+    func readSelectionFromFocusedSurface() -> GhosttyTerminalSelectionReadOutcome {
+        let outcome = surfaceRegistry.readSelectionFromFocusedSurface()
+        if outcome.selectedText == nil {
             debugStatus = "copy dropped: no focused selection"
         }
 
-        return selection
+        return outcome
     }
 
-    func hasSelectionInFocusedSurface() -> Bool {
-        surfaceRegistry.hasSelectionInFocusedSurface()
+    func focusedSelectionAvailability() -> GhosttyTerminalSelectionAvailabilityOutcome {
+        surfaceRegistry.focusedSelectionAvailability()
     }
 
     @discardableResult
