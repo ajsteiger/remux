@@ -6,7 +6,8 @@ private func diagnosticRect(_ rect: CGRect) -> String {
 }
 
 struct GhosttyRuntimePaneTreeView: View {
-    @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
+    let registry: GhosttyRuntimeSurfaceRegistry
+    let projection: GhosttyTerminalTreePresentationProjection
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
@@ -21,7 +22,7 @@ struct GhosttyRuntimePaneTreeView: View {
     var body: some View {
         GhosttySurfaceTreeContainerRepresentable(
             registry: registry,
-            topLevel: registry.selectedTopLevel,
+            projection: projection,
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
             onCopySelection: onCopySelection,
@@ -38,8 +39,8 @@ struct GhosttyRuntimePaneTreeView: View {
 }
 
 private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
-    @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
-    let topLevel: GhosttyTopLevelSurface?
+    let registry: GhosttyRuntimeSurfaceRegistry
+    let projection: GhosttyTerminalTreePresentationProjection
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
@@ -60,7 +61,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: GhosttySurfaceTreeContainerUIView, context: Context) {
         uiView.update(
-            topLevel: topLevel,
+            projection: projection,
             registry: registry,
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
@@ -78,7 +79,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 
 private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate, @preconcurrency UIEditMenuInteractionDelegate {
     private weak var registry: GhosttyRuntimeSurfaceRegistry?
-    private var topLevel: GhosttyTopLevelSurface?
+    private var projection = GhosttyTerminalTreePresentationProjection.empty
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     private var onCopySelection: (() -> Bool)?
@@ -129,7 +130,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     func update(
-        topLevel: GhosttyTopLevelSurface?,
+        projection: GhosttyTerminalTreePresentationProjection,
         registry: GhosttyRuntimeSurfaceRegistry,
         onSurfaceTap: ((UUID) -> Void)?,
         onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
@@ -142,12 +143,12 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?,
         submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
     ) {
-        let previousTopLevel = self.topLevel
+        let previousProjection = self.projection
         let previousRegistry = self.registry
         updatePresentationOverlay(
-            pendingSurfaceID: registry.pendingPhonePresentationSurfaceIDForView
+            pendingSurfaceID: projection.pendingPresentationSurfaceID
         )
-        self.topLevel = topLevel
+        self.projection = projection
         self.registry = registry
         self.onSurfaceTap = onSurfaceTap
         self.onWindowSwipe = onWindowSwipe
@@ -160,11 +161,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         self.submitMouseScroll = submitMouseScroll
         self.submitMousePressure = submitMousePressure
         GhosttyRuntimeTrace.diagnostics(
-            "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(topLevel?.id)) \(registry.diagnosticSelectionSummary())"
+            "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(projection.topLevel?.id)) \(registry.diagnosticSelectionSummary())"
         )
         syncAttachedViews()
         layoutPresentationOverlay()
-        if previousTopLevel != topLevel || previousRegistry !== registry {
+        if previousProjection != projection || previousRegistry !== registry {
             setNeedsLayout()
         }
     }
@@ -211,7 +212,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         guard let registry else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
 
-        let visibleIDs = Set(topLevel?.phonePresentedLeafIDs ?? [])
+        let visibleIDs = Set(projection.topLevel?.phonePresentedLeafIDs ?? [])
         defer {
             if let perfStartedAt {
                 GhosttyRuntimeTrace.perf(
@@ -237,7 +238,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         if let activeSelectionSurfaceID, !visibleIDs.contains(activeSelectionSurfaceID) {
             self.activeSelectionSurfaceID = nil
         }
-        if activePanAxis == .horizontal, registry.topLevels.count <= 1 {
+        if activePanAxis == .horizontal, !projection.canNavigateWindows {
             resetActivePanState()
         }
         surfaceIDsByView = [:]
@@ -279,11 +280,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func layoutVisibleTree() {
-        guard let registry, let topLevel else { return }
+        guard let registry, let topLevel = projection.topLevel else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
         let viewportTraceStartedAt = GhosttyRuntimeTrace.tmuxViewportEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
         GhosttyRuntimeTrace.tmuxViewport(
-            "tree.layoutVisible begin leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) selected=\(ghosttyDiagnosticShortID(registry.selectedActiveLeafID))"
+            "tree.layoutVisible begin leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) selected=\(ghosttyDiagnosticShortID(projection.selectedActiveLeafID))"
         )
         defer {
             if let viewportTraceStartedAt {
@@ -297,7 +298,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 )
             }
         }
-        let focusedSurfaceID = registry.selectedActiveLeafID
+        let focusedSurfaceID = projection.selectedActiveLeafID
         layout(
             node: topLevel.phonePresentedTree.root,
             in: bounds,
@@ -429,7 +430,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     @objc
     private func handleSelectionLongPress(_ recognizer: UILongPressGestureRecognizer) {
         guard
-            let registry,
+            registry != nil,
             let view = recognizer.view,
             let phase = GhosttySurfaceLongPressSelectionGesture.Phase(recognizer.state)
         else {
@@ -511,7 +512,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     @objc
     private func handleSurfaceTap(_ recognizer: UITapGestureRecognizer) {
         guard
-            let registry,
+            registry != nil,
             let view = recognizer.view
         else {
             return
@@ -544,8 +545,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func handleInputActivationTap(_ recognizer: UITapGestureRecognizer) {
         guard
             recognizer.state == .ended,
-            let topLevel,
-            let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first
+            let topLevel = projection.topLevel,
+            let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.phonePresentedLeafIDs.first
         else {
             return
         }
@@ -608,7 +609,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         translation: CGPoint,
         velocity: CGPoint
     ) {
-        guard registry.topLevels.count > 1 else { return }
+        guard projection.canNavigateWindows else { return }
         guard let direction = GhosttySurfacePanGesture.windowNavigationDirection(
             forTranslation: translation,
             velocity: velocity,
@@ -626,7 +627,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 event: "ui.swipe.threshold",
                 fields: [
                     "direction": "\(direction.runtimeSelectionDirection)",
-                    "topLevels": "\(registry.topLevels.count)",
+                    "topLevels": "\(projection.windowCount)",
                     "translation": "\(Int(translation.x)),\(Int(translation.y))",
                     "velocity": "\(Int(velocity.x)),\(Int(velocity.y))",
                 ],
@@ -681,7 +682,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         let velocity = panRecognizer.velocity(in: self)
         return GhosttySurfacePanGesture.surfaceContainerPanShouldBegin(
-            topLevelCount: registry?.topLevels.count ?? 0,
+            topLevelCount: projection.windowCount,
             velocity: velocity
         )
     }

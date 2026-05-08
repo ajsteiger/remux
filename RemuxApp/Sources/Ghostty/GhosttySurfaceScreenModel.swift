@@ -66,6 +66,33 @@ struct GhosttyTerminalInteractionProjection: Equatable, Sendable {
     let isWaitingForPanes: Bool
 }
 
+struct GhosttyTerminalTreeTopLevelPresentation: Equatable {
+    let id: UUID
+    let phonePresentedLeafIDs: [UUID]
+    let phonePresentedTree: GhosttySurfaceTree
+    let resolvedFocusedLeafID: UUID?
+}
+
+struct GhosttyTerminalTreePresentationProjection: Equatable {
+    static var empty: GhosttyTerminalTreePresentationProjection {
+        GhosttyTerminalTreePresentationProjection(
+            topLevel: nil,
+            selectedActiveLeafID: nil,
+            windowCount: 0,
+            pendingPresentationSurfaceID: nil
+        )
+    }
+
+    let topLevel: GhosttyTerminalTreeTopLevelPresentation?
+    let selectedActiveLeafID: UUID?
+    let windowCount: Int
+    let pendingPresentationSurfaceID: UUID?
+
+    var canNavigateWindows: Bool {
+        windowCount > 1
+    }
+}
+
 enum GhosttyTmuxTopologyActionInteractionEffect: Equatable, Sendable {
     case none
     case refocusOnly
@@ -172,6 +199,24 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             selectedPaneIndex: selectedPaneIndex,
             paneCount: selectedTopLevel?.leafIDs.count ?? 0,
             isWaitingForPanes: state == .running && surfaceRegistry.topLevels.isEmpty
+        )
+    }
+
+    var terminalTreePresentationProjection: GhosttyTerminalTreePresentationProjection {
+        let topLevel = surfaceRegistry.selectedTopLevel.map { topLevel in
+            GhosttyTerminalTreeTopLevelPresentation(
+                id: topLevel.id,
+                phonePresentedLeafIDs: topLevel.phonePresentedLeafIDs,
+                phonePresentedTree: topLevel.phonePresentedTree,
+                resolvedFocusedLeafID: topLevel.resolvedFocusedLeafID
+            )
+        }
+
+        return GhosttyTerminalTreePresentationProjection(
+            topLevel: topLevel,
+            selectedActiveLeafID: surfaceRegistry.selectedActiveLeafID,
+            windowCount: surfaceRegistry.topLevels.count,
+            pendingPresentationSurfaceID: surfaceRegistry.pendingPhonePresentationSurfaceIDForView
         )
     }
 

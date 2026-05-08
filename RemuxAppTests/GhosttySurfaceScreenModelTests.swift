@@ -1754,6 +1754,99 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.terminalInteractionProjection.selectedActiveLeafID, first.id)
     }
 
+    func testTerminalTreePresentationProjectionReportsEmptyTopology() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+
+        XCTAssertEqual(model.terminalTreePresentationProjection, .empty)
+        XCTAssertFalse(model.terminalTreePresentationProjection.canNavigateWindows)
+    }
+
+    func testTerminalTreePresentationProjectionReportsSelectedWindow() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertEqual(
+            model.terminalTreePresentationProjection,
+            GhosttyTerminalTreePresentationProjection(
+                topLevel: GhosttyTerminalTreeTopLevelPresentation(
+                    id: topLevelID,
+                    phonePresentedLeafIDs: [managed.id],
+                    phonePresentedTree: GhosttySurfaceTree(root: .leaf(managed.id)),
+                    resolvedFocusedLeafID: managed.id
+                ),
+                selectedActiveLeafID: managed.id,
+                windowCount: 1,
+                pendingPresentationSurfaceID: nil
+            )
+        )
+        XCTAssertFalse(model.terminalTreePresentationProjection.canNavigateWindows)
+    }
+
+    func testTerminalTreePresentationProjectionAllowsWindowNavigationForMultipleWindows() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+
+        XCTAssertEqual(model.terminalTreePresentationProjection.selectedActiveLeafID, second.id)
+        XCTAssertEqual(model.terminalTreePresentationProjection.windowCount, 2)
+        XCTAssertTrue(model.terminalTreePresentationProjection.canNavigateWindows)
+    }
+
+    func testTerminalTreePresentationProjectionTracksPendingPhonePresentation() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [first, second],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .leaf(second.id)
+                )
+            ),
+            focusedLeafID: first.id
+        )
+
+        model.surfaceRegistry.selectSurface(second.id)
+
+        XCTAssertEqual(model.terminalTreePresentationProjection.pendingPresentationSurfaceID, second.id)
+        XCTAssertEqual(model.terminalTreePresentationProjection.topLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertEqual(
+            model.terminalTreePresentationProjection.topLevel?.phonePresentedTree,
+            GhosttySurfaceTree(root: .leaf(second.id))
+        )
+
+        model.surfaceRegistry.recordSurfaceDisplayUpdateForTesting(
+            surfaceID: second.id,
+            size: CGSize(width: 390, height: 641),
+            scale: 3
+        )
+        model.surfaceRegistry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
+
+        XCTAssertNil(model.terminalTreePresentationProjection.pendingPresentationSurfaceID)
+    }
+
     func testTerminalInteractionProjectionReportsWaitingForPanesWhenRunningWithoutTopology() async {
         let transport = ControlledScreenModelTmuxControlTransport()
         let model = Self.screenModel(

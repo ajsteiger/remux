@@ -88,6 +88,7 @@ struct GhosttySurfaceScreen: View {
 
                         GhosttyRuntimePaneTreeView(
                             registry: registry,
+                            projection: model.terminalTreePresentationProjection,
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,
                             onCopySelection: copyTerminalSelection,
