@@ -5,6 +5,25 @@ import XCTest
 
 @MainActor
 final class GhosttyControlHostSurfaceTests: XCTestCase {
+    func testTmuxActionSubmissionResultMapsNativeCases() {
+        XCTAssertEqual(
+            TmuxActionSubmissionResult(native: GHOSTTY_TMUX_ACTION_SUBMISSION_QUEUED),
+            .queued
+        )
+        XCTAssertEqual(
+            TmuxActionSubmissionResult(native: GHOSTTY_TMUX_ACTION_SUBMISSION_NOT_TMUX_BOUND),
+            .notTmuxBound
+        )
+        XCTAssertEqual(
+            TmuxActionSubmissionResult(native: GHOSTTY_TMUX_ACTION_SUBMISSION_NO_TARGET),
+            .noTarget
+        )
+        XCTAssertEqual(
+            TmuxActionSubmissionResult(native: GHOSTTY_TMUX_ACTION_SUBMISSION_QUEUE_FAILED),
+            .queueFailed
+        )
+    }
+
     func testInboundTmuxBytesAreFedToGhosttySurface() async {
         let transport = RecordingTmuxControlTransport()
         let surface = RecordingGhosttyControlSurface()
@@ -579,24 +598,24 @@ private final class RecordingGhosttyControlSurface: GhosttyControlSurface {
         backingExited.append(exited)
     }
 
-    func tmuxFocus() -> Bool {
-        true
+    func tmuxFocus() -> TmuxActionSubmissionResult {
+        .queued
     }
 
-    func tmuxNewWindow() -> Bool {
-        true
+    func tmuxNewWindow() -> TmuxActionSubmissionResult {
+        .queued
     }
 
-    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool {
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> TmuxActionSubmissionResult {
         _ = direction
-        return true
+        return .queued
     }
 
-    func tmuxClosePane() -> Bool {
-        true
+    func tmuxClosePane() -> TmuxActionSubmissionResult {
+        .queued
     }
 
-    func tmuxCloseWindow() -> Bool {
-        true
+    func tmuxCloseWindow() -> TmuxActionSubmissionResult {
+        .queued
     }
 }

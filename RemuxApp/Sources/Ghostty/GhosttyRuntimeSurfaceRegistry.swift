@@ -1727,10 +1727,10 @@ final class GhosttyManagedSurface {
     private let isMouseCapturedHandler: (@MainActor () -> Bool)?
     private let setFocusedHandler: (@MainActor (Bool) -> Void)?
     private let updateDisplayHandler: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)?
-    private let tmuxFocusHandler: (@MainActor () -> Bool)?
-    private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> Bool)?
-    private let tmuxClosePaneHandler: (@MainActor () -> Bool)?
-    private let tmuxCloseWindowHandler: (@MainActor () -> Bool)?
+    private let tmuxFocusHandler: (@MainActor () -> TmuxActionSubmissionResult)?
+    private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)?
+    private let tmuxClosePaneHandler: (@MainActor () -> TmuxActionSubmissionResult)?
+    private let tmuxCloseWindowHandler: (@MainActor () -> TmuxActionSubmissionResult)?
     private var displayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
@@ -1752,10 +1752,10 @@ final class GhosttyManagedSurface {
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         setFocused: (@MainActor (Bool) -> Void)? = nil,
         updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
-        tmuxFocus: (@MainActor () -> Bool)? = nil,
-        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
-        tmuxClosePane: (@MainActor () -> Bool)? = nil,
-        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
+        tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
+        tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil
     ) {
         self.id = id
         self.view = view
@@ -1960,7 +1960,7 @@ final class GhosttyManagedSurface {
 
     @MainActor
     @discardableResult
-    func tmuxFocus() -> Bool {
+    func tmuxFocus() -> TmuxActionSubmissionResult {
         if let tmuxFocusHandler {
             return tmuxFocusHandler()
         }
@@ -1970,7 +1970,7 @@ final class GhosttyManagedSurface {
 
     @MainActor
     @discardableResult
-    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool {
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> TmuxActionSubmissionResult {
         if let tmuxSplitHandler {
             return tmuxSplitHandler(direction)
         }
@@ -1980,7 +1980,7 @@ final class GhosttyManagedSurface {
 
     @MainActor
     @discardableResult
-    func tmuxClosePane() -> Bool {
+    func tmuxClosePane() -> TmuxActionSubmissionResult {
         if let tmuxClosePaneHandler {
             return tmuxClosePaneHandler()
         }
@@ -1990,7 +1990,7 @@ final class GhosttyManagedSurface {
 
     @MainActor
     @discardableResult
-    func tmuxCloseWindow() -> Bool {
+    func tmuxCloseWindow() -> TmuxActionSubmissionResult {
         if let tmuxCloseWindowHandler {
             return tmuxCloseWindowHandler()
         }

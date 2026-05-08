@@ -221,7 +221,7 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     @discardableResult
-    func tmuxFocus() -> Bool {
+    func tmuxFocus() -> TmuxActionSubmissionResult {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "control.tmuxFocus handle=\(String(describing: storage.surface)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
@@ -229,51 +229,51 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
         GhosttyRuntimeTrace.latency(
             "control.tmuxFocus begin handle=\(String(describing: storage.surface)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
-        let accepted = ghostty_surface_tmux_focus(storage.surface)
+        let result = TmuxActionSubmissionResult(native: ghostty_surface_tmux_focus(storage.surface))
         GhosttyRuntimeTrace.latency(
-            "control.tmuxFocus end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "control.tmuxFocus end result=\(result.description) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
-        return accepted
+        return result
     }
 
     @MainActor
     @discardableResult
-    func tmuxNewWindow() -> Bool {
+    func tmuxNewWindow() -> TmuxActionSubmissionResult {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(
             "control.tmuxNewWindow begin handle=\(String(describing: storage.surface)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
-        let accepted = ghostty_surface_tmux_new_window(storage.surface)
+        let result = TmuxActionSubmissionResult(native: ghostty_surface_tmux_new_window(storage.surface))
         GhosttyRuntimeTrace.latency(
-            "control.tmuxNewWindow end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "control.tmuxNewWindow end result=\(result.description) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
-        return accepted
+        return result
     }
 
     @MainActor
     @discardableResult
-    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool {
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> TmuxActionSubmissionResult {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(
             "control.tmuxSplit begin handle=\(String(describing: storage.surface)) direction=\(direction) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
-        let accepted = ghostty_surface_tmux_split(storage.surface, direction)
+        let result = TmuxActionSubmissionResult(native: ghostty_surface_tmux_split(storage.surface, direction))
         GhosttyRuntimeTrace.latency(
-            "control.tmuxSplit end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "control.tmuxSplit end result=\(result.description) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
-        return accepted
+        return result
     }
 
     @MainActor
     @discardableResult
-    func tmuxClosePane() -> Bool {
-        ghostty_surface_tmux_close_pane(storage.surface)
+    func tmuxClosePane() -> TmuxActionSubmissionResult {
+        TmuxActionSubmissionResult(native: ghostty_surface_tmux_close_pane(storage.surface))
     }
 
     @MainActor
     @discardableResult
-    func tmuxCloseWindow() -> Bool {
-        ghostty_surface_tmux_close_window(storage.surface)
+    func tmuxCloseWindow() -> TmuxActionSubmissionResult {
+        TmuxActionSubmissionResult(native: ghostty_surface_tmux_close_window(storage.surface))
     }
 
     @MainActor

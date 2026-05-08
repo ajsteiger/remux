@@ -1381,7 +1381,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var focusCallCount = 0
         let second = Self.managedSurface(tmuxFocus: {
             focusCallCount += 1
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
@@ -1403,7 +1403,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var focusCallCount = 0
         let managed = Self.managedSurface(tmuxFocus: {
             focusCallCount += 1
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
@@ -1423,7 +1423,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var focusCallCount = 0
         let second = Self.managedSurface(tmuxFocus: {
             focusCallCount += 1
-            return false
+            return .noTarget
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
@@ -1433,7 +1433,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(model.focusTmuxPane(second.id))
         XCTAssertEqual(focusCallCount, 1)
         XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
-        XCTAssertEqual(model.debugStatus, "tmux focus selected locally; remote sync rejected")
+        XCTAssertEqual(model.debugStatus, "tmux focus selected locally; remote sync no target")
     }
 
     func testModelFocusAdjacentTmuxTopLevelRoutesThroughTargetPane() {
@@ -1446,7 +1446,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var focusCallCount = 0
         let second = Self.managedSurface(tmuxFocus: {
             focusCallCount += 1
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
@@ -1504,7 +1504,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var receivedDirections: [ghostty_action_split_direction_e] = []
         let managed = Self.managedSurface(tmuxSplit: {
             receivedDirections.append($0)
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
@@ -1512,6 +1512,22 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN))
         XCTAssertEqual(receivedDirections, [GHOSTTY_SPLIT_DIRECTION_DOWN])
         XCTAssertEqual(model.debugStatus, "tmux split queued")
+    }
+
+    func testModelSplitFocusedTmuxPaneReportsSubmissionRejectionReason() {
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugPaneInputSmoke: nil
+        )
+        let managed = Self.managedSurface(tmuxSplit: { _ in
+            .notTmuxBound
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertFalse(model.splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT))
+        XCTAssertEqual(model.debugStatus, "tmux split rejected: not tmux backed")
     }
 
     func testModelCloseFocusedTmuxPaneRoutesToManagedSurface() {
@@ -1523,7 +1539,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var closeCallCount = 0
         let managed = Self.managedSurface(tmuxClosePane: {
             closeCallCount += 1
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
@@ -1543,11 +1559,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var secondCloseCallCount = 0
         let first = Self.managedSurface(tmuxClosePane: {
             firstCloseCallCount += 1
-            return true
+            return .queued
         })
         let second = Self.managedSurface(tmuxClosePane: {
             secondCloseCallCount += 1
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
@@ -1569,7 +1585,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var closeCallCount = 0
         let managed = Self.managedSurface(tmuxCloseWindow: {
             closeCallCount += 1
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
@@ -1589,11 +1605,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var secondCloseCallCount = 0
         let first = Self.managedSurface(tmuxCloseWindow: {
             firstCloseCallCount += 1
-            return true
+            return .queued
         })
         let second = Self.managedSurface(tmuxCloseWindow: {
             secondCloseCallCount += 1
-            return true
+            return .queued
         })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
@@ -1772,10 +1788,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         setFocused: (@MainActor (Bool) -> Void)? = nil,
         updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
-        tmuxFocus: (@MainActor () -> Bool)? = nil,
-        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> Bool)? = nil,
-        tmuxClosePane: (@MainActor () -> Bool)? = nil,
-        tmuxCloseWindow: (@MainActor () -> Bool)? = nil
+        tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
+        tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: UUID(),
@@ -1797,10 +1813,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             isMouseCaptured: isMouseCaptured,
             setFocused: setFocused,
             updateDisplay: updateDisplay,
-            tmuxFocus: tmuxFocus ?? { false },
-            tmuxSplit: tmuxSplit ?? { _ in false },
-            tmuxClosePane: tmuxClosePane ?? { false },
-            tmuxCloseWindow: tmuxCloseWindow ?? { false }
+            tmuxFocus: tmuxFocus ?? { .noTarget },
+            tmuxSplit: tmuxSplit ?? { _ in .noTarget },
+            tmuxClosePane: tmuxClosePane ?? { .noTarget },
+            tmuxCloseWindow: tmuxCloseWindow ?? { .noTarget }
         )
     }
 }

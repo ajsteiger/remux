@@ -453,14 +453,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
 
         surfaceRegistry.selectSurface(id, reason: "model.focusTmuxPane")
-        let queued = surface.tmuxFocus()
-        if queued {
+        let submission = surface.tmuxFocus()
+        if submission.isQueued {
             debugStatus = "tmux focus queued"
         } else {
-            debugStatus = "tmux focus selected locally; remote sync rejected"
+            debugStatus = "tmux focus selected locally; remote sync \(submission.description)"
         }
         GhosttyRuntimeTrace.diagnostics(
-            "model.focusTmuxPane end target=\(ghosttyDiagnosticShortID(id)) queued=\(queued) targetSurface={\(surface.diagnosticSummary())} \(surfaceRegistry.diagnosticSelectionSummary())"
+            "model.focusTmuxPane end target=\(ghosttyDiagnosticShortID(id)) submission=\(submission.description) targetSurface={\(surface.diagnosticSummary())} \(surfaceRegistry.diagnosticSelectionSummary())"
         )
         return true
     }
@@ -528,10 +528,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return false
         }
 
-        guard controlSurface.tmuxNewWindow() else {
-            debugStatus = "tmux new-window rejected"
+        let submission = controlSurface.tmuxNewWindow()
+        guard submission.isQueued else {
+            debugStatus = "tmux new-window rejected: \(submission.description)"
             GhosttyRuntimeTrace.latency(
-                "model.createTmuxWindow rejected elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                "model.createTmuxWindow rejected result=\(submission.description) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
             GhosttyRuntimeTrace.flowEnd("tmux.newWindow", event: "model.createTmuxWindow.rejected")
             return false
@@ -569,10 +570,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return false
         }
 
-        guard surface.tmuxSplit(direction) else {
-            debugStatus = "tmux split rejected"
+        let submission = surface.tmuxSplit(direction)
+        guard submission.isQueued else {
+            debugStatus = "tmux split rejected: \(submission.description)"
             GhosttyRuntimeTrace.latency(
-                "model.splitFocusedTmuxPane rejected target=\(ghosttyDiagnosticShortID(surfaceID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                "model.splitFocusedTmuxPane rejected target=\(ghosttyDiagnosticShortID(surfaceID)) result=\(submission.description) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
             GhosttyRuntimeTrace.flowEnd("tmux.splitPane", event: "model.splitFocusedTmuxPane.rejected")
             return false
@@ -609,8 +611,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return false
         }
 
-        guard surface.tmuxClosePane() else {
-            debugStatus = "tmux close-pane rejected"
+        let submission = surface.tmuxClosePane()
+        guard submission.isQueued else {
+            debugStatus = "tmux close-pane rejected: \(submission.description)"
             return false
         }
 
@@ -639,8 +642,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return false
         }
 
-        guard surface.tmuxCloseWindow() else {
-            debugStatus = "tmux close-window rejected"
+        let submission = surface.tmuxCloseWindow()
+        guard submission.isQueued else {
+            debugStatus = "tmux close-window rejected: \(submission.description)"
             return false
         }
 

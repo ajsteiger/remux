@@ -1,6 +1,45 @@
 import Foundation
 import GhosttyKit
 
+enum TmuxActionSubmissionResult: Equatable, Sendable, CustomStringConvertible {
+    case queued
+    case notTmuxBound
+    case noTarget
+    case queueFailed
+
+    init(native result: ghostty_tmux_action_submission_e) {
+        switch result {
+        case GHOSTTY_TMUX_ACTION_SUBMISSION_QUEUED:
+            self = .queued
+        case GHOSTTY_TMUX_ACTION_SUBMISSION_NOT_TMUX_BOUND:
+            self = .notTmuxBound
+        case GHOSTTY_TMUX_ACTION_SUBMISSION_NO_TARGET:
+            self = .noTarget
+        case GHOSTTY_TMUX_ACTION_SUBMISSION_QUEUE_FAILED:
+            self = .queueFailed
+        default:
+            preconditionFailure("unknown ghostty tmux action submission result: \(result.rawValue)")
+        }
+    }
+
+    var isQueued: Bool {
+        self == .queued
+    }
+
+    var description: String {
+        switch self {
+        case .queued:
+            "queued"
+        case .notTmuxBound:
+            "not tmux backed"
+        case .noTarget:
+            "no target"
+        case .queueFailed:
+            "queue failed"
+        }
+    }
+}
+
 enum GhosttyRuntimeTrace {
     static let isEnabled = ProcessInfo.processInfo.environment["REMUX_TRACE_GHOSTTY_IO"] == "1"
     private static let latencyMode = ProcessInfo.processInfo.environment["REMUX_TRACE_LATENCY"]
@@ -733,23 +772,23 @@ protocol GhosttyControlSurface: AnyObject {
 
     /// Queue tmux focus for the pane bound to this surface.
     @MainActor
-    func tmuxFocus() -> Bool
+    func tmuxFocus() -> TmuxActionSubmissionResult
 
     /// Queue creation of a new tmux window using the session bound to this surface.
     @MainActor
-    func tmuxNewWindow() -> Bool
+    func tmuxNewWindow() -> TmuxActionSubmissionResult
 
     /// Queue a tmux split for the pane bound to this surface.
     @MainActor
-    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> Bool
+    func tmuxSplit(_ direction: ghostty_action_split_direction_e) -> TmuxActionSubmissionResult
 
     /// Queue close for the pane bound to this surface.
     @MainActor
-    func tmuxClosePane() -> Bool
+    func tmuxClosePane() -> TmuxActionSubmissionResult
 
     /// Queue close for the tmux window containing the pane bound to this surface.
     @MainActor
-    func tmuxCloseWindow() -> Bool
+    func tmuxCloseWindow() -> TmuxActionSubmissionResult
 }
 
 final class TmuxControlWriteSequencer: @unchecked Sendable {
