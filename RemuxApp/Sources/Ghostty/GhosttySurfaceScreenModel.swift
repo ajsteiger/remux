@@ -96,6 +96,37 @@ struct GhosttyPaneSheetPresentationProjection: Equatable, Sendable {
     let paneCount: Int
 }
 
+struct GhosttyWindowSelectionSheetRenderProjection: Equatable, Sendable {
+    struct Window: Identifiable, Equatable, Sendable {
+        let id: UUID
+        let displayIndex: Int
+        let totalCount: Int
+        let paneCount: Int
+        let isSelected: Bool
+        let focusedPreviewPaneID: UUID?
+    }
+
+    let windows: [Window]
+    let selectedWindowID: UUID?
+    let previewLeafIDs: [UUID]
+    let cellCount: Int
+}
+
+struct GhosttyPaneSelectionSheetRenderProjection: Equatable, Sendable {
+    struct Pane: Identifiable, Equatable, Sendable {
+        let id: UUID
+        let displayIndex: Int
+        let totalCount: Int
+        let isSelected: Bool
+    }
+
+    let topLevelID: UUID
+    let panes: [Pane]
+    let selectedPaneID: UUID?
+    let previewLeafIDs: [UUID]
+    let paneCount: Int
+}
+
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
@@ -551,6 +582,62 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func containsTopLevel(_ topLevelID: UUID) -> Bool {
         surfaceRegistry.topLevels.contains(where: { $0.id == topLevelID })
+    }
+
+    func windowSelectionSheetRenderProjection() -> GhosttyWindowSelectionSheetRenderProjection {
+        let topLevels = surfaceRegistry.topLevels
+        let selectedWindowID = surfaceRegistry.selectedTopLevel?.id
+        let totalCount = topLevels.count
+        let windows = topLevels.enumerated().map { index, topLevel in
+            GhosttyWindowSelectionSheetRenderProjection.Window(
+                id: topLevel.id,
+                displayIndex: index + 1,
+                totalCount: totalCount,
+                paneCount: topLevel.leafIDs.count,
+                isSelected: topLevel.id == selectedWindowID,
+                focusedPreviewPaneID: topLevel.resolvedFocusedLeafID
+            )
+        }
+
+        return GhosttyWindowSelectionSheetRenderProjection(
+            windows: windows,
+            selectedWindowID: selectedWindowID,
+            previewLeafIDs: windows.compactMap(\.focusedPreviewPaneID),
+            cellCount: totalCount + 1
+        )
+    }
+
+    func paneSelectionSheetRenderProjection(
+        topLevelID: UUID
+    ) -> GhosttyPaneSelectionSheetRenderProjection {
+        guard let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == topLevelID }) else {
+            return GhosttyPaneSelectionSheetRenderProjection(
+                topLevelID: topLevelID,
+                panes: [],
+                selectedPaneID: nil,
+                previewLeafIDs: [],
+                paneCount: 0
+            )
+        }
+
+        let selectedPaneID = topLevel.resolvedFocusedLeafID
+        let totalCount = topLevel.leafIDs.count
+        let panes = topLevel.leafIDs.enumerated().map { index, paneID in
+            GhosttyPaneSelectionSheetRenderProjection.Pane(
+                id: paneID,
+                displayIndex: index + 1,
+                totalCount: totalCount,
+                isSelected: paneID == selectedPaneID
+            )
+        }
+
+        return GhosttyPaneSelectionSheetRenderProjection(
+            topLevelID: topLevelID,
+            panes: panes,
+            selectedPaneID: selectedPaneID,
+            previewLeafIDs: topLevel.leafIDs,
+            paneCount: totalCount
+        )
     }
 
     @discardableResult

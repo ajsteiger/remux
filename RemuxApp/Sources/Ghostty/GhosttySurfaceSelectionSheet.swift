@@ -25,28 +25,24 @@ private enum GhosttySheetPalette {
 }
 
 struct GhosttyWindowSelectionSheet: View {
-    @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyWindowRemovalRequest?
 
+    let projection: GhosttyWindowSelectionSheetRenderProjection
     let sessionName: String
     let onCreateWindow: (() -> Void)?
     let onSelect: (UUID) -> Void
     let onRemoveWindow: (UUID) -> Void
 
     var body: some View {
-        let topLevels = registry.topLevels
-        let selectedID = registry.selectedTopLevel?.id
-        let cellCount = topLevels.count + 1
-        let layout = PanePreviewLayout.windowMetricsForCurrentScreen(cellCount: cellCount)
+        let layout = PanePreviewLayout.windowMetricsForCurrentScreen(cellCount: projection.cellCount)
 
         VStack(alignment: .leading, spacing: 14) {
             sheetHeader(caption: "SESSION", title: sessionName)
 
             ScrollView(showsIndicators: false) {
                 windowGrid(
-                    topLevels: topLevels,
-                    selectedID: selectedID,
+                    windows: projection.windows,
                     layout: layout
                 )
             }
@@ -56,11 +52,11 @@ struct GhosttyWindowSelectionSheet: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
-        .task(id: focusedLeafSignature(topLevels)) {
-            session.reconcile(leafIDs: focusedLeafIDs(topLevels))
+        .task(id: projection.previewLeafIDs) {
+            session.reconcile(leafIDs: projection.previewLeafIDs)
         }
-        .onChange(of: focusedLeafSignature(topLevels)) { _, _ in
-            session.reconcile(leafIDs: focusedLeafIDs(topLevels))
+        .onChange(of: projection.previewLeafIDs) { _, newValue in
+            session.reconcile(leafIDs: newValue)
         }
         .confirmationDialog(
             "Remove Window?",
@@ -78,8 +74,7 @@ struct GhosttyWindowSelectionSheet: View {
     }
 
     private func windowGrid(
-        topLevels: [GhosttyTopLevelSurface],
-        selectedID: UUID?,
+        windows: [GhosttyWindowSelectionSheetRenderProjection.Window],
         layout: PanePreviewLayout.Metrics
     ) -> some View {
         LazyVGrid(
@@ -90,17 +85,17 @@ struct GhosttyWindowSelectionSheet: View {
             alignment: .center,
             spacing: layout.gridSpacing
         ) {
-            ForEach(Array(topLevels.enumerated()), id: \.element.id) { index, topLevel in
+            ForEach(windows) { window in
                 Button {
                     Haptic.selection()
-                    onSelect(topLevel.id)
+                    onSelect(window.id)
                 } label: {
                     GhosttyWindowSelectionTile(
-                        index: index,
-                        totalCount: topLevels.count,
-                        topLevel: topLevel,
-                        isSelected: topLevel.id == selectedID,
-                        previewState: topLevel.resolvedFocusedLeafID
+                        displayIndex: window.displayIndex,
+                        totalCount: window.totalCount,
+                        paneCount: window.paneCount,
+                        isSelected: window.isSelected,
+                        previewState: window.focusedPreviewPaneID
                             .flatMap { session.imagesByPaneID[$0] },
                         layout: layout
                     )
@@ -110,12 +105,12 @@ struct GhosttyWindowSelectionSheet: View {
                     Button(role: .destructive) {
                         Haptic.warning()
                         pendingRemoval = GhosttyWindowRemovalRequest(
-                            id: topLevel.id,
-                            displayIndex: index + 1,
-                            paneCount: topLevel.leafIDs.count
+                            id: window.id,
+                            displayIndex: window.displayIndex,
+                            paneCount: window.paneCount
                         )
                     } label: {
-                        Label("Remove Window \(index + 1)", systemImage: "trash")
+                        Label("Remove Window \(window.displayIndex)", systemImage: "trash")
                     }
                 }
             }
@@ -131,14 +126,6 @@ struct GhosttyWindowSelectionSheet: View {
             .opacity(onCreateWindow == nil ? 0.5 : 1.0)
         }
         .frame(maxWidth: .infinity, alignment: .top)
-    }
-
-    private func focusedLeafIDs(_ topLevels: [GhosttyTopLevelSurface]) -> [UUID] {
-        topLevels.compactMap(\.resolvedFocusedLeafID)
-    }
-
-    private func focusedLeafSignature(_ topLevels: [GhosttyTopLevelSurface]) -> [UUID] {
-        focusedLeafIDs(topLevels)
     }
 
     private var pendingRemovalBinding: Binding<Bool> {
@@ -158,46 +145,33 @@ struct GhosttyWindowSelectionSheet: View {
 }
 
 struct GhosttyPaneSelectionSheet: View {
-    @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyPaneRemovalRequest?
 
-    let topLevelID: UUID
+    let projection: GhosttyPaneSelectionSheetRenderProjection
     let onSplitPane: (() -> Void)?
     let onStackPane: (() -> Void)?
     let onSelect: (UUID) -> Void
     let onRemovePane: (UUID) -> Void
 
-    /// Frozen top-level the session was opened against. The sheet never
-    /// jumps to another top-level even if `registry.selectedTopLevel`
-    /// changes underneath (e.g., user swiped to a different window after
-    /// tapping panes). If the frozen top-level is gone from the registry
-    /// entirely, leafIDs is empty and the parent will dismiss.
-    private var frozenTopLevel: GhosttyTopLevelSurface? {
-        registry.topLevels.first(where: { $0.id == topLevelID })
-    }
-
     var body: some View {
-        let leafIDs = frozenTopLevel?.leafIDs ?? []
-        let selectedLeafID = frozenTopLevel?.resolvedFocusedLeafID
-        let layout = PanePreviewLayout.metricsForCurrentScreen(for: leafIDs.count)
+        let layout = PanePreviewLayout.metricsForCurrentScreen(for: projection.paneCount)
 
         VStack(alignment: .leading, spacing: 14) {
             sheetHeader(
                 caption: "PANES",
-                title: "\(leafIDs.count) \(leafIDs.count == 1 ? "pane" : "panes")"
+                title: "\(projection.paneCount) \(projection.paneCount == 1 ? "pane" : "panes")"
             )
 
             ScrollView(showsIndicators: false) {
                 paneLayout(
-                    leafIDs: leafIDs,
-                    selectedLeafID: selectedLeafID,
+                    panes: projection.panes,
                     layout: layout,
-                    onRemove: { paneID, index in
+                    onRemove: { pane in
                         pendingRemoval = GhosttyPaneRemovalRequest(
-                            id: paneID,
-                            displayIndex: index + 1,
-                            isOnlyPane: leafIDs.count == 1
+                            id: pane.id,
+                            displayIndex: pane.displayIndex,
+                            isOnlyPane: projection.paneCount == 1
                         )
                     }
                 )
@@ -224,14 +198,14 @@ struct GhosttyPaneSelectionSheet: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
-        .task(id: topLevelID) {
+        .task(id: projection.topLevelID) {
             // First-render reconcile closes the gap between tap-time session
             // creation and the sheet's initial body render. If pane
             // membership changed during presentation, the session must align
             // immediately with the leaf IDs the sheet is actually showing.
-            session.reconcile(leafIDs: leafIDs)
+            session.reconcile(leafIDs: projection.previewLeafIDs)
         }
-        .onChange(of: leafIDs) { _, newValue in
+        .onChange(of: projection.previewLeafIDs) { _, newValue in
             session.reconcile(leafIDs: newValue)
         }
         .confirmationDialog(
@@ -250,10 +224,9 @@ struct GhosttyPaneSelectionSheet: View {
     }
 
     private func paneLayout(
-        leafIDs: [UUID],
-        selectedLeafID: UUID?,
+        panes: [GhosttyPaneSelectionSheetRenderProjection.Pane],
         layout: PanePreviewLayout.Metrics,
-        onRemove: @escaping (UUID, Int) -> Void
+        onRemove: @escaping (GhosttyPaneSelectionSheetRenderProjection.Pane) -> Void
     ) -> some View {
         LazyVGrid(
             columns: Array(
@@ -263,16 +236,16 @@ struct GhosttyPaneSelectionSheet: View {
             alignment: .center,
             spacing: layout.gridSpacing
         ) {
-            ForEach(Array(leafIDs.enumerated()), id: \.element) { index, paneID in
+            ForEach(panes) { pane in
                 Button {
                     Haptic.selection()
-                    onSelect(paneID)
+                    onSelect(pane.id)
                 } label: {
                     GhosttyPaneSelectionTile(
-                        index: index,
-                        totalCount: leafIDs.count,
-                        isSelected: paneID == selectedLeafID,
-                        state: session.imagesByPaneID[paneID],
+                        displayIndex: pane.displayIndex,
+                        totalCount: pane.totalCount,
+                        isSelected: pane.isSelected,
+                        state: session.imagesByPaneID[pane.id],
                         layout: layout
                     )
                 }
@@ -280,9 +253,9 @@ struct GhosttyPaneSelectionSheet: View {
                 .contextMenu {
                     Button(role: .destructive) {
                         Haptic.warning()
-                        onRemove(paneID, index)
+                        onRemove(pane)
                     } label: {
-                        Label("Remove Pane \(index + 1)", systemImage: "trash")
+                        Label("Remove Pane \(pane.displayIndex)", systemImage: "trash")
                     }
                 }
             }
@@ -398,9 +371,9 @@ private struct GhosttySheetActionButton: View {
 }
 
 private struct GhosttyWindowSelectionTile: View {
-    let index: Int
+    let displayIndex: Int
     let totalCount: Int
-    let topLevel: GhosttyTopLevelSurface
+    let paneCount: Int
     let isSelected: Bool
     let previewState: GhosttyPanePreviewSession.PreviewState?
     let layout: PanePreviewLayout.Metrics
@@ -458,7 +431,7 @@ private struct GhosttyWindowSelectionTile: View {
 
     private var captionRow: some View {
         HStack(spacing: 6) {
-            Text("\(index + 1)")
+            Text("\(displayIndex)")
                 .font(.system(size: 11, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(GhosttySheetPalette.tertiary)
@@ -486,14 +459,12 @@ private struct GhosttyWindowSelectionTile: View {
     }
 
     private var paneCountLabel: String {
-        let count = topLevel.leafIDs.count
-        return "\(count) \(count == 1 ? "pane" : "panes")"
+        "\(paneCount) \(paneCount == 1 ? "pane" : "panes")"
     }
 
     private var accessibilityLabel: String {
-        let count = topLevel.leafIDs.count
-        let paneText = "\(count) \(count == 1 ? "pane" : "panes")"
-        let positional = "Window \(index + 1) of \(totalCount)"
+        let paneText = "\(paneCount) \(paneCount == 1 ? "pane" : "panes")"
+        let positional = "Window \(displayIndex) of \(totalCount)"
         if isSelected {
             return "\(positional), \(paneText), active"
         }
@@ -546,7 +517,7 @@ private struct GhosttyWindowNewTile: View {
 }
 
 private struct GhosttyPaneSelectionTile: View {
-    let index: Int
+    let displayIndex: Int
     let totalCount: Int
     let isSelected: Bool
     let state: GhosttyPanePreviewSession.PreviewState?
@@ -578,7 +549,7 @@ private struct GhosttyPaneSelectionTile: View {
     }
 
     private var accessibilityLabel: String {
-        let positional = "Pane \(index + 1) of \(totalCount)"
+        let positional = "Pane \(displayIndex) of \(totalCount)"
         return isSelected ? "\(positional), active" : positional
     }
 

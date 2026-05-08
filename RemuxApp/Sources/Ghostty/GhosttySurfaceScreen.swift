@@ -1045,8 +1045,8 @@ struct GhosttySurfaceScreen: View {
         switch sheet {
         case .windows(let session):
             GhosttyWindowSelectionSheet(
-                registry: registry,
                 session: session,
+                projection: model.windowSelectionSheetRenderProjection(),
                 sessionName: target.workspace.sessionName,
                 onCreateWindow: {
                     GhosttyRuntimeTrace.flowBegin(
@@ -1075,9 +1075,8 @@ struct GhosttySurfaceScreen: View {
 
         case .panes(let topLevelID, let session):
             GhosttyPaneSelectionSheet(
-                registry: registry,
                 session: session,
-                topLevelID: topLevelID,
+                projection: model.paneSelectionSheetRenderProjection(topLevelID: topLevelID),
                 onSplitPane: {
                     GhosttyRuntimeTrace.flowBegin(
                         "tmux.splitPane",
