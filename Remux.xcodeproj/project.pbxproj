@@ -100,7 +100,7 @@
 		07301EEDA55AAD40D17C26DA /* GhosttyPanePreviewSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPanePreviewSessionTests.swift; sourceTree = "<group>"; };
 		08FA18CCB40D2C7746D7D569 /* TerminalSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSettingsTests.swift; sourceTree = "<group>"; };
 		0C7EBCE00319FF2879275BDD /* JSONFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONFileStore.swift; sourceTree = "<group>"; };
-		0CB12DC1EC78CE1C1286BA4E /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = "../ghostty-remux-track3/macos/GhosttyKit.xcframework"; sourceTree = "<group>"; };
+		0CB12DC1EC78CE1C1286BA4E /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = "../ghostty-remux-option-c/macos/GhosttyKit.xcframework"; sourceTree = "<group>"; };
 		0CBF1D7B0CCEAA8D032C1DDC /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		0DA264E3527C3F2FC33AF435 /* GhosttyTerminalInputCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalInputCoordinatorTests.swift; sourceTree = "<group>"; };
 		119884123163BF2FA3ABDDE3 /* GhosttySurfaceScreenModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceScreenModelTests.swift; sourceTree = "<group>"; };
@@ -647,7 +647,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"../ghostty-remux-track3/macos\"",
+					"\"../ghostty-remux-option-c/macos\"",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -671,7 +671,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"../ghostty-remux-track3/macos\"",
+					"\"../ghostty-remux-option-c/macos\"",
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -759,7 +759,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"../ghostty-remux-track3/macos\"",
+					"\"../ghostty-remux-option-c/macos\"",
 				);
 				INFOPLIST_FILE = RemuxApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -799,7 +799,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"../ghostty-remux-track3/macos\"",
+					"\"../ghostty-remux-option-c/macos\"",
 				);
 				INFOPLIST_FILE = RemuxApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;

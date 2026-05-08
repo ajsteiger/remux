@@ -26,7 +26,7 @@ targets:
     sources:
       - path: RemuxApp/Sources
     dependencies:
-      - framework: ../ghostty-remux-track3/macos/GhosttyKit.xcframework
+      - framework: ../ghostty-remux-option-c/macos/GhosttyKit.xcframework
         embed: false
       - package: Citadel
     info:
@@ -49,7 +49,7 @@ targets:
       - path: RemuxAppTests
     dependencies:
       - target: Remux
-      - framework: ../ghostty-remux-track3/macos/GhosttyKit.xcframework
+      - framework: ../ghostty-remux-option-c/macos/GhosttyKit.xcframework
         embed: false
     settings:
       base:
