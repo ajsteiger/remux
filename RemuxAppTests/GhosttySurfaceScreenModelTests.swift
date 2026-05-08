@@ -204,7 +204,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testRegistryChangesInvalidateScreenModel() async {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() }
         )
@@ -219,13 +219,172 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(didIncrementRevision)
     }
 
+    func testModelReportsInitialRuntimeReadinessFromModel() {
+        let target = Self.target()
+        let sessionInstanceID = UUID()
+        var updates: [TerminalRuntimeStateUpdate] = []
+        let model = Self.screenModel(
+            target: target,
+            sessionInstanceID: sessionInstanceID,
+            onRuntimeStateChange: { updates.append($0) },
+            debugLatencyProbe: nil
+        )
+
+        model.reportRuntimeReadinessIfNeeded()
+        model.reportRuntimeReadinessIfNeeded()
+
+        XCTAssertEqual(
+            updates,
+            [
+                TerminalRuntimeStateUpdate(
+                    workspaceID: target.workspace.id,
+                    instanceID: sessionInstanceID,
+                    state: .connecting,
+                    source: .readiness
+                ),
+            ]
+        )
+    }
+
+    func testModelReportsConnectedOnlyAfterRunningWithFocusedSurface() async {
+        let target = Self.target()
+        let sessionInstanceID = UUID()
+        let transport = ControlledScreenModelTmuxControlTransport()
+        var updates: [TerminalRuntimeStateUpdate] = []
+        let model = Self.screenModel(
+            target: target,
+            sessionInstanceID: sessionInstanceID,
+            transportFactory: { _ in transport },
+            onRuntimeStateChange: { updates.append($0) },
+            debugLatencyProbe: nil
+        )
+
+        model.reportRuntimeReadinessIfNeeded()
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+        XCTAssertEqual(updates.map(\.state), [.connecting])
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(Self.managedSurface())
+
+        let didReportConnected = await waitUntil(timeout: 2) {
+            updates.map(\.state) == [.connecting, .connected]
+        }
+        XCTAssertTrue(didReportConnected)
+        XCTAssertEqual(updates.last?.workspaceID, target.workspace.id)
+        XCTAssertEqual(updates.last?.instanceID, sessionInstanceID)
+        XCTAssertEqual(updates.last?.source, .readiness)
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(Self.managedSurface())
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(updates.map(\.state), [.connecting, .connected])
+    }
+
+    func testModelStopDoesNotPublishRuntimeStateFromRegistryReset() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        var updates: [TerminalRuntimeStateUpdate] = []
+        let model = Self.screenModel(
+            transportFactory: { _ in transport },
+            onRuntimeStateChange: { updates.append($0) },
+            debugLatencyProbe: nil
+        )
+
+        model.reportRuntimeReadinessIfNeeded()
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(Self.managedSurface())
+
+        let didReportConnected = await waitUntil(timeout: 2) {
+            updates.map(\.state) == [.connecting, .connected]
+        }
+        XCTAssertTrue(didReportConnected)
+
+        model.stop()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(updates.map(\.state), [.connecting, .connected])
+    }
+
+    func testModelReportsRuntimeFailureAndForegroundDisconnectedOnce() {
+        enum RuntimeFailure: Error {
+            case expected
+        }
+
+        let target = Self.target()
+        let sessionInstanceID = UUID()
+        var updates: [TerminalRuntimeStateUpdate] = []
+        let model = Self.screenModel(
+            target: target,
+            sessionInstanceID: sessionInstanceID,
+            onRuntimeStateChange: { updates.append($0) },
+            runtimeFactory: { _ in throw RuntimeFailure.expected },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let reason = TerminalDisconnectReason(
+            kind: .runtime,
+            message: String(describing: RuntimeFailure.expected)
+        )
+        XCTAssertEqual(
+            updates,
+            [
+                TerminalRuntimeStateUpdate(
+                    workspaceID: target.workspace.id,
+                    instanceID: sessionInstanceID,
+                    state: .disconnected(reason),
+                    source: .runtime
+                ),
+            ]
+        )
+
+        model.handleAppLifecyclePhase(.active)
+        model.handleAppLifecyclePhase(.active)
+
+        XCTAssertEqual(
+            updates,
+            [
+                TerminalRuntimeStateUpdate(
+                    workspaceID: target.workspace.id,
+                    instanceID: sessionInstanceID,
+                    state: .disconnected(reason),
+                    source: .runtime
+                ),
+                TerminalRuntimeStateUpdate(
+                    workspaceID: target.workspace.id,
+                    instanceID: sessionInstanceID,
+                    state: .disconnected(reason),
+                    source: .foreground
+                ),
+            ]
+        )
+    }
+
     func testPrecreatedRuntimeFailureIsReusedAtAttach() {
         enum RuntimeFailure: Error {
             case expected
         }
 
         var runtimeFactoryCalls = 0
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
             runtimeFactory: { _ in
@@ -253,7 +412,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         }
 
         var runtimeFactoryCalls = 0
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
             runtimeFactory: { _ in
@@ -1219,7 +1378,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelKeyEventWithoutFocusedSurfaceUpdatesDebugStatus() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1229,7 +1388,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelRejectsInputWhenTransportIsNotRunningEvenWithFocusedSurface() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1248,7 +1407,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testModelMarksTransportUnavailableWhenInboundTransportEnds() async {
         let transport = ControlledScreenModelTmuxControlTransport()
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
             debugLatencyProbe: nil
@@ -1281,7 +1440,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testModelClassifiesSSHChannelRequestFailureAsProfileFailure() async {
         let transport = ControlledScreenModelTmuxControlTransport()
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
             debugLatencyProbe: nil
@@ -1311,7 +1470,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testModelPreservesSSHStartupDiagnosticsInTransportFailureMessage() async {
         let transport = ControlledScreenModelTmuxControlTransport()
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
             debugLatencyProbe: nil
@@ -1350,7 +1509,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testModelSurfacesTmuxNoSpaceCommandFailureWithoutDisconnecting() async {
         let transport = ControlledScreenModelTmuxControlTransport()
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
             debugLatencyProbe: nil
@@ -1408,7 +1567,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelPasteWithoutFocusedSurfaceUpdatesDebugStatus() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1418,7 +1577,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelReadSelectionRoutesThroughRegistry() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1430,7 +1589,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelReadSelectionWithoutFocusedSurfaceUpdatesDebugStatus() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1440,7 +1599,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelHasSelectionRoutesThroughRegistry() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1503,7 +1662,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelMousePositionWithoutFocusedSurfaceUpdatesDebugStatus() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1513,7 +1672,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelFocusTmuxPaneRoutesToManagedSurface() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1535,7 +1694,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelFocusTmuxPaneRequeuesAlreadyFocusedPaneForRemoteResync() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1553,7 +1712,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelFocusTmuxPaneSelectsLocallyWhenRemoteFocusIsRejected() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1575,7 +1734,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelFocusAdjacentTmuxTopLevelRoutesThroughTargetPane() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1633,7 +1792,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelSplitFocusedTmuxPaneRoutesToManagedSurface() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1651,7 +1810,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelSplitFocusedTmuxPaneReportsSubmissionRejectionReason() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1666,7 +1825,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelCloseFocusedTmuxPaneRoutesToManagedSurface() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1684,7 +1843,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelCloseTmuxPaneRoutesToRequestedPane() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1710,7 +1869,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelCloseSelectedTmuxWindowRoutesThroughFocusedPane() {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1728,7 +1887,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testModelCloseTmuxWindowRoutesToRequestedTopLevel() throws {
-        let model = GhosttySurfaceScreenModel(
+        let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
@@ -1851,6 +2010,28 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
+    }
+
+    private static func screenModel(
+        target: TmuxConnectionTarget? = nil,
+        sessionInstanceID: UUID = UUID(),
+        transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory = { _ in NoopTmuxControlTransport() },
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void = { _ in },
+        surfaceRegistry: GhosttyRuntimeSurfaceRegistry = GhosttyRuntimeSurfaceRegistry(),
+        runtimeFactory: GhosttySurfaceScreenModel.RuntimeFactory? = nil,
+        precreateRuntime: Bool = false,
+        debugLatencyProbe: DebugLatencyProbeCommand? = .fromEnvironment()
+    ) -> GhosttySurfaceScreenModel {
+        GhosttySurfaceScreenModel(
+            target: target ?? Self.target(),
+            sessionInstanceID: sessionInstanceID,
+            transportFactory: transportFactory,
+            onRuntimeStateChange: onRuntimeStateChange,
+            surfaceRegistry: surfaceRegistry,
+            runtimeFactory: runtimeFactory,
+            precreateRuntime: precreateRuntime,
+            debugLatencyProbe: debugLatencyProbe
+        )
     }
 
     private static func target() -> TmuxConnectionTarget {

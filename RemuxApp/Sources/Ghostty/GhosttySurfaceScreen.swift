@@ -16,12 +16,9 @@ struct GhosttySurfaceScreen: View {
     @State private var keyboardViewportTransitionFallbackToken: UInt64 = 0
     @State private var isAwaitingSystemKeyboardPresentation = false
     @State private var pendingTopologyInputRefocus = GhosttyPendingTopologyInputRefocus()
-    @State private var runtimeStateReportTracker = TerminalRuntimeStateReportTracker()
     @State private var trackpadHUDState = GhosttyKeyboardCursorTrackpad.HUDState.hidden
 
     private let target: TmuxConnectionTarget
-    private let sessionInstanceID: UUID
-    private let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
 
@@ -34,14 +31,14 @@ struct GhosttySurfaceScreen: View {
         onEditConnection: @escaping () -> Void
     ) {
         self.target = target
-        self.sessionInstanceID = sessionInstanceID
-        self.onRuntimeStateChange = onRuntimeStateChange
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
         _model = StateObject(
             wrappedValue: GhosttySurfaceScreenModel(
                 target: target,
+                sessionInstanceID: sessionInstanceID,
                 transportFactory: transportFactory,
+                onRuntimeStateChange: onRuntimeStateChange,
                 precreateRuntime: true
             )
         )
@@ -237,10 +234,6 @@ struct GhosttySurfaceScreen: View {
             }
             .onChange(of: registry.selectedActiveLeafID) { _, activeLeafID in
                 handleActiveLeafChange(activeLeafID)
-                reportRuntimeStateIfNeeded(source: .readiness)
-            }
-            .onChange(of: model.state) { _, _ in
-                reportRuntimeStateIfNeeded(source: .runtime)
             }
             .onChange(of: model.commandFailureEvent) { _, event in
                 handleTmuxCommandFailureEvent(event)
@@ -274,7 +267,7 @@ struct GhosttySurfaceScreen: View {
                 ]
             )
             handleScenePhaseChange(scenePhase)
-            reportRuntimeStateIfNeeded(source: .readiness)
+            model.reportRuntimeReadinessIfNeeded()
         }
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
@@ -310,24 +303,6 @@ struct GhosttySurfaceScreen: View {
         model.state == .running && registry.selectedActiveLeafID != nil
     }
 
-    private var currentRuntimeState: TerminalRuntimeState {
-        if isTerminalInputAvailable {
-            return .connected
-        }
-
-        switch model.state {
-        case .idle, .starting, .running:
-            return .connecting
-        case .failed(let message):
-            return .disconnected(
-                model.failureReason ?? TerminalDisconnectReason(
-                    kind: .unknown,
-                    message: message
-                )
-            )
-        }
-    }
-
     private var isTerminalViewportFrozen: Bool {
         terminalViewportCoordinator.isFrozen
     }
@@ -346,22 +321,6 @@ struct GhosttySurfaceScreen: View {
     private func showSystemKeyboard() {
         GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.showSystemKeyboard")
         inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
-    }
-
-    private func reportRuntimeStateIfNeeded(source: TerminalRuntimeStateUpdateSource) {
-        let state = currentRuntimeState
-        guard runtimeStateReportTracker.shouldReport(state: state, source: source) else {
-            return
-        }
-
-        onRuntimeStateChange(
-            TerminalRuntimeStateUpdate(
-                workspaceID: target.workspace.id,
-                instanceID: sessionInstanceID,
-                state: state,
-                source: source
-            )
-        )
     }
 
     private func handleSurfaceTap(_ surfaceID: UUID) {
@@ -449,9 +408,6 @@ struct GhosttySurfaceScreen: View {
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         model.handleAppLifecyclePhase(GhosttySurfaceScreenModel.AppLifecyclePhase(scenePhase: phase))
-        if phase == .active {
-            reportRuntimeStateIfNeeded(source: .foreground)
-        }
 
         guard phase == .active else { return }
         refocusSystemKeyboardIfActive()

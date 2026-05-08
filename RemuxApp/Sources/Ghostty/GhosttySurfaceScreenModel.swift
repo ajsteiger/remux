@@ -41,8 +41,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     typealias RuntimeFactory = (GhosttyKitRuntimeSurfaceDelegate?) throws -> GhosttyKitRuntime
 
     private let target: TmuxConnectionTarget
+    private let sessionInstanceID: UUID
     private let transportFactory: TransportFactory
     private let runtimeFactory: RuntimeFactory
+    private let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
     private var precreatedRuntime: Result<GhosttyKitRuntime, Error>?
     private var debugLatencyProbe: DebugLatencyProbeCommand?
     private var debugLatencyProbeDelaySatisfied = false
@@ -56,6 +58,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var hostDisplayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
     private var hostAttachmentTracker = GhosttyHostAttachmentTracker()
     private var hostControlStateTracker = GhosttyHostControlStateTracker()
+    private var runtimeStateReportTracker = TerminalRuntimeStateReportTracker()
+    private var isRuntimeStateReportingStopped = false
     private var didTraceTerminalReady = false
     private var transportStartToken: UInt64 = 0
     private var commandFailureMessageToken: UInt64 = 0
@@ -63,14 +67,18 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     init(
         target: TmuxConnectionTarget,
+        sessionInstanceID: UUID,
         transportFactory: @escaping TransportFactory,
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
         surfaceRegistry: GhosttyRuntimeSurfaceRegistry = GhosttyRuntimeSurfaceRegistry(),
         runtimeFactory: RuntimeFactory? = nil,
         precreateRuntime: Bool = false,
         debugLatencyProbe: DebugLatencyProbeCommand? = .fromEnvironment()
     ) {
         self.target = target
+        self.sessionInstanceID = sessionInstanceID
         self.transportFactory = transportFactory
+        self.onRuntimeStateChange = onRuntimeStateChange
         self.surfaceRegistry = surfaceRegistry
         self.runtimeFactory = runtimeFactory ?? { delegate in
             try GhosttyKitRuntime(
@@ -90,6 +98,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 scheduleDebugLatencyProbeIfNeeded()
                 submitDebugLatencyProbeIfReady()
                 traceTerminalReadyIfNeeded()
+                reportRuntimeStateIfNeeded(source: .readiness)
             }
         }
         surfaceRegistry.onTmuxCommandFailure = { [weak self] failure in
@@ -127,6 +136,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             ]
         )
 
+        isRuntimeStateReportingStopped = false
         state = .starting
         debugStatus = "creating Ghostty runtime"
         clearCommandFailureMessage()
@@ -233,11 +243,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             state = .failed(reason.message)
             failureReason = reason
             debugStatus = reason.message
+            reportRuntimeStateIfNeeded(source: .runtime)
         }
     }
 
     func stop() {
         GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.stop")
+        isRuntimeStateReportingStopped = true
         clearCommandFailureMessage()
         transportWriteSequencer?.close()
         transportWriteSequencer = nil
@@ -261,6 +273,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         failureReason = nil
     }
 
+    func reportRuntimeReadinessIfNeeded() {
+        isRuntimeStateReportingStopped = false
+        reportRuntimeStateIfNeeded(source: .readiness)
+    }
+
     func handleAppLifecyclePhase(_ phase: AppLifecyclePhase) {
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.lifecycle",
@@ -274,6 +291,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         guard phase == .active else { return }
         reconcileTransportAfterForeground()
+        reportRuntimeStateIfNeeded(source: .foreground)
     }
 
     @discardableResult
@@ -757,6 +775,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         scheduleDebugLatencyProbeIfNeeded()
         submitDebugLatencyProbeIfReady()
         traceTerminalReadyIfNeeded()
+        reportRuntimeStateIfNeeded(source: .runtime)
         return false
     }
 
@@ -773,6 +792,43 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         state = .failed(reason.message)
         failureReason = reason
         debugStatus = reason.message
+        reportRuntimeStateIfNeeded(source: .runtime)
+    }
+
+    private var currentRuntimeState: TerminalRuntimeState {
+        if state == .running, surfaceRegistry.selectedActiveLeafID != nil {
+            return .connected
+        }
+
+        switch state {
+        case .idle, .starting, .running:
+            return .connecting
+        case .failed(let message):
+            return .disconnected(
+                failureReason ?? TerminalDisconnectReason(
+                    kind: .unknown,
+                    message: message
+                )
+            )
+        }
+    }
+
+    private func reportRuntimeStateIfNeeded(source: TerminalRuntimeStateUpdateSource) {
+        guard !isRuntimeStateReportingStopped else { return }
+
+        let state = currentRuntimeState
+        guard runtimeStateReportTracker.shouldReport(state: state, source: source) else {
+            return
+        }
+
+        onRuntimeStateChange(
+            TerminalRuntimeStateUpdate(
+                workspaceID: target.workspace.id,
+                instanceID: sessionInstanceID,
+                state: state,
+                source: source
+            )
+        )
     }
 
     private func terminalRuntimeFailureReason(_ error: any Error) -> TerminalDisconnectReason {
@@ -968,7 +1024,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 ),
                 event: "model.transport.foregroundMissingHost",
                 error: nil,
-                closeDisposition: .invalidated
+                closeDisposition: .invalidated,
+                reportSource: .foreground
             )
             return
         }
@@ -990,7 +1047,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 reason: reason,
                 event: "model.transport.foregroundEnded",
                 error: hostSurface.lastError,
-                closeDisposition: .invalidated
+                closeDisposition: .invalidated,
+                reportSource: .foreground
             )
             return
         }
@@ -1002,7 +1060,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         reason: TerminalDisconnectReason,
         event: String,
         error: (any Error)?,
-        closeDisposition: TmuxControlTransportCloseDisposition
+        closeDisposition: TmuxControlTransportCloseDisposition,
+        reportSource: TerminalRuntimeStateUpdateSource = .runtime
     ) {
         guard state != .idle else { return }
 
@@ -1024,6 +1083,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         state = .failed(reason.message)
         failureReason = reason
         debugStatus = reason.message
+        reportRuntimeStateIfNeeded(source: reportSource)
 
         Task {
             await failedTransport?.close(disposition: closeDisposition)
