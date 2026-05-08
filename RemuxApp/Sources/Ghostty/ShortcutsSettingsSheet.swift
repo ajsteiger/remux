@@ -234,8 +234,7 @@ private struct ShortcutCollectionSettingsRow: View {
 
     var body: some View {
         HStack(spacing: 13) {
-            Image(systemName: collection.systemImageName)
-                .font(.system(size: 16, weight: .semibold))
+            ShortcutCollectionIconView(collection: collection)
                 .foregroundStyle(.primary)
                 .frame(width: 34, height: 34)
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 9, style: .continuous))

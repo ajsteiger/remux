@@ -233,9 +233,7 @@ private struct ShortcutPaletteTabButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: tab.systemImageName)
-                .font(.system(size: 16, weight: .semibold))
-                .symbolRenderingMode(.monochrome)
+            ShortcutPaletteTabIcon(tab: tab)
                 .frame(width: 36, height: 32)
         }
         .buttonStyle(.plain)
