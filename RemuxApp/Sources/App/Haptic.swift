@@ -32,7 +32,7 @@ enum Haptic {
     /// cold-start latency. Idempotent.
     static func prewarmChromeFeedback() {
         if keyboardImpact == nil {
-            keyboardImpact = UIImpactFeedbackGenerator(style: .soft)
+            keyboardImpact = UIImpactFeedbackGenerator(style: .light)
         }
         if chromeSelection == nil {
             chromeSelection = UISelectionFeedbackGenerator()
@@ -47,9 +47,9 @@ enum Haptic {
     /// the audio click as an explicit caller opt-in.
     static func keyboardPress(playsAudio: Bool = false) {
         if keyboardImpact == nil {
-            keyboardImpact = UIImpactFeedbackGenerator(style: .soft)
+            keyboardImpact = UIImpactFeedbackGenerator(style: .light)
         }
-        keyboardImpact?.impactOccurred(intensity: 0.55)
+        keyboardImpact?.impactOccurred()
         keyboardImpact?.prepare()
 
         if playsAudio {
