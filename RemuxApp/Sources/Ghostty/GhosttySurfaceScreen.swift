@@ -1476,9 +1476,54 @@ private struct GhosttySurfaceStatusOverlay: View {
     }
 }
 
+@MainActor
+final class GhosttyHostAttachmentScheduler {
+    private var scheduledTask: Task<Void, Never>?
+
+    func schedule(_ action: @escaping @MainActor () -> Void) {
+        scheduledTask?.cancel()
+        scheduledTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            self?.scheduledTask = nil
+            action()
+        }
+    }
+
+    func cancel() {
+        scheduledTask?.cancel()
+        scheduledTask = nil
+    }
+}
+
 private struct GhosttyHostSurfaceView: UIViewRepresentable {
     @ObservedObject var model: GhosttySurfaceScreenModel
     let size: CGSize
+
+    final class Coordinator {
+        private let attachmentScheduler = GhosttyHostAttachmentScheduler()
+
+        @MainActor
+        func scheduleAttach(
+            model: GhosttySurfaceScreenModel,
+            view: GhosttyKitSurfaceView,
+            size: CGSize
+        ) {
+            attachmentScheduler.schedule { [weak model, weak view] in
+                guard let model, let view else { return }
+                model.attach(view: view, size: size)
+            }
+        }
+
+        @MainActor
+        func cancelPendingAttach() {
+            attachmentScheduler.cancel()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeUIView(context: Context) -> GhosttyKitSurfaceView {
         let initialSize = CGSize(
@@ -1494,7 +1539,11 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 
     func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
         uiView.isHidden = true
-        model.attach(view: uiView, size: size)
+        context.coordinator.scheduleAttach(model: model, view: uiView, size: size)
+    }
+
+    static func dismantleUIView(_ uiView: GhosttyKitSurfaceView, coordinator: Coordinator) {
+        coordinator.cancelPendingAttach()
     }
 }
 

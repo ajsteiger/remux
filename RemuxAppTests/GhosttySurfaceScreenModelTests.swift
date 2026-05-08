@@ -5,6 +5,55 @@ import XCTest
 
 @MainActor
 final class GhosttySurfaceScreenModelTests: XCTestCase {
+    func testHostAttachmentSchedulerDefersScheduledWork() async {
+        let scheduler = GhosttyHostAttachmentScheduler()
+        var didRun = false
+
+        scheduler.schedule {
+            didRun = true
+        }
+
+        XCTAssertFalse(didRun)
+
+        let didRunDeferredWork = await waitUntil {
+            didRun
+        }
+        XCTAssertTrue(didRunDeferredWork)
+    }
+
+    func testHostAttachmentSchedulerCoalescesToLatestWork() async {
+        let scheduler = GhosttyHostAttachmentScheduler()
+        var calls: [Int] = []
+
+        scheduler.schedule {
+            calls.append(1)
+        }
+        scheduler.schedule {
+            calls.append(2)
+        }
+
+        XCTAssertEqual(calls, [])
+
+        let didRunLatestWork = await waitUntil {
+            calls == [2]
+        }
+        XCTAssertTrue(didRunLatestWork)
+    }
+
+    func testHostAttachmentSchedulerCancelDropsPendingWork() async {
+        let scheduler = GhosttyHostAttachmentScheduler()
+        var didRun = false
+
+        scheduler.schedule {
+            didRun = true
+        }
+        scheduler.cancel()
+
+        try? await Task.sleep(for: .milliseconds(30))
+
+        XCTAssertFalse(didRun)
+    }
+
     func testTerminalViewportCoordinatorFreezesLiveSizeWhileSheetIsPresented() {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let keyboardSize = CGSize(width: 402, height: 673)
@@ -450,6 +499,39 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertTrue(registry.runtimeAction(app: nil, target: target, action: action))
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+    }
+
+    func testRuntimeRenderDefersPendingPresentationPublication() async throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let firstHandle = UnsafeMutableRawPointer(bitPattern: 0x101)!
+        let secondHandle = UnsafeMutableRawPointer(bitPattern: 0x102)!
+        let first = Self.managedSurface(handle: firstHandle)
+        let second = Self.managedSurface(handle: secondHandle)
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        var notificationCount = 0
+        registry.onChange = {
+            notificationCount += 1
+        }
+
+        var target = ghostty_target_s()
+        target.tag = GHOSTTY_TARGET_SURFACE
+        target.target.surface = secondHandle
+        var action = ghostty_action_s()
+        action.tag = GHOSTTY_ACTION_RENDER
+
+        XCTAssertTrue(registry.runtimeAction(app: nil, target: target, action: action))
+        XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+        XCTAssertEqual(notificationCount, 0)
+
+        let didNotify = await waitUntil {
+            notificationCount == 1
+        }
+        XCTAssertTrue(didNotify)
     }
 
     func testDisplayUpdateMarksPendingWindowPresentationReadyWithoutPreviewText() throws {

@@ -73,6 +73,11 @@ func ghosttyDiagnosticSurfaceSize(_ size: ghostty_surface_size_s) -> String {
 
 @MainActor
 final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
+    private enum ChangeNotificationDelivery {
+        case immediate
+        case deferred
+    }
+
     private static let phonePresentationRefreshRetryDelay: Duration = .milliseconds(16)
     private static let phonePresentationRefreshMaxAttempts = 16
     private static let windowSwipeFlow = "tmux.windowSwipe"
@@ -101,6 +106,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var pendingPhonePresentationRefreshTask: Task<Void, Never>?
     private var pendingPhonePresentationRefreshAttempt = 0
     private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
+    private var deferredChangeNotificationTask: Task<Void, Never>?
     private var contentReadySurfaceIDs: Set<UUID> = []
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
@@ -452,7 +458,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @discardableResult
     private func promotePendingPhonePresentationIfReady(
         surfaceID: UUID,
-        reason: String
+        reason: String,
+        notificationDelivery: ChangeNotificationDelivery = .immediate
     ) -> Bool {
         guard pendingPhonePresentationSurfaceID == surfaceID else { return true }
         guard selectedActiveLeafID == surfaceID else {
@@ -496,7 +503,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "surface": ghosttyDiagnosticShortID(surfaceID),
             ]
         )
-        notifyChanged()
+        notifyChanged(delivery: notificationDelivery)
         return true
     }
 
@@ -1145,7 +1152,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             if pendingPhonePresentationSurfaceID == id {
                 _ = promotePendingPhonePresentationIfReady(
                     surfaceID: id,
-                    reason: "runtime.render"
+                    reason: "runtime.render",
+                    notificationDelivery: .deferred
                 )
             } else {
                 completeInteractiveReadinessIfNeeded(
@@ -1718,7 +1726,24 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         notifyChanged()
     }
 
-    private func notifyChanged() {
+    private func notifyChanged(delivery: ChangeNotificationDelivery = .immediate) {
+        switch delivery {
+        case .immediate:
+            deferredChangeNotificationTask?.cancel()
+            deferredChangeNotificationTask = nil
+            sendChangeNotification()
+
+        case .deferred:
+            guard deferredChangeNotificationTask == nil else { return }
+            deferredChangeNotificationTask = Task { @MainActor [weak self] in
+                guard let self, !Task.isCancelled else { return }
+                self.deferredChangeNotificationTask = nil
+                self.sendChangeNotification()
+            }
+        }
+    }
+
+    private func sendChangeNotification() {
         objectWillChange.send()
         onChange?()
     }
