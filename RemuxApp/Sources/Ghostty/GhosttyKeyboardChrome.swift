@@ -61,6 +61,7 @@ struct GhosttyKeyboardChrome: View {
     let onShowPanes: () -> Void
     let onToggleKeyboard: () -> Void
     let onToggleControl: () -> Void
+    let onShowShortcuts: () -> Void
     let sendKey: (GhosttySurfaceKeyEvent) -> Bool
 
     var body: some View {
@@ -126,7 +127,12 @@ struct GhosttyKeyboardChrome: View {
     private var terminalKeyControls: some View {
         controlGroup {
             HStack(spacing: 4) {
-                accessoryKey(title: "ctrl", accessibilityIdentifier: "terminal.ctrl", isActive: isControlArmed) {
+                accessoryKey(
+                    title: "ctrl",
+                    accessibilityIdentifier: "terminal.ctrl",
+                    isActive: isControlArmed,
+                    onLongPress: onShowShortcuts
+                ) {
                     onToggleControl()
                     return true
                 }
@@ -174,6 +180,7 @@ struct GhosttyKeyboardChrome: View {
         title: String,
         accessibilityIdentifier: String,
         isActive: Bool = false,
+        onLongPress: (() -> Void)? = nil,
         action: @escaping () -> Bool
     ) -> some View {
         GhosttyKeyboardKeyButton(
@@ -184,6 +191,7 @@ struct GhosttyKeyboardChrome: View {
             height: GhosttyKeyboardChromeSizing.dockButtonHeight,
             isActive: isActive,
             isEnabled: isEnabled,
+            onLongPress: onLongPress,
             action: action
         )
     }
@@ -291,32 +299,83 @@ private struct GhosttyKeyboardKeyButton: View {
     var height: CGFloat = GhosttyKeyboardChromeSizing.dockButtonHeight
     var isActive = false
     let isEnabled: Bool
+    var onLongPress: (() -> Void)?
     let action: () -> Bool
 
+    @State private var isPressed = false
+    @State private var didLongPress = false
+
     var body: some View {
-        Button {
-            _ = action()
-        } label: {
-            Text(title)
-        }
-        .buttonStyle(GhosttyKeyboardKeyButtonStyle(
-            isActive: isActive,
-            isEnabled: isEnabled,
-            fontSize: fontSize,
-            width: width,
-            height: height
-        ))
-        .disabled(!isEnabled)
-        .accessibilityLabel(title)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        Text(title)
+            .font(.system(size: fontSize, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))
+            .frame(width: width, height: height)
+            .background(keyBackground)
+            .overlay {
+                if isActive, isPressed, isEnabled {
+                    RoundedRectangle(
+                        cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
+                        style: .continuous
+                    )
+                    .fill(GhosttyPhoneChromePalette.keySurfaceActivePressedOverlay)
+                }
+            }
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
+                    style: .continuous
+                )
+            )
+            .scaleEffect(isPressed && isEnabled ? 0.96 : 1)
+            .opacity(isEnabled ? 1 : 0.42)
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
+                    style: .continuous
+                )
+            )
+            .accessibilityLabel(title)
+            .accessibilityIdentifier(accessibilityIdentifier)
+            .accessibilityAddTraits(.isButton)
+            .onTapGesture {
+                guard isEnabled else { return }
+                isPressed = false
+                if didLongPress {
+                    didLongPress = false
+                    return
+                }
+                _ = action()
+            }
+            .onLongPressGesture(
+                minimumDuration: 0.5,
+                maximumDistance: 18,
+                pressing: { pressing in
+                    guard isEnabled else { return }
+                    if pressing, !isPressed {
+                        Haptic.keyboardPress()
+                    }
+                    isPressed = pressing
+                },
+                perform: {
+                    guard let onLongPress else { return }
+                    didLongPress = true
+                    Haptic.tap(.medium)
+                    onLongPress()
+                }
+            )
+    }
+
+    private var keyBackground: Color {
+        if isActive { return GhosttyPhoneChromePalette.accent }
+        if isPressed, isEnabled { return GhosttyPhoneChromePalette.keySurfacePressed }
+        return GhosttyPhoneChromePalette.keySurface
     }
 }
 
-/// Shared press primitive for keyboard-chrome buttons. Owns the press scale,
-/// disabled opacity, and rising-edge feedback dispatch. Visual chrome (font,
-/// background, overlay, clip, frame) is owned by the per-style wrapper because
-/// keys (plain Text label) and dock controls (Image + optional badge ZStack)
-/// compose their content very differently.
+/// Shared press primitive for dock buttons. Owns the press scale,
+/// disabled opacity, and rising-edge feedback dispatch.
 private struct GhosttyChromePressBody<Content: View>: View {
     let isPressed: Bool
     let isEnabled: Bool
@@ -334,51 +393,6 @@ private struct GhosttyChromePressBody<Content: View>: View {
                 guard isEnabled, nowPressed, !wasPressed else { return }
                 onPressDown()
             }
-    }
-}
-
-private struct GhosttyKeyboardKeyButtonStyle: ButtonStyle {
-    let isActive: Bool
-    let isEnabled: Bool
-    let fontSize: CGFloat
-    let width: CGFloat
-    let height: CGFloat
-
-    func makeBody(configuration: Configuration) -> some View {
-        GhosttyChromePressBody(
-            isPressed: configuration.isPressed,
-            isEnabled: isEnabled,
-            onPressDown: { Haptic.keyboardPress() }
-        ) {
-            configuration.label
-                .font(.system(size: fontSize, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))
-                .frame(width: width, height: height)
-                .background(keyBackground(isPressed: configuration.isPressed))
-                .overlay {
-                    if isActive, configuration.isPressed, isEnabled {
-                        RoundedRectangle(
-                            cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
-                            style: .continuous
-                        )
-                        .fill(GhosttyPhoneChromePalette.keySurfaceActivePressedOverlay)
-                    }
-                }
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
-                        style: .continuous
-                    )
-                )
-        }
-    }
-
-    private func keyBackground(isPressed: Bool) -> Color {
-        if isActive { return GhosttyPhoneChromePalette.accent }
-        if isPressed, isEnabled { return GhosttyPhoneChromePalette.keySurfacePressed }
-        return GhosttyPhoneChromePalette.keySurface
     }
 }
 
@@ -445,6 +459,13 @@ enum GhosttyPhoneChromePalette {
         red: 0.18,
         green: 0.20,
         blue: 0.24,
-        alpha: 1
+        alpha: 1.0
+    )
+
+    static let uiAccent = UIColor(
+        red: 0.43,
+        green: 1.0,
+        blue: 0.78,
+        alpha: 1.0
     )
 }
