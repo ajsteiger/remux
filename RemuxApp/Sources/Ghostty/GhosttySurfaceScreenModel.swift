@@ -811,6 +811,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 return TerminalDisconnectReason(kind: .profile, message: message)
             case .closed:
                 return TerminalDisconnectReason(kind: .transportIO, message: message)
+            case .stalePreparedConnection:
+                return TerminalDisconnectReason(kind: .transportIO, message: message)
             case .alreadyStarted, .unsupportedInboundChannel:
                 return TerminalDisconnectReason(kind: .profile, message: message)
             }

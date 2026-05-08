@@ -83,6 +83,7 @@ struct SSHTmuxAuthenticatedConnectionPoolSnapshot: Equatable, Sendable {
         let generation: UUID
         let readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
         let activeLeaseCount: Int
+        let reservationID: UUID?
         let isIdleCloseScheduled: Bool
     }
 
@@ -437,6 +438,7 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
     case unsupportedInboundChannel
     case alreadyStarted
     case closed
+    case stalePreparedConnection
 
     var description: String {
         switch self {
@@ -456,6 +458,8 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
             return "alreadyStarted"
         case .closed:
             return "closed"
+        case .stalePreparedConnection:
+            return "stalePreparedConnection"
         }
     }
 
@@ -471,6 +475,8 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
             return "The tmux control transport has already started."
         case .closed:
             return "The tmux control transport has already been closed."
+        case .stalePreparedConnection:
+            return "The prepared SSH root reservation is no longer valid."
         }
     }
 
@@ -955,12 +961,13 @@ private struct SSHTmuxPreparedConnection {
                 lease: nil
             )
 
-        case .pooled(let pool, let key, let generation):
+        case .pooled(let pool, let key, let generation, let reservationID):
             let lease = try await trace.stage("sshRoot.pool.lease") {
                 try await pool.leaseConnection(
                     authenticatedConnection,
                     for: key,
-                    generation: generation
+                    generation: generation,
+                    reservationID: reservationID
                 )
             }
             return SSHTmuxClaimedAuthenticatedConnection(
@@ -971,6 +978,19 @@ private struct SSHTmuxPreparedConnection {
     }
 
     func cancelAndCleanup() async {
+        switch ownership {
+        case .pooled(let pool, let key, let generation, let reservationID):
+            await pool.releaseReservation(
+                for: key,
+                generation: generation,
+                reservationID: reservationID
+            )
+            return
+
+        case .dedicated:
+            break
+        }
+
         guard cancelAuthenticationOnClose else { return }
 
         task.cancel()
@@ -990,7 +1010,8 @@ private enum SSHTmuxPreparedConnectionOwnership {
     case pooled(
         pool: SSHTmuxAuthenticatedConnectionPool,
         key: SSHTmuxAuthenticatedConnectionPoolKey,
-        generation: UUID
+        generation: UUID,
+        reservationID: UUID
     )
 }
 
@@ -1116,6 +1137,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
         let generation: UUID
         let task: Task<SSHTmuxAuthenticatedConnection, Error>
         var activeLeaseCount: Int
+        var reservationID: UUID?
         var idleCloseTask: Task<Void, Never>?
         var readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
     }
@@ -1125,6 +1147,13 @@ actor SSHTmuxAuthenticatedConnectionPool {
         let task: Task<SSHTmuxAuthenticatedConnection, Error>
         let didReuse: Bool
         let readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
+        let reservationID: UUID?
+    }
+
+    private enum LeaseEntryResult {
+        case leased
+        case busy
+        case stale
     }
 
     private let idleTimeout: Duration
@@ -1141,6 +1170,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
                     generation: entry.generation,
                     readiness: entry.readiness,
                     activeLeaseCount: entry.activeLeaseCount,
+                    reservationID: entry.reservationID,
                     isIdleCloseScheduled: entry.idleCloseTask != nil
                 )
             }
@@ -1199,22 +1229,38 @@ actor SSHTmuxAuthenticatedConnectionPool {
         configuration: SSHTmuxControlConfiguration,
         trace: SSHTmuxControlStartupTrace
     ) -> SSHTmuxPreparedConnection {
-        let snapshot = entrySnapshot(
+        guard let snapshot = reserveEntry(
             for: key,
             configuration: configuration,
             trace: trace
-        )
+        ) else {
+            trace.event(
+                "sshRoot.pool.busy",
+                fields: poolTraceFields(key: key, readiness: entries[key]?.readiness ?? .connecting)
+            )
+            return dedicatedPreparedConnection(
+                configuration: configuration,
+                trace: trace
+            )
+        }
         trace.event(
             snapshot.didReuse ? "sshRoot.pool.hit" : "sshRoot.pool.miss",
             fields: poolTraceFields(key: key, readiness: snapshot.readiness)
         )
+        guard let reservationID = snapshot.reservationID else {
+            return dedicatedPreparedConnection(
+                configuration: configuration,
+                trace: trace
+            )
+        }
 
         return SSHTmuxPreparedConnection(
             trace: trace,
             ownership: .pooled(
                 pool: self,
                 key: key,
-                generation: snapshot.generation
+                generation: snapshot.generation,
+                reservationID: reservationID
             ),
             cancelAuthenticationOnClose: false,
             task: snapshot.task
@@ -1224,10 +1270,16 @@ actor SSHTmuxAuthenticatedConnectionPool {
     fileprivate func leaseConnection(
         _ connection: SSHTmuxAuthenticatedConnection,
         for key: SSHTmuxAuthenticatedConnectionPoolKey,
-        generation: UUID
+        generation: UUID,
+        reservationID: UUID
     ) async throws -> SSHTmuxAuthenticatedConnectionLease {
-        guard leaseEntry(for: key, generation: generation) else {
+        switch leaseEntry(for: key, generation: generation, reservationID: reservationID) {
+        case .leased:
+            break
+        case .stale:
             await connection.close()
+            throw SSHTmuxControlTransportError.stalePreparedConnection
+        case .busy:
             throw SSHTmuxControlTransportError.closed
         }
 
@@ -1257,17 +1309,22 @@ actor SSHTmuxAuthenticatedConnectionPool {
     @discardableResult
     private func leaseEntry(
         for key: SSHTmuxAuthenticatedConnectionPoolKey,
-        generation: UUID
-    ) -> Bool {
+        generation: UUID,
+        reservationID: UUID
+    ) -> LeaseEntryResult {
         guard var entry = entries[key], entry.generation == generation else {
-            return false
+            return .stale
+        }
+        guard entry.activeLeaseCount == 0, entry.reservationID == reservationID else {
+            return .busy
         }
 
         entry.idleCloseTask?.cancel()
         entry.idleCloseTask = nil
+        entry.reservationID = nil
         entry.activeLeaseCount += 1
         entries[key] = entry
-        return true
+        return .leased
     }
 
     @discardableResult
@@ -1294,10 +1351,28 @@ actor SSHTmuxAuthenticatedConnectionPool {
         return true
     }
 
+    fileprivate func releaseReservation(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID,
+        reservationID: UUID
+    ) {
+        guard var entry = entries[key],
+              entry.generation == generation,
+              entry.reservationID == reservationID else {
+            return
+        }
+
+        entry.reservationID = nil
+        entries[key] = entry
+        scheduleIdleCloseIfNeeded(for: key, generation: generation)
+    }
+
     func closeIdleConnections(forServerID serverID: SavedServer.ID) {
         let closing = entries
             .filter { key, entry in
-                key.serverID == serverID && entry.activeLeaseCount == 0
+                key.serverID == serverID
+                    && entry.activeLeaseCount == 0
+                    && entry.reservationID == nil
             }
 
         for (key, entry) in closing {
@@ -1327,25 +1402,120 @@ actor SSHTmuxAuthenticatedConnectionPool {
                 generation: existing.generation,
                 task: existing.task,
                 didReuse: true,
-                readiness: existing.readiness
+                readiness: existing.readiness,
+                reservationID: existing.reservationID
             )
         }
 
         let generation = UUID()
-        let task = Task.detached(priority: .userInitiated) {
+        let task = makeAuthenticationTask(configuration: configuration, trace: trace)
+        entries[key] = Entry(
+            generation: generation,
+            task: task,
+            activeLeaseCount: 0,
+            reservationID: nil,
+            idleCloseTask: nil,
+            readiness: .connecting
+        )
+
+        observeAuthenticationResult(task, for: key, generation: generation)
+
+        return EntrySnapshot(
+            generation: generation,
+            task: task,
+            didReuse: false,
+            readiness: .connecting,
+            reservationID: nil
+        )
+    }
+
+    private func reserveEntry(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        configuration: SSHTmuxControlConfiguration,
+        trace: SSHTmuxControlStartupTrace
+    ) -> EntrySnapshot? {
+        let reservationID = UUID()
+        if entries[key] != nil {
+            return reserveExistingEntry(
+                for: key,
+                reservationID: reservationID
+            )
+        }
+
+        let generation = UUID()
+        let task = makeAuthenticationTask(configuration: configuration, trace: trace)
+        entries[key] = Entry(
+            generation: generation,
+            task: task,
+            activeLeaseCount: 0,
+            reservationID: reservationID,
+            idleCloseTask: nil,
+            readiness: .connecting
+        )
+
+        observeAuthenticationResult(task, for: key, generation: generation)
+
+        return EntrySnapshot(
+            generation: generation,
+            task: task,
+            didReuse: false,
+            readiness: .connecting,
+            reservationID: reservationID
+        )
+    }
+
+    private func reserveExistingEntry(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        reservationID: UUID
+    ) -> EntrySnapshot? {
+        guard var existing = entries[key],
+              existing.activeLeaseCount == 0,
+              existing.reservationID == nil else {
+            return nil
+        }
+
+        existing.idleCloseTask?.cancel()
+        existing.idleCloseTask = nil
+        existing.reservationID = reservationID
+        entries[key] = existing
+        return EntrySnapshot(
+            generation: existing.generation,
+            task: existing.task,
+            didReuse: true,
+            readiness: existing.readiness,
+            reservationID: reservationID
+        )
+    }
+
+    private func dedicatedPreparedConnection(
+        configuration: SSHTmuxControlConfiguration,
+        trace: SSHTmuxControlStartupTrace
+    ) -> SSHTmuxPreparedConnection {
+        SSHTmuxPreparedConnection(
+            trace: trace,
+            ownership: .dedicated,
+            cancelAuthenticationOnClose: true,
+            task: makeAuthenticationTask(configuration: configuration, trace: trace)
+        )
+    }
+
+    private nonisolated func makeAuthenticationTask(
+        configuration: SSHTmuxControlConfiguration,
+        trace: SSHTmuxControlStartupTrace
+    ) -> Task<SSHTmuxAuthenticatedConnection, Error> {
+        Task.detached(priority: .userInitiated) {
             try await SSHTmuxControlBootstrap.authenticate(
                 using: configuration,
                 trace: trace
             )
         }
-        entries[key] = Entry(
-            generation: generation,
-            task: task,
-            activeLeaseCount: 0,
-            idleCloseTask: nil,
-            readiness: .connecting
-        )
+    }
 
+    private func observeAuthenticationResult(
+        _ task: Task<SSHTmuxAuthenticatedConnection, Error>,
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
         Task {
             do {
                 _ = try await task.value
@@ -1354,13 +1524,6 @@ actor SSHTmuxAuthenticatedConnectionPool {
                 self.authenticationFailed(for: key, generation: generation)
             }
         }
-
-        return EntrySnapshot(
-            generation: generation,
-            task: task,
-            didReuse: false,
-            readiness: .connecting
-        )
     }
 
     private func authenticationSucceeded(
@@ -1387,7 +1550,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
         generation: UUID
     ) {
         guard var entry = entries[key], entry.generation == generation else { return }
-        guard entry.activeLeaseCount == 0 else { return }
+        guard entry.activeLeaseCount == 0, entry.reservationID == nil else { return }
 
         entry.idleCloseTask?.cancel()
         entry.idleCloseTask = Task {
@@ -1408,7 +1571,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
         generation: UUID
     ) {
         guard let entry = entries[key], entry.generation == generation else { return }
-        guard entry.activeLeaseCount == 0 else { return }
+        guard entry.activeLeaseCount == 0, entry.reservationID == nil else { return }
 
         entry.idleCloseTask?.cancel()
         entries.removeValue(forKey: key)
@@ -1422,6 +1585,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
         generation: UUID = UUID(),
         readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness = .ready,
         activeLeaseCount: Int = 0,
+        reservationID: UUID? = nil,
         idleCloseScheduled: Bool = false
     ) -> UUID {
         entries[key]?.idleCloseTask?.cancel()
@@ -1431,6 +1595,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
                 throw CancellationError()
             },
             activeLeaseCount: activeLeaseCount,
+            reservationID: reservationID,
             idleCloseTask: idleCloseScheduled ? Self.testingIdleCloseTask() : nil,
             readiness: readiness
         )
@@ -1439,11 +1604,33 @@ actor SSHTmuxAuthenticatedConnectionPool {
 
     func leaseEntryForTesting(
         for key: SSHTmuxAuthenticatedConnectionPoolKey,
-        generation: UUID
+        generation: UUID,
+        reservationID: UUID
     ) throws {
-        guard leaseEntry(for: key, generation: generation) else {
+        guard leaseEntry(for: key, generation: generation, reservationID: reservationID) == .leased else {
             throw SSHTmuxControlTransportError.closed
         }
+    }
+
+    func reserveEntryForTesting(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey
+    ) -> UUID? {
+        reserveExistingEntry(
+            for: key,
+            reservationID: UUID()
+        )?.reservationID
+    }
+
+    func releaseReservationForTesting(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID,
+        reservationID: UUID
+    ) {
+        releaseReservation(
+            for: key,
+            generation: generation,
+            reservationID: reservationID
+        )
     }
 
     func releaseEntryForTesting(

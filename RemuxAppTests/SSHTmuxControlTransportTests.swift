@@ -131,12 +131,92 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             activeLeaseCount: 0,
             idleCloseScheduled: true
         )
+        let reservedID = await pool.reserveEntryForTesting(for: key)
+        let reservationID = try XCTUnwrap(reservedID)
 
-        try await pool.leaseEntryForTesting(for: key, generation: generation)
+        try await pool.leaseEntryForTesting(
+            for: key,
+            generation: generation,
+            reservationID: reservationID
+        )
 
         let entry = await pool.snapshot().entry(for: key)
         XCTAssertEqual(entry?.activeLeaseCount, 1)
+        XCTAssertNil(entry?.reservationID)
         XCTAssertEqual(entry?.isIdleCloseScheduled, false)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolReservationPreventsSecondReservation() async throws {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(for: key)
+
+        let reservedID = await pool.reserveEntryForTesting(for: key)
+        let reservationID = try XCTUnwrap(reservedID)
+
+        let secondReservedID = await pool.reserveEntryForTesting(for: key)
+        XCTAssertNil(secondReservedID)
+        let entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.generation, generation)
+        XCTAssertEqual(entry?.reservationID, reservationID)
+        XCTAssertEqual(entry?.activeLeaseCount, 0)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolClaimRequiresMatchingReservation() async throws {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(for: key)
+        let reservedID = await pool.reserveEntryForTesting(for: key)
+        let reservationID = try XCTUnwrap(reservedID)
+
+        do {
+            try await pool.leaseEntryForTesting(
+                for: key,
+                generation: generation,
+                reservationID: UUID()
+            )
+            XCTFail("expected stale reservation to fail")
+        } catch let error as SSHTmuxControlTransportError {
+            XCTAssertEqual(error, .closed)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        var entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.reservationID, reservationID)
+        XCTAssertEqual(entry?.activeLeaseCount, 0)
+
+        try await pool.leaseEntryForTesting(
+            for: key,
+            generation: generation,
+            reservationID: reservationID
+        )
+
+        entry = await pool.snapshot().entry(for: key)
+        XCTAssertNil(entry?.reservationID)
+        XCTAssertEqual(entry?.activeLeaseCount, 1)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolReleasedReservationReturnsRootToIdle() async throws {
+        let pool = SSHTmuxAuthenticatedConnectionPool(idleTimeout: .seconds(60))
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(for: key)
+        let reservedID = await pool.reserveEntryForTesting(for: key)
+        let reservationID = try XCTUnwrap(reservedID)
+
+        await pool.releaseReservationForTesting(
+            for: key,
+            generation: generation,
+            reservationID: reservationID
+        )
+
+        let entry = await pool.snapshot().entry(for: key)
+        XCTAssertNil(entry?.reservationID)
+        XCTAssertEqual(entry?.activeLeaseCount, 0)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, true)
         await pool.closeAllConnections()
     }
 
@@ -195,6 +275,10 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             serverID: serverID,
             host: "idle.example.com"
         )
+        let reservedKey = makeAuthenticatedConnectionPoolKey(
+            serverID: serverID,
+            host: "reserved.example.com"
+        )
         let activeKey = makeAuthenticatedConnectionPoolKey(
             serverID: serverID,
             host: "active.example.com"
@@ -204,6 +288,11 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             host: "other.example.com"
         )
         await pool.insertEntryForTesting(for: idleKey, activeLeaseCount: 0)
+        await pool.insertEntryForTesting(
+            for: reservedKey,
+            activeLeaseCount: 0,
+            reservationID: UUID()
+        )
         await pool.insertEntryForTesting(for: activeKey, activeLeaseCount: 1)
         await pool.insertEntryForTesting(for: otherServerKey, activeLeaseCount: 0)
 
@@ -211,9 +300,10 @@ final class SSHTmuxControlTransportTests: XCTestCase {
 
         let snapshot = await pool.snapshot()
         XCTAssertNil(snapshot.entry(for: idleKey))
+        XCTAssertNotNil(snapshot.entry(for: reservedKey))
         XCTAssertNotNil(snapshot.entry(for: activeKey))
         XCTAssertNotNil(snapshot.entry(for: otherServerKey))
-        XCTAssertEqual(snapshot.entryCount, 2)
+        XCTAssertEqual(snapshot.entryCount, 3)
         await pool.closeAllConnections()
     }
 
@@ -261,6 +351,26 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         let entry = await pool.snapshot().entry(for: key)
         XCTAssertEqual(entry?.readiness, .ready)
         XCTAssertEqual(entry?.isIdleCloseScheduled, true)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolAuthenticationSuccessKeepsReservedEntryOpen() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let reservationID = UUID()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            readiness: .connecting,
+            activeLeaseCount: 0,
+            reservationID: reservationID
+        )
+
+        await pool.markAuthenticationSucceededForTesting(for: key, generation: generation)
+
+        let entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.readiness, .ready)
+        XCTAssertEqual(entry?.reservationID, reservationID)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, false)
         await pool.closeAllConnections()
     }
 
