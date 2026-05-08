@@ -891,83 +891,61 @@ enum TmuxControlCommandFailureReason: Equatable, Sendable {
     case tmuxError(String)
 }
 
-struct TmuxControlCommandFailure: Equatable, Sendable {
-    let reason: TmuxControlCommandFailureReason
-    let message: String
+enum TmuxControlCommandFailureKind: Equatable, Sendable {
+    case newWindow
+    case splitPane
+    case closePane
+    case closeWindow
+
+    init(native: ghostty_tmux_command_failure_kind_e) {
+        switch native {
+        case GHOSTTY_TMUX_COMMAND_FAILURE_KIND_NEW_WINDOW:
+            self = .newWindow
+        case GHOSTTY_TMUX_COMMAND_FAILURE_KIND_SPLIT_PANE:
+            self = .splitPane
+        case GHOSTTY_TMUX_COMMAND_FAILURE_KIND_CLOSE_PANE:
+            self = .closePane
+        case GHOSTTY_TMUX_COMMAND_FAILURE_KIND_CLOSE_WINDOW:
+            self = .closeWindow
+        default:
+            preconditionFailure("unknown tmux command failure kind: \(native.rawValue)")
+        }
+    }
 }
 
-struct TmuxControlCommandFailureObserver {
-    private var bufferedBytes = Data()
-    private var isCapturingCommandOutput = false
-    private var commandOutputLines: [String] = []
+struct TmuxControlCommandFailure: Equatable, Sendable {
+    let kind: TmuxControlCommandFailureKind
+    let reason: TmuxControlCommandFailureReason
+    let message: String
 
-    mutating func observe(_ bytes: Data) -> [TmuxControlCommandFailure] {
-        guard !bytes.isEmpty else { return [] }
-
-        bufferedBytes.append(bytes)
-        var failures: [TmuxControlCommandFailure] = []
-
-        while let newlineIndex = bufferedBytes.firstIndex(of: 0x0A) {
-            var lineBytes = bufferedBytes[..<newlineIndex]
-            bufferedBytes.removeSubrange(bufferedBytes.startIndex...newlineIndex)
-            if lineBytes.last == 0x0D {
-                lineBytes = lineBytes.dropLast()
-            }
-
-            guard let line = String(data: lineBytes, encoding: .utf8) else {
-                resetCommandCapture()
-                continue
-            }
-
-            if let failure = observeLine(line) {
-                failures.append(failure)
-            }
-        }
-
-        return failures
+    init(kind: TmuxControlCommandFailureKind, reason: TmuxControlCommandFailureReason, message: String) {
+        self.kind = kind
+        self.reason = reason
+        self.message = message
     }
 
-    private mutating func observeLine(_ line: String) -> TmuxControlCommandFailure? {
-        if line.hasPrefix("%begin ") {
-            isCapturingCommandOutput = true
-            commandOutputLines.removeAll(keepingCapacity: true)
-            return nil
+    init(native: ghostty_tmux_command_failure_s) {
+        let message = Self.message(from: native)
+        self.kind = TmuxControlCommandFailureKind(native: native.kind)
+        self.reason = switch native.reason {
+        case GHOSTTY_TMUX_COMMAND_FAILURE_REASON_NO_SPACE_FOR_NEW_PANE:
+            .noSpaceForNewPane
+        case GHOSTTY_TMUX_COMMAND_FAILURE_REASON_TMUX_ERROR:
+            .tmuxError(message)
+        default:
+            preconditionFailure("unknown tmux command failure reason: \(native.reason.rawValue)")
         }
-
-        if line.hasPrefix("%end ") {
-            resetCommandCapture()
-            return nil
-        }
-
-        if line.hasPrefix("%error ") {
-            defer { resetCommandCapture() }
-            let message = commandOutputLines.joined(separator: "\n")
-            let normalizedMessage = message.isEmpty ? "tmux command failed" : message
-            return TmuxControlCommandFailure(
-                reason: Self.reason(for: normalizedMessage),
-                message: normalizedMessage
-            )
-        }
-
-        guard isCapturingCommandOutput else { return nil }
-        guard !line.hasPrefix("%") else { return nil }
-        guard commandOutputLines.count < 8 else { return nil }
-
-        commandOutputLines.append(String(line.prefix(240)))
-        return nil
+        self.message = message
     }
 
-    private mutating func resetCommandCapture() {
-        isCapturingCommandOutput = false
-        commandOutputLines.removeAll(keepingCapacity: true)
-    }
-
-    private static func reason(for message: String) -> TmuxControlCommandFailureReason {
-        if message.lowercased().contains("no space for new pane") {
-            return .noSpaceForNewPane
+    private static func message(from native: ghostty_tmux_command_failure_s) -> String {
+        guard native.message_len > 0, let message = native.message else {
+            return "tmux command failed"
         }
 
-        return .tmuxError(message)
+        let bytes = UnsafeBufferPointer(start: message, count: Int(native.message_len))
+            .map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 }
 
@@ -985,10 +963,8 @@ final class GhosttyControlHostSurface {
     private let transport: any TmuxControlTransport
     private weak var surface: (any GhosttyControlSurface)?
     private let onDebugEvent: ((String) -> Void)?
-    private let onCommandFailure: ((TmuxControlCommandFailure) -> Void)?
     private let onCompletion: ((Completion) -> Void)?
     private var pumpTask: Task<Void, Never>?
-    private var commandFailureObserver = TmuxControlCommandFailureObserver()
     private var receivedByteCount = 0
     private var capturedFirstChunk = false
     private var didComplete = false
@@ -1000,13 +976,11 @@ final class GhosttyControlHostSurface {
         transport: any TmuxControlTransport,
         surface: any GhosttyControlSurface,
         onDebugEvent: ((String) -> Void)? = nil,
-        onCommandFailure: ((TmuxControlCommandFailure) -> Void)? = nil,
         onCompletion: ((Completion) -> Void)? = nil
     ) {
         self.transport = transport
         self.surface = surface
         self.onDebugEvent = onDebugEvent
-        self.onCommandFailure = onCommandFailure
         self.onCompletion = onCompletion
     }
 
@@ -1025,9 +999,6 @@ final class GhosttyControlHostSurface {
                     GhosttyRuntimeTrace.latency(
                         "host.pump.receive bytes=\(bytes.count) total=\(receivedByteCount) preview=\(GhosttyRuntimeTrace.preview(bytes, limit: 160))"
                     )
-                    for failure in commandFailureObserver.observe(bytes) {
-                        onCommandFailure?(failure)
-                    }
                     GhosttyRuntimeTrace.observeInboundData(bytes, source: "host.pump")
                     if GhosttyRuntimeTrace.isEnabled {
                         NSLog(

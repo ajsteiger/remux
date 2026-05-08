@@ -300,7 +300,8 @@ private final class GhosttyKitRuntimeState {
             close_surface_cb: GhosttyKitRuntimeCallbacks.closeSurfaceCallback,
             select_surface_cb: GhosttyKitRuntimeCallbacks.selectSurfaceCallback,
             create_surface_cb: GhosttyKitRuntimeCallbacks.createSurfaceCallback,
-            create_surface_tree_cb: GhosttyKitRuntimeCallbacks.createSurfaceTreeCallback
+            create_surface_tree_cb: GhosttyKitRuntimeCallbacks.createSurfaceTreeCallback,
+            tmux_command_failure_cb: GhosttyKitRuntimeCallbacks.tmuxCommandFailureCallback
         )
 
         guard let app = ghostty_app_new(&runtimeConfig, config) else {
@@ -418,6 +419,12 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
     static var createSurfaceTreeCallback: ghostty_runtime_create_surface_tree_cb {
         { app, request in
             GhosttyKitRuntimeCallbacks.createSurfaceTree(app, request: request)
+        }
+    }
+
+    static var tmuxCommandFailureCallback: ghostty_runtime_tmux_command_failure_cb {
+        { app, failure in
+            GhosttyKitRuntimeCallbacks.tmuxCommandFailure(app, failure: failure)
         }
     }
 
@@ -653,6 +660,35 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                         callbacks.surfaceDelegate?.runtimeSelectSurface(
                             app: appBox.value,
                             surface: surfaceBox.value
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    static func tmuxCommandFailure(
+        _ app: ghostty_app_t?,
+        failure: ghostty_tmux_command_failure_s
+    ) {
+        guard let callbacks = from(app: app) else { return }
+        let appBox = UnsafeSendable(app)
+        let failureBox = UnsafeSendable(failure)
+        if Thread.isMainThread {
+            GhosttyRuntimeTrace.perf("runtime.tmuxCommandFailure route=main")
+            MainActor.assumeIsolated {
+                callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
+                    app: appBox.value,
+                    failure: failureBox.value
+                )
+            }
+        } else {
+            GhosttyRuntimeTrace.perfMeasure("runtime.tmuxCommandFailure route=sync") {
+                DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
+                            app: appBox.value,
+                            failure: failureBox.value
                         )
                     }
                 }

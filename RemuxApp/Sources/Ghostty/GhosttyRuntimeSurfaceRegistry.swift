@@ -40,6 +40,11 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
         target: ghostty_target_s,
         action: ghostty_action_s
     ) -> Bool
+
+    func runtimeTmuxCommandFailure(
+        app: ghostty_app_t?,
+        failure: ghostty_tmux_command_failure_s
+    )
 }
 
 func ghosttyDiagnosticShortID(_ id: UUID?) -> String {
@@ -77,6 +82,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @Published private(set) var debugSummary = "runtime callbacks: none"
 
     var onChange: (() -> Void)?
+    var onTmuxCommandFailure: ((TmuxControlCommandFailure) -> Void)?
     var terminalSettings: TerminalSettings = .default
 
     private var managedSurfaces: [UUID: GhosttyManagedSurface] = [:]
@@ -124,6 +130,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         pendingPhonePresentationTrace = nil
         contentReadySurfaceIDs = []
         notifyChanged()
+    }
+
+    func deliverTmuxCommandFailure(_ failure: TmuxControlCommandFailure) {
+        GhosttyRuntimeTrace.diagnostics(
+            "registry.tmuxCommandFailure kind=\(failure.kind) reason=\(String(describing: failure.reason)) message=\(failure.message)"
+        )
+        onTmuxCommandFailure?(failure)
     }
 
     func prepareForRuntimeTeardown() {
@@ -1155,6 +1168,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
 
         return true
+    }
+
+    func runtimeTmuxCommandFailure(
+        app: ghostty_app_t?,
+        failure: ghostty_tmux_command_failure_s
+    ) {
+        _ = app
+        deliverTmuxCommandFailure(TmuxControlCommandFailure(native: failure))
     }
 
 #if DEBUG

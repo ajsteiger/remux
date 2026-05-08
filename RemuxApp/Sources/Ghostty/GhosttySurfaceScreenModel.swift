@@ -5,6 +5,7 @@ import UIKit
 
 struct GhosttyTmuxCommandFailureEvent: Equatable {
     let token: UInt64
+    let kind: TmuxControlCommandFailureKind
     let reason: TmuxControlCommandFailureReason
     let message: String
 }
@@ -94,6 +95,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 submitDebugLatencyProbeIfReady()
                 traceTerminalReadyIfNeeded()
             }
+        }
+        surfaceRegistry.onTmuxCommandFailure = { [weak self] failure in
+            self?.handleTmuxCommandFailure(failure)
         }
         if precreateRuntime {
             precreateRuntimeIfNeeded()
@@ -206,9 +210,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 surface: surface,
                 onDebugEvent: { [weak self] event in
                     self?.debugStatus = event
-                },
-                onCommandFailure: { [weak self] failure in
-                    self?.handleTmuxCommandFailure(failure)
                 },
                 onCompletion: { [weak self] completion in
                     self?.handleTransportCompletion(completion)
@@ -874,6 +875,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         commandFailureEventToken &+= 1
         commandFailureEvent = GhosttyTmuxCommandFailureEvent(
             token: commandFailureEventToken,
+            kind: failure.kind,
             reason: failure.reason,
             message: failure.message
         )

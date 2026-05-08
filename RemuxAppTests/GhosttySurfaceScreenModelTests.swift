@@ -1239,6 +1239,16 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(didRun)
 
         await transport.emit(Data("%begin 1 2 1\nno space for new pane\n%error 1 2 1\n".utf8))
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertNil(model.commandFailureEvent)
+
+        model.surfaceRegistry.deliverTmuxCommandFailure(
+            TmuxControlCommandFailure(
+                kind: .splitPane,
+                reason: .noSpaceForNewPane,
+                message: "no space for new pane"
+            )
+        )
 
         let didReportFailure = await waitUntil(timeout: 2) {
             model.commandFailureMessage == "No space for another pane."
@@ -1248,15 +1258,23 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(didReportFailure)
         XCTAssertEqual(model.debugStatus, "No space for another pane.")
         XCTAssertEqual(model.commandFailureEvent?.token, 1)
+        XCTAssertEqual(model.commandFailureEvent?.kind, .splitPane)
         XCTAssertEqual(model.commandFailureEvent?.message, "no space for new pane")
         XCTAssertEqual(model.state, .running)
 
-        await transport.emit(Data("%begin 1 2 1\nno space for new pane\n%error 1 2 1\n".utf8))
+        model.surfaceRegistry.deliverTmuxCommandFailure(
+            TmuxControlCommandFailure(
+                kind: .newWindow,
+                reason: .noSpaceForNewPane,
+                message: "no space for new pane"
+            )
+        )
         let didPublishSecondFailure = await waitUntil(timeout: 2) {
             model.commandFailureEvent?.token == 2
         }
 
         XCTAssertTrue(didPublishSecondFailure)
+        XCTAssertEqual(model.commandFailureEvent?.kind, .newWindow)
         XCTAssertEqual(model.commandFailureEvent?.reason, .noSpaceForNewPane)
         XCTAssertEqual(model.state, .running)
     }
