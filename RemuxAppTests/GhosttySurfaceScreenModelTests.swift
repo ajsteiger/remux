@@ -1652,6 +1652,141 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.focusedSelectionAvailability(), .noFocusedSurface)
     }
 
+    func testTerminalInteractionProjectionReportsEmptyIdleTopology() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+
+        XCTAssertEqual(
+            model.terminalInteractionProjection,
+            GhosttyTerminalInteractionProjection(
+                isInputAvailable: false,
+                hasFocusedSurface: false,
+                selectedActiveLeafID: nil,
+                selectedWindowIndex: nil,
+                windowCount: 0,
+                selectedPaneIndex: nil,
+                paneCount: 0,
+                isWaitingForPanes: false
+            )
+        )
+    }
+
+    func testTerminalInteractionProjectionReportsSelectedIdlePaneWithoutInputAvailability() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(
+            model.terminalInteractionProjection,
+            GhosttyTerminalInteractionProjection(
+                isInputAvailable: false,
+                hasFocusedSurface: true,
+                selectedActiveLeafID: managed.id,
+                selectedWindowIndex: 0,
+                windowCount: 1,
+                selectedPaneIndex: 0,
+                paneCount: 1,
+                isWaitingForPanes: false
+            )
+        )
+    }
+
+    func testTerminalInteractionProjectionReportsSelectedWindowAndPaneIndexes() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        let third = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [first, second, third],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .split(
+                        axis: .vertical,
+                        ratio: 0.5,
+                        left: .leaf(second.id),
+                        right: .leaf(third.id)
+                    )
+                )
+            ),
+            focusedLeafID: second.id
+        )
+
+        XCTAssertEqual(model.terminalInteractionProjection.selectedActiveLeafID, second.id)
+        XCTAssertEqual(model.terminalInteractionProjection.selectedWindowIndex, 0)
+        XCTAssertEqual(model.terminalInteractionProjection.windowCount, 1)
+        XCTAssertEqual(model.terminalInteractionProjection.selectedPaneIndex, 1)
+        XCTAssertEqual(model.terminalInteractionProjection.paneCount, 3)
+    }
+
+    func testTerminalInteractionProjectionTracksSelectedWindowAcrossTopLevels() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        let third = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(third)
+
+        XCTAssertEqual(model.terminalInteractionProjection.selectedWindowIndex, 2)
+        XCTAssertEqual(model.terminalInteractionProjection.windowCount, 3)
+        XCTAssertEqual(model.terminalInteractionProjection.selectedActiveLeafID, third.id)
+
+        model.surfaceRegistry.selectSurface(first.id)
+
+        XCTAssertEqual(model.terminalInteractionProjection.selectedWindowIndex, 0)
+        XCTAssertEqual(model.terminalInteractionProjection.selectedActiveLeafID, first.id)
+    }
+
+    func testTerminalInteractionProjectionReportsWaitingForPanesWhenRunningWithoutTopology() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        XCTAssertEqual(
+            model.terminalInteractionProjection,
+            GhosttyTerminalInteractionProjection(
+                isInputAvailable: false,
+                hasFocusedSurface: false,
+                selectedActiveLeafID: nil,
+                selectedWindowIndex: nil,
+                windowCount: 0,
+                selectedPaneIndex: nil,
+                paneCount: 0,
+                isWaitingForPanes: true
+            )
+        )
+    }
+
     func testMouseButtonRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var received: [GhosttySurfaceMouseButtonEvent] = []

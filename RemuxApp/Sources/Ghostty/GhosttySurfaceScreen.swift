@@ -50,6 +50,7 @@ struct GhosttySurfaceScreen: View {
             let chrome = GhosttyPhoneChromeLayout(
                 screenSize: screenProxy.size
             )
+            let interactionProjection = model.terminalInteractionProjection
 
             ZStack {
                 target.terminalSettings.theme.swiftUIBackground
@@ -120,8 +121,9 @@ struct GhosttySurfaceScreen: View {
                             .background(target.terminalSettings.theme.swiftUIBackground)
 
                         GhosttyTerminalResponderRepresentable(
-                            isEnabled: isTerminalInputAvailable,
-                            wantsFirstResponder: inputCoordinator.keyboardMode.enablesSystemKeyboard && isTerminalInputAvailable,
+                            isEnabled: interactionProjection.isInputAvailable,
+                            wantsFirstResponder: inputCoordinator.keyboardMode.enablesSystemKeyboard
+                                && interactionProjection.isInputAvailable,
                             activationToken: inputCoordinator.terminalActivationToken,
                             sendText: sendTerminalText,
                             sendPaste: sendTerminalPaste,
@@ -186,13 +188,13 @@ struct GhosttySurfaceScreen: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 GhosttyKeyboardChrome(
                     keyboardMode: renderedKeyboardMode,
-                    isEnabled: isTerminalInputAvailable,
+                    isEnabled: interactionProjection.isInputAvailable,
                     isCompact: chrome.isCompact,
                     isControlArmed: modifierState.isControlArmed,
-                    selectedWindowIndex: registry.selectedTopLevelIndex,
-                    windowCount: registry.topLevels.count,
-                    selectedPaneIndex: selectedPaneIndex,
-                    paneCount: registry.selectedTopLevel?.leafIDs.count ?? 0,
+                    selectedWindowIndex: interactionProjection.selectedWindowIndex,
+                    windowCount: interactionProjection.windowCount,
+                    selectedPaneIndex: interactionProjection.selectedPaneIndex,
+                    paneCount: interactionProjection.paneCount,
                     onShowHome: onEditConnection,
                     onShowWindows: showWindows,
                     onShowPanes: showPanes,
@@ -253,7 +255,7 @@ struct GhosttySurfaceScreen: View {
                 }
                 dismissSelectionSheet()
             }
-            .onChange(of: registry.selectedActiveLeafID) { _, activeLeafID in
+            .onChange(of: interactionProjection.selectedActiveLeafID) { _, activeLeafID in
                 handleActiveLeafChange(activeLeafID)
             }
             .onChange(of: model.commandFailureEvent) { _, event in
@@ -264,7 +266,7 @@ struct GhosttySurfaceScreen: View {
             .task {
                 if CommandLine.arguments.contains("--open-panes-after-warmup") {
                     for _ in 0..<60 {
-                        if !(registry.selectedTopLevel?.leafIDs.isEmpty ?? true) {
+                        if model.terminalInteractionProjection.paneCount > 0 {
                             try? await Task.sleep(nanoseconds: 3_000_000_000)
                             showPanes()
                             return
@@ -321,22 +323,11 @@ struct GhosttySurfaceScreen: View {
     }
 
     private var isTerminalInputAvailable: Bool {
-        model.state == .running && registry.selectedActiveLeafID != nil
+        model.terminalInteractionProjection.isInputAvailable
     }
 
     private var isTerminalViewportFrozen: Bool {
         terminalViewportCoordinator.isFrozen
-    }
-
-    private var selectedPaneIndex: Int? {
-        guard
-            let topLevel = registry.selectedTopLevel,
-            let focusedLeafID = topLevel.resolvedFocusedLeafID
-        else {
-            return nil
-        }
-
-        return topLevel.leafIDs.firstIndex(of: focusedLeafID)
     }
 
     private func showSystemKeyboard() {
@@ -436,7 +427,7 @@ struct GhosttySurfaceScreen: View {
 
     private func requestSystemKeyboardRefocusAfterTopologyChange() {
         let didRequest = pendingTopologyInputRefocus.request(
-            from: registry.selectedActiveLeafID,
+            from: model.terminalInteractionProjection.selectedActiveLeafID,
             keyboardMode: inputCoordinator.keyboardMode
         )
         guard didRequest else { return }
@@ -1009,12 +1000,13 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func terminalInputTraceFields(extra: [String: String] = [:]) -> [String: String] {
+        let interactionProjection = model.terminalInteractionProjection
         var fields = [
-            "activeLeaf": ghosttyDiagnosticShortID(registry.selectedActiveLeafID),
-            "inputAvailable": "\(isTerminalInputAvailable)",
+            "activeLeaf": ghosttyDiagnosticShortID(interactionProjection.selectedActiveLeafID),
+            "inputAvailable": "\(interactionProjection.isInputAvailable)",
             "keyboardMode": "\(inputCoordinator.keyboardMode)",
             "state": "\(model.state)",
-            "topLevels": "\(registry.topLevels.count)",
+            "topLevels": "\(interactionProjection.windowCount)",
             "workspaceID": target.workspace.id.uuidString,
         ]
         for (key, value) in extra {
@@ -1404,7 +1396,7 @@ private struct GhosttySurfaceStatusOverlay: View {
                     .clipShape(Capsule())
                     .padding(10)
                     .accessibilityIdentifier("terminal.command.failure")
-            } else if registry.topLevels.isEmpty {
+            } else if model.terminalInteractionProjection.isWaitingForPanes {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("waiting for tmux panes")
                     Text(model.debugStatus)

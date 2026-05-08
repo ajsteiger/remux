@@ -55,6 +55,17 @@ enum GhosttySurfaceSelectionOutcome: Equatable, Sendable {
     }
 }
 
+struct GhosttyTerminalInteractionProjection: Equatable, Sendable {
+    let isInputAvailable: Bool
+    let hasFocusedSurface: Bool
+    let selectedActiveLeafID: UUID?
+    let selectedWindowIndex: Int?
+    let windowCount: Int
+    let selectedPaneIndex: Int?
+    let paneCount: Int
+    let isWaitingForPanes: Bool
+}
+
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
@@ -81,6 +92,27 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     @Published private(set) var failureReason: TerminalDisconnectReason?
 
     let surfaceRegistry: GhosttyRuntimeSurfaceRegistry
+
+    var terminalInteractionProjection: GhosttyTerminalInteractionProjection {
+        let selectedTopLevel = surfaceRegistry.selectedTopLevel
+        let selectedActiveLeafID = surfaceRegistry.selectedActiveLeafID
+        let selectedPaneIndex = selectedTopLevel.flatMap { topLevel -> Int? in
+            guard let focusedLeafID = topLevel.resolvedFocusedLeafID else { return nil }
+            return topLevel.leafIDs.firstIndex(of: focusedLeafID)
+        }
+        let hasFocusedSurface = selectedActiveLeafID != nil
+
+        return GhosttyTerminalInteractionProjection(
+            isInputAvailable: state == .running && hasFocusedSurface,
+            hasFocusedSurface: hasFocusedSurface,
+            selectedActiveLeafID: selectedActiveLeafID,
+            selectedWindowIndex: surfaceRegistry.selectedTopLevelIndex,
+            windowCount: surfaceRegistry.topLevels.count,
+            selectedPaneIndex: selectedPaneIndex,
+            paneCount: selectedTopLevel?.leafIDs.count ?? 0,
+            isWaitingForPanes: state == .running && surfaceRegistry.topLevels.isEmpty
+        )
+    }
 
     typealias TransportFactory = (TmuxConnectionTarget) -> any TmuxControlTransport
     typealias RuntimeFactory = (GhosttyKitRuntimeSurfaceDelegate?) throws -> GhosttyKitRuntime
