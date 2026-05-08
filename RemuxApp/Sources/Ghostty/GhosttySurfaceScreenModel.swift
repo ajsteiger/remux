@@ -40,6 +40,21 @@ enum GhosttyTmuxModelActionOutcome: Equatable, Sendable {
     }
 }
 
+enum GhosttySurfaceSelectionOutcome: Equatable, Sendable {
+    case selected
+    case alreadySelected
+    case missingSurface(UUID)
+
+    var isSelected: Bool {
+        switch self {
+        case .selected, .alreadySelected:
+            true
+        case .missingSurface:
+            false
+        }
+    }
+}
+
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
@@ -594,6 +609,33 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func focusedSurfaceMouseCaptured() -> Bool {
         surfaceRegistry.focusedSurfaceMouseCaptured()
+    }
+
+    func isMouseCaptured(for surfaceID: UUID) -> Bool {
+        surfaceRegistry.isMouseCaptured(for: surfaceID)
+    }
+
+    @discardableResult
+    func selectTerminalSurface(
+        _ surfaceID: UUID,
+        reason: String = "model.selectTerminalSurface"
+    ) -> GhosttySurfaceSelectionOutcome {
+        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
+            debugStatus = "surface selection dropped: pane missing"
+            return .missingSurface(surfaceID)
+        }
+
+        guard surfaceRegistry.selectedActiveLeafID != surfaceID else {
+            return .alreadySelected
+        }
+
+        surfaceRegistry.selectSurface(surfaceID, reason: reason)
+        guard surfaceRegistry.selectedActiveLeafID == surfaceID else {
+            debugStatus = "surface selection dropped: pane missing"
+            return .missingSurface(surfaceID)
+        }
+
+        return .selected
     }
 
     @discardableResult

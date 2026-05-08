@@ -2065,6 +2065,67 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux close-window dropped: window missing")
     }
 
+    func testModelSelectTerminalSurfaceRoutesExistingSurface() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+
+        XCTAssertEqual(model.selectTerminalSurface(first.id, reason: "test"), .selected)
+        XCTAssertEqual(model.surfaceRegistry.selectedActiveLeafID, first.id)
+    }
+
+    func testModelSelectTerminalSurfaceReportsAlreadySelectedSurface() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(model.selectTerminalSurface(managed.id, reason: "test"), .alreadySelected)
+        XCTAssertEqual(model.surfaceRegistry.selectedActiveLeafID, managed.id)
+    }
+
+    func testModelSelectTerminalSurfaceReportsMissingSurfaceWithoutChangingSelection() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface()
+        let missingID = UUID()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(model.selectTerminalSurface(missingID, reason: "test"), .missingSurface(missingID))
+        XCTAssertEqual(model.surfaceRegistry.selectedActiveLeafID, managed.id)
+        XCTAssertEqual(model.debugStatus, "surface selection dropped: pane missing")
+    }
+
+    func testModelMouseCapturedLookupUsesRequestedSurfaceNotFocusedSurface() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let uncaptured = Self.managedSurface(isMouseCaptured: { false })
+        let captured = Self.managedSurface(isMouseCaptured: { true })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(uncaptured)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(captured)
+        model.surfaceRegistry.selectSurface(uncaptured.id)
+
+        XCTAssertFalse(model.focusedSurfaceMouseCaptured())
+        XCTAssertFalse(model.isMouseCaptured(for: uncaptured.id))
+        XCTAssertTrue(model.isMouseCaptured(for: captured.id))
+        XCTAssertFalse(model.isMouseCaptured(for: UUID()))
+    }
+
     func testFocusedSurfaceMouseCapturedReflectsManagedSurfaceState() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let uncaptured = Self.managedSurface(isMouseCaptured: { false })

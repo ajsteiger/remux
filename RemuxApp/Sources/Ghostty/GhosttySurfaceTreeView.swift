@@ -10,6 +10,8 @@ struct GhosttyRuntimePaneTreeView: View {
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
+    let selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome
+    let isMouseCaptured: (UUID) -> Bool
     let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
@@ -22,6 +24,8 @@ struct GhosttyRuntimePaneTreeView: View {
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
             onCopySelection: onCopySelection,
+            selectSurface: selectSurface,
+            isMouseCaptured: isMouseCaptured,
             submitMouseButton: submitMouseButton,
             submitMousePosition: submitMousePosition,
             submitMouseScroll: submitMouseScroll,
@@ -37,6 +41,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
+    let selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome
+    let isMouseCaptured: (UUID) -> Bool
     let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
@@ -56,6 +62,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
             onCopySelection: onCopySelection,
+            selectSurface: selectSurface,
+            isMouseCaptured: isMouseCaptured,
             submitMouseButton: submitMouseButton,
             submitMousePosition: submitMousePosition,
             submitMouseScroll: submitMouseScroll,
@@ -70,6 +78,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     private var onCopySelection: (() -> Bool)?
+    private var selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome = { surfaceID, _ in
+        .missingSurface(surfaceID)
+    }
+    private var isMouseCaptured: (UUID) -> Bool = { _ in false }
     private var submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
     private var submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
     private var submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
@@ -117,6 +129,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         onSurfaceTap: ((UUID) -> Void)?,
         onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
         onCopySelection: (() -> Bool)?,
+        selectSurface: @escaping (UUID, String) -> GhosttySurfaceSelectionOutcome,
+        isMouseCaptured: @escaping (UUID) -> Bool,
         submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?,
         submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?,
         submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?,
@@ -132,6 +146,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         self.onSurfaceTap = onSurfaceTap
         self.onWindowSwipe = onWindowSwipe
         self.onCopySelection = onCopySelection
+        self.selectSurface = selectSurface
+        self.isMouseCaptured = isMouseCaptured
         self.submitMouseButton = submitMouseButton
         self.submitMousePosition = submitMousePosition
         self.submitMouseScroll = submitMouseScroll
@@ -420,9 +436,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             }
 
             guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
-            selectSurfaceIfNeeded(surfaceID, registry: registry)
+            selectSurfaceIfNeeded(surfaceID)
 
-            guard !registry.focusedSurfaceMouseCaptured() else {
+            guard !isMouseCaptured(surfaceID) else {
                 activeSelectionSurfaceID = nil
                 return
             }
@@ -433,7 +449,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         guard let surfaceID = activeSelectionSurfaceID else {
             return
         }
-        selectSurfaceIfNeeded(surfaceID, registry: registry)
+        selectSurfaceIfNeeded(surfaceID)
 
         for action in GhosttySurfaceLongPressSelectionGesture.actions(
             forLocalPoint: recognizer.location(in: view),
@@ -482,11 +498,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func selectSurfaceIfNeeded(
-        _ surfaceID: UUID,
-        registry: GhosttyRuntimeSurfaceRegistry
+        _ surfaceID: UUID
     ) {
-        guard registry.selectedActiveLeafID != surfaceID else { return }
-        registry.selectSurface(surfaceID, reason: "tree.selectSurfaceIfNeeded")
+        _ = selectSurface(surfaceID, "tree.selectSurfaceIfNeeded")
     }
 
     @objc
@@ -499,8 +513,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         }
 
         guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
-        let mouseCaptured = registry.isMouseCaptured(for: surfaceID)
-        registry.selectSurface(surfaceID, reason: "tree.handleSurfaceTap")
+        let mouseCaptured = isMouseCaptured(surfaceID)
+        _ = selectSurface(surfaceID, "tree.handleSurfaceTap")
 
         for action in GhosttySurfaceTapGesture.actions(
             forLocalPoint: recognizer.location(in: view),

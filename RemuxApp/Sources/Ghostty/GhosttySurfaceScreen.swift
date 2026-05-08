@@ -90,6 +90,12 @@ struct GhosttySurfaceScreen: View {
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,
                             onCopySelection: copyTerminalSelection,
+                            selectSurface: { surfaceID, reason in
+                                model.selectTerminalSurface(surfaceID, reason: reason)
+                            },
+                            isMouseCaptured: { surfaceID in
+                                model.isMouseCaptured(for: surfaceID)
+                            },
                             submitMouseButton: { surfaceID, event in
                                 model.sendMouseButton(to: surfaceID, event)
                             },
