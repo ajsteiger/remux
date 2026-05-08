@@ -191,7 +191,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                             )
                         } catch {
                             NSLog("Remux Ghostty transport resize failed: %@", String(describing: error))
-                            await transport.close()
+                            await transport.close(disposition: .invalidated)
                         }
                     }
                     return true
@@ -740,10 +740,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     return self.completeTransportStart(token: token)
                 }
                 if shouldCloseTransport {
-                    await transport.close()
+                    await transport.close(disposition: .reusable)
                 }
             } catch {
-                await transport.close()
+                await transport.close(disposition: .invalidated)
                 await MainActor.run { [weak self] in
                     self?.failTransportStart(error, token: token)
                 }
@@ -833,7 +833,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 message: "tmux transport write failed: \(String(describing: error))"
             ),
             event: "model.transport.writeFailed",
-            error: error
+            error: error,
+            closeDisposition: .invalidated
         )
         hostSurface?.failOutboundWrite(error)
     }
@@ -912,27 +913,33 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         guard state == .running || state == .starting else { return }
 
         let reason: TerminalDisconnectReason
+        let closeDisposition: TmuxControlTransportCloseDisposition
         if let error = completion.error {
             let message = "tmux transport ended: \(String(describing: error))"
             if let hostFailure = error as? GhosttyControlHostSurface.Failure,
                hostFailure == .outputRejected {
                 reason = TerminalDisconnectReason(kind: .runtime, message: message)
+                closeDisposition = .reusable
             } else if let sshError = error as? SSHTmuxControlTransportError,
                       case .channelRequestFailed = sshError {
                 reason = TerminalDisconnectReason(kind: .profile, message: message)
+                closeDisposition = .invalidated
             } else {
                 reason = TerminalDisconnectReason(kind: .transportIO, message: message)
+                closeDisposition = .invalidated
             }
         } else {
             reason = TerminalDisconnectReason(
                 kind: .transportIO,
                 message: "tmux transport disconnected after \(completion.receivedByteCount) bytes"
             )
+            closeDisposition = .invalidated
         }
         markTerminalTransportUnavailable(
             reason: reason,
             event: "model.transport.ended",
-            error: completion.error
+            error: completion.error,
+            closeDisposition: closeDisposition
         )
     }
 
@@ -946,7 +953,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     message: "tmux transport unavailable after foreground"
                 ),
                 event: "model.transport.foregroundMissingHost",
-                error: nil
+                error: nil,
+                closeDisposition: .invalidated
             )
             return
         }
@@ -967,7 +975,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             markTerminalTransportUnavailable(
                 reason: reason,
                 event: "model.transport.foregroundEnded",
-                error: hostSurface.lastError
+                error: hostSurface.lastError,
+                closeDisposition: .invalidated
             )
             return
         }
@@ -978,7 +987,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private func markTerminalTransportUnavailable(
         reason: TerminalDisconnectReason,
         event: String,
-        error: (any Error)?
+        error: (any Error)?,
+        closeDisposition: TmuxControlTransportCloseDisposition
     ) {
         guard state != .idle else { return }
 
@@ -1002,7 +1012,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         debugStatus = reason.message
 
         Task {
-            await failedTransport?.close()
+            await failedTransport?.close(disposition: closeDisposition)
         }
     }
 

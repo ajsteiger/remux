@@ -853,7 +853,8 @@ private actor RecordingRootTmuxControlTransport: TmuxControlTransport {
         _ = height
     }
 
-    func close() async {
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
+        _ = disposition
         factory.record(.closed(id))
         continuation.finish()
     }

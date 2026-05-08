@@ -429,7 +429,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             )
         )
 
-        await transport.close()
+        await transport.close(disposition: .reusable)
 
         do {
             try await transport.send(Data("send-keys -t %1 a\n".utf8))

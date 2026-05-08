@@ -557,7 +557,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
                 trace: startupTrace
             )
             guard !isClosed else {
-                await claimedConnection.releaseAfterFailedStart()
+                await claimedConnection.release(.reusable)
                 throw SSHTmuxControlTransportError.closed
             }
             establishedConnection = try await SSHTmuxControlBootstrap.openControlSession(
@@ -581,7 +581,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         } catch {
             self.preparedConnection = nil
             self.connection = nil
-            await startedConnection?.close()
+            await startedConnection?.close(disposition: closeDispositionAfterStartFailure(error))
             throw error
         }
 
@@ -655,19 +655,28 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
         )
     }
 
-    func close() async {
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
         let activeConnection = connection
         let pendingPreparedConnection = preparedConnection
         connection = nil
         preparedConnection = nil
         isClosed = true
-        await activeConnection?.close()
+        await activeConnection?.close(disposition: disposition)
         if let pendingPreparedConnection {
             Task {
                 await pendingPreparedConnection.cancelAndCleanup()
             }
         }
         inboundStream.finish(nil)
+    }
+
+    private func closeDispositionAfterStartFailure(_ error: any Error) -> TmuxControlTransportCloseDisposition {
+        if let transportError = error as? SSHTmuxControlTransportError,
+           transportError == .closed {
+            return .reusable
+        }
+
+        return .invalidated
     }
 
     private func makePreparedConnection() async -> SSHTmuxPreparedConnection {
@@ -879,7 +888,7 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
         )
     }
 
-    func close() async {
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
         let shouldClose = closeLock.withLock {
             guard !didClose else { return false }
             didClose = true
@@ -889,7 +898,7 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
 
         try? await sessionChannel.close()
         if let authenticatedConnectionLease {
-            await authenticatedConnectionLease.release(.reusable)
+            await authenticatedConnectionLease.release(disposition.authenticatedConnectionLeaseDisposition)
         } else {
             await authenticatedConnection.close()
         }
@@ -1018,6 +1027,17 @@ private final class SSHTmuxAuthenticatedConnection: @unchecked Sendable {
 private enum SSHTmuxAuthenticatedConnectionLeaseDisposition: Sendable {
     case reusable
     case invalidated
+}
+
+private extension TmuxControlTransportCloseDisposition {
+    var authenticatedConnectionLeaseDisposition: SSHTmuxAuthenticatedConnectionLeaseDisposition {
+        switch self {
+        case .reusable:
+            return .reusable
+        case .invalidated:
+            return .invalidated
+        }
+    }
 }
 
 private final class SSHTmuxAuthenticatedConnectionLease: @unchecked Sendable {

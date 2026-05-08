@@ -60,7 +60,8 @@ actor DeterministicTmuxControlTransport: TmuxControlTransport {
         )
     }
 
-    func close() async {
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
+        _ = disposition
         continuation.finish()
     }
 

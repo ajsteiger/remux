@@ -94,7 +94,7 @@ final class RemuxRootModel: ObservableObject {
     deinit {
         libraryPrewarmTask?.cancel()
         for preparedTransport in preparedTransports.values {
-            Task { await preparedTransport.transport.close() }
+            Task { await preparedTransport.transport.close(disposition: .reusable) }
         }
     }
 
@@ -555,7 +555,7 @@ final class RemuxRootModel: ObservableObject {
     func makeTransport(for target: TmuxConnectionTarget) -> any TmuxControlTransport {
         if let prepared = preparedTransports.removeValue(forKey: target.workspace.id) {
             guard prepared.target.canReusePreparedTransport(for: target) else {
-                Task { await prepared.transport.close() }
+                Task { await prepared.transport.close(disposition: .reusable) }
                 GhosttyRuntimeTrace.flowEvent(
                     sessionOpenFlowID(target.workspace.id),
                     event: "model.transport.prewarm.discarded",
@@ -830,13 +830,13 @@ final class RemuxRootModel: ObservableObject {
         for workspaceID: SavedWorkspace.ID
     ) {
         if let existing = preparedTransports.updateValue(preparedTransport, forKey: workspaceID) {
-            Task { await existing.transport.close() }
+            Task { await existing.transport.close(disposition: .reusable) }
         }
     }
 
     private func closePreparedTransport(for workspaceID: SavedWorkspace.ID) {
         guard let prepared = preparedTransports.removeValue(forKey: workspaceID) else { return }
-        Task { await prepared.transport.close() }
+        Task { await prepared.transport.close(disposition: .reusable) }
     }
 
     private func closePreparedTransports(forServerID serverID: SavedServer.ID) {
@@ -847,7 +847,7 @@ final class RemuxRootModel: ObservableObject {
             preparedTransports.removeValue(forKey: workspaceID)
         }
         for prepared in closing.values {
-            Task { await prepared.transport.close() }
+            Task { await prepared.transport.close(disposition: .reusable) }
         }
     }
 

@@ -681,7 +681,12 @@ protocol TmuxControlTransport: Sendable {
     func start(initialViewport: TmuxControlViewport?) async throws
     func send(_ data: Data) async throws
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws
-    func close() async
+    func close(disposition: TmuxControlTransportCloseDisposition) async
+}
+
+enum TmuxControlTransportCloseDisposition: Equatable, Sendable {
+    case reusable
+    case invalidated
 }
 
 extension TmuxControlTransport {
@@ -744,7 +749,8 @@ actor UnavailableTmuxControlTransport: TmuxControlTransport {
         throw error
     }
 
-    func close() async {
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
+        _ = disposition
         finish(nil)
     }
 
@@ -863,7 +869,7 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
                 )
                 close()
                 await onFailure?(error)
-                await transport.close()
+                await transport.close(disposition: .invalidated)
                 return
             }
         }
@@ -1020,7 +1026,7 @@ final class GhosttyControlHostSurface {
 
                     guard let surface else {
                         GhosttyRuntimeTrace.latency("host.pump.noSurface closeTransport")
-                        await transport.close()
+                        await transport.close(disposition: .reusable)
                         complete(error: nil, markBackingExited: false)
                         return
                     }
@@ -1031,7 +1037,7 @@ final class GhosttyControlHostSurface {
                         "host.pump.processOutput end accepted=\(accepted) bytes=\(bytes.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: processStart))"
                     )
                     guard accepted else {
-                        await transport.close()
+                        await transport.close(disposition: .reusable)
                         onDebugEvent?("Ghostty rejected tmux output after \(receivedByteCount) bytes")
                         complete(error: Failure.outputRejected)
                         return
@@ -1059,7 +1065,7 @@ final class GhosttyControlHostSurface {
         surface?.setBackingExited(true)
 
         Task { [transport] in
-            await transport.close()
+            await transport.close(disposition: .reusable)
         }
     }
 

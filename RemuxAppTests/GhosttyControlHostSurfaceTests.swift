@@ -59,11 +59,11 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
             return sentCommands.isEmpty && closeCount == 1
         }
         let sentCommands = await transport.sentCommands()
-        let closeCount = await transport.closeCount()
+        let closeDispositions = await transport.closeDispositions()
 
         XCTAssertTrue(finished)
         XCTAssertTrue(sentCommands.isEmpty)
-        XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(closeDispositions, [.reusable])
     }
 
     func testWriteSequencerPreservesCommandOrderAcrossAsyncTransportSends() async {
@@ -103,8 +103,8 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
 
         let failed = await waitUntilAsync {
             let recordedErrors = await failureSink.recordedErrors()
-            let closeCount = await transport.closeCount()
-            return recordedErrors == [.disconnected] && closeCount == 1
+            let closeDispositions = await transport.closeDispositions()
+            return recordedErrors == [.disconnected] && closeDispositions == [.invalidated]
         }
 
         XCTAssertTrue(failed)
@@ -334,11 +334,11 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         await transport.emit(Data("%bad\n".utf8))
 
         let markedExited = await waitUntil { surface.backingExited == [true] }
-        let closeCount = await transport.closeCount()
+        let closeDispositions = await transport.closeDispositions()
 
         XCTAssertTrue(markedExited)
         XCTAssertFalse(host.isRunning)
-        XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(closeDispositions, [.reusable])
         XCTAssertEqual(
             host.lastError as? GhosttyControlHostSurface.Failure,
             .outputRejected
@@ -475,7 +475,7 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
     private let sendError: TestTransportError?
     private var commands: [Data] = []
     private var resizes: [ResizeEvent] = []
-    private var closes = 0
+    private var recordedCloseDispositions: [TmuxControlTransportCloseDisposition] = []
 
     struct ResizeEvent: Equatable {
         let columns: UInt16
@@ -519,8 +519,8 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
         )
     }
 
-    func close() async {
-        closes += 1
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
+        recordedCloseDispositions.append(disposition)
         continuation.finish()
     }
 
@@ -541,7 +541,11 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
     }
 
     func closeCount() -> Int {
-        closes
+        recordedCloseDispositions.count
+    }
+
+    func closeDispositions() -> [TmuxControlTransportCloseDisposition] {
+        recordedCloseDispositions
     }
 }
 

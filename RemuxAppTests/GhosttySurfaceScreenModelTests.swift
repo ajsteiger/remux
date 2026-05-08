@@ -1264,9 +1264,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             return message.contains("tmux transport ended")
         }
         let closeCount = await transport.closeCount()
+        let closeDispositions = await transport.closeDispositions()
 
         XCTAssertTrue(didFail)
         XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(closeDispositions, [.invalidated])
         XCTAssertEqual(model.debugStatus, "tmux transport ended: disconnected")
     }
 
@@ -1969,7 +1971,7 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
     nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
 
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
-    private var closes = 0
+    private var recordedCloseDispositions: [TmuxControlTransportCloseDisposition] = []
 
     init() {
         var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
@@ -1994,8 +1996,8 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
         _ = height
     }
 
-    func close() async {
-        closes += 1
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
+        recordedCloseDispositions.append(disposition)
         continuation.finish()
     }
 
@@ -2008,7 +2010,11 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
     }
 
     func closeCount() -> Int {
-        closes
+        recordedCloseDispositions.count
+    }
+
+    func closeDispositions() -> [TmuxControlTransportCloseDisposition] {
+        recordedCloseDispositions
     }
 }
 
@@ -2036,5 +2042,7 @@ private actor NoopTmuxControlTransport: TmuxControlTransport {
         _ = height
     }
 
-    func close() async {}
+    func close(disposition: TmuxControlTransportCloseDisposition) async {
+        _ = disposition
+    }
 }
