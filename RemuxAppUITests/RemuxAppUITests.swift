@@ -166,6 +166,48 @@ final class RemuxAppUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(5))
     }
 
+    func testLiveHighOutputRuntimeWhenConfigured() throws {
+        let sessionName = "remux-latency-flow-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        let keyboard = app.buttons["terminal.keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        keyboard.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 8))
+
+        let payload = String(repeating: "x", count: 80)
+        app.typeText(
+            "i=0; while [ $i -lt 5000 ]; do printf 'REMUX_FLOW_%05d \(payload)\\n' $i; i=$((i+1)); done\n"
+        )
+
+        RunLoop.current.run(until: Date().addingTimeInterval(10))
+
+        XCTAssertFalse(app.staticTexts["terminal.status.failed"].exists)
+        XCTAssertTrue(app.otherElements["terminal.screen"].exists || app.staticTexts["terminal.screen"].exists)
+
+        let panes = app.buttons["terminal.panes"]
+        XCTAssertTrue(panes.waitForExistence(timeout: 10))
+        panes.tap()
+        XCTAssertTrue(app.buttons["Split"].waitForExistence(timeout: 8))
+        dismissTopSheetIfPresent()
+
+        let windows = app.buttons["terminal.windows"]
+        XCTAssertTrue(windows.waitForExistence(timeout: 10))
+        windows.tap()
+        XCTAssertTrue(app.buttons["New Window"].waitForExistence(timeout: 8))
+        dismissTopSheetIfPresent()
+
+        openHomeFromTerminal()
+        XCTAssertTrue(activeSessionRows.firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testLiveWarmSSHRootReuseWhenConfigured() throws {
         let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
         defer {
