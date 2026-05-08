@@ -4,6 +4,7 @@ import Foundation
 struct RemuxAppDependencies: Sendable {
     let profileRepository: any ConnectionProfileRepository
     let settingsRepository: any TerminalSettingsRepository
+    let shortcutRepository: any ShortcutRepository
     let passwordStore: any PasswordStore
     let trustedHostStore: TrustedHostStore
     private let sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
@@ -21,6 +22,7 @@ struct RemuxAppDependencies: Sendable {
     init(
         profileRepository: any ConnectionProfileRepository,
         settingsRepository: any TerminalSettingsRepository,
+        shortcutRepository: any ShortcutRepository = InMemoryShortcutRepository(),
         passwordStore: any PasswordStore,
         trustedHostStore: TrustedHostStore,
         sshConnectionPool: SSHTmuxAuthenticatedConnectionPool = SSHTmuxAuthenticatedConnectionPool(),
@@ -37,6 +39,7 @@ struct RemuxAppDependencies: Sendable {
     ) {
         self.profileRepository = profileRepository
         self.settingsRepository = settingsRepository
+        self.shortcutRepository = shortcutRepository
         self.passwordStore = passwordStore
         self.trustedHostStore = trustedHostStore
         self.sshConnectionPool = sshConnectionPool
@@ -60,6 +63,7 @@ struct RemuxAppDependencies: Sendable {
         return RemuxAppDependencies(
             profileRepository: FileBackedConnectionProfileRepository(rootURL: root),
             settingsRepository: FileBackedTerminalSettingsRepository(rootURL: root),
+            shortcutRepository: FileBackedShortcutRepository(rootURL: root),
             passwordStore: KeychainPasswordStore(),
             trustedHostStore: TrustedHostStore(rootURL: root)
         )
@@ -152,6 +156,7 @@ struct RemuxAppDependencies: Sendable {
         return RemuxAppDependencies(
             profileRepository: InMemoryConnectionProfileRepository(),
             settingsRepository: InMemoryTerminalSettingsRepository(),
+            shortcutRepository: InMemoryShortcutRepository(),
             passwordStore: InMemoryPasswordStore(),
             trustedHostStore: TrustedHostStore(rootURL: root),
             transportFactory: { _, _, _ in
@@ -237,6 +242,28 @@ private actor InMemoryTerminalSettingsRepository: TerminalSettingsRepository {
 
     func saveSettings(_ settings: TerminalSettings) async throws {
         self.settings = settings
+    }
+}
+
+private actor InMemoryShortcutRepository: ShortcutRepository {
+    private var snapshot: ShortcutStoreSnapshot
+    private let starters: [StarterShortcut]
+
+    init(
+        snapshot: ShortcutStoreSnapshot = ShortcutStoreSnapshot(),
+        starters: [StarterShortcut] = StarterShortcuts.all
+    ) {
+        self.snapshot = snapshot
+        self.starters = starters
+    }
+
+    func loadSnapshot() async throws -> ShortcutStoreSnapshot {
+        snapshot.installMissingStarters(starters)
+        return snapshot
+    }
+
+    func saveSnapshot(_ snapshot: ShortcutStoreSnapshot) async throws {
+        self.snapshot = snapshot
     }
 }
 
