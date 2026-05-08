@@ -673,7 +673,8 @@ final class GhosttyLatencyProbeStore: @unchecked Sendable {
 protocol TmuxControlTransport: Sendable {
     var receivedBytes: AsyncThrowingStream<Data, Error> { get }
 
-    /// Starts any transport work that does not depend on the terminal viewport.
+    /// Starts authentication/root transport work that does not allocate the
+    /// terminal session channel and does not depend on the terminal viewport.
     /// Implementations must keep this idempotent; `start()` remains the point
     /// where the transport becomes usable and queued writes may flush.
     func prepare() async
