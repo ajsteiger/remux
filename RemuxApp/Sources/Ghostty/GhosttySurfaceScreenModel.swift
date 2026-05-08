@@ -10,6 +10,36 @@ struct GhosttyTmuxCommandFailureEvent: Equatable {
     let message: String
 }
 
+enum GhosttyTmuxActionMissingTarget: Equatable, Sendable {
+    case host
+    case pane(UUID)
+    case focusedPane
+    case window(UUID)
+    case windowPane(UUID)
+    case selectedWindow
+    case adjacentWindow
+}
+
+enum GhosttyTmuxModelActionOutcome: Equatable, Sendable {
+    case queued
+    case localSelectionOnly(TmuxActionSubmissionResult)
+    case missingTarget(GhosttyTmuxActionMissingTarget)
+    case rejected(TmuxActionSubmissionResult)
+
+    var isHandled: Bool {
+        switch self {
+        case .queued, .localSelectionOnly:
+            true
+        case .missingTarget, .rejected:
+            false
+        }
+    }
+
+    var isQueued: Bool {
+        self == .queued
+    }
+}
+
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
@@ -456,7 +486,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     @discardableResult
-    func focusTmuxPane(_ id: UUID) -> Bool {
+    func focusTmuxPane(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
         GhosttyRuntimeTrace.diagnostics(
             "model.focusTmuxPane begin target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
@@ -465,7 +495,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.diagnostics(
                 "model.focusTmuxPane missing target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
             )
-            return false
+            return .missingTarget(.pane(id))
         }
 
         surfaceRegistry.selectSurface(id, reason: "model.focusTmuxPane")
@@ -478,11 +508,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.diagnostics(
             "model.focusTmuxPane end target=\(ghosttyDiagnosticShortID(id)) submission=\(submission.description) targetSurface={\(surface.diagnosticSummary())} \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        return true
+        return submission.isQueued ? .queued : .localSelectionOnly(submission)
     }
 
     @discardableResult
-    func focusTmuxTopLevel(_ id: UUID) -> Bool {
+    func focusTmuxTopLevel(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
         GhosttyRuntimeTrace.diagnostics(
             "model.focusTmuxTopLevel begin target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
@@ -491,7 +521,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.diagnostics(
                 "model.focusTmuxTopLevel missing target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
             )
-            return false
+            return .missingTarget(.window(id))
         }
 
         guard let paneID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first else {
@@ -499,14 +529,16 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.diagnostics(
                 "model.focusTmuxTopLevel no-pane target=\(ghosttyDiagnosticShortID(id)) \(surfaceRegistry.diagnosticSelectionSummary())"
             )
-            return false
+            return .missingTarget(.windowPane(id))
         }
 
         return focusTmuxPane(paneID)
     }
 
     @discardableResult
-    func focusAdjacentTmuxTopLevel(_ direction: GhosttyRuntimeSelectionDirection) -> Bool {
+    func focusAdjacentTmuxTopLevel(
+        _ direction: GhosttyRuntimeSelectionDirection
+    ) -> GhosttyTmuxModelActionOutcome {
         GhosttyRuntimeTrace.diagnostics(
             "model.focusAdjacentTmuxTopLevel begin direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
@@ -515,7 +547,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.diagnostics(
                 "model.focusAdjacentTmuxTopLevel no-adjacent direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
             )
-            return false
+            return .missingTarget(.adjacentWindow)
         }
 
         let currentIndex = surfaceRegistry.selectedTopLevelIndex ?? 0
@@ -530,7 +562,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     @discardableResult
-    func createTmuxWindow() -> Bool {
+    func createTmuxWindow() -> GhosttyTmuxModelActionOutcome {
         let start = GhosttyRuntimeTrace.nowNanos()
         clearCommandFailureMessage()
         GhosttyRuntimeTrace.latency("model.createTmuxWindow begin")
@@ -541,7 +573,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 "model.createTmuxWindow dropped hostMissing elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
             GhosttyRuntimeTrace.flowEnd("tmux.newWindow", event: "model.createTmuxWindow.dropped")
-            return false
+            return .missingTarget(.host)
         }
 
         let submission = controlSurface.tmuxNewWindow()
@@ -551,7 +583,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 "model.createTmuxWindow rejected result=\(submission.description) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
             GhosttyRuntimeTrace.flowEnd("tmux.newWindow", event: "model.createTmuxWindow.rejected")
-            return false
+            return .rejected(submission)
         }
 
         debugStatus = "tmux new-window queued"
@@ -559,11 +591,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             "model.createTmuxWindow queued elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
         GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "model.createTmuxWindow.queued")
-        return true
+        return .queued
     }
 
     @discardableResult
-    func splitFocusedTmuxPane(_ direction: ghostty_action_split_direction_e) -> Bool {
+    func splitFocusedTmuxPane(
+        _ direction: ghostty_action_split_direction_e
+    ) -> GhosttyTmuxModelActionOutcome {
         let start = GhosttyRuntimeTrace.nowNanos()
         clearCommandFailureMessage()
         GhosttyRuntimeTrace.latency(
@@ -583,7 +617,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 "model.splitFocusedTmuxPane dropped noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
             GhosttyRuntimeTrace.flowEnd("tmux.splitPane", event: "model.splitFocusedTmuxPane.dropped")
-            return false
+            return .missingTarget(.focusedPane)
         }
 
         let submission = surface.tmuxSplit(direction)
@@ -593,7 +627,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 "model.splitFocusedTmuxPane rejected target=\(ghosttyDiagnosticShortID(surfaceID)) result=\(submission.description) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
             GhosttyRuntimeTrace.flowEnd("tmux.splitPane", event: "model.splitFocusedTmuxPane.rejected")
-            return false
+            return .rejected(submission)
         }
 
         debugStatus = "tmux split queued"
@@ -605,67 +639,71 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             event: "model.splitFocusedTmuxPane.queued",
             fields: ["target": ghosttyDiagnosticShortID(surfaceID)]
         )
-        return true
+        return .queued
     }
 
     @discardableResult
-    func closeFocusedTmuxPane() -> Bool {
+    func closeFocusedTmuxPane() -> GhosttyTmuxModelActionOutcome {
         guard let surfaceID = surfaceRegistry.selectedActiveLeafID else {
             debugStatus = "tmux close-pane dropped: no focused pane"
-            return false
+            return .missingTarget(.focusedPane)
         }
 
         return closeTmuxPane(surfaceID)
     }
 
     @discardableResult
-    func closeTmuxPane(_ id: UUID) -> Bool {
+    func closeTmuxPane(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
         guard
             let surface = surfaceRegistry.managedSurface(for: id)
         else {
             debugStatus = "tmux close-pane dropped: pane missing"
-            return false
+            return .missingTarget(.pane(id))
         }
 
         let submission = surface.tmuxClosePane()
         guard submission.isQueued else {
             debugStatus = "tmux close-pane rejected: \(submission.description)"
-            return false
+            return .rejected(submission)
         }
 
         debugStatus = "tmux close-pane queued"
-        return true
+        return .queued
     }
 
     @discardableResult
-    func closeSelectedTmuxWindow() -> Bool {
+    func closeSelectedTmuxWindow() -> GhosttyTmuxModelActionOutcome {
         guard let topLevel = surfaceRegistry.selectedTopLevel else {
             debugStatus = "tmux close-window dropped: no selected window"
-            return false
+            return .missingTarget(.selectedWindow)
         }
 
         return closeTmuxWindow(topLevel.id)
     }
 
     @discardableResult
-    func closeTmuxWindow(_ id: UUID) -> Bool {
-        guard
-            let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == id }),
-            let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first,
-            let surface = surfaceRegistry.managedSurface(for: surfaceID)
-        else {
+    func closeTmuxWindow(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
+        guard let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == id }) else {
             debugStatus = "tmux close-window dropped: window missing"
-            return false
+            return .missingTarget(.window(id))
+        }
+        guard let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first else {
+            debugStatus = "tmux close-window dropped: window missing"
+            return .missingTarget(.windowPane(id))
+        }
+        guard let surface = surfaceRegistry.managedSurface(for: surfaceID) else {
+            debugStatus = "tmux close-window dropped: window missing"
+            return .missingTarget(.pane(surfaceID))
         }
 
         let submission = surface.tmuxCloseWindow()
         guard submission.isQueued else {
             debugStatus = "tmux close-window rejected: \(submission.description)"
-            return false
+            return .rejected(submission)
         }
 
         debugStatus = "tmux close-window queued"
-        return true
+        return .queued
     }
 
     private func startTransportWhenSurfaceIsSized(
@@ -1246,19 +1284,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         case .splitRight:
             GhosttyRuntimeTrace.latency("debugLatencyProbe.splitRight submit")
-            if !splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT) {
+            if !splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_RIGHT).isQueued {
                 probe.markRejected()
             }
 
         case .splitDown:
             GhosttyRuntimeTrace.latency("debugLatencyProbe.splitDown submit")
-            if !splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN) {
+            if !splitFocusedTmuxPane(GHOSTTY_SPLIT_DIRECTION_DOWN).isQueued {
                 probe.markRejected()
             }
 
         case .newWindow:
             GhosttyRuntimeTrace.latency("debugLatencyProbe.newWindow submit")
-            if !createTmuxWindow() {
+            if !createTmuxWindow().isQueued {
                 probe.markRejected()
             }
         }
