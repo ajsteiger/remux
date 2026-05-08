@@ -85,6 +85,17 @@ enum GhosttyTmuxTopologyActionInteractionEffect: Equatable, Sendable {
     }
 }
 
+struct GhosttyWindowSheetPresentationProjection: Equatable, Sendable {
+    let previewLeafIDs: [UUID]
+    let cellCount: Int
+}
+
+struct GhosttyPaneSheetPresentationProjection: Equatable, Sendable {
+    let topLevelID: UUID
+    let previewLeafIDs: [UUID]
+    let paneCount: Int
+}
+
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     private static let surfaceSizeReadinessRetryDelay: Duration = .milliseconds(8)
@@ -509,6 +520,37 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
 
         return topLevel.leafIDs.count == 1 ? .refocusOnly : .none
+    }
+
+    func windowSheetPresentationProjection() -> GhosttyWindowSheetPresentationProjection? {
+        guard !surfaceRegistry.topLevels.isEmpty else { return nil }
+
+        return GhosttyWindowSheetPresentationProjection(
+            previewLeafIDs: surfaceRegistry.topLevels.compactMap(\.resolvedFocusedLeafID),
+            cellCount: windowSheetDetentCellCount()
+        )
+    }
+
+    func selectedPaneSheetPresentationProjection() -> GhosttyPaneSheetPresentationProjection? {
+        guard let topLevel = surfaceRegistry.selectedTopLevel else { return nil }
+
+        return GhosttyPaneSheetPresentationProjection(
+            topLevelID: topLevel.id,
+            previewLeafIDs: topLevel.leafIDs,
+            paneCount: topLevel.leafIDs.count
+        )
+    }
+
+    func paneSheetDetentPaneCount(topLevelID: UUID) -> Int {
+        surfaceRegistry.topLevels.first(where: { $0.id == topLevelID })?.leafIDs.count ?? 0
+    }
+
+    func windowSheetDetentCellCount() -> Int {
+        surfaceRegistry.topLevels.count + 1
+    }
+
+    func containsTopLevel(_ topLevelID: UUID) -> Bool {
+        surfaceRegistry.topLevels.contains(where: { $0.id == topLevelID })
     }
 
     @discardableResult

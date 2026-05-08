@@ -246,11 +246,11 @@ struct GhosttySurfaceScreen: View {
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
             }
-            .onChange(of: registry.topLevels.map(\.id)) { _, topLevelIDs in
+            .onChange(of: model.surfaceRegistryRevision) { _, _ in
                 guard case .panes(let topLevelID, _) = selectionSheet else {
                     return
                 }
-                guard !topLevelIDs.contains(topLevelID) else {
+                guard !model.containsTopLevel(topLevelID) else {
                     return
                 }
                 dismissSelectionSheet()
@@ -530,15 +530,17 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showWindows() {
-        guard !registry.topLevels.isEmpty else { return }
+        guard let projection = model.windowSheetPresentationProjection() else { return }
         GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "ui.showWindows")
         captureSelectionSheetBottomReplacementHeight()
-        selectionSheet = .windows(makeWindowPreviewSession())
+        selectionSheet = .windows(
+            makeWindowPreviewSession(leafIDs: projection.previewLeafIDs)
+        )
     }
 
-    private func makeWindowPreviewSession() -> GhosttyPanePreviewSession {
+    private func makeWindowPreviewSession(leafIDs: [UUID]) -> GhosttyPanePreviewSession {
         GhosttyPanePreviewSession(
-            leafIDs: registry.topLevels.compactMap(\.resolvedFocusedLeafID),
+            leafIDs: leafIDs,
             registry: registry,
             previewSizing: .windowGridForCurrentScreen
         )
@@ -560,7 +562,7 @@ struct GhosttySurfaceScreen: View {
     ) -> Set<PresentationDetent> {
         switch sheet {
         case .windows(_):
-            let cellCount = registry.topLevels.count + 1
+            let cellCount = model.windowSheetDetentCellCount()
             switch PanePreviewLayout.windowMetricsForCurrentScreen(cellCount: cellCount).sheetDetent {
             case .fixed(let height):
                 return [
@@ -576,7 +578,7 @@ struct GhosttySurfaceScreen: View {
             }
 
         case .panes(let topLevelID, _):
-            let paneCount = registry.topLevels.first(where: { $0.id == topLevelID })?.leafIDs.count ?? 0
+            let paneCount = model.paneSheetDetentPaneCount(topLevelID: topLevelID)
             switch PanePreviewLayout.metricsForCurrentScreen(for: paneCount).sheetDetent {
             case .fixed(let height):
                 return [
@@ -594,7 +596,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showPanes() {
-        guard let topLevel = registry.selectedTopLevel else { return }
+        guard let projection = model.selectedPaneSheetPresentationProjection() else { return }
         GhosttyRuntimeTrace.flowEventIfActive("tmux.splitPane", event: "ui.showPanes")
 
         // Carry the preview session in the sheet payload itself so the pane
@@ -602,9 +604,9 @@ struct GhosttySurfaceScreen: View {
         // the presentation transaction.
         captureSelectionSheetBottomReplacementHeight()
         selectionSheet = .panes(
-            topLevelID: topLevel.id,
+            topLevelID: projection.topLevelID,
             previews: GhosttyPanePreviewSession(
-                leafIDs: topLevel.leafIDs,
+                leafIDs: projection.previewLeafIDs,
                 registry: registry,
                 previewSizing: .paneGridForCurrentScreen
             )
@@ -1051,7 +1053,7 @@ struct GhosttySurfaceScreen: View {
                         "tmux.newWindow",
                         event: "ui.tap.newWindow",
                         fields: [
-                            "topLevelsBefore": "\(registry.topLevels.count)",
+                            "topLevelsBefore": "\(model.terminalInteractionProjection.windowCount)",
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
@@ -1081,7 +1083,7 @@ struct GhosttySurfaceScreen: View {
                         "tmux.splitPane",
                         event: "ui.tap.splitPane",
                         fields: [
-                            "panesBefore": "\(registry.selectedTopLevel?.leafIDs.count ?? 0)",
+                            "panesBefore": "\(model.paneSheetDetentPaneCount(topLevelID: topLevelID))",
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )
@@ -1097,7 +1099,7 @@ struct GhosttySurfaceScreen: View {
                         "tmux.splitPane",
                         event: "ui.tap.stackPane",
                         fields: [
-                            "panesBefore": "\(registry.selectedTopLevel?.leafIDs.count ?? 0)",
+                            "panesBefore": "\(model.paneSheetDetentPaneCount(topLevelID: topLevelID))",
                             "workspaceID": target.workspace.id.uuidString,
                         ]
                     )

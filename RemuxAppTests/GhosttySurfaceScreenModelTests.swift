@@ -1883,6 +1883,117 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.closeTmuxPaneInteractionEffect(managed.id, inTopLevel: UUID()), .none)
     }
 
+    func testWindowSheetPresentationProjectionRequiresTopology() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+
+        XCTAssertNil(model.windowSheetPresentationProjection())
+        XCTAssertEqual(model.windowSheetDetentCellCount(), 1)
+    }
+
+    func testWindowSheetPresentationProjectionUsesFocusedLeafIDsAndCreateTileCount() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        let third = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [second, third],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(second.id),
+                    right: .leaf(third.id)
+                )
+            ),
+            focusedLeafID: third.id
+        )
+
+        XCTAssertEqual(
+            model.windowSheetPresentationProjection(),
+            GhosttyWindowSheetPresentationProjection(
+                previewLeafIDs: [first.id, third.id],
+                cellCount: 3
+            )
+        )
+        XCTAssertEqual(model.windowSheetDetentCellCount(), 3)
+    }
+
+    func testSelectedPaneSheetPresentationProjectionRequiresSelectedTopLevel() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+
+        XCTAssertNil(model.selectedPaneSheetPresentationProjection())
+    }
+
+    func testSelectedPaneSheetPresentationProjectionUsesFrozenTopLevelSeed() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let second = Self.managedSurface()
+        let third = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [first, second, third],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .split(
+                        axis: .vertical,
+                        ratio: 0.5,
+                        left: .leaf(second.id),
+                        right: .leaf(third.id)
+                    )
+                )
+            ),
+            focusedLeafID: second.id
+        )
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertEqual(
+            model.selectedPaneSheetPresentationProjection(),
+            GhosttyPaneSheetPresentationProjection(
+                topLevelID: topLevelID,
+                previewLeafIDs: [first.id, second.id, third.id],
+                paneCount: 3
+            )
+        )
+        XCTAssertEqual(model.paneSheetDetentPaneCount(topLevelID: topLevelID), 3)
+        XCTAssertEqual(model.paneSheetDetentPaneCount(topLevelID: UUID()), 0)
+    }
+
+    func testSheetTopologyHelpersTrackMissingTopLevel() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+
+        XCTAssertTrue(model.containsTopLevel(topLevelID))
+        XCTAssertFalse(model.containsTopLevel(UUID()))
+
+        model.surfaceRegistry.runtimeCloseSurface(id: managed.id, processAlive: false)
+
+        XCTAssertFalse(model.containsTopLevel(topLevelID))
+        XCTAssertEqual(model.paneSheetDetentPaneCount(topLevelID: topLevelID), 0)
+    }
+
     func testMouseButtonRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var received: [GhosttySurfaceMouseButtonEvent] = []
