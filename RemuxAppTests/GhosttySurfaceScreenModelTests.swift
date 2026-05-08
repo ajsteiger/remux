@@ -1301,6 +1301,46 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux transport ended: SSH exec request failed")
     }
 
+    func testModelPreservesSSHStartupDiagnosticsInTransportFailureMessage() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = GhosttySurfaceScreenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugPaneInputSmoke: nil,
+            debugLatencyProbe: nil
+        )
+        let diagnostics = SSHTmuxStartupDiagnostics(
+            stdoutByteCount: 0,
+            stderrByteCount: 21,
+            extendedDataByteCount: 0,
+            stderrPreview: "tmux failed",
+            extendedDataPreview: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        await transport.fail(
+            SSHTmuxControlTransportError.channelRequestFailed(.exec, diagnostics: diagnostics)
+        )
+
+        let didFail = await waitUntil(timeout: 2) {
+            guard case .failed(let message) = model.state else { return false }
+            return message.contains("stderr_preview=\"tmux failed\"")
+        }
+
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(model.failureReason?.kind, .profile)
+        XCTAssertTrue(model.debugStatus.contains("stderr_bytes=21"))
+    }
+
     func testModelSurfacesTmuxNoSpaceCommandFailureWithoutDisconnecting() async {
         let transport = ControlledScreenModelTmuxControlTransport()
         let model = GhosttySurfaceScreenModel(

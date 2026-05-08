@@ -1,4 +1,5 @@
 @preconcurrency import Citadel
+@preconcurrency import NIOSSH
 import XCTest
 @testable import Remux
 
@@ -220,6 +221,146 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             String(describing: SSHTmuxControlTransportError.channelRequestFailed(.pseudoTerminal)),
             "SSH pseudo-terminal request failed"
         )
+    }
+
+    func testChannelDataRouterForwardsOnlyStdoutAsControlOutput() {
+        var router = SSHTmuxControlChannelDataRouter()
+        let first = Data("%begin 1 0\\n".utf8)
+        let second = Data("%end 1 0\\n".utf8)
+
+        XCTAssertEqual(
+            router.route(type: .channel, data: first),
+            .stdout(reportFirstOutput: true)
+        )
+        XCTAssertEqual(
+            router.route(type: .channel, data: second),
+            .stdout(reportFirstOutput: false)
+        )
+
+        let diagnostics = router.diagnostics
+        XCTAssertEqual(diagnostics?.stdoutByteCount, first.count + second.count)
+        XCTAssertEqual(diagnostics?.stderrByteCount, 0)
+        XCTAssertEqual(diagnostics?.extendedDataByteCount, 0)
+    }
+
+    func testChannelDataRouterCapturesStderrWithoutControlOutput() {
+        var router = SSHTmuxControlChannelDataRouter()
+        let stderr = Data("tmux: no server running\\n".utf8)
+
+        XCTAssertEqual(router.route(type: .stdErr, data: stderr), .stderr)
+
+        let diagnostics = router.diagnostics
+        XCTAssertEqual(diagnostics?.stdoutByteCount, 0)
+        XCTAssertEqual(diagnostics?.stderrByteCount, stderr.count)
+        XCTAssertEqual(diagnostics?.extendedDataByteCount, 0)
+        XCTAssertTrue(diagnostics?.stderrPreview?.contains("tmux: no server running") == true)
+    }
+
+    func testChannelDataRouterCapturesUnknownExtendedDataWithoutControlOutput() {
+        var router = SSHTmuxControlChannelDataRouter()
+        let extended = Data("extended diagnostic\\n".utf8)
+
+        XCTAssertEqual(
+            router.route(type: SSHChannelData.DataType(extended: 2), data: extended),
+            .extendedData(typeDescription: "SSHChannelData(extended: 2)")
+        )
+
+        let diagnostics = router.diagnostics
+        XCTAssertEqual(diagnostics?.stdoutByteCount, 0)
+        XCTAssertEqual(diagnostics?.stderrByteCount, 0)
+        XCTAssertEqual(diagnostics?.extendedDataByteCount, extended.count)
+        XCTAssertTrue(diagnostics?.extendedDataPreview?.contains("extended diagnostic") == true)
+    }
+
+    func testStartupDiagnosticsBoundsStderrPreview() {
+        var router = SSHTmuxControlChannelDataRouter()
+        let stderr = Data(String(repeating: "x", count: 500).utf8)
+
+        XCTAssertEqual(router.route(type: .stdErr, data: stderr), .stderr)
+
+        let diagnostics = router.diagnostics
+        XCTAssertEqual(diagnostics?.stderrByteCount, 500)
+        XCTAssertLessThanOrEqual(diagnostics?.stderrPreview?.count ?? 0, 260)
+    }
+
+    func testTransportFailureDescriptionIncludesBoundedDiagnosticsWhenPresent() {
+        let diagnostics = SSHTmuxStartupDiagnostics(
+            stdoutByteCount: 0,
+            stderrByteCount: 18,
+            extendedDataByteCount: 0,
+            stderrPreview: "tmux failed",
+            extendedDataPreview: nil
+        )
+
+        XCTAssertEqual(
+            String(describing: SSHTmuxControlTransportError.remoteExit(1)),
+            "remoteExit(1)"
+        )
+        XCTAssertTrue(
+            String(describing: SSHTmuxControlTransportError.remoteExit(1, diagnostics: diagnostics))
+                .contains("stderr_preview=\"tmux failed\"")
+        )
+        XCTAssertEqual(
+            String(describing: SSHTmuxControlTransportError.channelRequestFailed(.exec)),
+            "SSH exec request failed"
+        )
+        XCTAssertTrue(
+            String(describing: SSHTmuxControlTransportError.channelRequestFailed(.exec, diagnostics: diagnostics))
+                .contains("stderr_bytes=18")
+        )
+        XCTAssertFalse(
+            String(describing: SSHTmuxControlTransportError.remoteExit(1, diagnostics: diagnostics))
+                .contains("stdout_preview")
+        )
+    }
+
+    func testChannelCompletionReportsRemoteExitWithDiagnosticsOnClose() {
+        let diagnostics = SSHTmuxStartupDiagnostics(
+            stdoutByteCount: 12,
+            stderrByteCount: 18,
+            extendedDataByteCount: 0,
+            stderrPreview: "tmux failed",
+            extendedDataPreview: nil
+        )
+        var completionState = SSHTmuxControlChannelCompletionState()
+
+        completionState.recordExitStatus(1)
+
+        let completion = completionState.finish(nil, diagnostics: diagnostics)
+        guard case .failure(let error as SSHTmuxControlTransportError) = completion else {
+            XCTFail("expected transport remote exit failure")
+            return
+        }
+
+        XCTAssertEqual(
+            String(describing: error),
+            "remoteExit(1) stdout_bytes=12 stderr_bytes=18 extended_bytes=0 stderr_preview=\"tmux failed\""
+        )
+        XCTAssertNil(completionState.finish(nil, diagnostics: diagnostics))
+    }
+
+    func testChannelCompletionKeepsRequestRejectionAsImmediateFailure() {
+        let diagnostics = SSHTmuxStartupDiagnostics(
+            stdoutByteCount: 0,
+            stderrByteCount: 18,
+            extendedDataByteCount: 0,
+            stderrPreview: "tmux failed",
+            extendedDataPreview: nil
+        )
+        var completionState = SSHTmuxControlChannelCompletionState()
+        let requestFailure = SSHTmuxControlTransportError.channelRequestFailed(
+            .exec,
+            diagnostics: diagnostics
+        )
+
+        let completion = completionState.finish(requestFailure, diagnostics: diagnostics)
+        guard case .failure(let error as SSHTmuxControlTransportError) = completion else {
+            XCTFail("expected transport request failure")
+            return
+        }
+
+        XCTAssertEqual(error, requestFailure)
+        XCTAssertNil(completionState.finish(nil, diagnostics: diagnostics))
     }
 
     func testControlSessionCommandAttachesOrCreatesNamedSession() {

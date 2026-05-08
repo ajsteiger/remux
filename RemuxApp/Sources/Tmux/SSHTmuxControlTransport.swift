@@ -243,19 +243,180 @@ final class SSHTmuxControlInboundStream: @unchecked Sendable {
     }
 }
 
+private struct SSHTmuxBoundedStreamPreview: Equatable, Sendable {
+    private static let limit = 240
+
+    private(set) var byteCount = 0
+    private var bytes = Data()
+
+    var preview: String? {
+        guard !bytes.isEmpty else { return nil }
+        return GhosttyRuntimeTrace.preview(bytes, limit: Self.limit)
+    }
+
+    mutating func append(_ data: Data) {
+        guard !data.isEmpty else { return }
+
+        byteCount += data.count
+
+        if data.count >= Self.limit {
+            bytes = Data(data.suffix(Self.limit))
+            return
+        }
+
+        let retainedPrefixCount = max(0, Self.limit - data.count)
+        if bytes.count > retainedPrefixCount {
+            bytes = Data(bytes.suffix(retainedPrefixCount))
+        }
+        bytes.append(data)
+    }
+}
+
+struct SSHTmuxStartupDiagnostics: Equatable, Sendable, CustomStringConvertible {
+    let stdoutByteCount: Int
+    let stderrByteCount: Int
+    let extendedDataByteCount: Int
+    let stderrPreview: String?
+    let extendedDataPreview: String?
+
+    var isEmpty: Bool {
+        stdoutByteCount == 0 &&
+            stderrByteCount == 0 &&
+            extendedDataByteCount == 0
+    }
+
+    var description: String {
+        var fields = [
+            "stdout_bytes=\(stdoutByteCount)",
+            "stderr_bytes=\(stderrByteCount)",
+            "extended_bytes=\(extendedDataByteCount)",
+        ]
+        if let stderrPreview {
+            fields.append("stderr_preview=\"\(stderrPreview)\"")
+        }
+        if let extendedDataPreview {
+            fields.append("extended_preview=\"\(extendedDataPreview)\"")
+        }
+        return fields.joined(separator: " ")
+    }
+}
+
+private struct SSHTmuxStartupDiagnosticsAccumulator: Equatable, Sendable {
+    private var stdout = SSHTmuxBoundedStreamPreview()
+    private var stderr = SSHTmuxBoundedStreamPreview()
+    private var extendedData = SSHTmuxBoundedStreamPreview()
+
+    mutating func recordStdout(_ data: Data) {
+        stdout.append(data)
+    }
+
+    mutating func recordStderr(_ data: Data) {
+        stderr.append(data)
+    }
+
+    mutating func recordExtendedData(_ data: Data) {
+        extendedData.append(data)
+    }
+
+    func snapshot() -> SSHTmuxStartupDiagnostics? {
+        let diagnostics = SSHTmuxStartupDiagnostics(
+            stdoutByteCount: stdout.byteCount,
+            stderrByteCount: stderr.byteCount,
+            extendedDataByteCount: extendedData.byteCount,
+            stderrPreview: stderr.preview,
+            extendedDataPreview: extendedData.preview
+        )
+        return diagnostics.isEmpty ? nil : diagnostics
+    }
+}
+
+enum SSHTmuxControlChannelDataRoute: Equatable, Sendable {
+    case stdout(reportFirstOutput: Bool)
+    case stderr
+    case extendedData(typeDescription: String)
+}
+
+struct SSHTmuxControlChannelDataRouter: Equatable, Sendable {
+    private var didReportFirstOutput = false
+    private var startupDiagnostics = SSHTmuxStartupDiagnosticsAccumulator()
+
+    var diagnostics: SSHTmuxStartupDiagnostics? {
+        startupDiagnostics.snapshot()
+    }
+
+    mutating func route(
+        type: SSHChannelData.DataType,
+        data: Data
+    ) -> SSHTmuxControlChannelDataRoute {
+        switch type {
+        case .channel:
+            startupDiagnostics.recordStdout(data)
+            let reportFirstOutput = !didReportFirstOutput
+            didReportFirstOutput = true
+            return .stdout(reportFirstOutput: reportFirstOutput)
+
+        case .stdErr:
+            startupDiagnostics.recordStderr(data)
+            return .stderr
+
+        default:
+            startupDiagnostics.recordExtendedData(data)
+            return .extendedData(typeDescription: type.description)
+        }
+    }
+}
+
+struct SSHTmuxControlChannelCompletionState: Equatable, Sendable {
+    private var didFinish = false
+    private var exitStatus: Int?
+
+    mutating func recordExitStatus(_ status: Int) {
+        exitStatus = status
+    }
+
+    mutating func finish(
+        _ error: Error?,
+        diagnostics: SSHTmuxStartupDiagnostics?
+    ) -> Result<Void, Error>? {
+        guard !didFinish else { return nil }
+        didFinish = true
+
+        if let error {
+            return .failure(error)
+        }
+
+        if let exitStatus, exitStatus != 0 {
+            return .failure(
+                SSHTmuxControlTransportError.remoteExit(
+                    exitStatus,
+                    diagnostics: diagnostics
+                )
+            )
+        }
+
+        return .success(())
+    }
+}
+
 enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConvertible {
-    case remoteExit(Int)
-    case channelRequestFailed(SSHTmuxControlChannelRequestKind)
+    case remoteExit(Int, diagnostics: SSHTmuxStartupDiagnostics? = nil)
+    case channelRequestFailed(SSHTmuxControlChannelRequestKind, diagnostics: SSHTmuxStartupDiagnostics? = nil)
     case unsupportedInboundChannel
     case alreadyStarted
     case closed
 
     var description: String {
         switch self {
-        case .remoteExit(let code):
-            return "remoteExit(\(code))"
-        case .channelRequestFailed(let request):
-            return "SSH \(request.description) request failed"
+        case .remoteExit(let code, let diagnostics):
+            return Self.describe(
+                "remoteExit(\(code))",
+                diagnostics: diagnostics
+            )
+        case .channelRequestFailed(let request, let diagnostics):
+            return Self.describe(
+                "SSH \(request.description) request failed",
+                diagnostics: diagnostics
+            )
         case .unsupportedInboundChannel:
             return "unsupportedInboundChannel"
         case .alreadyStarted:
@@ -267,9 +428,9 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
 
     var errorDescription: String? {
         switch self {
-        case .remoteExit(let code):
+        case .remoteExit(let code, _):
             return "The remote tmux control session exited with status \(code)."
-        case .channelRequestFailed(let request):
+        case .channelRequestFailed(let request, _):
             return "The SSH server rejected the \(request.description) request."
         case .unsupportedInboundChannel:
             return "Remux received an unexpected SSH channel type."
@@ -278,6 +439,14 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
         case .closed:
             return "The tmux control transport has already been closed."
         }
+    }
+
+    private static func describe(
+        _ base: String,
+        diagnostics: SSHTmuxStartupDiagnostics?
+    ) -> String {
+        guard let diagnostics else { return base }
+        return "\(base) \(diagnostics)"
     }
 }
 
@@ -1510,11 +1679,9 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
     private let onFinish: @Sendable (Error?) -> Void
     private let lock = NIOLock()
     private var inboundProtocolTrace = TmuxControlProtocolTraceAccumulator()
+    private var channelDataRouter = SSHTmuxControlChannelDataRouter()
+    private var completionState = SSHTmuxControlChannelCompletionState()
     private var requestReplyTracker = SSHTmuxControlChannelRequestReplyTracker()
-
-    private var didFinish = false
-    private var didReportFirstOutput = false
-    private var exitStatus: Int?
 
     init(
         viewportTraceState: SSHTmuxControlViewportTraceState,
@@ -1544,17 +1711,25 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
         switch event {
         case let status as SSHChannelRequestEvent.ExitStatus:
             lock.withLock {
-                exitStatus = Int(status.exitStatus)
+                completionState.recordExitStatus(Int(status.exitStatus))
             }
         case is ChannelSuccessEvent:
             lock.withLock {
                 _ = requestReplyTracker.acknowledgeSuccess()
             }
         case is NIOSSH.ChannelFailureEvent:
-            let request = lock.withLock {
-                requestReplyTracker.acknowledgeFailure()
+            let failure = lock.withLock {
+                (
+                    request: requestReplyTracker.acknowledgeFailure(),
+                    diagnostics: channelDataRouter.diagnostics
+                )
             }
-            finish(SSHTmuxControlTransportError.channelRequestFailed(request))
+            finish(
+                SSHTmuxControlTransportError.channelRequestFailed(
+                    failure.request,
+                    diagnostics: failure.diagnostics
+                )
+            )
         default:
             context.fireUserInboundEventTriggered(event)
         }
@@ -1572,6 +1747,20 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
         }
 
         let data = Data(bytes)
+        let route = lock.withLock {
+            channelDataRouter.route(type: channelData.type, data: data)
+        }
+        switch route {
+        case .stdout(let reportFirstOutput):
+            handleStdout(data, reportFirstOutput: reportFirstOutput)
+        case .stderr:
+            handleStderr(data)
+        case .extendedData(let typeDescription):
+            handleExtendedData(data, typeDescription: typeDescription)
+        }
+    }
+
+    private func handleStdout(_ data: Data, reportFirstOutput: Bool) {
         traceTmuxControlProtocolChunk(
             data,
             direction: .inbound,
@@ -1582,15 +1771,22 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
         GhosttyRuntimeTrace.latency(
             "ssh.channelRead bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )
-        let shouldReportFirstOutput = lock.withLock { () -> Bool in
-            guard !didReportFirstOutput else { return false }
-            didReportFirstOutput = true
-            return true
-        }
-        if shouldReportFirstOutput {
+        if reportFirstOutput {
             onFirstOutput(data)
         }
         onOutput(data)
+    }
+
+    private func handleStderr(_ data: Data) {
+        GhosttyRuntimeTrace.latency(
+            "ssh.channelRead.stderr bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+        )
+    }
+
+    private func handleExtendedData(_ data: Data, typeDescription: String) {
+        GhosttyRuntimeTrace.latency(
+            "ssh.channelRead.extended type=\(typeDescription) bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+        )
     }
 
     func channelInactive(context: ChannelHandlerContext) {
@@ -1609,18 +1805,7 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
 
     private func finish(_ error: Error?) {
         let completion = lock.withLock { () -> Result<Void, Error>? in
-            guard !didFinish else { return nil }
-            didFinish = true
-
-            if let error {
-                return .failure(error)
-            }
-
-            if let exitStatus, exitStatus != 0 {
-                return .failure(SSHTmuxControlTransportError.remoteExit(exitStatus))
-            }
-
-            return .success(())
+            completionState.finish(error, diagnostics: channelDataRouter.diagnostics)
         }
 
         guard let completion else { return }
