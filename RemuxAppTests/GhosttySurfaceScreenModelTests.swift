@@ -233,7 +233,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 throw RuntimeFailure.expected
             },
             precreateRuntime: true,
-            debugPaneInputSmoke: nil,
             debugLatencyProbe: nil
         )
 
@@ -262,7 +261,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 throw RuntimeFailure.expected
             },
             precreateRuntime: true,
-            debugPaneInputSmoke: nil,
             debugLatencyProbe: nil
         )
 
@@ -1224,7 +1222,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
 
         XCTAssertEqual(model.sendKeyEventToFocusedSurface(.init(keyCode: .escape)), .noFocusedSurface)
@@ -1235,7 +1232,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         var receivedInput: [String] = []
         let managed = Self.managedSurface(sendInput: {
@@ -1255,7 +1251,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
-            debugPaneInputSmoke: nil,
             debugLatencyProbe: nil
         )
 
@@ -1289,7 +1284,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
-            debugPaneInputSmoke: nil,
             debugLatencyProbe: nil
         )
 
@@ -1320,7 +1314,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
-            debugPaneInputSmoke: nil,
             debugLatencyProbe: nil
         )
         let diagnostics = SSHTmuxStartupDiagnostics(
@@ -1360,7 +1353,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in transport },
-            debugPaneInputSmoke: nil,
             debugLatencyProbe: nil
         )
 
@@ -1419,7 +1411,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
 
         XCTAssertEqual(model.sendPasteToFocusedSurface("dropped"), .noFocusedSurface)
@@ -1430,7 +1421,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         let managed = Self.managedSurface(readSelection: { "selected text" })
 
@@ -1443,7 +1433,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
 
         XCTAssertNil(model.readSelectionFromFocusedSurface())
@@ -1454,7 +1443,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         let managed = Self.managedSurface(hasSelection: { true })
 
@@ -1518,7 +1506,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
 
         XCTAssertFalse(model.sendMousePositionToFocusedSurface(CGPoint(x: 10, y: 20)))
@@ -1529,7 +1516,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         let first = Self.managedSurface()
         var focusCallCount = 0
@@ -1552,7 +1538,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         var focusCallCount = 0
         let managed = Self.managedSurface(tmuxFocus: {
@@ -1571,7 +1556,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         let first = Self.managedSurface()
         var focusCallCount = 0
@@ -1594,7 +1578,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         let first = Self.managedSurface()
         var focusCallCount = 0
@@ -1653,7 +1636,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         var receivedDirections: [ghostty_action_split_direction_e] = []
         let managed = Self.managedSurface(tmuxSplit: {
@@ -1672,7 +1654,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         let managed = Self.managedSurface(tmuxSplit: { _ in
             .notTmuxBound
@@ -1688,7 +1669,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         var closeCallCount = 0
         let managed = Self.managedSurface(tmuxClosePane: {
@@ -1707,7 +1687,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         var firstCloseCallCount = 0
         var secondCloseCallCount = 0
@@ -1734,7 +1713,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         var closeCallCount = 0
         let managed = Self.managedSurface(tmuxCloseWindow: {
@@ -1753,7 +1731,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let model = GhosttySurfaceScreenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
-            debugPaneInputSmoke: nil
         )
         var firstCloseCallCount = 0
         var secondCloseCallCount = 0
@@ -1817,39 +1794,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         lifecycle.bind(surfaceHandle: surfaceHandle)
 
         XCTAssertEqual(lifecycle.surfaceHandle, surfaceHandle)
-    }
-
-    func testDebugPaneInputSmokeIsDisabledWithoutConfiguredText() {
-        XCTAssertNil(DebugPaneInputSmokeCommand(nil))
-        XCTAssertNil(DebugPaneInputSmokeCommand(""))
-    }
-
-    func testDebugPaneInputSmokeWaitsForRunningFocusedSurface() {
-        var smoke = DebugPaneInputSmokeCommand("echo smoke")!
-
-        XCTAssertNil(smoke.nextSubmission(isRunning: false, hasFocusedSurface: true))
-        XCTAssertNil(smoke.nextSubmission(isRunning: true, hasFocusedSurface: false))
-        XCTAssertEqual(
-            smoke.nextSubmission(isRunning: true, hasFocusedSurface: true),
-            "echo smoke\r"
-        )
-    }
-
-    func testDebugPaneInputSmokeSubmitsOnlyOnceUnlessRejected() {
-        var smoke = DebugPaneInputSmokeCommand("echo smoke\r")!
-
-        XCTAssertEqual(
-            smoke.nextSubmission(isRunning: true, hasFocusedSurface: true),
-            "echo smoke\r"
-        )
-        XCTAssertNil(smoke.nextSubmission(isRunning: true, hasFocusedSurface: true))
-
-        smoke.markRejected()
-
-        XCTAssertEqual(
-            smoke.nextSubmission(isRunning: true, hasFocusedSurface: true),
-            "echo smoke\r"
-        )
     }
 
     func testDebugLatencyProbeBuildsInputMarkerWithoutEchoingFullMarker() {

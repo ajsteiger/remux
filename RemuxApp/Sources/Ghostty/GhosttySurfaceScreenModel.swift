@@ -44,7 +44,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private let transportFactory: TransportFactory
     private let runtimeFactory: RuntimeFactory
     private var precreatedRuntime: Result<GhosttyKitRuntime, Error>?
-    private var debugPaneInputSmoke: DebugPaneInputSmokeCommand?
     private var debugLatencyProbe: DebugLatencyProbeCommand?
     private var debugLatencyProbeDelaySatisfied = false
     private var debugLatencyProbeDelayTask: Task<Void, Never>?
@@ -68,7 +67,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surfaceRegistry: GhosttyRuntimeSurfaceRegistry = GhosttyRuntimeSurfaceRegistry(),
         runtimeFactory: RuntimeFactory? = nil,
         precreateRuntime: Bool = false,
-        debugPaneInputSmoke: DebugPaneInputSmokeCommand? = .fromEnvironment(),
         debugLatencyProbe: DebugLatencyProbeCommand? = .fromEnvironment()
     ) {
         self.target = target
@@ -80,7 +78,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 terminalSettings: target.terminalSettings
             )
         }
-        self.debugPaneInputSmoke = debugPaneInputSmoke
         self.debugLatencyProbe = debugLatencyProbe
         surfaceRegistry.terminalSettings = target.terminalSettings
         surfaceRegistry.onChange = { [weak self] in
@@ -90,7 +87,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 if GhosttyRuntimeTrace.isEnabled {
                     NSLog("Remux surface registry revision=%d", surfaceRegistryRevision)
                 }
-                submitDebugPaneInputSmokeIfReady()
                 scheduleDebugLatencyProbeIfNeeded()
                 submitDebugLatencyProbeIfReady()
                 traceTerminalReadyIfNeeded()
@@ -758,7 +754,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         state = .running
         debugStatus = "transport started"
         failureReason = nil
-        submitDebugPaneInputSmokeIfReady()
         scheduleDebugLatencyProbeIfNeeded()
         submitDebugLatencyProbeIfReady()
         traceTerminalReadyIfNeeded()
@@ -1134,29 +1129,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         "session.open.\(target.workspace.id.uuidString)"
     }
 
-    private func submitDebugPaneInputSmokeIfReady() {
-        guard var smoke = debugPaneInputSmoke else { return }
-        guard let text = smoke.nextSubmission(
-            isRunning: state == .running,
-            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
-        ) else {
-            debugPaneInputSmoke = smoke
-            return
-        }
-
-        let result = sendInputToFocusedSurface(text)
-        if result.isAccepted {
-            debugStatus = "debug pane input smoke sent \(text.lengthOfBytes(using: .utf8)) bytes"
-            NSLog(
-                "Remux debug pane input smoke sent %d bytes",
-                text.lengthOfBytes(using: .utf8)
-            )
-        } else {
-            smoke.markRejected()
-        }
-        debugPaneInputSmoke = smoke
-    }
-
     private func submitDebugLatencyProbeIfReady() {
         guard var probe = debugLatencyProbe else { return }
         guard debugLatencyProbeDelaySatisfied else { return }
@@ -1296,51 +1268,6 @@ struct GhosttyHostControlStateTracker: Equatable {
     mutating func reset() {
         isVisible = nil
         isFocused = nil
-    }
-}
-
-struct DebugPaneInputSmokeCommand: Equatable {
-    private static let environmentKey = "REMUX_DEBUG_PANE_INPUT"
-
-    private let rawText: String
-    private var didSubmit = false
-
-    init?(_ rawText: String?) {
-        guard let rawText, !rawText.isEmpty else { return nil }
-        self.rawText = rawText
-    }
-
-    static func fromEnvironment(
-        _ environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> DebugPaneInputSmokeCommand? {
-#if DEBUG
-        DebugPaneInputSmokeCommand(environment[environmentKey])
-#else
-        _ = environment
-        return nil
-#endif
-    }
-
-    mutating func nextSubmission(
-        isRunning: Bool,
-        hasFocusedSurface: Bool
-    ) -> String? {
-        guard !didSubmit, isRunning, hasFocusedSurface else { return nil }
-
-        didSubmit = true
-        return normalizedText
-    }
-
-    mutating func markRejected() {
-        didSubmit = false
-    }
-
-    private var normalizedText: String {
-        guard !rawText.hasSuffix("\r"), !rawText.hasSuffix("\n") else {
-            return rawText
-        }
-
-        return rawText + "\r"
     }
 }
 
