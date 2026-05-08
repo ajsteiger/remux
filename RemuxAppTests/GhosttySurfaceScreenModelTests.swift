@@ -338,7 +338,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(second)
         registry.selectSurface(second.id)
 
-        XCTAssertTrue(registry.sendInputToFocusedSurface("echo focused\r"))
+        XCTAssertEqual(registry.sendInputToFocusedSurface("echo focused\r"), .accepted)
         XCTAssertTrue(firstInput.isEmpty)
         XCTAssertEqual(secondInput, ["echo focused\r"])
     }
@@ -366,7 +366,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
         XCTAssertEqual(registry.selectedActiveLeafID, first.id)
-        XCTAssertTrue(registry.sendInputToFocusedSurface("echo fallback\r"))
+        XCTAssertEqual(registry.sendInputToFocusedSurface("echo fallback\r"), .accepted)
         XCTAssertEqual(firstInput, ["echo fallback\r"])
     }
 
@@ -399,7 +399,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.selectedActiveLeafID, second.id)
         XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
-        XCTAssertTrue(registry.sendInputToFocusedSurface("echo pending\r"))
+        XCTAssertEqual(registry.sendInputToFocusedSurface("echo pending\r"), .accepted)
         XCTAssertEqual(secondInput, ["echo pending\r"])
 
         registry.recordSurfaceDisplayUpdateForTesting(
@@ -573,7 +573,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertNil(registry.selectedTopLevel)
         XCTAssertNil(registry.selectedActiveLeafID)
-        XCTAssertFalse(registry.sendInputToFocusedSurface("echo nowhere\r"))
+        XCTAssertEqual(registry.sendInputToFocusedSurface("echo nowhere\r"), .noFocusedSurface)
         XCTAssertTrue(firstInput.isEmpty)
         XCTAssertTrue(secondInput.isEmpty)
     }
@@ -977,15 +977,21 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
         XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, newSecond.id)
-        XCTAssertTrue(registry.sendInputToFocusedSurface("echo preserved\r"))
+        XCTAssertEqual(registry.sendInputToFocusedSurface("echo preserved\r"), .accepted)
         XCTAssertEqual(routedInput, ["echo preserved\r"])
     }
 
     func testInputWithoutFocusedSurfaceIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
-        XCTAssertFalse(registry.sendInputToFocusedSurface("echo dropped\r"))
+        XCTAssertEqual(registry.sendInputToFocusedSurface("echo dropped\r"), .noFocusedSurface)
         XCTAssertTrue(registry.debugSummary.contains("input dropped"))
+    }
+
+    func testEmptyInputIsAcceptedNoop() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertEqual(registry.sendInputToFocusedSurface(""), .empty)
     }
 
     func testInputRejectedByFocusedManagedSurface() {
@@ -994,7 +1000,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         registry.registerManagedSurfaceForTesting(managed)
 
-        XCTAssertFalse(registry.sendInputToFocusedSurface("echo rejected\r"))
+        XCTAssertEqual(registry.sendInputToFocusedSurface("echo rejected\r"), .surfaceRejected)
         XCTAssertTrue(registry.debugSummary.contains("input rejected"))
     }
 
@@ -1092,7 +1098,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(second)
         registry.selectSurface(second.id)
 
-        XCTAssertTrue(registry.sendPasteToFocusedSurface("first\nsecond"))
+        XCTAssertEqual(registry.sendPasteToFocusedSurface("first\nsecond"), .accepted)
         XCTAssertTrue(firstPaste.isEmpty)
         XCTAssertEqual(secondPaste, ["first\nsecond"])
     }
@@ -1100,8 +1106,14 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     func testPasteWithoutFocusedSurfaceIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
-        XCTAssertFalse(registry.sendPasteToFocusedSurface("dropped"))
+        XCTAssertEqual(registry.sendPasteToFocusedSurface("dropped"), .noFocusedSurface)
         XCTAssertTrue(registry.debugSummary.contains("paste dropped"))
+    }
+
+    func testEmptyPasteIsAcceptedNoop() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertEqual(registry.sendPasteToFocusedSurface(""), .empty)
     }
 
     func testPasteRejectedByFocusedManagedSurface() {
@@ -1110,7 +1122,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         registry.registerManagedSurfaceForTesting(managed)
 
-        XCTAssertFalse(registry.sendPasteToFocusedSurface("rejected"))
+        XCTAssertEqual(registry.sendPasteToFocusedSurface("rejected"), .surfaceRejected)
         XCTAssertTrue(registry.debugSummary.contains("paste rejected"))
     }
 
@@ -1185,7 +1197,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(second)
         registry.selectSurface(second.id)
 
-        XCTAssertTrue(registry.sendKeyEventToFocusedSurface(event))
+        XCTAssertEqual(registry.sendKeyEventToFocusedSurface(event), .accepted)
         XCTAssertTrue(firstEvents.isEmpty)
         XCTAssertEqual(secondEvents, [event])
     }
@@ -1194,7 +1206,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let event = GhosttySurfaceKeyEvent(keyCode: .escape)
 
-        XCTAssertFalse(registry.sendKeyEventToFocusedSurface(event))
+        XCTAssertEqual(registry.sendKeyEventToFocusedSurface(event), .noFocusedSurface)
         XCTAssertTrue(registry.debugSummary.contains("key dropped"))
     }
 
@@ -1204,7 +1216,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         registry.registerManagedSurfaceForTesting(managed)
 
-        XCTAssertFalse(registry.sendKeyEventToFocusedSurface(.init(keyCode: .tab)))
+        XCTAssertEqual(registry.sendKeyEventToFocusedSurface(.init(keyCode: .tab)), .surfaceRejected)
         XCTAssertTrue(registry.debugSummary.contains("key rejected"))
     }
 
@@ -1215,7 +1227,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             debugPaneInputSmoke: nil
         )
 
-        XCTAssertFalse(model.sendKeyEventToFocusedSurface(.init(keyCode: .escape)))
+        XCTAssertEqual(model.sendKeyEventToFocusedSurface(.init(keyCode: .escape)), .noFocusedSurface)
         XCTAssertEqual(model.debugStatus, "key dropped: no focused tmux pane")
     }
 
@@ -1233,7 +1245,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
-        XCTAssertFalse(model.sendInputToFocusedSurface("echo stale\r"))
+        XCTAssertEqual(model.sendInputToFocusedSurface("echo stale\r"), .transportUnavailable)
         XCTAssertTrue(receivedInput.isEmpty)
         XCTAssertEqual(model.debugStatus, "input dropped: terminal transport unavailable")
     }
@@ -1410,7 +1422,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             debugPaneInputSmoke: nil
         )
 
-        XCTAssertFalse(model.sendPasteToFocusedSurface("dropped"))
+        XCTAssertEqual(model.sendPasteToFocusedSurface("dropped"), .noFocusedSurface)
         XCTAssertEqual(model.debugStatus, "paste dropped: no focused tmux pane")
     }
 

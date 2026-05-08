@@ -657,27 +657,30 @@ struct GhosttySurfaceScreen: View {
             ),
             at: submittedAt
         )
-        let accepted = model.sendInputToFocusedSurface(outbound)
+        let result = model.sendInputToFocusedSurface(outbound)
         GhosttyRuntimeTrace.perf(
-            "input.sendText bytes=\(outbound.lengthOfBytes(using: .utf8)) accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "input.sendText bytes=\(outbound.lengthOfBytes(using: .utf8)) result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "ui.sendTerminalText.end",
-            fields: terminalInputTraceFields(extra: ["accepted": "\(accepted)"])
+            fields: terminalInputTraceFields(extra: [
+                "accepted": "\(result.isAccepted)",
+                "result": result.description,
+            ])
         )
-        if !accepted {
+        if !result.isAccepted {
             GhosttyRuntimeTrace.flowEventIfActive(
                 "terminal.input",
                 event: "ui.sendTerminalText.rejected",
-                fields: terminalInputTraceFields()
+                fields: terminalInputTraceFields(extra: ["result": result.description])
             )
         }
-        return accepted
+        return result.isAccepted
     }
 
     private func sendTerminalPaste(_ text: String) -> Bool {
-        model.sendPasteToFocusedSurface(text)
+        model.sendPasteToFocusedSurface(text).isAccepted
     }
 
     private func copyTerminalSelection() -> Bool {
@@ -692,11 +695,11 @@ struct GhosttySurfaceScreen: View {
     private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
         let outbound = modifierState.apply(to: event)
         let start = GhosttyRuntimeTrace.nowNanos()
-        let accepted = model.sendKeyEventToFocusedSurface(outbound)
+        let result = model.sendKeyEventToFocusedSurface(outbound)
         GhosttyRuntimeTrace.perf(
-            "input.sendKey accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "input.sendKey result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
-        return accepted
+        return result.isAccepted
     }
 
     private func updateKeyboardVisibility(with notification: Notification) {

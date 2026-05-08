@@ -281,7 +281,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     @discardableResult
-    func sendInputToFocusedSurface(_ text: String) -> Bool {
+    func sendInputToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "model.sendInput bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
@@ -294,38 +294,39 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "model.sendInput rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
-            return false
+            return .noFocusedSurface
         }
-        guard canSendTerminalInput(kind: "input") else {
+        if let unavailable = terminalInputUnavailableResult(kind: "input") {
             GhosttyRuntimeTrace.latency(
                 "model.sendInput rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
-            return false
+            return unavailable
         }
-        let accepted = surfaceRegistry.sendInputToFocusedSurface(text)
-        if !accepted {
-            debugStatus = "input dropped: no focused tmux pane"
+        let result = surfaceRegistry.sendInputToFocusedSurface(text)
+        if !result.isAccepted {
+            updateDebugStatusForTerminalInputResult(result, kind: "input")
         }
         GhosttyRuntimeTrace.latency(
-            "model.sendInput end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "model.sendInput end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "model.sendInput.end",
             fields: [
-                "accepted": "\(accepted)",
+                "accepted": "\(result.isAccepted)",
                 "activeLeaf": ghosttyDiagnosticShortID(surfaceRegistry.selectedActiveLeafID),
                 "bytes": "\(text.lengthOfBytes(using: .utf8))",
+                "result": result.description,
                 "state": "\(state)",
                 "topLevels": "\(surfaceRegistry.topLevels.count)",
             ]
         )
 
-        return accepted
+        return result
     }
 
     @discardableResult
-    func sendPasteToFocusedSurface(_ text: String) -> Bool {
+    func sendPasteToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "model.sendPaste bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
@@ -338,23 +339,23 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "model.sendPaste rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
-            return false
+            return .noFocusedSurface
         }
-        guard canSendTerminalInput(kind: "paste") else {
+        if let unavailable = terminalInputUnavailableResult(kind: "paste") {
             GhosttyRuntimeTrace.latency(
                 "model.sendPaste rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
-            return false
+            return unavailable
         }
-        let accepted = surfaceRegistry.sendPasteToFocusedSurface(text)
-        if !accepted {
-            debugStatus = "paste dropped: no focused tmux pane"
+        let result = surfaceRegistry.sendPasteToFocusedSurface(text)
+        if !result.isAccepted {
+            updateDebugStatusForTerminalInputResult(result, kind: "paste")
         }
         GhosttyRuntimeTrace.latency(
-            "model.sendPaste end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "model.sendPaste end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
 
-        return accepted
+        return result
     }
 
     func readSelectionFromFocusedSurface() -> String? {
@@ -371,7 +372,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     @discardableResult
-    func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
+    func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> FocusedTerminalInputSubmissionResult {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
             "model.sendKey event=\(event) \(surfaceRegistry.diagnosticSelectionSummary())"
@@ -384,23 +385,23 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "model.sendKey rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
-            return false
+            return .noFocusedSurface
         }
-        guard canSendTerminalInput(kind: "key") else {
+        if let unavailable = terminalInputUnavailableResult(kind: "key") {
             GhosttyRuntimeTrace.latency(
                 "model.sendKey rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
-            return false
+            return unavailable
         }
-        let accepted = surfaceRegistry.sendKeyEventToFocusedSurface(event)
-        if !accepted {
-            debugStatus = "key dropped: no focused tmux pane"
+        let result = surfaceRegistry.sendKeyEventToFocusedSurface(event)
+        if !result.isAccepted {
+            updateDebugStatusForTerminalInputResult(result, kind: "key")
         }
         GhosttyRuntimeTrace.latency(
-            "model.sendKey end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+            "model.sendKey end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
 
-        return accepted
+        return result
     }
 
     @discardableResult
@@ -903,12 +904,28 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         commandFailureMessage = nil
     }
 
-    private func canSendTerminalInput(kind: String) -> Bool {
+    private func terminalInputUnavailableResult(kind: String) -> FocusedTerminalInputSubmissionResult? {
         guard state == .running, transportWriteSequencer != nil else {
             debugStatus = "\(kind) dropped: terminal transport unavailable"
-            return false
+            return .transportUnavailable
         }
-        return true
+        return nil
+    }
+
+    private func updateDebugStatusForTerminalInputResult(
+        _ result: FocusedTerminalInputSubmissionResult,
+        kind: String
+    ) {
+        switch result {
+        case .accepted, .empty:
+            return
+        case .noFocusedSurface:
+            debugStatus = "\(kind) dropped: no focused tmux pane"
+        case .transportUnavailable:
+            debugStatus = "\(kind) dropped: terminal transport unavailable"
+        case .surfaceRejected:
+            debugStatus = "\(kind) rejected by focused tmux pane"
+        }
     }
 
     private func handleTransportCompletion(_ completion: GhosttyControlHostSurface.Completion) {
@@ -1127,8 +1144,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return
         }
 
-        let accepted = sendInputToFocusedSurface(text)
-        if accepted {
+        let result = sendInputToFocusedSurface(text)
+        if result.isAccepted {
             debugStatus = "debug pane input smoke sent \(text.lengthOfBytes(using: .utf8)) bytes"
             NSLog(
                 "Remux debug pane input smoke sent %d bytes",
@@ -1166,8 +1183,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "debugLatencyProbe.input submit marker=\(marker) bytes=\(text.lengthOfBytes(using: .utf8))"
             )
-            let accepted = sendInputToFocusedSurface(text)
-            if accepted {
+            let result = sendInputToFocusedSurface(text)
+            if result.isAccepted {
                 debugStatus = "debug latency input probe sent"
             } else {
                 probe.markRejected()
@@ -1187,8 +1204,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyRuntimeTrace.latency(
                 "debugLatencyProbe.keyEcho submit marker=\(marker) characters=\(text.count) bytes=\(text.lengthOfBytes(using: .utf8))"
             )
-            let accepted = sendInputToFocusedSurface(text)
-            if accepted {
+            let result = sendInputToFocusedSurface(text)
+            if result.isAccepted {
                 _ = sendInputToFocusedSurface("\u{15}")
                 debugStatus = "debug latency key echo probe sent"
             } else {

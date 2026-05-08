@@ -18,6 +18,38 @@ enum GhosttyRuntimeSelectionDirection {
     }
 }
 
+enum FocusedTerminalInputSubmissionResult: Equatable, Sendable, CustomStringConvertible {
+    case accepted
+    case empty
+    case noFocusedSurface
+    case transportUnavailable
+    case surfaceRejected
+
+    var isAccepted: Bool {
+        switch self {
+        case .accepted, .empty:
+            true
+        case .noFocusedSurface, .transportUnavailable, .surfaceRejected:
+            false
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .accepted:
+            "accepted"
+        case .empty:
+            "empty"
+        case .noFocusedSurface:
+            "noFocusedSurface"
+        case .transportUnavailable:
+            "transportUnavailable"
+        case .surfaceRejected:
+            "surfaceRejected"
+        }
+    }
+}
+
 @MainActor
 protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     func runtimeCreateSurface(
@@ -620,8 +652,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     @discardableResult
-    func sendInputToFocusedSurface(_ text: String) -> Bool {
-        guard !text.isEmpty else { return true }
+    func sendInputToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult {
+        guard !text.isEmpty else { return .empty }
         let start = GhosttyRuntimeTrace.nowNanos()
         guard let surface = selectedActiveSurface else {
             GhosttyRuntimeTrace.diagnostics(
@@ -631,7 +663,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "registry.sendInput dropped noSurface bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
             )
             updateDebugSummary("input dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         GhosttyRuntimeTrace.diagnostics(
@@ -640,53 +672,55 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.latency(
             "registry.sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())}"
         )
-        guard surface.sendInput(text) else {
+        let result = surface.sendInput(text)
+        guard result.isAccepted else {
             GhosttyRuntimeTrace.diagnostics(
-                "sendInput rejected bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+                "sendInput rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
             )
             GhosttyRuntimeTrace.latency(
-                "registry.sendInput rejected bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
+                "registry.sendInput rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
             )
             updateDebugSummary("input rejected by focused surface")
-            return false
+            return result
         }
 
         GhosttyRuntimeTrace.diagnostics(
-            "sendInput accepted bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            "sendInput accepted result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
         GhosttyRuntimeTrace.latency(
-            "registry.sendInput accepted bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
+            "registry.sendInput accepted result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
         )
-        return true
+        return result
     }
 
     @MainActor
     @discardableResult
-    func sendPasteToFocusedSurface(_ text: String) -> Bool {
-        guard !text.isEmpty else { return true }
+    func sendPasteToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult {
+        guard !text.isEmpty else { return .empty }
         guard let surface = selectedActiveSurface else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendPaste drop-no-surface bytes=\(text.lengthOfBytes(using: .utf8)) \(diagnosticSelectionSummary())"
             )
             updateDebugSummary("paste dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         GhosttyRuntimeTrace.diagnostics(
             "sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
-        guard surface.sendPaste(text) else {
+        let result = surface.sendPaste(text)
+        guard result.isAccepted else {
             GhosttyRuntimeTrace.diagnostics(
-                "sendPaste rejected bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+                "sendPaste rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
             )
             updateDebugSummary("paste rejected by focused surface")
-            return false
+            return result
         }
 
         GhosttyRuntimeTrace.diagnostics(
-            "sendPaste accepted bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            "sendPaste accepted result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
-        return true
+        return result
     }
 
     @MainActor
@@ -719,30 +753,31 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     @discardableResult
-    func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> Bool {
+    func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> FocusedTerminalInputSubmissionResult {
         guard let surface = selectedActiveSurface else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendKey drop-no-surface event=\(event) \(diagnosticSelectionSummary())"
             )
             updateDebugSummary("key dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         GhosttyRuntimeTrace.diagnostics(
             "sendKey begin event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
-        guard surface.sendKeyEvent(event) else {
+        let result = surface.sendKeyEvent(event)
+        guard result.isAccepted else {
             GhosttyRuntimeTrace.diagnostics(
-                "sendKey rejected event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+                "sendKey rejected result=\(result) event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
             )
             updateDebugSummary("key rejected by focused surface")
-            return false
+            return result
         }
 
         GhosttyRuntimeTrace.diagnostics(
-            "sendKey accepted event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            "sendKey accepted result=\(result) event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
-        return true
+        return result
     }
 
     @MainActor
@@ -1829,12 +1864,13 @@ final class GhosttyManagedSurface {
 
     @MainActor
     @discardableResult
-    func sendInput(_ text: String) -> Bool {
+    func sendInput(_ text: String) -> FocusedTerminalInputSubmissionResult {
+        guard !text.isEmpty else { return .empty }
         if let sendInputHandler {
-            return sendInputHandler(text)
+            return sendInputHandler(text) ? .accepted : .surfaceRejected
         }
 
-        return controlSurface.sendInput(text)
+        return controlSurface.sendInput(text) ? .accepted : .surfaceRejected
     }
 
     @MainActor
@@ -1894,12 +1930,13 @@ final class GhosttyManagedSurface {
 
     @MainActor
     @discardableResult
-    func sendPaste(_ text: String) -> Bool {
+    func sendPaste(_ text: String) -> FocusedTerminalInputSubmissionResult {
+        guard !text.isEmpty else { return .empty }
         if let sendPasteHandler {
-            return sendPasteHandler(text)
+            return sendPasteHandler(text) ? .accepted : .surfaceRejected
         }
 
-        return controlSurface.sendPaste(text)
+        return controlSurface.sendPaste(text) ? .accepted : .surfaceRejected
     }
 
     @MainActor
@@ -1922,12 +1959,12 @@ final class GhosttyManagedSurface {
 
     @MainActor
     @discardableResult
-    func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
+    func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> FocusedTerminalInputSubmissionResult {
         if let sendKeyEventHandler {
-            return sendKeyEventHandler(event)
+            return sendKeyEventHandler(event) ? .accepted : .surfaceRejected
         }
 
-        return controlSurface.sendKeyEvent(event)
+        return controlSurface.sendKeyEvent(event) ? .accepted : .surfaceRejected
     }
 
     @MainActor
