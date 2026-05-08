@@ -24,6 +24,7 @@
 		1E4598594269BC31B1B28C21 /* RemuxRootModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C76A9A6D14624AC5E1155D8 /* RemuxRootModelTests.swift */; };
 		1F97978A518B2AD52F9A556A /* GhosttyKeyboardCursorTrackpad.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C7136948AF9803FAAD6F82 /* GhosttyKeyboardCursorTrackpad.swift */; };
 		1FCDFBD088BC311CDCBA7C7B /* GhosttyKitRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA8119EA500195F1FF488FF /* GhosttyKitRuntimeTests.swift */; };
+		20BB39E73768590B38F63D44 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8C2B66078B4ACDDF40D10263 /* Assets.xcassets */; };
 		21D804DB6768A5474BAB4DA2 /* GhosttySurfaceScrollGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451C5235FD50DD80CBC53CCC /* GhosttySurfaceScrollGestureTests.swift */; };
 		245F3E2F2ED1675C0BFC0318 /* TerminalSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08FA18CCB40D2C7746D7D569 /* TerminalSettingsTests.swift */; };
 		2521091156DB41132937296A /* GhosttySurfaceScrollGesture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23F3CE22CD66E574D1A7196E /* GhosttySurfaceScrollGesture.swift */; };
@@ -149,6 +150,7 @@
 		7C4BA10112A17B5AD8A53A6E /* GhosttySurfaceTreeModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceTreeModelTests.swift; sourceTree = "<group>"; };
 		85665F143AC61F871841ED90 /* TmuxConnectionTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxConnectionTarget.swift; sourceTree = "<group>"; };
 		87358B27991E5D2ECE199ECC /* RemuxSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxSmokeTests.swift; sourceTree = "<group>"; };
+		8C2B66078B4ACDDF40D10263 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = RemuxApp/Assets.xcassets; sourceTree = "<group>"; };
 		8926D94B4AAF192302FC58E4 /* Haptic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptic.swift; sourceTree = "<group>"; };
 		8B77D12E9FC8E4FF183EC209 /* ShortcutExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutExecutorTests.swift; sourceTree = "<group>"; };
 		8BA8119EA500195F1FF488FF /* GhosttyKitRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKitRuntimeTests.swift; sourceTree = "<group>"; };
@@ -316,6 +318,7 @@
 		D5B969C9596603CB720FBE0D = {
 			isa = PBXGroup;
 			children = (
+				8C2B66078B4ACDDF40D10263 /* Assets.xcassets */,
 				34D2E4930A61ACCECA627727 /* RemuxAppTests */,
 				8940332584E6E630AC566417 /* RemuxAppUITests */,
 				C4E0C65BA27966F9CD06AA26 /* Sources */,
@@ -388,6 +391,7 @@
 			buildPhases = (
 				204B591A381758166DA82963 /* Sources */,
 				03BDC461530EDD09CDB7FF29 /* Frameworks */,
+				D369B4608AF28DF22C34E224 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -475,6 +479,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D369B4608AF28DF22C34E224 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				20BB39E73768590B38F63D44 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		204B591A381758166DA82963 /* Sources */ = {
@@ -795,7 +810,6 @@
 		A8EBDFB043CD42C757E3F876 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -835,7 +849,6 @@
 		C0E5593BA2CFEE44A2B659DC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
