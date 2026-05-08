@@ -64,6 +64,39 @@ struct SSHTmuxAuthenticatedConnectionPoolKey: Hashable, Sendable {
     }
 }
 
+enum SSHTmuxAuthenticatedConnectionPoolEntryReadiness: Equatable, Sendable {
+    case connecting
+    case ready
+
+    var traceValue: String {
+        switch self {
+        case .connecting:
+            "connecting"
+        case .ready:
+            "ready"
+        }
+    }
+}
+
+struct SSHTmuxAuthenticatedConnectionPoolSnapshot: Equatable, Sendable {
+    struct Entry: Equatable, Sendable {
+        let generation: UUID
+        let readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
+        let activeLeaseCount: Int
+        let isIdleCloseScheduled: Bool
+    }
+
+    fileprivate let entries: [SSHTmuxAuthenticatedConnectionPoolKey: Entry]
+
+    var entryCount: Int {
+        entries.count
+    }
+
+    func entry(for key: SSHTmuxAuthenticatedConnectionPoolKey) -> Entry? {
+        entries[key]
+    }
+}
+
 struct TmuxControlViewport: Equatable, Sendable {
     static let `default` = TmuxControlViewport(
         columns: 120,
@@ -1024,7 +1057,7 @@ private final class SSHTmuxAuthenticatedConnection: @unchecked Sendable {
     }
 }
 
-private enum SSHTmuxAuthenticatedConnectionLeaseDisposition: Sendable {
+private enum SSHTmuxAuthenticatedConnectionLeaseDisposition: Equatable, Sendable {
     case reusable
     case invalidated
 }
@@ -1079,33 +1112,19 @@ private final class SSHTmuxAuthenticatedConnectionLease: @unchecked Sendable {
 }
 
 actor SSHTmuxAuthenticatedConnectionPool {
-    private enum EntryReadiness: Equatable, Sendable {
-        case connecting
-        case ready
-
-        var traceValue: String {
-            switch self {
-            case .connecting:
-                "connecting"
-            case .ready:
-                "ready"
-            }
-        }
-    }
-
     private struct Entry {
         let generation: UUID
         let task: Task<SSHTmuxAuthenticatedConnection, Error>
         var activeLeaseCount: Int
         var idleCloseTask: Task<Void, Never>?
-        var readiness: EntryReadiness
+        var readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
     }
 
     private struct EntrySnapshot: Sendable {
         let generation: UUID
         let task: Task<SSHTmuxAuthenticatedConnection, Error>
         let didReuse: Bool
-        let readiness: EntryReadiness
+        let readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
     }
 
     private let idleTimeout: Duration
@@ -1113,6 +1132,19 @@ actor SSHTmuxAuthenticatedConnectionPool {
 
     init(idleTimeout: Duration = .seconds(120)) {
         self.idleTimeout = idleTimeout
+    }
+
+    func snapshot() -> SSHTmuxAuthenticatedConnectionPoolSnapshot {
+        SSHTmuxAuthenticatedConnectionPoolSnapshot(
+            entries: entries.mapValues { entry in
+                SSHTmuxAuthenticatedConnectionPoolSnapshot.Entry(
+                    generation: entry.generation,
+                    readiness: entry.readiness,
+                    activeLeaseCount: entry.activeLeaseCount,
+                    isIdleCloseScheduled: entry.idleCloseTask != nil
+                )
+            }
+        )
     }
 
     func prewarmConnection(
@@ -1194,15 +1226,10 @@ actor SSHTmuxAuthenticatedConnectionPool {
         for key: SSHTmuxAuthenticatedConnectionPoolKey,
         generation: UUID
     ) async throws -> SSHTmuxAuthenticatedConnectionLease {
-        guard var entry = entries[key], entry.generation == generation else {
+        guard leaseEntry(for: key, generation: generation) else {
             await connection.close()
             throw SSHTmuxControlTransportError.closed
         }
-
-        entry.idleCloseTask?.cancel()
-        entry.idleCloseTask = nil
-        entry.activeLeaseCount += 1
-        entries[key] = entry
 
         return SSHTmuxAuthenticatedConnectionLease(
             connection: connection,
@@ -1218,9 +1245,39 @@ actor SSHTmuxAuthenticatedConnectionPool {
         generation: UUID,
         disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition
     ) async {
-        guard var entry = entries[key], entry.generation == generation else {
+        guard releaseEntry(for: key, generation: generation, disposition: disposition) else {
             await connection.close()
             return
+        }
+        if disposition == .invalidated {
+            await connection.close()
+        }
+    }
+
+    @discardableResult
+    private func leaseEntry(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) -> Bool {
+        guard var entry = entries[key], entry.generation == generation else {
+            return false
+        }
+
+        entry.idleCloseTask?.cancel()
+        entry.idleCloseTask = nil
+        entry.activeLeaseCount += 1
+        entries[key] = entry
+        return true
+    }
+
+    @discardableResult
+    private func releaseEntry(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID,
+        disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition
+    ) -> Bool {
+        guard var entry = entries[key], entry.generation == generation else {
+            return false
         }
 
         switch disposition {
@@ -1232,8 +1289,9 @@ actor SSHTmuxAuthenticatedConnectionPool {
         case .invalidated:
             entry.idleCloseTask?.cancel()
             entries.removeValue(forKey: key)
-            await connection.close()
         }
+
+        return true
     }
 
     func closeIdleConnections(forServerID serverID: SavedServer.ID) {
@@ -1357,6 +1415,74 @@ actor SSHTmuxAuthenticatedConnectionPool {
         closeEntryTask(entry.task, reason: "idle_timeout")
     }
 
+#if DEBUG
+    @discardableResult
+    func insertEntryForTesting(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID = UUID(),
+        readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness = .ready,
+        activeLeaseCount: Int = 0,
+        idleCloseScheduled: Bool = false
+    ) -> UUID {
+        entries[key]?.idleCloseTask?.cancel()
+        entries[key] = Entry(
+            generation: generation,
+            task: Task<SSHTmuxAuthenticatedConnection, Error> {
+                throw CancellationError()
+            },
+            activeLeaseCount: activeLeaseCount,
+            idleCloseTask: idleCloseScheduled ? Self.testingIdleCloseTask() : nil,
+            readiness: readiness
+        )
+        return generation
+    }
+
+    func leaseEntryForTesting(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) throws {
+        guard leaseEntry(for: key, generation: generation) else {
+            throw SSHTmuxControlTransportError.closed
+        }
+    }
+
+    func releaseEntryForTesting(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID,
+        disposition: TmuxControlTransportCloseDisposition
+    ) {
+        releaseEntry(
+            for: key,
+            generation: generation,
+            disposition: disposition.authenticatedConnectionLeaseDisposition
+        )
+    }
+
+    func markAuthenticationSucceededForTesting(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
+        authenticationSucceeded(for: key, generation: generation)
+    }
+
+    func markAuthenticationFailedForTesting(
+        for key: SSHTmuxAuthenticatedConnectionPoolKey,
+        generation: UUID
+    ) {
+        authenticationFailed(for: key, generation: generation)
+    }
+
+    private static func testingIdleCloseTask() -> Task<Void, Never> {
+        Task {
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                return
+            }
+        }
+    }
+#endif
+
     private nonisolated func closeEntryTask(
         _ task: Task<SSHTmuxAuthenticatedConnection, Error>,
         reason: String
@@ -1378,7 +1504,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
     private func poolTraceFields(
         key: SSHTmuxAuthenticatedConnectionPoolKey,
         reason: String? = nil,
-        readiness: EntryReadiness
+        readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
     ) -> [String: String] {
         var fields = [
             "host": "\(key.host):\(key.port)",

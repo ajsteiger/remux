@@ -82,6 +82,210 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         )
     }
 
+    func testAuthenticatedConnectionPoolReusableReleaseKeepsRootIdleReusable() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool(idleTimeout: .seconds(60))
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            activeLeaseCount: 1
+        )
+
+        await pool.releaseEntryForTesting(
+            for: key,
+            generation: generation,
+            disposition: .reusable
+        )
+
+        let entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.generation, generation)
+        XCTAssertEqual(entry?.readiness, .ready)
+        XCTAssertEqual(entry?.activeLeaseCount, 0)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, true)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolInvalidatedReleaseRemovesRoot() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            activeLeaseCount: 1
+        )
+
+        await pool.releaseEntryForTesting(
+            for: key,
+            generation: generation,
+            disposition: .invalidated
+        )
+
+        let snapshot = await pool.snapshot()
+        XCTAssertNil(snapshot.entry(for: key))
+        XCTAssertEqual(snapshot.entryCount, 0)
+    }
+
+    func testAuthenticatedConnectionPoolLeaseCancelsIdleCloseAndIncrementsActiveCount() async throws {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            activeLeaseCount: 0,
+            idleCloseScheduled: true
+        )
+
+        try await pool.leaseEntryForTesting(for: key, generation: generation)
+
+        let entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.activeLeaseCount, 1)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, false)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolReusableReleasesMultipleLeasesIndependently() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool(idleTimeout: .seconds(60))
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            activeLeaseCount: 2
+        )
+
+        await pool.releaseEntryForTesting(
+            for: key,
+            generation: generation,
+            disposition: .reusable
+        )
+
+        var entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.activeLeaseCount, 1)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, false)
+
+        await pool.releaseEntryForTesting(
+            for: key,
+            generation: generation,
+            disposition: .reusable
+        )
+
+        entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.activeLeaseCount, 0)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, true)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolInvalidatingOneLeaseEvictsSharedRoot() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            activeLeaseCount: 2
+        )
+
+        await pool.releaseEntryForTesting(
+            for: key,
+            generation: generation,
+            disposition: .invalidated
+        )
+
+        let snapshot = await pool.snapshot()
+        XCTAssertNil(snapshot.entry(for: key))
+    }
+
+    func testAuthenticatedConnectionPoolCloseIdleConnectionsPreservesActiveEntries() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let serverID = UUID()
+        let idleKey = makeAuthenticatedConnectionPoolKey(
+            serverID: serverID,
+            host: "idle.example.com"
+        )
+        let activeKey = makeAuthenticatedConnectionPoolKey(
+            serverID: serverID,
+            host: "active.example.com"
+        )
+        let otherServerKey = makeAuthenticatedConnectionPoolKey(
+            serverID: UUID(),
+            host: "other.example.com"
+        )
+        await pool.insertEntryForTesting(for: idleKey, activeLeaseCount: 0)
+        await pool.insertEntryForTesting(for: activeKey, activeLeaseCount: 1)
+        await pool.insertEntryForTesting(for: otherServerKey, activeLeaseCount: 0)
+
+        await pool.closeIdleConnections(forServerID: serverID)
+
+        let snapshot = await pool.snapshot()
+        XCTAssertNil(snapshot.entry(for: idleKey))
+        XCTAssertNotNil(snapshot.entry(for: activeKey))
+        XCTAssertNotNil(snapshot.entry(for: otherServerKey))
+        XCTAssertEqual(snapshot.entryCount, 2)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolCloseAllConnectionsEvictsAllEntries() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        await pool.insertEntryForTesting(
+            for: makeAuthenticatedConnectionPoolKey(host: "first.example.com")
+        )
+        await pool.insertEntryForTesting(
+            for: makeAuthenticatedConnectionPoolKey(host: "second.example.com")
+        )
+
+        await pool.closeAllConnections()
+
+        let snapshot = await pool.snapshot()
+        XCTAssertEqual(snapshot.entryCount, 0)
+    }
+
+    func testAuthenticatedConnectionPoolAuthenticationFailureRemovesEntry() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            readiness: .connecting,
+            idleCloseScheduled: true
+        )
+
+        await pool.markAuthenticationFailedForTesting(for: key, generation: generation)
+
+        let snapshot = await pool.snapshot()
+        XCTAssertNil(snapshot.entry(for: key))
+    }
+
+    func testAuthenticatedConnectionPoolAuthenticationSuccessMarksReadyAndSchedulesIdleClose() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool(idleTimeout: .seconds(60))
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            readiness: .connecting,
+            activeLeaseCount: 0
+        )
+
+        await pool.markAuthenticationSucceededForTesting(for: key, generation: generation)
+
+        let entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.readiness, .ready)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, true)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolGenerationMismatchDoesNotMutateCurrentEntry() async {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        let generation = await pool.insertEntryForTesting(
+            for: key,
+            activeLeaseCount: 1,
+            idleCloseScheduled: false
+        )
+
+        await pool.releaseEntryForTesting(
+            for: key,
+            generation: UUID(),
+            disposition: .invalidated
+        )
+
+        let entry = await pool.snapshot().entry(for: key)
+        XCTAssertEqual(entry?.generation, generation)
+        XCTAssertEqual(entry?.activeLeaseCount, 1)
+        XCTAssertEqual(entry?.isIdleCloseScheduled, false)
+        await pool.closeAllConnections()
+    }
+
     func testInboundStreamYieldsBytesInCallOrder() async throws {
         let stream = SSHTmuxControlInboundStream()
         let first = Data("first".utf8)
@@ -439,5 +643,29 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         } catch {
             XCTFail("unexpected error: \(error)")
         }
+    }
+
+    private func makeAuthenticatedConnectionPoolKey(
+        serverID: SavedServer.ID = UUID(),
+        host: String = "server.example.com",
+        port: Int = 22,
+        username: String = "tester",
+        password: String = "pw"
+    ) -> SSHTmuxAuthenticatedConnectionPoolKey {
+        let server = SavedServer(
+            id: serverID,
+            displayName: host,
+            host: host,
+            port: port,
+            username: username
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        return SSHTmuxAuthenticatedConnectionPoolKey(
+            target: TmuxConnectionTarget(
+                server: server,
+                workspace: workspace,
+                password: password
+            )
+        )
     }
 }
