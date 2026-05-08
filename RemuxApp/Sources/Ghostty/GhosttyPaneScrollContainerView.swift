@@ -79,6 +79,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var isApplyingProgrammaticUpdate = false
     private var lastAppliedScrollRoute: GhosttySurfaceScrollRoute?
     private var routeForwardingGesture = GhosttyRouteForwardingScrollGesture()
+    private var submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
 
     private lazy var routeForwardingPanRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleRouteForwardingPan(_:)))
@@ -104,10 +105,15 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     }
 
     @discardableResult
-    func update(surface: GhosttyManagedSurface, displayScale: CGFloat) -> Bool {
+    func update(
+        surface: GhosttyManagedSurface,
+        displayScale: CGFloat,
+        submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    ) -> Bool {
         let normalizedDisplayScale = max(displayScale, 1)
         let didChangeScale = self.displayScale != normalizedDisplayScale
         self.displayScale = normalizedDisplayScale
+        self.submitRouteForwardedMouseScroll = submitRouteForwardedMouseScroll
 
         var needsLayout = didChangeScale
         if self.surface !== surface {
@@ -147,6 +153,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         guard self.surface === surface else { return }
         surface.onScrollStateChange = nil
         self.surface = nil
+        submitRouteForwardedMouseScroll = nil
         lastAppliedScrollRoute = nil
         surface.view.removeFromSuperview()
     }
@@ -364,6 +371,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     @objc
     private func handleRouteForwardingPan(_ recognizer: UIPanGestureRecognizer) {
         guard let surface, surface.scrollRoute != .viewport else { return }
+        guard let submitRouteForwardedMouseScroll else { return }
         guard let phase = GhosttySurfacePanGesture.Phase(recognizer.state) else { return }
 
         let translation = recognizer.translation(in: self)
@@ -372,7 +380,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
             phase: phase
         )
         for event in events {
-            surface.sendMouseScroll(event)
+            _ = submitRouteForwardedMouseScroll(surface.id, event)
         }
         recognizer.setTranslation(.zero, in: self)
     }

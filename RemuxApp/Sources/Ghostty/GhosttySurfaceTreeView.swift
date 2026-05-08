@@ -10,6 +10,10 @@ struct GhosttyRuntimePaneTreeView: View {
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
+    let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    let submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
+    let submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    let submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
 
     var body: some View {
         GhosttySurfaceTreeContainerRepresentable(
@@ -17,7 +21,11 @@ struct GhosttyRuntimePaneTreeView: View {
             topLevel: registry.selectedTopLevel,
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
-            onCopySelection: onCopySelection
+            onCopySelection: onCopySelection,
+            submitMouseButton: submitMouseButton,
+            submitMousePosition: submitMousePosition,
+            submitMouseScroll: submitMouseScroll,
+            submitMousePressure: submitMousePressure
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -29,6 +37,10 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: (() -> Bool)?
+    let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    let submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
+    let submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    let submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
@@ -43,7 +55,11 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
             registry: registry,
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
-            onCopySelection: onCopySelection
+            onCopySelection: onCopySelection,
+            submitMouseButton: submitMouseButton,
+            submitMousePosition: submitMousePosition,
+            submitMouseScroll: submitMouseScroll,
+            submitMousePressure: submitMousePressure
         )
     }
 }
@@ -54,6 +70,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     private var onCopySelection: (() -> Bool)?
+    private var submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    private var submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
+    private var submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    private var submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
     private var surfaceIDsByView: [ObjectIdentifier: UUID] = [:]
     private var scrollContainersBySurfaceID: [UUID: GhosttyPaneScrollContainerView] = [:]
     private var visibleSurfaceIDs: Set<UUID> = []
@@ -96,7 +116,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         registry: GhosttyRuntimeSurfaceRegistry,
         onSurfaceTap: ((UUID) -> Void)?,
         onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
-        onCopySelection: (() -> Bool)?
+        onCopySelection: (() -> Bool)?,
+        submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?,
+        submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?,
+        submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?,
+        submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
     ) {
         let previousTopLevel = self.topLevel
         let previousRegistry = self.registry
@@ -108,6 +132,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         self.onSurfaceTap = onSurfaceTap
         self.onWindowSwipe = onWindowSwipe
         self.onCopySelection = onCopySelection
+        self.submitMouseButton = submitMouseButton
+        self.submitMousePosition = submitMousePosition
+        self.submitMouseScroll = submitMouseScroll
+        self.submitMousePressure = submitMousePressure
         GhosttyRuntimeTrace.diagnostics(
             "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(topLevel?.id)) \(registry.diagnosticSelectionSummary())"
         )
@@ -201,7 +229,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
                 ensureInteractionRecognizers(for: surface.view)
                 let container = scrollContainer(for: surface)
-                let didChangeContainer = container.update(surface: surface, displayScale: effectiveScale)
+                let didChangeContainer = container.update(
+                    surface: surface,
+                    displayScale: effectiveScale,
+                    submitRouteForwardedMouseScroll: submitMouseScroll
+                )
                 if container.superview !== self {
                     container.removeFromSuperview()
                     addSubview(container)
@@ -267,7 +299,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             if didChangeFrame {
                 container.frame = targetFrame
             }
-            let didChangeContainer = container.update(surface: surface, displayScale: effectiveScale)
+            let didChangeContainer = container.update(
+                surface: surface,
+                displayScale: effectiveScale,
+                submitRouteForwardedMouseScroll: submitMouseScroll
+            )
             GhosttyRuntimeTrace.tmuxViewport(
                 "tree.layout leaf=\(ghosttyDiagnosticShortID(surfaceID)) rect=\(diagnosticRect(rect)) targetFrame=\(diagnosticRect(targetFrame)) didFrame=\(didChangeFrame) didContainer=\(didChangeContainer) focused=\(surfaceID == focusedSurfaceID) before=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
             )
@@ -405,13 +441,13 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         ) {
             switch action {
             case .mousePosition(let position):
-                _ = registry.sendMousePositionToFocusedSurface(position)
+                _ = submitMousePosition?(surfaceID, position, [])
 
             case .mouseButton(let event):
-                _ = registry.sendMouseButtonToFocusedSurface(event)
+                _ = submitMouseButton?(surfaceID, event)
 
             case .mousePressure(let event):
-                _ = registry.sendMousePressureToFocusedSurface(event)
+                _ = submitMousePressure?(surfaceID, event)
             }
         }
 
@@ -475,10 +511,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 onSurfaceTap?(surfaceID)
 
             case .mousePosition(let position):
-                _ = registry.sendMousePositionToFocusedSurface(position)
+                _ = submitMousePosition?(surfaceID, position, [])
 
             case .mouseButton(let event):
-                _ = registry.sendMouseButtonToFocusedSurface(event)
+                _ = submitMouseButton?(surfaceID, event)
             }
         }
 

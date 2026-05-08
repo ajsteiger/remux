@@ -449,36 +449,147 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     @discardableResult
-    func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
-        let accepted = surfaceRegistry.sendMouseButtonToFocusedSurface(event)
-        if !accepted {
+    func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
             debugStatus = "mouse button dropped: no focused tmux pane"
+            return .noFocusedSurface
         }
 
-        return accepted
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse button") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMouseButtonToFocusedSurface(event)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "focused tmux pane")
+        return outcome
     }
 
     @discardableResult
     func sendMousePositionToFocusedSurface(
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
-    ) -> Bool {
-        let accepted = surfaceRegistry.sendMousePositionToFocusedSurface(position, mods: mods)
-        if !accepted {
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
             debugStatus = "mouse position dropped: no focused tmux pane"
+            return .noFocusedSurface
         }
 
-        return accepted
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse position") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMousePositionToFocusedSurface(position, mods: mods)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "focused tmux pane")
+        return outcome
     }
 
     @discardableResult
-    func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> Bool {
-        let accepted = surfaceRegistry.sendMouseScrollToFocusedSurface(event)
-        if !accepted {
+    func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
             debugStatus = "mouse scroll dropped: no focused tmux pane"
+            return .noFocusedSurface
         }
 
-        return accepted
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse scroll") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMouseScrollToFocusedSurface(event)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "focused tmux pane")
+        return outcome
+    }
+
+    @discardableResult
+    func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
+            debugStatus = "mouse pressure dropped: no focused tmux pane"
+            return .noFocusedSurface
+        }
+
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse pressure") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMousePressureToFocusedSurface(event)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "focused tmux pane")
+        return outcome
+    }
+
+    @discardableResult
+    func sendMouseButton(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMouseButtonEvent
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
+            debugStatus = "mouse button dropped: target tmux pane missing"
+            return .missingTarget(surfaceID)
+        }
+
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse button") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMouseButton(to: surfaceID, event)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "target tmux pane")
+        return outcome
+    }
+
+    @discardableResult
+    func sendMousePosition(
+        to surfaceID: UUID,
+        _ position: CGPoint,
+        mods: GhosttySurfaceKeyEvent.Mods = []
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
+            debugStatus = "mouse position dropped: target tmux pane missing"
+            return .missingTarget(surfaceID)
+        }
+
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse position") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMousePosition(to: surfaceID, position, mods: mods)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "target tmux pane")
+        return outcome
+    }
+
+    @discardableResult
+    func sendMouseScroll(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMouseScrollEvent
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
+            debugStatus = "mouse scroll dropped: target tmux pane missing"
+            return .missingTarget(surfaceID)
+        }
+
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse scroll") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMouseScroll(to: surfaceID, event)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "target tmux pane")
+        return outcome
+    }
+
+    @discardableResult
+    func sendMousePressure(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMousePressureEvent
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
+            debugStatus = "mouse pressure dropped: target tmux pane missing"
+            return .missingTarget(surfaceID)
+        }
+
+        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse pressure") {
+            return unavailable
+        }
+
+        let outcome = surfaceRegistry.sendMousePressure(to: surfaceID, event)
+        updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "target tmux pane")
+        return outcome
     }
 
     func focusedSurfaceMouseCaptured() -> Bool {
@@ -1001,6 +1112,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return nil
     }
 
+    private func mouseInputUnavailableOutcome(kind: String) -> GhosttyMouseInputSubmissionOutcome? {
+        guard state == .running, transportWriteSequencer != nil else {
+            debugStatus = "\(kind) dropped: terminal transport unavailable"
+            return .transportUnavailable
+        }
+        return nil
+    }
+
     private func updateDebugStatusForTerminalInputResult(
         _ result: FocusedTerminalInputSubmissionResult,
         kind: String
@@ -1014,6 +1133,25 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             debugStatus = "\(kind) dropped: terminal transport unavailable"
         case .surfaceRejected:
             debugStatus = "\(kind) rejected by focused tmux pane"
+        }
+    }
+
+    private func updateDebugStatusForMouseInputOutcome(
+        _ outcome: GhosttyMouseInputSubmissionOutcome,
+        kind: String,
+        targetDescription: String
+    ) {
+        switch outcome {
+        case .sent:
+            return
+        case .noFocusedSurface:
+            debugStatus = "\(kind) dropped: no focused tmux pane"
+        case .missingTarget:
+            debugStatus = "\(kind) dropped: target tmux pane missing"
+        case .transportUnavailable:
+            debugStatus = "\(kind) dropped: terminal transport unavailable"
+        case .surfaceRejected:
+            debugStatus = "\(kind) rejected by \(targetDescription)"
         }
     }
 

@@ -1621,17 +1621,53 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(surface)
 
         let event = GhosttySurfaceMouseButtonEvent(state: .press, button: .left)
-        XCTAssertTrue(registry.sendMouseButtonToFocusedSurface(event))
+        XCTAssertEqual(registry.sendMouseButtonToFocusedSurface(event), .sent)
         XCTAssertEqual(received, [event])
     }
 
     func testMouseScrollWithoutFocusedSurfaceIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
-        XCTAssertFalse(
+        XCTAssertEqual(
             registry.sendMouseScrollToFocusedSurface(
                 GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
-            )
+            ),
+            .noFocusedSurface
+        )
+        XCTAssertTrue(registry.debugSummary.contains("mouse scroll dropped"))
+    }
+
+    func testMouseScrollToTargetSurfaceDoesNotUseFocusedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var firstReceived: [GhosttySurfaceMouseScrollEvent] = []
+        var secondReceived: [GhosttySurfaceMouseScrollEvent] = []
+        let first = Self.managedSurface(sendMouseScroll: {
+            firstReceived.append($0)
+        })
+        let second = Self.managedSurface(sendMouseScroll: {
+            secondReceived.append($0)
+        })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(first.id)
+
+        let event = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+        XCTAssertEqual(registry.sendMouseScroll(to: second.id, event), .sent)
+        XCTAssertEqual(firstReceived, [])
+        XCTAssertEqual(secondReceived, [event])
+    }
+
+    func testMouseScrollToMissingTargetIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let missingID = UUID()
+
+        XCTAssertEqual(
+            registry.sendMouseScroll(
+                to: missingID,
+                GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+            ),
+            .missingTarget(missingID)
         )
         XCTAssertTrue(registry.debugSummary.contains("mouse scroll dropped"))
     }
@@ -1646,17 +1682,18 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(surface)
 
         let event = GhosttySurfaceMousePressureEvent(stage: .deep, pressure: 1)
-        XCTAssertTrue(registry.sendMousePressureToFocusedSurface(event))
+        XCTAssertEqual(registry.sendMousePressureToFocusedSurface(event), .sent)
         XCTAssertEqual(received, [event])
     }
 
     func testMousePressureWithoutFocusedSurfaceIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
-        XCTAssertFalse(
+        XCTAssertEqual(
             registry.sendMousePressureToFocusedSurface(
                 GhosttySurfaceMousePressureEvent(stage: .deep, pressure: 1)
-            )
+            ),
+            .noFocusedSurface
         )
         XCTAssertTrue(registry.debugSummary.contains("mouse pressure dropped"))
     }
@@ -1667,8 +1704,26 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
 
-        XCTAssertFalse(model.sendMousePositionToFocusedSurface(CGPoint(x: 10, y: 20)))
+        XCTAssertEqual(model.sendMousePositionToFocusedSurface(CGPoint(x: 10, y: 20)), .noFocusedSurface)
         XCTAssertEqual(model.debugStatus, "mouse position dropped: no focused tmux pane")
+    }
+
+    func testModelMouseScrollToRegisteredTargetRequiresRunningTransport() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        var received: [GhosttySurfaceMouseScrollEvent] = []
+        let managed = Self.managedSurface(sendMouseScroll: {
+            received.append($0)
+        })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        let event = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+        XCTAssertEqual(model.sendMouseScroll(to: managed.id, event), .transportUnavailable)
+        XCTAssertEqual(received, [])
+        XCTAssertEqual(model.debugStatus, "mouse scroll dropped: terminal transport unavailable")
     }
 
     func testModelFocusTmuxPaneRoutesToManagedSurface() {

@@ -50,6 +50,18 @@ enum FocusedTerminalInputSubmissionResult: Equatable, Sendable, CustomStringConv
     }
 }
 
+enum GhosttyMouseInputSubmissionOutcome: Equatable, Sendable {
+    case sent
+    case noFocusedSurface
+    case missingTarget(UUID)
+    case transportUnavailable
+    case surfaceRejected
+
+    var isSent: Bool {
+        self == .sent
+    }
+}
+
 @MainActor
 protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     func runtimeCreateSurface(
@@ -782,18 +794,18 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     @discardableResult
-    func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
+    func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome {
         guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse button dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         guard surface.sendMouseButton(event) else {
             updateDebugSummary("mouse button rejected by focused surface")
-            return false
+            return .surfaceRejected
         }
 
-        return true
+        return .sent
     }
 
     @MainActor
@@ -801,38 +813,103 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     func sendMousePositionToFocusedSurface(
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
-    ) -> Bool {
+    ) -> GhosttyMouseInputSubmissionOutcome {
         guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse position dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         surface.sendMousePosition(position, mods: mods)
-        return true
+        return .sent
     }
 
     @MainActor
     @discardableResult
-    func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> Bool {
+    func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome {
         guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse scroll dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         surface.sendMouseScroll(event)
-        return true
+        return .sent
     }
 
     @MainActor
     @discardableResult
-    func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> Bool {
+    func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome {
         guard let surface = selectedActiveSurface else {
             updateDebugSummary("mouse pressure dropped: no focused surface")
-            return false
+            return .noFocusedSurface
         }
 
         surface.sendMousePressure(event)
-        return true
+        return .sent
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMouseButton(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMouseButtonEvent
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard let surface = managedSurfaces[surfaceID] else {
+            updateDebugSummary("mouse button dropped: target surface missing")
+            return .missingTarget(surfaceID)
+        }
+
+        guard surface.sendMouseButton(event) else {
+            updateDebugSummary("mouse button rejected by target surface")
+            return .surfaceRejected
+        }
+
+        return .sent
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMousePosition(
+        to surfaceID: UUID,
+        _ position: CGPoint,
+        mods: GhosttySurfaceKeyEvent.Mods = []
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard let surface = managedSurfaces[surfaceID] else {
+            updateDebugSummary("mouse position dropped: target surface missing")
+            return .missingTarget(surfaceID)
+        }
+
+        surface.sendMousePosition(position, mods: mods)
+        return .sent
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMouseScroll(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMouseScrollEvent
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard let surface = managedSurfaces[surfaceID] else {
+            updateDebugSummary("mouse scroll dropped: target surface missing")
+            return .missingTarget(surfaceID)
+        }
+
+        surface.sendMouseScroll(event)
+        return .sent
+    }
+
+    @MainActor
+    @discardableResult
+    func sendMousePressure(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMousePressureEvent
+    ) -> GhosttyMouseInputSubmissionOutcome {
+        guard let surface = managedSurfaces[surfaceID] else {
+            updateDebugSummary("mouse pressure dropped: target surface missing")
+            return .missingTarget(surfaceID)
+        }
+
+        surface.sendMousePressure(event)
+        return .sent
     }
 
     @MainActor

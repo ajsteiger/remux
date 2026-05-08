@@ -89,7 +89,19 @@ struct GhosttySurfaceScreen: View {
                             registry: registry,
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,
-                            onCopySelection: copyTerminalSelection
+                            onCopySelection: copyTerminalSelection,
+                            submitMouseButton: { surfaceID, event in
+                                model.sendMouseButton(to: surfaceID, event)
+                            },
+                            submitMousePosition: { surfaceID, position, mods in
+                                model.sendMousePosition(to: surfaceID, position, mods: mods)
+                            },
+                            submitMouseScroll: { surfaceID, event in
+                                model.sendMouseScroll(to: surfaceID, event)
+                            },
+                            submitMousePressure: { surfaceID, event in
+                                model.sendMousePressure(to: surfaceID, event)
+                            }
                         )
                             .frame(
                                 width: terminalViewportSize.width,
