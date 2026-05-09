@@ -22,6 +22,8 @@ struct StarterShortcut: Equatable, Sendable {
 }
 
 enum StarterShortcuts {
+    static let collections = ShortcutCollection.starterCollections
+    static let collectionIDs = Set(collections.map(\.id))
     static let all: [StarterShortcut] = shell + claude + codex
 
     static let shell: [StarterShortcut] = [

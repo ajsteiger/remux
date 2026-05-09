@@ -1,31 +1,142 @@
 import Foundation
 
-enum ShortcutCollectionID: String, CaseIterable, Codable, Identifiable, Sendable {
-    case shell
-    case claude
-    case codex
+struct ShortcutCollectionID: RawRepresentable, Hashable, Codable, Identifiable, Sendable {
+    let rawValue: String
 
     var id: String { rawValue }
 
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        rawValue = try container.decode(String.self)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    static let shell = Self(rawValue: "shell")
+    static let claude = Self(rawValue: "claude")
+    static let codex = Self(rawValue: "codex")
+}
+
+struct ShortcutCollection: Codable, Identifiable, Equatable, Sendable {
+    var id: ShortcutCollectionID
+    var title: String
+    var icon: ShortcutCollectionIcon
+    var sortIndex: Int
+    var isHidden: Bool
+
+    init(
+        id: ShortcutCollectionID,
+        title: String,
+        icon: ShortcutCollectionIcon,
+        sortIndex: Int,
+        isHidden: Bool = false
+    ) {
+        self.id = id
+        self.title = title
+        self.icon = icon
+        self.sortIndex = sortIndex
+        self.isHidden = isHidden
+    }
+
+    static let starterCollections: [Self] = [
+        ShortcutCollection(id: .shell, title: "Shell", icon: .shell, sortIndex: 0),
+        ShortcutCollection(id: .claude, title: "Claude", icon: .claude, sortIndex: 1),
+        ShortcutCollection(id: .codex, title: "Codex", icon: .codex, sortIndex: 2),
+    ]
+}
+
+struct ShortcutCollectionIcon: RawRepresentable, Hashable, Codable, Identifiable, Sendable {
+    let rawValue: String
+
+    var id: String { rawValue }
+
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        rawValue = try container.decode(String.self)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    static let shell = Self(rawValue: "shell")
+    static let claude = Self(rawValue: "claude")
+    static let codex = Self(rawValue: "codex")
+    static let terminal = Self.system("terminal")
+    static let robot = Self.system("cpu")
+    static let sparkle = Self.system("sparkle")
+    static let command = Self.system("command")
+    static let folder = Self.system("folder")
+
+    static func system(_ name: String) -> Self {
+        Self(rawValue: "sf.\(name)")
+    }
+
+    static let suggestedIcons: [Self] = [
+        .folder,
+        .terminal,
+        .robot,
+        .command,
+        .sparkle,
+        .system("bolt"),
+        .system("hammer"),
+        .system("gearshape"),
+        .system("server.rack"),
+        .system("curlybraces"),
+        .system("wrench.and.screwdriver"),
+        .system("doc.text"),
+        .system("tray.full"),
+        .system("square.stack.3d.up"),
+        .claude,
+        .codex,
+    ]
+
     var displayTitle: String {
-        switch self {
-        case .shell:
+        switch rawValue {
+        case Self.shell.rawValue:
             "Shell"
-        case .claude:
+        case Self.claude.rawValue:
             "Claude"
-        case .codex:
+        case Self.codex.rawValue:
             "Codex"
+        default:
+            systemImageName
         }
     }
 
     var systemImageName: String {
-        switch self {
-        case .shell:
+        switch rawValue {
+        case Self.shell.rawValue:
             "terminal"
-        case .claude:
-            "sparkle"
-        case .codex:
-            "command"
+        case Self.claude.rawValue, Self.codex.rawValue:
+            "app"
+        default:
+            if rawValue.hasPrefix("sf.") {
+                String(rawValue.dropFirst(3))
+            } else {
+                rawValue
+            }
+        }
+    }
+
+    var editableSystemSymbolName: String? {
+        switch rawValue {
+        case Self.shell.rawValue, Self.claude.rawValue, Self.codex.rawValue:
+            nil
+        default:
+            systemImageName
         }
     }
 }
@@ -60,40 +171,30 @@ enum ShortcutPaletteTabID: Hashable, Codable, Identifiable, Sendable {
         case .favorites:
             "favorites"
         case .collection(let collection):
-            "collection.\(collection.rawValue)"
+            "collection.\(collection.id)"
         case .appAction(let action):
             "action.\(action.rawValue)"
         }
     }
 
-    var displayTitle: String {
+    var fallbackDisplayTitle: String {
         switch self {
         case .favorites:
             "Favorites"
         case .collection(let collection):
-            collection.displayTitle
+            if collection == .shell {
+                "Shell"
+            } else if collection == .claude {
+                "Claude"
+            } else if collection == .codex {
+                "Codex"
+            } else {
+                "Shortcuts"
+            }
         case .appAction(let action):
             action.displayTitle
         }
     }
-
-    var systemImageName: String {
-        switch self {
-        case .favorites:
-            "star"
-        case .collection(let collection):
-            collection.systemImageName
-        case .appAction(let action):
-            action.systemImageName
-        }
-    }
-
-    static let defaultOrder: [Self] = [
-        .favorites,
-        .collection(.shell),
-        .collection(.claude),
-        .collection(.codex),
-    ]
 
     private enum CodingKeys: String, CodingKey {
         case kind

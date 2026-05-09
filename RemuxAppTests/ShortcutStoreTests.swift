@@ -2,6 +2,192 @@ import XCTest
 @testable import Remux
 
 final class ShortcutStoreTests: XCTestCase {
+    func testLegacyShortcutSnapshotDecodesWithStarterCollections() throws {
+        let data = Data(
+            """
+            [
+              {
+                "schemaVersion": 1,
+                "installedStarterIDs": [],
+                "deletedStarterIDs": [],
+                "shortcuts": [
+                  {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "starterID": "claude.clear",
+                    "collection": "claude",
+                    "title": "/clear",
+                    "sequence": {
+                      "kind": "text",
+                      "text": "/clear",
+                      "submit": true
+                    },
+                    "sortIndex": 0,
+                    "isHidden": false
+                  }
+                ],
+                "favoriteIDs": [],
+                "hiddenAppActionTabs": ["upload"],
+                "lastSelectedTab": {
+                  "kind": "collection",
+                  "value": "claude"
+                }
+              }
+            ]
+            """.utf8
+        )
+
+        let snapshots = try JSONDecoder().decode([ShortcutStoreSnapshot].self, from: data)
+        let snapshot = try XCTUnwrap(snapshots.first)
+
+        XCTAssertEqual(snapshot.schemaVersion, ShortcutStoreSnapshot.currentSchemaVersion)
+        XCTAssertEqual(snapshot.collection(id: .claude)?.title, "Claude")
+        XCTAssertEqual(snapshot.shortcuts.first?.collection, .claude)
+        XCTAssertTrue(snapshot.visiblePaletteTabs.contains(.collection(.claude)))
+    }
+
+    func testCustomCollectionsOwnShortcutsAndFavorites() {
+        var snapshot = ShortcutStoreSnapshot()
+        let collectionID = snapshot.addCollection(title: "OpenCode", icon: .robot)
+        let shortcut = Shortcut(
+            collection: collectionID,
+            title: "/status",
+            sequence: .text("/status", submit: true),
+            sortIndex: 0
+        )
+
+        snapshot.upsertShortcut(shortcut)
+        snapshot.setFavorite(true, shortcutID: shortcut.id)
+        snapshot.setLastSelectedTab(.collection(collectionID))
+
+        XCTAssertEqual(snapshot.collection(id: collectionID)?.title, "OpenCode")
+        XCTAssertEqual(snapshot.shortcuts(in: collectionID).map(\.id), [shortcut.id])
+        XCTAssertEqual(snapshot.favoriteShortcuts.map(\.id), [shortcut.id])
+        XCTAssertTrue(snapshot.visiblePaletteTabs.contains(.collection(collectionID)))
+
+        snapshot.deleteCollection(id: collectionID)
+
+        XCTAssertNil(snapshot.collection(id: collectionID))
+        XCTAssertTrue(snapshot.shortcuts(in: collectionID).isEmpty)
+        XCTAssertTrue(snapshot.favoriteShortcuts.isEmpty)
+        XCTAssertEqual(snapshot.lastSelectedTab, .favorites)
+        XCTAssertFalse(snapshot.visiblePaletteTabs.contains(.collection(collectionID)))
+    }
+
+    func testCollectionReorderPersistsMovedOrder() {
+        var snapshot = ShortcutStoreSnapshot()
+        let first = snapshot.orderedCollections[0].id
+
+        snapshot.moveCollections(from: IndexSet(integer: 0), to: snapshot.orderedCollections.count)
+
+        XCTAssertEqual(snapshot.orderedCollections.last?.id, first)
+    }
+
+    func testCustomCollectionIconStoresArbitrarySymbolName() throws {
+        let icon = ShortcutCollectionIcon.system("server.rack")
+        let data = try JSONEncoder().encode(icon)
+        let decoded = try JSONDecoder().decode(ShortcutCollectionIcon.self, from: data)
+
+        XCTAssertEqual(decoded, icon)
+        XCTAssertEqual(decoded.systemImageName, "server.rack")
+    }
+
+    func testDefaultShortcutCollectionTracksStoredCollections() {
+        var snapshot = ShortcutStoreSnapshot()
+        let firstCollection = snapshot.orderedCollections.first
+
+        XCTAssertEqual(snapshot.defaultShortcutCollectionID, firstCollection?.id)
+
+        if let firstCollection {
+            snapshot.deleteCollection(id: firstCollection.id)
+        }
+
+        let nextCollection = snapshot.orderedCollections.first
+        XCTAssertEqual(snapshot.defaultShortcutCollectionID, nextCollection?.id)
+    }
+
+    func testDeletedStarterCollectionCanBeRestoredExplicitly() throws {
+        let starters = [
+            StarterShortcut(
+                id: "shell.interrupt",
+                collection: .shell,
+                title: "^C",
+                hint: nil,
+                sequence: .control("c"),
+                sortIndex: 0
+            ),
+        ]
+        var snapshot = ShortcutStoreSnapshot()
+        snapshot.installMissingStarters(starters)
+        let shortcutID = try XCTUnwrap(snapshot.shortcuts.first(where: { $0.starterID == "shell.interrupt" })?.id)
+
+        snapshot.deleteCollection(id: .shell)
+
+        XCTAssertNil(snapshot.collection(id: .shell))
+        XCTAssertTrue(snapshot.shortcuts(in: .shell).isEmpty)
+        XCTAssertTrue(snapshot.deletedCollectionIDs.contains(.shell))
+        XCTAssertTrue(snapshot.deletedStarterIDs.contains("shell.interrupt"))
+        XCTAssertTrue(snapshot.hasMissingStarterCollections)
+
+        snapshot.installMissingCollections(StarterShortcuts.collections)
+        snapshot.installMissingStarters(starters)
+
+        XCTAssertNil(snapshot.collection(id: .shell))
+        XCTAssertTrue(snapshot.shortcuts(in: .shell).isEmpty)
+
+        snapshot.restoreMissingStarterCollections(StarterShortcuts.collections, starters: starters)
+
+        XCTAssertEqual(snapshot.collection(id: .shell)?.title, "Shell")
+        XCTAssertFalse(snapshot.deletedCollectionIDs.contains(.shell))
+        XCTAssertFalse(snapshot.deletedStarterIDs.contains("shell.interrupt"))
+        XCTAssertNotEqual(snapshot.shortcuts.first(where: { $0.starterID == "shell.interrupt" })?.id, shortcutID)
+    }
+
+    func testRestoringDeletedStarterCollectionDoesNotRestoreDeletedShortcutsInExistingCollections() throws {
+        let starters = [
+            StarterShortcut(
+                id: "shell.interrupt",
+                collection: .shell,
+                title: "^C",
+                hint: nil,
+                sequence: .control("c"),
+                sortIndex: 0
+            ),
+            StarterShortcut(
+                id: "claude.clear",
+                collection: .claude,
+                title: "/clear",
+                hint: nil,
+                sequence: .text("/clear", submit: true),
+                sortIndex: 0
+            ),
+        ]
+        var snapshot = ShortcutStoreSnapshot()
+        snapshot.installMissingStarters(starters)
+
+        let claudeShortcutID = try XCTUnwrap(snapshot.shortcuts.first(where: { $0.starterID == "claude.clear" })?.id)
+        snapshot.deleteShortcut(id: claudeShortcutID)
+        snapshot.deleteCollection(id: .shell)
+
+        snapshot.restoreMissingStarterCollections(StarterShortcuts.collections, starters: starters)
+
+        XCTAssertNotNil(snapshot.collection(id: .shell))
+        XCTAssertNotNil(snapshot.shortcuts.first(where: { $0.starterID == "shell.interrupt" }))
+        XCTAssertNil(snapshot.shortcuts.first(where: { $0.starterID == "claude.clear" }))
+        XCTAssertTrue(snapshot.deletedStarterIDs.contains("claude.clear"))
+    }
+
+    func testBuiltInCollectionIconDoesNotBecomeSystemIconWhenSaved() {
+        let collection = ShortcutCollection(
+            id: .shell,
+            title: "Shell",
+            icon: .shell,
+            sortIndex: 0
+        )
+
+        XCTAssertNil(collection.icon.editableSystemSymbolName)
+        XCTAssertEqual(collection.icon.systemImageName, "terminal")
+    }
+
     func testFileBackedRepositoryInstallsStartersOnlyOnce() async throws {
         let root = temporaryRoot()
         let starters = [
