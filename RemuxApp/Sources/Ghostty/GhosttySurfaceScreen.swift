@@ -586,8 +586,12 @@ struct GhosttySurfaceScreen: View {
                     executeShortcut: executeShortcut,
                     onAddShortcut: {
                         isShortcutPalettePresented = false
+                        guard let defaultCollection = shortcutStore.snapshot.defaultShortcutCollectionID else {
+                            isShortcutsSettingsPresented = true
+                            return
+                        }
                         shortcutEditorRequest = .new(
-                            defaultCollection: .shell,
+                            defaultCollection: defaultCollection,
                             favoriteOnSave: true,
                             snapshot: shortcutStore.snapshot
                         )

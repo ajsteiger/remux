@@ -80,17 +80,21 @@ struct ShortcutPalette: View {
 
     private var tabRail: some View {
         HStack(spacing: 9) {
-            HStack(spacing: 4) {
-                ForEach(store.snapshot.visiblePaletteTabs) { tab in
-                    ShortcutPaletteTabButton(
-                        tab: tab,
-                        isSelected: selectedTab == tab
-                    ) {
-                        store.update { $0.setLastSelectedTab(tab) }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(store.snapshot.visiblePaletteTabs) { tab in
+                        ShortcutPaletteTabButton(
+                            tab: tab,
+                            snapshot: store.snapshot,
+                            isSelected: selectedTab == tab
+                        ) {
+                            store.update { $0.setLastSelectedTab(tab) }
+                        }
                     }
                 }
+                .padding(4)
             }
-            .padding(4)
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .background(GhosttyPhoneChromePalette.groupSurface)
             .clipShape(Capsule())
             .overlay {
@@ -228,12 +232,13 @@ private struct AddShortcutTile: View {
 
 private struct ShortcutPaletteTabButton: View {
     let tab: ShortcutPaletteTabID
+    let snapshot: ShortcutStoreSnapshot
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            ShortcutPaletteTabIcon(tab: tab)
+            ShortcutPaletteTabIcon(tab: tab, snapshot: snapshot)
                 .frame(width: 36, height: 32)
         }
         .buttonStyle(.plain)
@@ -245,7 +250,7 @@ private struct ShortcutPaletteTabButton: View {
                     .stroke(Color.white.opacity(0.070), lineWidth: 1)
             }
         }
-        .accessibilityLabel(tab.displayTitle)
+        .accessibilityLabel(snapshot.displayTitle(for: tab))
     }
 }
 
