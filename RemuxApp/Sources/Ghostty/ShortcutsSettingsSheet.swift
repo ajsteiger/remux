@@ -1,37 +1,48 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct ShortcutsSettingsSheet: View {
     @ObservedObject var store: ShortcutStore
     @Environment(\.dismiss) private var dismiss
     @State private var editorRequest: ShortcutEditorRequest?
+    @State private var collectionEditorRequest: ShortcutCollectionEditorRequest?
     @State private var restoreCollection: ShortcutCollectionID?
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Collections") {
-                    ForEach(ShortcutCollectionID.allCases) { collection in
-                        NavigationLink {
-                            ShortcutCollectionDetailView(
-                                store: store,
-                                collection: collection,
-                                addShortcut: {
-                                    editorRequest = .new(defaultCollection: collection, snapshot: store.snapshot)
-                                },
-                                editShortcut: { shortcut in
-                                    editorRequest = .edit(shortcut, snapshot: store.snapshot)
-                                },
-                                restoreStarters: {
-                                    restoreCollection = collection
-                                }
-                            )
+                    ForEach(store.snapshot.orderedCollections) { collection in
+                        collectionRow(collection)
+                    }
+                    .onDelete { indexSet in
+                        let collections = store.snapshot.orderedCollections
+                        let collectionIDs = indexSet.map { collections[$0].id }
+                        store.update { snapshot in
+                            for id in collectionIDs {
+                                snapshot.deleteCollection(id: id)
+                            }
+                        }
+                    }
+                    .onMove { source, destination in
+                        store.update { $0.moveCollections(from: source, to: destination) }
+                    }
+                }
+
+                if store.snapshot.hasMissingStarterCollections {
+                    Section {
+                        Button {
+                            store.update {
+                                $0.restoreMissingStarterCollections(
+                                    StarterShortcuts.collections,
+                                    starters: StarterShortcuts.all
+                                )
+                            }
                         } label: {
-                            ShortcutCollectionSettingsRow(
-                                collection: collection,
-                                totalCount: store.snapshot.shortcuts(in: collection).count,
-                                visibleCount: store.snapshot.visibleShortcuts(in: collection).count,
-                                favoriteCount: favoriteCount(in: collection)
-                            )
+                            Label("Restore Default Collections", systemImage: "arrow.counterclockwise")
                         }
                     }
                 }
@@ -43,11 +54,32 @@ struct ShortcutsSettingsSheet: View {
             .background(Color(.systemGroupedBackground))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
                     }
+                    .accessibilityLabel("Close Shortcuts")
+                }
+
+                ToolbarItemGroup(placement: .primaryAction) {
+                    EditButton()
+
+                    Button {
+                        collectionEditorRequest = .new(snapshot: store.snapshot)
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Add Collection")
                 }
             }
+        }
+        .environment(\.editMode, $editMode)
+        .sheet(item: $collectionEditorRequest) { request in
+            ShortcutCollectionEditorSheet(request: request) { collection in
+                store.update { $0.upsertCollection(collection) }
+            }
+            .presentationDetents([.medium])
         }
         .sheet(item: $editorRequest) { request in
             ShortcutEditorSheet(request: request) { shortcut, favorite in
@@ -61,7 +93,7 @@ struct ShortcutsSettingsSheet: View {
             .presentationDetents([.medium, .large])
         }
         .confirmationDialog(
-            "Restore Starter Shortcuts",
+            "Restore Default Shortcuts",
             isPresented: Binding(
                 get: { restoreCollection != nil },
                 set: { isPresented in
@@ -73,7 +105,7 @@ struct ShortcutsSettingsSheet: View {
             titleVisibility: .visible
         ) {
             if let collection = restoreCollection {
-                Button("Restore \(collection.displayTitle) Starters") {
+                Button("Restore \(store.snapshot.collectionTitle(collection)) Defaults") {
                     store.update {
                         $0.restoreMissingStarters(in: collection, starters: StarterShortcuts.all)
                     }
@@ -82,7 +114,7 @@ struct ShortcutsSettingsSheet: View {
             }
         } message: {
             if let collection = restoreCollection {
-                Text("This re-adds missing \(collection.displayTitle) starter shortcuts. Existing edits stay unchanged.")
+                Text("This re-adds missing default shortcuts for \(store.snapshot.collectionTitle(collection)). Existing edits stay unchanged.")
             }
         }
     }
@@ -90,57 +122,77 @@ struct ShortcutsSettingsSheet: View {
     private func favoriteCount(in collection: ShortcutCollectionID) -> Int {
         store.snapshot.shortcuts(in: collection).filter { store.snapshot.isFavorite($0.id) }.count
     }
+
+    private func collectionRow(_ collection: ShortcutCollection) -> some View {
+        NavigationLink {
+            ShortcutCollectionDetailView(
+                store: store,
+                collectionID: collection.id,
+                addShortcut: {
+                    editorRequest = .new(defaultCollection: collection.id, snapshot: store.snapshot)
+                },
+                editShortcut: { shortcut in
+                    editorRequest = .edit(shortcut, snapshot: store.snapshot)
+                },
+                editCollection: {
+                    if let current = store.snapshot.collection(id: collection.id) {
+                        collectionEditorRequest = .edit(current)
+                    }
+                },
+                restoreStarters: {
+                    restoreCollection = collection.id
+                }
+            )
+        } label: {
+            collectionRowLabel(collection)
+        }
+    }
+
+    private func collectionRowLabel(_ collection: ShortcutCollection) -> some View {
+        ShortcutCollectionSettingsRow(
+            collection: collection,
+            totalCount: store.snapshot.shortcuts(in: collection.id).count,
+            visibleCount: store.snapshot.visibleShortcuts(in: collection.id).count,
+            favoriteCount: favoriteCount(in: collection.id)
+        )
+    }
 }
 
 private struct ShortcutCollectionDetailView: View {
     @ObservedObject var store: ShortcutStore
-    let collection: ShortcutCollectionID
+    let collectionID: ShortcutCollectionID
     let addShortcut: () -> Void
     let editShortcut: (Shortcut) -> Void
+    let editCollection: () -> Void
     let restoreStarters: () -> Void
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         List {
             Section {
-                ForEach(store.snapshot.shortcuts(in: collection)) { shortcut in
-                    Button {
-                        editShortcut(shortcut)
-                    } label: {
-                        ShortcutSettingsRow(
-                            shortcut: shortcut,
-                            isFavorite: store.snapshot.isFavorite(shortcut.id)
-                        )
-                    }
-                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                        Button {
+                ForEach(store.snapshot.shortcuts(in: collectionID)) { shortcut in
+                    ShortcutSettingsEditableRow(
+                        shortcut: shortcut,
+                        collectionTitle: store.snapshot.collectionTitle(shortcut.collection),
+                        isFavorite: store.snapshot.isFavorite(shortcut.id),
+                        editShortcut: {
+                            editShortcut(shortcut)
+                        },
+                        toggleFavorite: {
                             store.update {
                                 $0.setFavorite(!$0.isFavorite(shortcut.id), shortcutID: shortcut.id)
                             }
-                        } label: {
-                            Label(
-                                store.snapshot.isFavorite(shortcut.id) ? "Unfavorite" : "Favorite",
-                                systemImage: "star"
-                            )
-                        }
-                        .tint(.yellow)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
+                        },
+                        deleteShortcut: {
                             store.update { $0.deleteShortcut(id: shortcut.id) }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-
-                        Button {
+                        },
+                        toggleHidden: {
                             store.update { $0.setHidden(!shortcut.isHidden, shortcutID: shortcut.id) }
-                        } label: {
-                            Label(shortcut.isHidden ? "Show" : "Hide", systemImage: shortcut.isHidden ? "eye" : "eye.slash")
                         }
-                        .tint(.gray)
-                    }
+                    )
                 }
                 .onDelete { indexSet in
-                    let shortcuts = store.snapshot.shortcuts(in: collection)
+                    let shortcuts = store.snapshot.shortcuts(in: collectionID)
                     store.update { snapshot in
                         for index in indexSet {
                             snapshot.deleteShortcut(id: shortcuts[index].id)
@@ -149,43 +201,110 @@ private struct ShortcutCollectionDetailView: View {
                 }
                 .onMove { source, destination in
                     store.update {
-                        $0.moveShortcuts(in: collection, from: source, to: destination)
+                        $0.moveShortcuts(in: collectionID, from: source, to: destination)
                     }
                 }
             } footer: {
                 Text("Swipe to favorite, hide, or delete. Use Edit to reorder.")
             }
 
-            Section {
-                Button {
-                    restoreStarters()
-                } label: {
-                    Label("Restore Starter Shortcuts", systemImage: "arrow.counterclockwise")
+            if StarterShortcuts.collectionIDs.contains(collectionID) {
+                Section {
+                    Button {
+                        restoreStarters()
+                    } label: {
+                        Label("Restore Default Shortcuts", systemImage: "arrow.counterclockwise")
+                    }
                 }
             }
         }
-        .navigationTitle(collection.displayTitle)
+        .navigationTitle(store.snapshot.collectionTitle(collectionID))
         .navigationBarTitleDisplayMode(.inline)
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                EditButton()
+
                 Button(action: addShortcut) {
                     Image(systemName: "plus")
                 }
                 .accessibilityLabel("Add Shortcut")
-            }
 
-            ToolbarItem(placement: .topBarTrailing) {
-                EditButton()
+                Menu {
+                    Button("Rename Collection") {
+                        editCollection()
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Collection Actions")
             }
         }
+        .environment(\.editMode, $editMode)
+    }
+}
+
+private struct ShortcutSettingsEditableRow: View {
+    @Environment(\.editMode) private var editMode
+
+    let shortcut: Shortcut
+    let collectionTitle: String
+    let isFavorite: Bool
+    let editShortcut: () -> Void
+    let toggleFavorite: () -> Void
+    let deleteShortcut: () -> Void
+    let toggleHidden: () -> Void
+
+    var body: some View {
+        ShortcutSettingsRow(
+            shortcut: shortcut,
+            collectionTitle: collectionTitle,
+            isFavorite: isFavorite
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isEditing {
+                editShortcut()
+            }
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            if !isEditing {
+                Button {
+                    toggleFavorite()
+                } label: {
+                    Label(isFavorite ? "Unfavorite" : "Favorite", systemImage: "star")
+                }
+                .tint(.yellow)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            if !isEditing {
+                Button(role: .destructive) {
+                    deleteShortcut()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+
+                Button {
+                    toggleHidden()
+                } label: {
+                    Label(shortcut.isHidden ? "Show" : "Hide", systemImage: shortcut.isHidden ? "eye" : "eye.slash")
+                }
+                .tint(.gray)
+            }
+        }
+    }
+
+    private var isEditing: Bool {
+        editMode?.wrappedValue.isEditing == true
     }
 }
 
 private struct ShortcutSettingsRow: View {
     let shortcut: Shortcut
+    let collectionTitle: String
     let isFavorite: Bool
 
     var body: some View {
@@ -203,7 +322,7 @@ private struct ShortcutSettingsRow: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text(shortcut.collection.displayTitle)
+                    Text(collectionTitle)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -227,20 +346,20 @@ private struct ShortcutSettingsRow: View {
 }
 
 private struct ShortcutCollectionSettingsRow: View {
-    let collection: ShortcutCollectionID
+    let collection: ShortcutCollection
     let totalCount: Int
     let visibleCount: Int
     let favoriteCount: Int
 
     var body: some View {
         HStack(spacing: 13) {
-            ShortcutCollectionIconView(collection: collection)
+            ShortcutCollectionIconView(icon: collection.icon)
                 .foregroundStyle(.primary)
                 .frame(width: 34, height: 34)
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(collection.displayTitle)
+                Text(collection.title)
                     .font(.body.weight(.semibold))
                 Text(summary)
                     .font(.footnote)
@@ -268,10 +387,189 @@ private struct ShortcutCollectionSettingsRow: View {
     }
 }
 
+struct ShortcutCollectionEditorRequest: Identifiable {
+    let id = UUID()
+    let collection: ShortcutCollection?
+    let nextSortIndex: Int
+
+    static func new(snapshot: ShortcutStoreSnapshot) -> Self {
+        ShortcutCollectionEditorRequest(
+            collection: nil,
+            nextSortIndex: (snapshot.collections.map(\.sortIndex).max() ?? -1) + 1
+        )
+    }
+
+    static func edit(_ collection: ShortcutCollection) -> Self {
+        ShortcutCollectionEditorRequest(
+            collection: collection,
+            nextSortIndex: collection.sortIndex
+        )
+    }
+}
+
+struct ShortcutCollectionEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let request: ShortcutCollectionEditorRequest
+    let onSave: (ShortcutCollection) -> Void
+
+    @State private var title: String
+    @State private var selectedPreset: ShortcutCollectionIcon
+    @State private var symbolName: String
+
+    init(
+        request: ShortcutCollectionEditorRequest,
+        onSave: @escaping (ShortcutCollection) -> Void
+    ) {
+        self.request = request
+        self.onSave = onSave
+        let initialIcon = request.collection?.icon ?? .folder
+        _title = State(initialValue: request.collection?.title ?? "")
+        _selectedPreset = State(initialValue: initialIcon)
+        _symbolName = State(initialValue: initialIcon.editableSystemSymbolName ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Collection") {
+                    TextField("Name", text: $title)
+                }
+
+                Section {
+                    HStack(spacing: 14) {
+                        ShortcutCollectionIconView(icon: resolvedIcon)
+                            .foregroundStyle(.primary)
+                            .frame(width: 44, height: 44)
+                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(resolvedIcon.displayTitle)
+                                .font(.body.weight(.semibold))
+                            Text(iconDetailText)
+                                .font(.footnote)
+                                .foregroundStyle(isResolvedIconValid ? Color.secondary : Color.red)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    TextField("iOS icon name", text: $symbolName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(ShortcutCollectionIcon.suggestedIcons) { icon in
+                                Button {
+                                    selectIcon(icon)
+                                } label: {
+                                    ShortcutCollectionIconView(icon: icon)
+                                        .foregroundStyle(isIconSelected(icon) ? Color.accentColor : .primary)
+                                        .frame(width: 34, height: 34)
+                                        .background(
+                                            isIconSelected(icon)
+                                                ? Color.accentColor.opacity(0.14)
+                                                : Color(.secondarySystemGroupedBackground),
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(icon.displayTitle)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                } header: {
+                    Text("Icon")
+                } footer: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Enter an SF Symbol name, like terminal or server.rack, or tap a suggestion. Names are checked on this device as you type.")
+                    }
+                }
+            }
+            .navigationTitle(request.collection == nil ? "New Collection" : "Edit Collection")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        save()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && isResolvedIconValid
+    }
+
+    private var resolvedIcon: ShortcutCollectionIcon {
+        let trimmedSymbol = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSymbol.isEmpty {
+            return .system(trimmedSymbol)
+        }
+        return selectedPreset
+    }
+
+    private var isResolvedIconValid: Bool {
+        switch resolvedIcon.rawValue {
+        case ShortcutCollectionIcon.claude.rawValue, ShortcutCollectionIcon.codex.rawValue:
+            return true
+        default:
+            #if canImport(UIKit)
+            return UIImage(systemName: resolvedIcon.systemImageName) != nil
+            #else
+            return true
+            #endif
+        }
+    }
+
+    private var iconDetailText: String {
+        if isResolvedIconValid {
+            if let symbolName = resolvedIcon.editableSystemSymbolName {
+                return "SF Symbol: \(symbolName)"
+            }
+            return "Built-in icon"
+        }
+        return "Unknown SF Symbol"
+    }
+
+    private func selectIcon(_ icon: ShortcutCollectionIcon) {
+        selectedPreset = icon
+        symbolName = icon.editableSystemSymbolName ?? ""
+    }
+
+    private func isIconSelected(_ icon: ShortcutCollectionIcon) -> Bool {
+        resolvedIcon == icon
+    }
+
+    private func save() {
+        let existing = request.collection
+        let collection = ShortcutCollection(
+            id: existing?.id ?? ShortcutCollectionID(rawValue: "custom.\(UUID().uuidString.lowercased())"),
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            icon: resolvedIcon,
+            sortIndex: existing?.sortIndex ?? request.nextSortIndex,
+            isHidden: existing?.isHidden ?? false
+        )
+        onSave(collection)
+        dismiss()
+    }
+}
+
 struct ShortcutEditorRequest: Identifiable {
     let id = UUID()
     let shortcut: Shortcut?
     let defaultCollection: ShortcutCollectionID
+    let collections: [ShortcutCollection]
     let favoriteOnSave: Bool
     let nextSortIndexByCollection: [ShortcutCollectionID: Int]
 
@@ -283,6 +581,7 @@ struct ShortcutEditorRequest: Identifiable {
         ShortcutEditorRequest(
             shortcut: nil,
             defaultCollection: defaultCollection,
+            collections: snapshot.collections,
             favoriteOnSave: favoriteOnSave,
             nextSortIndexByCollection: nextSortIndexes(in: snapshot)
         )
@@ -295,15 +594,16 @@ struct ShortcutEditorRequest: Identifiable {
         ShortcutEditorRequest(
             shortcut: shortcut,
             defaultCollection: shortcut.collection,
+            collections: snapshot.collections,
             favoriteOnSave: false,
             nextSortIndexByCollection: nextSortIndexes(in: snapshot)
         )
     }
 
     private static func nextSortIndexes(in snapshot: ShortcutStoreSnapshot) -> [ShortcutCollectionID: Int] {
-        Dictionary(uniqueKeysWithValues: ShortcutCollectionID.allCases.map { collection in
-            let next = (snapshot.shortcuts(in: collection).map(\.sortIndex).max() ?? -1) + 1
-            return (collection, next)
+        Dictionary(uniqueKeysWithValues: snapshot.collections.map { collection in
+            let next = (snapshot.shortcuts(in: collection.id).map(\.sortIndex).max() ?? -1) + 1
+            return (collection.id, next)
         })
     }
 }
@@ -378,8 +678,8 @@ struct ShortcutEditorSheet: View {
                     TextField("Tile", text: $title)
                     TextField("Hint", text: $hint)
                     Picker("Collection", selection: $collection) {
-                        ForEach(ShortcutCollectionID.allCases) { collection in
-                            Text(collection.displayTitle).tag(collection)
+                        ForEach(request.collections) { collection in
+                            Text(collection.title).tag(collection.id)
                         }
                     }
                 }
