@@ -22,7 +22,7 @@ struct RemuxAppDependencies: Sendable {
     init(
         profileRepository: any ConnectionProfileRepository,
         settingsRepository: any TerminalSettingsRepository,
-        shortcutRepository: any ShortcutRepository = InMemoryShortcutRepository(),
+        shortcutRepository: any ShortcutRepository,
         passwordStore: any PasswordStore,
         trustedHostStore: TrustedHostStore,
         sshConnectionPool: SSHTmuxAuthenticatedConnectionPool = SSHTmuxAuthenticatedConnectionPool(),
