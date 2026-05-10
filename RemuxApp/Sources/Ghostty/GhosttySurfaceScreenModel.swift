@@ -62,7 +62,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
     }
 
-    typealias TransportFactory = (TmuxConnectionTarget) -> any TmuxControlTransport
+    typealias TransportFactory = GhosttyTerminalHostSessionFactory.TransportFactory
     typealias RuntimeFactory = GhosttyTerminalRuntimePrecreationController.RuntimeFactory
 
     private let target: TmuxConnectionTarget
@@ -73,6 +73,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private let debugLatencyProbeController: GhosttyTerminalDebugLatencyProbeController
 
     private let hostSessionSlot = GhosttyTerminalHostSessionSlot()
+    private lazy var hostSessionFactory = GhosttyTerminalHostSessionFactory(
+        target: target,
+        transportFactory: transportFactory,
+        flowID: sessionOpenFlowID,
+        eventHandler: { [weak self] session, event in
+            self?.handleHostSessionEvent(event, from: session)
+        }
+    )
     private let commandFailurePresenter = GhosttyTmuxCommandFailurePresenter()
     private lazy var tmuxActionCoordinator = GhosttyTmuxActionCoordinator(
         surfaceRegistry: surfaceRegistry,
@@ -184,16 +192,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 flowID: sessionOpenFlowID
             )
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.created")
-            let transport = transportFactory(target)
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.created")
-            let hostSession = GhosttyHostSession(
-                runtime: runtime,
-                transport: transport,
-                flowID: sessionOpenFlowID,
-                eventHandler: { [weak self] session, event in
-                    self?.handleHostSessionEvent(event, from: session)
-                }
-            )
+            let hostSession = hostSessionFactory.makeSession(runtime: runtime)
             sessionToCloseOnFailure = hostSession
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.prepare.scheduled")
             hostSessionSlot.install(hostSession)
