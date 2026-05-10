@@ -251,7 +251,10 @@ final class RemuxRootModel: ObservableObject {
                 library = try await dependencies.profileRepository.loadSnapshot()
                 closePreparedTransports(forServerID: submission.server.id)
                 dependencies.closeIdleSSHConnections(forServerID: submission.server.id)
-                refreshActiveSessions(server: submission.server)
+                RemuxActiveSessionCollection.refreshServer(
+                    submission.server,
+                    in: &activeSessions
+                )
 
                 guard let reconnectWorkspaceID else {
                     state = .library
@@ -302,7 +305,10 @@ final class RemuxRootModel: ObservableObject {
                 try await dependencies.profileRepository.saveWorkspace(workspace)
                 library = try await dependencies.profileRepository.loadSnapshot()
                 closePreparedTransport(for: workspace.id)
-                refreshActiveSession(workspace: workspace)
+                RemuxActiveSessionCollection.refreshWorkspace(
+                    workspace,
+                    in: &activeSessions
+                )
                 state = .library
                 scheduleLibrarySSHPrewarm(snapshot: library)
             } catch {
@@ -396,7 +402,7 @@ final class RemuxRootModel: ObservableObject {
             event: "model.showActiveSession.begin",
             fields: ["workspaceID": id.uuidString]
         )
-        guard activeSessions.contains(where: { $0.id == id }) else {
+        guard RemuxActiveSessionCollection.containsWorkspace(id, in: activeSessions) else {
             GhosttyRuntimeTrace.flowEnd(
                 sessionShowFlowID(id),
                 event: "model.showActiveSession.missing",
@@ -406,7 +412,7 @@ final class RemuxRootModel: ObservableObject {
             return
         }
 
-        if activeSessions.first(where: { $0.id == id })?.runtimeState.disconnectedReason != nil {
+        if RemuxActiveSessionCollection.session(id, in: activeSessions)?.runtimeState.disconnectedReason != nil {
             reconnectActiveSession(id, source: .activeSessionTap)
             GhosttyRuntimeTrace.flowEnd(
                 sessionShowFlowID(id),
@@ -428,12 +434,11 @@ final class RemuxRootModel: ObservableObject {
         _ id: SavedWorkspace.ID,
         source: TerminalReconnectSource
     ) {
-        guard let index = activeSessions.firstIndex(where: { $0.id == id }) else {
+        guard let currentSession = RemuxActiveSessionCollection.session(id, in: activeSessions) else {
             state = .library
             return
         }
 
-        var session = activeSessions[index]
         GhosttyRuntimeTrace.flowBegin(
             sessionReconnectFlowID(id),
             event: "model.reconnect.begin",
@@ -445,11 +450,17 @@ final class RemuxRootModel: ObservableObject {
         cancelLibrarySSHPrewarm()
         closePreparedTransport(for: id)
         closePreparedTransports(
-            forServerID: session.target.server.id,
+            forServerID: currentSession.target.server.id,
             excludingWorkspaceID: id
         )
-        session.replaceRuntime(source: source)
-        activeSessions[index] = session
+        guard let session = RemuxActiveSessionCollection.replaceRuntime(
+            workspaceID: id,
+            source: source,
+            in: &activeSessions
+        ) else {
+            state = .library
+            return
+        }
         prepareTransport(for: session.target, reason: "reconnect")
         state = .terminal(id)
         GhosttyRuntimeTrace.flowEvent(
@@ -467,7 +478,7 @@ final class RemuxRootModel: ObservableObject {
     func handleTerminalRuntimeStateUpdate(
         _ update: TerminalRuntimeStateUpdate
     ) -> ActiveSessionRuntimeTransitionOutcome {
-        let outcome = RemuxActiveSessionRuntimeReducer.apply(
+        let outcome = RemuxActiveSessionCollection.applyRuntimeStateUpdate(
             update,
             to: &activeSessions,
             requestedReconnectSource: automaticReconnectSource(for: update)
@@ -481,7 +492,7 @@ final class RemuxRootModel: ObservableObject {
 
     func closeActiveSession(_ id: SavedWorkspace.ID) {
         closePreparedTransport(for: id)
-        activeSessions.removeAll { $0.id == id }
+        RemuxActiveSessionCollection.removeWorkspace(id, from: &activeSessions)
 
         guard case .terminal(let selectedID) = state, selectedID == id else {
             return
@@ -498,7 +509,7 @@ final class RemuxRootModel: ObservableObject {
             try dependencies.trustedHostStore.deleteIdentity(for: id)
             closePreparedTransports(forServerID: id)
             dependencies.closeIdleSSHConnections(forServerID: id)
-            activeSessions.removeAll { $0.target.server.id == id }
+            RemuxActiveSessionCollection.removeServer(id, from: &activeSessions)
             library = try await dependencies.profileRepository.loadSnapshot()
             state = .library
             scheduleLibrarySSHPrewarm(snapshot: library)
@@ -511,7 +522,7 @@ final class RemuxRootModel: ObservableObject {
         do {
             try await dependencies.profileRepository.deleteWorkspace(id: id)
             closePreparedTransport(for: id)
-            activeSessions.removeAll { $0.id == id }
+            RemuxActiveSessionCollection.removeWorkspace(id, from: &activeSessions)
             library = try await dependencies.profileRepository.loadSnapshot()
             state = .library
             scheduleLibrarySSHPrewarm(snapshot: library)
@@ -608,13 +619,10 @@ final class RemuxRootModel: ObservableObject {
         closePreparedTransports(forServerID: server.id, excludingWorkspaceID: workspace.id)
         let target = target(server: server, workspace: workspace, password: password)
         prepareTransport(for: target, reason: "activation")
-        let activeSession = ActiveTerminalSession(target: target)
-
-        if let index = activeSessions.firstIndex(where: { $0.id == activeSession.id }) {
-            activeSessions[index] = activeSession
-        } else {
-            activeSessions.append(activeSession)
-        }
+        RemuxActiveSessionCollection.upsertActivatedSession(
+            target: target,
+            in: &activeSessions
+        )
 
         state = .terminal(workspace.id)
         GhosttyRuntimeTrace.flowEvent(
@@ -624,32 +632,6 @@ final class RemuxRootModel: ObservableObject {
                 "activeSessions": "\(activeSessions.count)",
                 "workspaceID": workspace.id.uuidString,
             ]
-        )
-    }
-
-    private func refreshActiveSessions(server: SavedServer) {
-        for index in activeSessions.indices where activeSessions[index].target.server.id == server.id {
-            let target = activeSessions[index].target
-            activeSessions[index].target = TmuxConnectionTarget(
-                server: server,
-                workspace: target.workspace,
-                password: target.password,
-                terminalSettings: target.terminalSettings
-            )
-        }
-    }
-
-    private func refreshActiveSession(workspace: SavedWorkspace) {
-        guard let index = activeSessions.firstIndex(where: { $0.id == workspace.id }) else {
-            return
-        }
-
-        let target = activeSessions[index].target
-        activeSessions[index].target = TmuxConnectionTarget(
-            server: target.server,
-            workspace: workspace,
-            password: target.password,
-            terminalSettings: target.terminalSettings
         )
     }
 
@@ -782,7 +764,9 @@ final class RemuxRootModel: ObservableObject {
     }
 
     private func scheduleLibrarySSHPrewarm(snapshot: ConnectionLibrarySnapshot) {
-        let activeServerIDs = Set(activeSessions.map(\.target.server.id))
+        let activeServerIDs = RemuxActiveSessionCollection.activeServerIDs(
+            in: activeSessions
+        )
         let candidates = libraryPrewarmCandidates(
             in: snapshot,
             excludingServerIDs: activeServerIDs
@@ -870,7 +854,10 @@ final class RemuxRootModel: ObservableObject {
             traceSkippedLibraryPrewarm(candidate: candidate, reason: "stale_candidate")
             return
         }
-        guard !activeSessions.contains(where: { $0.target.server.id == currentServer.id }) else {
+        guard !RemuxActiveSessionCollection.hasActiveSession(
+            onServer: currentServer.id,
+            in: activeSessions
+        ) else {
             traceSkippedLibraryPrewarm(candidate: candidate, reason: "active_server")
             return
         }
