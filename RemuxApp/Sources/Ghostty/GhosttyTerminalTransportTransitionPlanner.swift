@@ -84,6 +84,23 @@ enum GhosttyTerminalTransportTransitionPlanner {
         )
     }
 
+    static func transportResizeFailed(
+        _ error: any Error,
+        phase: GhosttyTerminalTransportPhase
+    ) -> GhosttyTerminalTransportTransitionPlan {
+        guard phase != .idle else { return .none }
+
+        return .transportUnavailable(
+            GhosttyTerminalTransportUnavailableTransition(
+                reason: GhosttyTerminalDisconnectReasonClassifier.transportResizeFailure(error),
+                traceEvent: "model.transport.resizeFailed",
+                traceErrorDescription: String(describing: error),
+                closeDisposition: .invalidated,
+                reportSource: .runtime
+            )
+        )
+    }
+
     static func transportCompleted(
         _ completion: GhosttyControlHostSurface.Completion,
         phase: GhosttyTerminalTransportPhase

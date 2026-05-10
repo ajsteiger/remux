@@ -199,20 +199,93 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
 
     func testHostTransportBridgeResizeFailureInvalidatesTransport() async {
         let transport = RecordingTmuxControlTransport(resizeError: .disconnected)
+        var resizeFailures: [TestTransportError] = []
         let bridge = GhosttyHostTransportBridge(
             transport: transport,
             onDebugEvent: { _ in },
             onCompletion: { _ in },
-            onWriteFailure: { _ in }
+            onWriteFailure: { _ in },
+            onResizeFailure: { error in
+                guard let error = error as? TestTransportError else { return }
+                resizeFailures.append(error)
+            }
         )
 
         XCTAssertTrue(bridge.manualResizeHandler(80, 24, 800, 600))
 
         let didClose = await waitUntilAsync {
             await transport.closeDispositions() == [.invalidated]
+                && resizeFailures == [.disconnected]
         }
 
         XCTAssertTrue(didClose)
+        XCTAssertFalse(bridge.manualWriteHandler(Data("send-keys -t %1 a\n".utf8), false))
+    }
+
+    func testHostTransportBridgeResizeFailureReportsOnce() async {
+        let transport = RecordingTmuxControlTransport(resizeError: .disconnected)
+        var resizeFailures: [TestTransportError] = []
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in },
+            onResizeFailure: { error in
+                guard let error = error as? TestTransportError else { return }
+                resizeFailures.append(error)
+            }
+        )
+
+        XCTAssertTrue(bridge.manualResizeHandler(80, 24, 800, 600))
+        XCTAssertTrue(bridge.manualResizeHandler(90, 30, 900, 700))
+
+        let didClose = await waitUntilAsync {
+            await transport.closeDispositions() == [.invalidated]
+                && resizeFailures == [.disconnected]
+        }
+
+        XCTAssertTrue(didClose)
+        try? await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(resizeFailures, [.disconnected])
+        let closeDispositions = await transport.closeDispositions()
+        XCTAssertEqual(closeDispositions, [.invalidated])
+    }
+
+    func testHostTransportBridgeResizeFailureWinsDelayedWriteFailureRace() async {
+        let transport = RecordingTmuxControlTransport(
+            sendDelay: .milliseconds(20),
+            sendError: .disconnected,
+            resizeError: .disconnected
+        )
+        var writeFailures: [TestTransportError] = []
+        var resizeFailures: [TestTransportError] = []
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { error in
+                guard let error = error as? TestTransportError else { return }
+                writeFailures.append(error)
+            },
+            onResizeFailure: { error in
+                guard let error = error as? TestTransportError else { return }
+                resizeFailures.append(error)
+            }
+        )
+
+        XCTAssertTrue(bridge.manualWriteHandler(Data("send-keys -t %1 a\n".utf8), false))
+        XCTAssertTrue(bridge.manualResizeHandler(80, 24, 800, 600))
+
+        let didReportResize = await waitUntilAsync {
+            await transport.closeDispositions().contains(.invalidated)
+                && resizeFailures == [.disconnected]
+        }
+
+        XCTAssertTrue(didReportResize)
+        try? await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(resizeFailures, [.disconnected])
+        XCTAssertTrue(writeFailures.isEmpty)
+        XCTAssertFalse(bridge.manualWriteHandler(Data("send-keys -t %1 b\n".utf8), false))
     }
 
     func testHostTransportBridgeStopClosesReusableAndRejectsWrites() async {

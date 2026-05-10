@@ -105,6 +105,15 @@ final class GhosttyTerminalDisconnectReasonClassifierTests: XCTestCase {
         XCTAssertEqual(reason.message, "tmux transport write failed: write failed")
     }
 
+    func testTransportResizeFailureUsesResizeSpecificTransportIOMessage() {
+        let reason = GhosttyTerminalDisconnectReasonClassifier.transportResizeFailure(
+            DescribedError("resize failed")
+        )
+
+        XCTAssertEqual(reason.kind, .transportIO)
+        XCTAssertEqual(reason.message, "tmux transport resize failed: resize failed")
+    }
+
     func testTransportCompletionWithoutErrorIsTransportIOAndInvalidates() {
         let classification = GhosttyTerminalDisconnectReasonClassifier.transportCompletion(
             GhosttyControlHostSurface.Completion(error: nil, receivedByteCount: 42)

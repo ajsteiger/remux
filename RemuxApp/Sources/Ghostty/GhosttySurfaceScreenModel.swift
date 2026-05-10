@@ -888,6 +888,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                     phase: transportPhase
                 )
             )
+        case .transportResizeFailed(let error):
+            applyTransportTransition(
+                GhosttyTerminalTransportTransitionPlanner.transportResizeFailed(
+                    error,
+                    phase: transportPhase
+                )
+            )
         }
     }
 

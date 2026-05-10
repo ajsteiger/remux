@@ -53,6 +53,34 @@ final class GhosttyTerminalTransportTransitionPlannerTests: XCTestCase {
         )
     }
 
+    func testTransportResizeFailureProducesUnavailablePlanWhenActive() {
+        let plan = GhosttyTerminalTransportTransitionPlanner.transportResizeFailed(
+            DescribedPlannerError("resize failed"),
+            phase: .running
+        )
+
+        guard case .transportUnavailable(let transition) = plan else {
+            return XCTFail("Expected unavailable plan")
+        }
+
+        XCTAssertEqual(transition.reason.kind, .transportIO)
+        XCTAssertEqual(transition.reason.message, "tmux transport resize failed: resize failed")
+        XCTAssertEqual(transition.traceEvent, "model.transport.resizeFailed")
+        XCTAssertEqual(transition.traceErrorDescription, "resize failed")
+        XCTAssertEqual(transition.closeDisposition, .invalidated)
+        XCTAssertEqual(transition.reportSource, .runtime)
+    }
+
+    func testTransportResizeFailureIsIgnoredWhenIdle() {
+        XCTAssertEqual(
+            GhosttyTerminalTransportTransitionPlanner.transportResizeFailed(
+                DescribedPlannerError("resize failed"),
+                phase: .idle
+            ),
+            .none
+        )
+    }
+
     func testTransportCompletionWithoutErrorInvalidatesWhenActive() {
         let plan = GhosttyTerminalTransportTransitionPlanner.transportCompleted(
             GhosttyControlHostSurface.Completion(error: nil, receivedByteCount: 2048),

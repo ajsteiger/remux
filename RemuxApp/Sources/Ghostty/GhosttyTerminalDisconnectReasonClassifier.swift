@@ -62,6 +62,13 @@ enum GhosttyTerminalDisconnectReasonClassifier {
         )
     }
 
+    static func transportResizeFailure(_ error: any Error) -> TerminalDisconnectReason {
+        TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "tmux transport resize failed: \(String(describing: error))"
+        )
+    }
+
     static func transportCompletion(
         _ completion: GhosttyControlHostSurface.Completion
     ) -> GhosttyTerminalTransportCompletionClassification {

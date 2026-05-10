@@ -8,6 +8,7 @@ enum GhosttyHostSessionEvent {
     case transportStartFailed(any Error)
     case transportCompleted(GhosttyControlHostSurface.Completion)
     case transportWriteFailed(any Error)
+    case transportResizeFailed(any Error)
 }
 
 enum GhosttyHostSessionAttachmentOutcome: Equatable {
@@ -58,6 +59,9 @@ final class GhosttyHostSession {
             },
             onWriteFailure: { [weak eventRelay] error in
                 eventRelay?.send(.transportWriteFailed(error))
+            },
+            onResizeFailure: { [weak eventRelay] error in
+                eventRelay?.send(.transportResizeFailed(error))
             }
         )
         eventRelay.session = self

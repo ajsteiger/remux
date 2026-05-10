@@ -914,6 +914,10 @@ final class GhosttyControlHostSurface {
     }
 
     func failOutboundWrite(_ error: any Error) {
+        failOutboundOperation(error)
+    }
+
+    func failOutboundOperation(_ error: any Error) {
         pumpTask?.cancel()
         pumpTask = nil
         complete(error: error, markBackingExited: false, notifyDebugEvent: false)

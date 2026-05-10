@@ -4,13 +4,15 @@ import GhosttyKit
 final class GhosttyHostTransportBridge: @unchecked Sendable {
     typealias DebugEventHandler = @MainActor @Sendable (String) -> Void
     typealias CompletionHandler = @MainActor @Sendable (GhosttyControlHostSurface.Completion) -> Void
-    typealias WriteFailureHandler = @MainActor @Sendable (any Error) -> Void
+    typealias TransportFailureHandler = @MainActor @Sendable (any Error) -> Void
 
     private let transport: any TmuxControlTransport
     private let writeSequencer: TmuxControlWriteSequencer
     private let onDebugEvent: DebugEventHandler
     private let onCompletion: CompletionHandler
-    private let onWriteFailure: WriteFailureHandler
+    private let onWriteFailure: TransportFailureHandler
+    private let onResizeFailure: TransportFailureHandler
+    private let outboundFailureGate = GhosttyHostTransportOutboundFailureGate()
 
     @MainActor
     private var hostSurface: GhosttyControlHostSurface?
@@ -19,12 +21,14 @@ final class GhosttyHostTransportBridge: @unchecked Sendable {
         transport: any TmuxControlTransport,
         onDebugEvent: @escaping DebugEventHandler,
         onCompletion: @escaping CompletionHandler,
-        onWriteFailure: @escaping WriteFailureHandler
+        onWriteFailure: @escaping TransportFailureHandler,
+        onResizeFailure: @escaping TransportFailureHandler = { _ in }
     ) {
         self.transport = transport
         self.onDebugEvent = onDebugEvent
         self.onCompletion = onCompletion
         self.onWriteFailure = onWriteFailure
+        self.onResizeFailure = onResizeFailure
         self.writeSequencer = TmuxControlWriteSequencer(transport: transport)
         self.writeSequencer.setFailureHandler { [weak self] error in
             await self?.handleWriteFailure(error)
@@ -120,7 +124,7 @@ final class GhosttyHostTransportBridge: @unchecked Sendable {
         GhosttyRuntimeTrace.diagnostics(
             "hostResize callback columns=\(columns) rows=\(rows) px=\(width)x\(height)"
         )
-        Task { [transport] in
+        Task { [weak self, transport] in
             do {
                 try await transport.resize(
                     columns: columns,
@@ -130,18 +134,44 @@ final class GhosttyHostTransportBridge: @unchecked Sendable {
                 )
             } catch {
                 NSLog("Remux Ghostty transport resize failed: %@", String(describing: error))
-                await transport.close(disposition: .invalidated)
+                await self?.handleResizeFailure(error)
             }
         }
         return true
     }
 
     private func handleWriteFailure(_ error: any Error) async {
+        guard outboundFailureGate.claim() else { return }
         NSLog("Remux Ghostty transport write failed: %@", String(describing: error))
         await MainActor.run { [weak self] in
             guard let self else { return }
             onWriteFailure(error)
             hostSurface?.failOutboundWrite(error)
         }
+    }
+
+    private func handleResizeFailure(_ error: any Error) async {
+        guard outboundFailureGate.claim() else { return }
+        writeSequencer.close()
+        await MainActor.run { [weak self] in
+            guard let self else { return }
+            onResizeFailure(error)
+            hostSurface?.failOutboundOperation(error)
+        }
+        await transport.close(disposition: .invalidated)
+    }
+}
+
+private final class GhosttyHostTransportOutboundFailureGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didClaim = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !didClaim else { return false }
+        didClaim = true
+        return true
     }
 }

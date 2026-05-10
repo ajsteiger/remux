@@ -1625,6 +1625,39 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.failureReason?.kind, .transportIO)
     }
 
+    func testModelPreservesResizeSpecificFailureWhenHostResizeFails() async {
+        let transport = ControlledScreenModelTmuxControlTransport(resizeError: .disconnected)
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didFail = await waitUntil(timeout: 2) {
+            guard case .failed(let message) = model.state else { return false }
+            return message == "tmux transport resize failed: disconnected"
+        }
+
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(model.debugStatus, "tmux transport resize failed: disconnected")
+        XCTAssertEqual(model.failureReason?.kind, .transportIO)
+        let closeDispositions = await transport.closeDispositions()
+        XCTAssertTrue(closeDispositions.contains(.invalidated))
+
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(model.debugStatus, "tmux transport resize failed: disconnected")
+        guard case .failed(let message) = model.state else {
+            XCTFail("Expected model to remain failed after resize failure")
+            return
+        }
+        XCTAssertEqual(message, "tmux transport resize failed: disconnected")
+    }
+
     func testModelClassifiesSSHChannelRequestFailureAsProfileFailure() async {
         let transport = ControlledScreenModelTmuxControlTransport()
         let model = Self.screenModel(
@@ -3399,6 +3432,7 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
 
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
     private let sendError: ScreenModelTransportError?
+    private let resizeError: ScreenModelTransportError?
     private let startError: (any Error)?
     private let suspendStart: Bool
     private var recordedCloseDispositions: [TmuxControlTransportCloseDisposition] = []
@@ -3407,10 +3441,12 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
 
     init(
         sendError: ScreenModelTransportError? = nil,
+        resizeError: ScreenModelTransportError? = nil,
         startError: (any Error)? = nil,
         suspendStart: Bool = false
     ) {
         self.sendError = sendError
+        self.resizeError = resizeError
         self.startError = startError
         self.suspendStart = suspendStart
         var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
@@ -3445,6 +3481,9 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
         _ = rows
         _ = width
         _ = height
+        if let resizeError {
+            throw resizeError
+        }
     }
 
     func close(disposition: TmuxControlTransportCloseDisposition) async {
