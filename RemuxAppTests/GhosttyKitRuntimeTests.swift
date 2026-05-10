@@ -247,6 +247,73 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         XCTAssertNil(leafSurfaces[1])
     }
 
+    func testRuntimeCreateSurfaceTreeRejectsInvalidChildIndexBeforeInstall() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        var firstConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_TAB
+        )
+        var secondConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT
+        )
+        var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
+
+        let created = try withUnsafePointer(to: &firstConfig) { firstConfigPtr in
+            try withUnsafePointer(to: &secondConfig) { secondConfigPtr in
+                var nodes = [
+                    ghostty_runtime_surface_tree_node_s(
+                        key: GHOSTTY_SURFACE_TREE_NODE_SPLIT,
+                        split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
+                        split_ratio: 0.5,
+                        left_index: 1,
+                        right_index: 3,
+                        config: nil
+                    ),
+                    ghostty_runtime_surface_tree_node_s(
+                        key: GHOSTTY_SURFACE_TREE_NODE_LEAF,
+                        split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
+                        split_ratio: 0.5,
+                        left_index: 0,
+                        right_index: 0,
+                        config: firstConfigPtr
+                    ),
+                    ghostty_runtime_surface_tree_node_s(
+                        key: GHOSTTY_SURFACE_TREE_NODE_LEAF,
+                        split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
+                        split_ratio: 0.5,
+                        left_index: 0,
+                        right_index: 0,
+                        config: secondConfigPtr
+                    ),
+                ]
+
+                return try nodes.withUnsafeBufferPointer { nodeBuffer in
+                    try leafSurfaces.withUnsafeMutableBufferPointer { leafBuffer in
+                        let request = ghostty_runtime_create_surface_tree_s(
+                            parent: nil,
+                            nodes: nodeBuffer.baseAddress,
+                            nodes_len: nodeBuffer.count,
+                            root_index: 0,
+                            leaf_surfaces: leafBuffer.baseAddress,
+                            leaf_surfaces_len: leafBuffer.count,
+                            focused_leaf_index: 0,
+                            focused_leaf_index_valid: true
+                        )
+                        return registry.runtimeCreateSurfaceTree(
+                            app: runtime.appHandleForTesting,
+                            request: request
+                        )
+                    }
+                }
+            }
+        }
+
+        XCTAssertFalse(created)
+        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertNil(leafSurfaces[0])
+        XCTAssertNil(leafSurfaces[1])
+    }
+
     private func waitUntil(
         timeout: TimeInterval = 1,
         condition: @escaping @Sendable () -> Bool

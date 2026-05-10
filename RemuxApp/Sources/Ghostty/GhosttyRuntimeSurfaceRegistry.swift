@@ -1083,25 +1083,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
         updateDebugSummary("create_surface_tree nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len)")
 
-        guard let nodePtr = request.nodes else { return false }
-        guard let leafSurfacePtr = request.leaf_surfaces else { return false }
-
-        guard let nodeCount = Int(exactly: request.nodes_len),
-              let expectedLeafCount = Int(exactly: request.leaf_surfaces_len)
-        else {
-            updateDebugSummary("create_surface_tree count overflow")
+        let decodedRequest: GhosttyRuntimeSurfaceTreeDecodedRequest
+        switch GhosttyRuntimeSurfaceTreeRequestDecoder.decode(request) {
+        case .success(let decoded):
+            decodedRequest = decoded
+        case .failure(let error):
+            updateDebugSummary("create_surface_tree decode failed: \(error.description)")
             return false
         }
-        if request.focused_leaf_index_valid,
-           request.focused_leaf_index >= request.leaf_surfaces_len {
-            updateDebugSummary("create_surface_tree focused leaf index out of range")
-            return false
-        }
-
-        let nodes = UnsafeBufferPointer(
-            start: nodePtr,
-            count: nodeCount
-        )
 
         var leafSurfaces: [GhosttyManagedSurface] = []
         var installedLeafSurfaces = false
@@ -1113,86 +1102,41 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             }
         }
 
-        func buildNode(_ index: Int) -> GhosttySurfaceTree.Node? {
-            guard nodes.indices.contains(index) else { return nil }
-
-            let node = nodes[index]
-            if GhosttyRuntimeTrace.isEnabled {
-                NSLog(
-                    "Remux tree node[%d] key=%d left=%d right=%d config=%@",
-                    index,
-                    node.key.rawValue,
-                    node.left_index,
-                    node.right_index,
-                    String(describing: node.config)
-                )
+        for (index, leafConfig) in decodedRequest.leafConfigs.enumerated() {
+            guard let managed = createManagedSurface(app: app, baseConfig: leafConfig) else {
+                NSLog("Remux failed to create managed surface for decoded leaf[%d]", index)
+                updateDebugSummary("create_surface_tree leaf surface creation failed")
+                return false
             }
-            switch node.key {
-            case GHOSTTY_SURFACE_TREE_NODE_LEAF:
-                guard let configPtr = node.config else { return nil }
-                guard let managed = createManagedSurface(app: app, baseConfig: configPtr.pointee) else {
-                    NSLog("Remux failed to create managed surface for leaf node[%d]", index)
-                    return nil
-                }
-                GhosttyRuntimeTrace.tmuxViewport(
-                    "registry.runtimeCreateSurfaceTree leaf index=\(leafSurfaces.count) surface=\(ghosttyDiagnosticShortID(managed.id)) initial=\(ghosttyDiagnosticSurfaceSize(managed.controlSurface.currentSize()))"
-                )
 
-                leafSurfaces.append(managed)
-                return .leaf(managed.id)
-
-            case GHOSTTY_SURFACE_TREE_NODE_SPLIT:
-                guard let axis = GhosttySurfaceTree.SplitAxis(native: node.split_direction) else {
-                    return nil
-                }
-                guard let left = buildNode(Int(node.left_index)) else { return nil }
-                guard let right = buildNode(Int(node.right_index)) else { return nil }
-                return .split(
-                    axis: axis,
-                    ratio: GhosttySurfaceTree.clamp(node.split_ratio),
-                    left: left,
-                    right: right
-                )
-
-            default:
-                return nil
-            }
+            GhosttyRuntimeTrace.tmuxViewport(
+                "registry.runtimeCreateSurfaceTree leaf index=\(leafSurfaces.count) surface=\(ghosttyDiagnosticShortID(managed.id)) initial=\(ghosttyDiagnosticSurfaceSize(managed.controlSurface.currentSize()))"
+            )
+            leafSurfaces.append(managed)
         }
 
-        guard let root = buildNode(Int(request.root_index)) else {
+        let leafIDs = leafSurfaces.map(\.id)
+        guard let tree = GhosttySurfaceTree.build(
+            nodes: decodedRequest.nodes,
+            rootIndex: decodedRequest.rootIndex,
+            leafIDs: leafIDs
+        ) else {
             updateDebugSummary("create_surface_tree build failed")
             return false
         }
         if GhosttyRuntimeTrace.isEnabled {
-            NSLog("Remux create_surface_tree built leaves=%d expected=%d", leafSurfaces.count, request.leaf_surfaces_len)
+            NSLog("Remux create_surface_tree built leaves=%d expected=%d", leafSurfaces.count, decodedRequest.leafConfigs.count)
         }
-        guard leafSurfaces.count == expectedLeafCount else {
-            updateDebugSummary("create_surface_tree leaf count mismatch")
-            return false
-        }
-        let focusedLeafID: UUID?
-        if request.focused_leaf_index_valid {
-            guard let focusedLeafIndex = Int(exactly: request.focused_leaf_index) else {
-                updateDebugSummary("create_surface_tree focused leaf index overflow")
-                return false
-            }
-            guard leafSurfaces.indices.contains(focusedLeafIndex) else {
-                updateDebugSummary("create_surface_tree focused leaf index out of range")
-                return false
-            }
-            focusedLeafID = leafSurfaces[focusedLeafIndex].id
-        } else {
-            focusedLeafID = nil
-        }
+        let focusedLeafID = decodedRequest.focusedLeafIndex.map { leafSurfaces[$0].id }
 
-        let replacingParentSurfaceID = request.parent.flatMap { surfaceIDsByHandle[$0] }
+        let replacingParentSurfaceID = decodedRequest.parent.flatMap { surfaceIDsByHandle[$0] }
         let replacingTopLevelID = replacingParentSurfaceID == nil
             ? topLevelID(overlappingManualIdentityFrom: leafSurfaces)
             : nil
 
         installSurfaceTree(
             leafSurfaces: leafSurfaces,
-            tree: .init(root: root),
+            tree: tree,
             focusedLeafID: focusedLeafID,
             replacingTopLevelContaining: replacingParentSurfaceID,
             replacingTopLevelID: replacingTopLevelID
@@ -1208,7 +1152,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
 
         for (index, surface) in leafSurfaces.enumerated() {
-            leafSurfacePtr[index] = surface.controlSurface.handle
+            decodedRequest.leafSurfaceBuffer[index] = surface.controlSurface.handle
             GhosttyRuntimeTrace.tmuxViewport(
                 "registry.runtimeCreateSurfaceTree leafHandle index=\(index) surface=\(ghosttyDiagnosticShortID(surface.id)) size=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize())) focused=\(surface.id == focusedLeafID)"
             )
@@ -2362,19 +2306,6 @@ private extension GhosttySurfaceTree.InsertDirection {
             self = .up
         case GHOSTTY_SPLIT_DIRECTION_DOWN:
             self = .down
-        default:
-            return nil
-        }
-    }
-}
-
-private extension GhosttySurfaceTree.SplitAxis {
-    init?(native direction: ghostty_action_split_direction_e) {
-        switch direction {
-        case GHOSTTY_SPLIT_DIRECTION_LEFT, GHOSTTY_SPLIT_DIRECTION_RIGHT:
-            self = .horizontal
-        case GHOSTTY_SPLIT_DIRECTION_UP, GHOSTTY_SPLIT_DIRECTION_DOWN:
-            self = .vertical
         default:
             return nil
         }
