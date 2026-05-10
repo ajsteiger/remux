@@ -32,6 +32,7 @@ struct GhosttyTerminalTransportStartFailedTransition: Equatable {
     let reason: TerminalDisconnectReason
     let traceEvent: String
     let traceErrorDescription: String?
+    let closeDisposition: TmuxControlTransportCloseDisposition
 }
 
 struct GhosttyTerminalTransportUnavailableTransition: Equatable {
@@ -60,7 +61,8 @@ enum GhosttyTerminalTransportTransitionPlanner {
             GhosttyTerminalTransportStartFailedTransition(
                 reason: GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(error),
                 traceEvent: "model.transport.failed",
-                traceErrorDescription: String(describing: error)
+                traceErrorDescription: String(describing: error),
+                closeDisposition: .invalidated
             )
         )
     }

@@ -1032,7 +1032,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private func applyTransportStartFailedTransition(
         _ transition: GhosttyTerminalTransportStartFailedTransition
     ) {
-        hostSessionSlot.clearCurrent()
+        let failedSession = hostSessionSlot.takeCurrent()
         GhosttyRuntimeTrace.flowEnd(
             sessionOpenFlowID,
             event: transition.traceEvent,
@@ -1042,6 +1042,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         failureReason = transition.reason
         debugStatus = transition.reason.message
         reportRuntimeStateIfNeeded(source: .runtime)
+
+        Task {
+            await failedSession?.close(disposition: transition.closeDisposition)
+        }
     }
 
     private func applyTransportUnavailableTransition(

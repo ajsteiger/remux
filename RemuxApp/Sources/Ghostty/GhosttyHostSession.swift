@@ -228,11 +228,12 @@ final class GhosttyHostSession {
                     await bridge.close(disposition: .reusable)
                 }
             } catch {
-                let shouldInvalidate = await MainActor.run { [weak self] in
-                    self?.failTransportStart(error, generation: generation) ?? false
+                let disposition = await MainActor.run { [weak self] in
+                    self?.failTransportStart(error, generation: generation) ?? .ignored
                 }
-                if shouldInvalidate {
-                    await bridge.close(disposition: .invalidated)
+                switch disposition {
+                case .notifiedModel, .ignored:
+                    break
                 }
             }
         }
@@ -254,14 +255,19 @@ final class GhosttyHostSession {
         return .keepOpen
     }
 
-    private func failTransportStart(_ error: any Error, generation: UInt64) -> Bool {
-        guard generation == transportStartGeneration, !isStopped else { return false }
+    private enum StartFailureDisposition {
+        case notifiedModel
+        case ignored
+    }
+
+    private func failTransportStart(_ error: any Error, generation: UInt64) -> StartFailureDisposition {
+        guard generation == transportStartGeneration, !isStopped else { return .ignored }
 
         transportStartGeneration &+= 1
         isStopped = true
         controlSurface?.setBackingExited(true)
         send(.transportStartFailed(error))
-        return true
+        return .notifiedModel
     }
 
     private func updateHostDisplay(

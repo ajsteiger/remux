@@ -1473,13 +1473,19 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             size: CGSize(width: 120, height: 80)
         )
 
-        let didFail = await waitUntil(timeout: 2) {
-            guard case .failed(let message) = model.state else { return false }
-            return message.contains("SSH exec request failed")
+        let didFailAndClose = await waitUntilAsync(timeout: 2) {
+            let didFail = await MainActor.run {
+                guard case .failed(let message) = model.state else { return false }
+                return message.contains("SSH exec request failed")
+            }
+            let closeCount = await transport.closeCount()
+            return didFail && closeCount == 1
         }
+        let closeCount = await transport.closeCount()
         let closeDispositions = await transport.closeDispositions()
 
-        XCTAssertTrue(didFail)
+        XCTAssertTrue(didFailAndClose)
+        XCTAssertEqual(closeCount, 1)
         XCTAssertEqual(closeDispositions, [.invalidated])
         XCTAssertEqual(model.failureReason?.kind, .profile)
         XCTAssertEqual(model.debugStatus, "SSH exec request failed")

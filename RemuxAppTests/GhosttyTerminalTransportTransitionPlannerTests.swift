@@ -9,7 +9,7 @@ final class GhosttyTerminalTransportTransitionPlannerTests: XCTestCase {
         )
     }
 
-    func testTransportStartFailureProducesRuntimeFailurePlanWithoutCloseDisposition() {
+    func testTransportStartFailureProducesRuntimeFailurePlanWithInvalidatedCloseDisposition() {
         let plan = GhosttyTerminalTransportTransitionPlanner.transportStartFailed(
             SSHTmuxControlTransportError.channelRequestFailed(.exec)
         )
@@ -22,6 +22,7 @@ final class GhosttyTerminalTransportTransitionPlannerTests: XCTestCase {
         XCTAssertEqual(transition.reason.message, "SSH exec request failed")
         XCTAssertEqual(transition.traceEvent, "model.transport.failed")
         XCTAssertEqual(transition.traceErrorDescription, "SSH exec request failed")
+        XCTAssertEqual(transition.closeDisposition, .invalidated)
     }
 
     func testTransportWriteFailureProducesUnavailablePlanWhenActive() {
