@@ -207,8 +207,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             self?.hostSession?.submitHostTmuxNewWindow()
         }
     )
-    private var runtimeStateReportTracker = TerminalRuntimeStateReportTracker()
-    private var isRuntimeStateReportingStopped = false
+    private lazy var runtimeStateReporter = GhosttyTerminalRuntimeStateReporter(
+        workspaceID: target.workspace.id,
+        sessionInstanceID: sessionInstanceID,
+        onRuntimeStateChange: onRuntimeStateChange
+    )
     private var didTraceTerminalReady = false
     private var commandFailureMessageToken: UInt64 = 0
     private var commandFailureEventToken: UInt64 = 0
@@ -284,7 +287,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             ]
         )
 
-        isRuntimeStateReportingStopped = false
+        runtimeStateReporter.resume()
         state = .starting
         debugStatus = "creating Ghostty runtime"
         clearCommandFailureMessage()
@@ -338,7 +341,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func stop() {
         GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.stop")
-        isRuntimeStateReportingStopped = true
+        runtimeStateReporter.suppress()
         clearCommandFailureMessage()
         debugLatencyProbeDelayTask?.cancel()
         debugLatencyProbeDelayTask = nil
@@ -354,7 +357,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     func reportRuntimeReadinessIfNeeded() {
-        isRuntimeStateReportingStopped = false
+        runtimeStateReporter.resume()
         reportRuntimeStateIfNeeded(source: .readiness)
     }
 
@@ -1077,39 +1080,29 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         reportRuntimeStateIfNeeded(source: .runtime)
     }
 
-    private var currentRuntimeState: TerminalRuntimeState {
-        if state == .running, surfaceRegistry.selectedActiveLeafID != nil {
-            return .connected
+    private var runtimeStateSnapshot: GhosttyTerminalRuntimeStateSnapshot {
+        let phase: GhosttyTerminalRuntimePhase
+        switch state {
+        case .idle:
+            phase = .idle
+        case .starting:
+            phase = .starting
+        case .running:
+            phase = .running
+        case .failed(let message):
+            phase = .failed(message: message, reason: failureReason)
         }
 
-        switch state {
-        case .idle, .starting, .running:
-            return .connecting
-        case .failed(let message):
-            return .disconnected(
-                failureReason ?? TerminalDisconnectReason(
-                    kind: .unknown,
-                    message: message
-                )
-            )
-        }
+        return GhosttyTerminalRuntimeStateSnapshot(
+            phase: phase,
+            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
+        )
     }
 
     private func reportRuntimeStateIfNeeded(source: TerminalRuntimeStateUpdateSource) {
-        guard !isRuntimeStateReportingStopped else { return }
-
-        let state = currentRuntimeState
-        guard runtimeStateReportTracker.shouldReport(state: state, source: source) else {
-            return
-        }
-
-        onRuntimeStateChange(
-            TerminalRuntimeStateUpdate(
-                workspaceID: target.workspace.id,
-                instanceID: sessionInstanceID,
-                state: state,
-                source: source
-            )
+        runtimeStateReporter.reportIfNeeded(
+            snapshot: runtimeStateSnapshot,
+            source: source
         )
     }
 
