@@ -167,6 +167,22 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             )
             return
         }
+
+        if case .failed(let message) = state {
+            GhosttyRuntimeTrace.perf(
+                "model.attach route=blockedFailed message=\(message) size=\(Int(size.width))x\(Int(size.height))"
+            )
+            GhosttyRuntimeTrace.flowEvent(
+                sessionOpenFlowID,
+                event: "model.attach.blockedFailed",
+                fields: [
+                    "size": "\(Int(size.width))x\(Int(size.height))",
+                    "workspaceID": target.workspace.id.uuidString,
+                ]
+            )
+            return
+        }
+
         GhosttyRuntimeTrace.perf("model.attach route=initial size=\(Int(size.width))x\(Int(size.height))")
         GhosttyRuntimeTrace.flowEvent(
             sessionOpenFlowID,

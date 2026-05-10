@@ -1491,6 +1491,53 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "SSH exec request failed")
     }
 
+    func testModelDoesNotImplicitlyReattachAfterStartFailure() async {
+        let transport = ControlledScreenModelTmuxControlTransport(
+            startError: SSHTmuxControlTransportError.channelRequestFailed(.exec)
+        )
+        var transportCreationCount = 0
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in
+                transportCreationCount += 1
+                return transport
+            },
+            debugLatencyProbe: nil
+        )
+        let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80))
+
+        model.attach(view: view, size: CGSize(width: 120, height: 80))
+
+        let didFailAndClose = await waitUntilAsync(timeout: 2) {
+            let didFail = await MainActor.run {
+                guard case .failed(let message) = model.state else { return false }
+                return message.contains("SSH exec request failed")
+            }
+            let closeCount = await transport.closeCount()
+            return didFail && closeCount == 1
+        }
+        XCTAssertTrue(didFailAndClose)
+        let startCallCountAfterFailure = await transport.startCallCount()
+        XCTAssertEqual(startCallCountAfterFailure, 1)
+        XCTAssertEqual(transportCreationCount, 1)
+        XCTAssertEqual(model.failureReason?.kind, .profile)
+        XCTAssertEqual(model.debugStatus, "SSH exec request failed")
+
+        model.attach(view: view, size: CGSize(width: 120, height: 80))
+        try? await Task.sleep(for: .milliseconds(50))
+
+        let startCallCountAfterRepeatAttach = await transport.startCallCount()
+        XCTAssertEqual(startCallCountAfterRepeatAttach, 1)
+        XCTAssertEqual(transportCreationCount, 1)
+        XCTAssertEqual(model.failureReason?.kind, .profile)
+        XCTAssertEqual(model.debugStatus, "SSH exec request failed")
+        guard case .failed(let message) = model.state else {
+            XCTFail("Expected model to remain failed after repeated attach")
+            return
+        }
+        XCTAssertTrue(message.contains("SSH exec request failed"))
+    }
+
     func testModelStopDuringSuspendedStartKeepsReusableCloseAndIgnoresLateSuccess() async {
         let transport = ControlledScreenModelTmuxControlTransport(suspendStart: true)
         let model = Self.screenModel(
