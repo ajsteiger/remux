@@ -145,9 +145,6 @@ final class GhosttyTmuxActionCoordinator {
     }
 
     private var targetResolver: GhosttyTmuxActionTargetResolver {
-        GhosttyTmuxActionTargetResolver(
-            topLevels: surfaceRegistry.topLevels,
-            selectedTopLevelID: surfaceRegistry.selectedTopLevelID
-        )
+        GhosttyTmuxActionTargetResolver(snapshot: surfaceRegistry.topologySnapshot)
     }
 }

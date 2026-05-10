@@ -163,8 +163,11 @@ final class GhosttyTmuxActionTargetResolverTests: XCTestCase {
         selectedTopLevelID: UUID?
     ) -> GhosttyTmuxActionTargetResolver {
         GhosttyTmuxActionTargetResolver(
-            topLevels: topLevels,
-            selectedTopLevelID: selectedTopLevelID
+            snapshot: GhosttyRuntimeSurfaceTopologySnapshot(
+                topLevels: topLevels,
+                selectedTopLevelID: selectedTopLevelID,
+                pendingPhonePresentationSurfaceID: nil
+            )
         )
     }
 

@@ -16,11 +16,14 @@ struct GhosttyTmuxActionTargetResolver {
         case missing(GhosttyTmuxActionMissingTarget)
     }
 
-    let topLevels: [GhosttyTopLevelSurface]
-    let selectedTopLevelID: UUID?
+    private let snapshot: GhosttyRuntimeSurfaceTopologySnapshot
+
+    init(snapshot: GhosttyRuntimeSurfaceTopologySnapshot) {
+        self.snapshot = snapshot
+    }
 
     func paneForTopLevel(id: UUID) -> Resolution {
-        guard let topLevel = topLevels.first(where: { $0.id == id }) else {
+        guard let topLevel = snapshot.topLevels.first(where: { $0.id == id }) else {
             return .missing(.window(id))
         }
 
@@ -34,20 +37,20 @@ struct GhosttyTmuxActionTargetResolver {
     func paneForAdjacentTopLevel(
         direction: GhosttyRuntimeSelectionDirection
     ) -> Resolution {
-        guard topLevels.count > 1 else {
+        guard snapshot.topLevels.count > 1 else {
             return .missing(.adjacentWindow)
         }
 
-        let currentIndex = selectedTopLevelIndex ?? 0
+        let currentIndex = snapshot.selectedTopLevelIndex ?? 0
         let nextIndex = direction.advancedIndex(
             from: currentIndex,
-            count: topLevels.count
+            count: snapshot.topLevels.count
         )
-        return paneForTopLevel(id: topLevels[nextIndex].id)
+        return paneForTopLevel(id: snapshot.topLevels[nextIndex].id)
     }
 
     func focusedPane() -> Resolution {
-        guard let paneID = selectedTopLevel?.resolvedFocusedLeafID else {
+        guard let paneID = snapshot.selectedActiveLeafID else {
             return .missing(.focusedPane)
         }
 
@@ -55,20 +58,10 @@ struct GhosttyTmuxActionTargetResolver {
     }
 
     func selectedWindowID() -> Resolution {
-        guard let windowID = selectedTopLevel?.id else {
+        guard let windowID = snapshot.selectedTopLevel?.id else {
             return .missing(.selectedWindow)
         }
 
         return .resolved(windowID)
-    }
-
-    private var selectedTopLevel: GhosttyTopLevelSurface? {
-        guard let selectedTopLevelID else { return nil }
-        return topLevels.first(where: { $0.id == selectedTopLevelID })
-    }
-
-    private var selectedTopLevelIndex: Int? {
-        guard let selectedTopLevelID else { return nil }
-        return topLevels.firstIndex(where: { $0.id == selectedTopLevelID })
     }
 }
