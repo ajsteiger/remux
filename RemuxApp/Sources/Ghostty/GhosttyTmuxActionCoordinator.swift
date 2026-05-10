@@ -1,16 +1,6 @@
 import Foundation
 import GhosttyKit
 
-enum GhosttyTmuxActionMissingTarget: Equatable, Sendable {
-    case host
-    case pane(UUID)
-    case focusedPane
-    case window(UUID)
-    case windowPane(UUID)
-    case selectedWindow
-    case adjacentWindow
-}
-
 enum GhosttyTmuxModelActionOutcome: Equatable, Sendable {
     case queued
     case localSelectionOnly(TmuxActionSubmissionResult)
@@ -59,31 +49,24 @@ final class GhosttyTmuxActionCoordinator {
 
     @discardableResult
     func focusTopLevel(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
-        guard let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == id }) else {
-            return .missingTarget(.window(id))
+        switch targetResolver.paneForTopLevel(id: id) {
+        case .resolved(let paneID):
+            return focusPane(paneID)
+        case .missing(let target):
+            return .missingTarget(target)
         }
-
-        guard let paneID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first else {
-            return .missingTarget(.windowPane(id))
-        }
-
-        return focusPane(paneID)
     }
 
     @discardableResult
     func focusAdjacentTopLevel(
         _ direction: GhosttyRuntimeSelectionDirection
     ) -> GhosttyTmuxModelActionOutcome {
-        guard surfaceRegistry.topLevels.count > 1 else {
-            return .missingTarget(.adjacentWindow)
+        switch targetResolver.paneForAdjacentTopLevel(direction: direction) {
+        case .resolved(let paneID):
+            return focusPane(paneID)
+        case .missing(let target):
+            return .missingTarget(target)
         }
-
-        let currentIndex = surfaceRegistry.selectedTopLevelIndex ?? 0
-        let nextIndex = direction.advancedIndex(
-            from: currentIndex,
-            count: surfaceRegistry.topLevels.count
-        )
-        return focusTopLevel(surfaceRegistry.topLevels[nextIndex].id)
     }
 
     @discardableResult
@@ -99,10 +82,14 @@ final class GhosttyTmuxActionCoordinator {
     func splitFocusedPane(
         _ direction: ghostty_action_split_direction_e
     ) -> GhosttyTmuxModelActionOutcome {
-        guard
-            let surfaceID = surfaceRegistry.selectedActiveLeafID,
-            let surface = surfaceRegistry.managedSurface(for: surfaceID)
-        else {
+        let surfaceID: UUID
+        switch targetResolver.focusedPane() {
+        case .resolved(let resolvedSurfaceID):
+            surfaceID = resolvedSurfaceID
+        case .missing:
+            return .missingTarget(.focusedPane)
+        }
+        guard let surface = surfaceRegistry.managedSurface(for: surfaceID) else {
             return .missingTarget(.focusedPane)
         }
 
@@ -112,11 +99,12 @@ final class GhosttyTmuxActionCoordinator {
 
     @discardableResult
     func closeFocusedPane() -> GhosttyTmuxModelActionOutcome {
-        guard let surfaceID = surfaceRegistry.selectedActiveLeafID else {
-            return .missingTarget(.focusedPane)
+        switch targetResolver.focusedPane() {
+        case .resolved(let surfaceID):
+            return closePane(surfaceID)
+        case .missing(let target):
+            return .missingTarget(target)
         }
-
-        return closePane(surfaceID)
     }
 
     @discardableResult
@@ -131,20 +119,22 @@ final class GhosttyTmuxActionCoordinator {
 
     @discardableResult
     func closeSelectedWindow() -> GhosttyTmuxModelActionOutcome {
-        guard let topLevel = surfaceRegistry.selectedTopLevel else {
-            return .missingTarget(.selectedWindow)
+        switch targetResolver.selectedWindowID() {
+        case .resolved(let windowID):
+            return closeWindow(windowID)
+        case .missing(let target):
+            return .missingTarget(target)
         }
-
-        return closeWindow(topLevel.id)
     }
 
     @discardableResult
     func closeWindow(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
-        guard let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == id }) else {
-            return .missingTarget(.window(id))
-        }
-        guard let surfaceID = topLevel.resolvedFocusedLeafID ?? topLevel.leafIDs.first else {
-            return .missingTarget(.windowPane(id))
+        let surfaceID: UUID
+        switch targetResolver.paneForTopLevel(id: id) {
+        case .resolved(let resolvedSurfaceID):
+            surfaceID = resolvedSurfaceID
+        case .missing(let target):
+            return .missingTarget(target)
         }
         guard let surface = surfaceRegistry.managedSurface(for: surfaceID) else {
             return .missingTarget(.pane(surfaceID))
@@ -152,5 +142,12 @@ final class GhosttyTmuxActionCoordinator {
 
         let submission = surface.tmuxCloseWindow()
         return submission.isQueued ? .queued : .rejected(submission)
+    }
+
+    private var targetResolver: GhosttyTmuxActionTargetResolver {
+        GhosttyTmuxActionTargetResolver(
+            topLevels: surfaceRegistry.topLevels,
+            selectedTopLevelID: surfaceRegistry.selectedTopLevelID
+        )
     }
 }

@@ -2914,6 +2914,29 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(secondCloseCallCount, 1)
     }
 
+    func testTmuxActionCoordinatorCloseWindowReportsMissingManagedPane() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let coordinator = GhosttyTmuxActionCoordinator(
+            surfaceRegistry: registry,
+            submitHostNewWindow: { nil }
+        )
+        let first = Self.managedSurface()
+        let missingID = UUID()
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceTreeForTesting(
+            [],
+            tree: GhosttySurfaceTree(root: .leaf(missingID)),
+            focusedLeafID: missingID
+        )
+        let missingTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+
+        XCTAssertEqual(
+            coordinator.closeWindow(missingTopLevelID),
+            .missingTarget(.pane(missingID))
+        )
+    }
+
     func testModelFocusTmuxPaneRoutesToManagedSurface() {
         let model = Self.screenModel(
             target: Self.target(),
