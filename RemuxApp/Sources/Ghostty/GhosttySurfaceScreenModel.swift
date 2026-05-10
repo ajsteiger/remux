@@ -201,6 +201,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private var debugLatencyProbeDelayTask: Task<Void, Never>?
 
     private var hostSession: GhosttyHostSession?
+    private let commandFailurePresenter = GhosttyTmuxCommandFailurePresenter()
     private lazy var tmuxActionCoordinator = GhosttyTmuxActionCoordinator(
         surfaceRegistry: surfaceRegistry,
         submitHostNewWindow: { [weak self] in
@@ -216,8 +217,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         onRuntimeStateChange: onRuntimeStateChange
     )
     private var didTraceTerminalReady = false
-    private var commandFailureMessageToken: UInt64 = 0
-    private var commandFailureEventToken: UInt64 = 0
 
     init(
         target: TmuxConnectionTarget,
@@ -1141,26 +1140,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private func handleTmuxCommandFailure(_ failure: TmuxControlCommandFailure) {
-        let message: String
-        let traceReason: String
-        switch failure.reason {
-        case .noSpaceForNewPane:
-            message = "No space for another pane."
-            traceReason = "no_space_for_new_pane"
-        case .tmuxError:
-            message = "tmux command failed: \(failure.message)"
-            traceReason = "tmux_error"
-        }
+        let presentation = commandFailurePresenter.present(failure)
 
-        debugStatus = message
-        publishCommandFailureEvent(failure)
-        presentCommandFailureMessage(message)
+        debugStatus = presentation.message
+        commandFailureEvent = presentation.event
+        presentCommandFailureMessage(presentation)
         GhosttyRuntimeTrace.flowEndIfActive(
             "tmux.splitPane",
             event: "tmux.command.failed",
             fields: [
                 "message": failure.message,
-                "reason": traceReason,
+                "reason": presentation.traceReason,
             ]
         )
         GhosttyRuntimeTrace.flowEndIfActive(
@@ -1168,37 +1158,26 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             event: "tmux.command.failed",
             fields: [
                 "message": failure.message,
-                "reason": traceReason,
+                "reason": presentation.traceReason,
             ]
         )
     }
 
-    private func publishCommandFailureEvent(_ failure: TmuxControlCommandFailure) {
-        commandFailureEventToken &+= 1
-        commandFailureEvent = GhosttyTmuxCommandFailureEvent(
-            token: commandFailureEventToken,
-            kind: failure.kind,
-            reason: failure.reason,
-            message: failure.message
-        )
-    }
-
-    private func presentCommandFailureMessage(_ message: String) {
-        commandFailureMessageToken &+= 1
-        let token = commandFailureMessageToken
-        commandFailureMessage = message
+    private func presentCommandFailureMessage(_ presentation: GhosttyTmuxCommandFailurePresentation) {
+        let token = presentation.messageClearToken
+        commandFailureMessage = presentation.message
 
         Task { [weak self, token] in
             try? await Task.sleep(for: .seconds(3))
             await MainActor.run {
-                guard self?.commandFailureMessageToken == token else { return }
+                guard self?.commandFailurePresenter.shouldClearMessage(for: token) == true else { return }
                 self?.commandFailureMessage = nil
             }
         }
     }
 
     private func clearCommandFailureMessage() {
-        commandFailureMessageToken &+= 1
+        commandFailurePresenter.clearMessage()
         commandFailureMessage = nil
     }
 

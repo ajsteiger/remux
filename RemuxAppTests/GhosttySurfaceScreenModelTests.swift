@@ -1700,6 +1700,26 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.state, .running)
     }
 
+    func testModelClearsCommandFailureMessageBeforeNewTmuxWindowAttempt() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            debugLatencyProbe: nil
+        )
+        model.surfaceRegistry.deliverTmuxCommandFailure(
+            TmuxControlCommandFailure(
+                kind: .splitPane,
+                reason: .noSpaceForNewPane,
+                message: "no space for new pane"
+            )
+        )
+
+        XCTAssertEqual(model.commandFailureMessage, "No space for another pane.")
+        XCTAssertEqual(model.createTmuxWindow(), .missingTarget(.host))
+        XCTAssertNil(model.commandFailureMessage)
+        XCTAssertEqual(model.commandFailureEvent?.reason, .noSpaceForNewPane)
+    }
+
     func testModelPasteWithoutFocusedSurfaceUpdatesDebugStatus() {
         let model = Self.screenModel(
             target: Self.target(),
