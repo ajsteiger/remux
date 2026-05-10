@@ -85,18 +85,22 @@ final class RemuxRootModel: ObservableObject {
 
     private let dependencies: RemuxAppDependencies
     private let preparedTransportCoordinator: RemuxPreparedTransportCoordinator
-    private var libraryPrewarmTask: Task<Void, Never>?
-    private var libraryPrewarmGeneration: UInt64 = 0
+    private let librarySSHPrewarmCoordinator: RemuxLibrarySSHPrewarmCoordinator
 
     init(dependencies: RemuxAppDependencies) {
         self.dependencies = dependencies
         self.preparedTransportCoordinator = RemuxPreparedTransportCoordinator { target in
             dependencies.makeTransport(for: target)
         }
-    }
-
-    deinit {
-        libraryPrewarmTask?.cancel()
+        self.librarySSHPrewarmCoordinator = RemuxLibrarySSHPrewarmCoordinator(
+            limit: Self.libraryPrewarmServerLimit,
+            passwordLoader: { serverID in
+                try await dependencies.passwordStore.loadPassword(for: serverID)
+            },
+            sshConnectionPrewarmer: { target in
+                await dependencies.prewarmSSHConnection(for: target)
+            }
+        )
     }
 
     func load() async {
@@ -692,112 +696,29 @@ final class RemuxRootModel: ObservableObject {
         let activeServerIDs = RemuxActiveSessionCollection.activeServerIDs(
             in: activeSessions
         )
-        let candidates = RemuxLibrarySSHPrewarmPlanner.candidates(
-            in: snapshot,
-            excludingServerIDs: activeServerIDs,
-            limit: Self.libraryPrewarmServerLimit
-        )
-        guard !candidates.isEmpty else {
-            cancelLibrarySSHPrewarm()
-            return
-        }
-
-        cancelLibrarySSHPrewarm()
-        let generation = libraryPrewarmGeneration
-        let dependencies = dependencies
-        let terminalSettings = terminalSettings
-        libraryPrewarmTask = Task.detached(priority: .utility) { [weak self] in
-            GhosttyRuntimeTrace.latency("library.prewarm scheduled count=\(candidates.count)")
-            for candidate in candidates {
-                guard !Task.isCancelled else { return }
-                do {
-                    guard let password = try await dependencies.passwordStore.loadPassword(for: candidate.server.id),
-                          !password.isEmpty else {
-                        GhosttyRuntimeTrace.latency(
-                            "library.prewarm skipped reason=missing_password serverID=\(candidate.server.id.uuidString)"
-                        )
-                        continue
-                    }
-
-                    let target = TmuxConnectionTarget(
-                        server: candidate.server,
-                        workspace: candidate.workspace,
-                        password: password,
-                        terminalSettings: terminalSettings
-                    )
-                    await dependencies.prewarmSSHConnection(for: target)
-                    guard !Task.isCancelled else { return }
-                    let currentPassword = try await dependencies.passwordStore.loadPassword(for: candidate.server.id)
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        guard !Task.isCancelled else { return }
-                        self?.prepareLibraryTransportIfStillEligible(
-                            candidate: candidate,
-                            target: target,
-                            currentPassword: currentPassword,
-                            generation: generation
-                        )
-                    }
-                } catch is CancellationError {
-                    return
-                } catch {
-                    NSLog(
-                        "Remux library SSH prewarm failed for %@: %@",
-                        candidate.server.displayName,
-                        String(describing: error)
-                    )
-                }
+        librarySSHPrewarmCoordinator.schedule(
+            snapshot: snapshot,
+            activeServerIDs: activeServerIDs,
+            terminalSettings: terminalSettings,
+            currentContext: { [weak self] in
+                guard let self else { return nil }
+                return RemuxLibrarySSHPrewarmCurrentContext(
+                    snapshot: library,
+                    isLibraryVisible: state == .library,
+                    activeServerIDs: RemuxActiveSessionCollection.activeServerIDs(
+                        in: activeSessions
+                    ),
+                    terminalSettings: terminalSettings
+                )
+            },
+            onEligibleTarget: { [weak self] target in
+                self?.prepareTransport(for: target, reason: .library)
             }
-        }
+        )
     }
 
     private func cancelLibrarySSHPrewarm() {
-        libraryPrewarmGeneration += 1
-        libraryPrewarmTask?.cancel()
-        libraryPrewarmTask = nil
-    }
-
-    private func prepareLibraryTransportIfStillEligible(
-        candidate: RemuxLibrarySSHPrewarmCandidate,
-        target: TmuxConnectionTarget,
-        currentPassword: String?,
-        generation: UInt64
-    ) {
-        let currentServer = library.server(id: candidate.server.id)
-        let currentWorkspace = library.workspace(id: candidate.workspace.id)
-        let hasActiveSessionOnServer = currentServer.map {
-            RemuxActiveSessionCollection.hasActiveSession(
-                onServer: $0.id,
-                in: activeSessions
-            )
-        } ?? false
-
-        switch RemuxLibrarySSHPrewarmPlanner.eligibility(
-            capturedGeneration: generation,
-            currentGeneration: libraryPrewarmGeneration,
-            isLibraryVisible: state == .library,
-            candidate: candidate,
-            capturedTarget: target,
-            currentServer: currentServer,
-            currentWorkspace: currentWorkspace,
-            currentPassword: currentPassword,
-            currentTerminalSettings: terminalSettings,
-            hasActiveSessionOnServer: hasActiveSessionOnServer
-        ) {
-        case .eligible(let eligibleTarget):
-            prepareTransport(for: eligibleTarget, reason: .library)
-        case .skipped(let reason):
-            traceSkippedLibraryPrewarm(candidate: candidate, reason: reason.rawValue)
-        }
-    }
-
-    private func traceSkippedLibraryPrewarm(
-        candidate: RemuxLibrarySSHPrewarmCandidate,
-        reason: String
-    ) {
-        GhosttyRuntimeTrace.latency(
-            "library.prewarm skipped reason=\(reason) serverID=\(candidate.server.id.uuidString) workspaceID=\(candidate.workspace.id.uuidString)"
-        )
+        librarySSHPrewarmCoordinator.cancel()
     }
 
     private func defaultSessionName(for serverID: SavedServer.ID) -> String {
