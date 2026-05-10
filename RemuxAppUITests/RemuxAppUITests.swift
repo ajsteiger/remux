@@ -208,6 +208,85 @@ final class RemuxAppUITests: XCTestCase {
         XCTAssertTrue(activeSessionRows.firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testLiveSSHTmuxActionCycleWhenConfigured() throws {
+        let sessionName = "remux-latency-action-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        openWindowsSheet()
+        tapPickerButton(identifier: "terminal.window.new", fallbackLabel: "New Window")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openWindowsSheet()
+        XCTAssertTrue(app.buttons["terminal.window.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["terminal.window.tile.2"].waitForExistence(timeout: 10))
+        tapPickerButton(identifier: "terminal.window.tile.1", fallbackLabel: "Window 1 of 2")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openWindowsSheet()
+        tapPickerButton(identifier: "terminal.window.tile.2", fallbackLabel: "Window 2 of 2")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openPanesSheet()
+        tapPickerButton(identifier: "terminal.pane.split", fallbackLabel: "Split")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openPanesSheet()
+        XCTAssertTrue(app.buttons["terminal.pane.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["terminal.pane.tile.2"].waitForExistence(timeout: 10))
+        tapPickerButton(identifier: "terminal.pane.tile.1", fallbackLabel: "Pane 1 of 2")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openPanesSheet()
+        tapPickerButton(identifier: "terminal.pane.tile.2", fallbackLabel: "Pane 2 of 2")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openPanesSheet()
+        removePickerItem(
+            tileIdentifier: "terminal.pane.tile.2",
+            actionIdentifier: "terminal.pane.remove.2",
+            actionLabel: "Remove Pane 2",
+            confirmIdentifier: "terminal.pane.remove.confirm.2",
+            confirmLabel: "Remove Pane 2"
+        )
+        XCTAssertTrue(
+            waitForElementToDisappear(app.buttons["terminal.pane.tile.2"], timeout: 10),
+            "Pane 2 should disappear after removal."
+        )
+        dismissTopSheetIfPresent()
+        waitForLiveTerminalReady(timeout: 30)
+
+        openWindowsSheet()
+        removePickerItem(
+            tileIdentifier: "terminal.window.tile.2",
+            actionIdentifier: "terminal.window.remove.2",
+            actionLabel: "Remove Window 2",
+            confirmIdentifier: "terminal.window.remove.confirm.2",
+            confirmLabel: "Remove Window 2"
+        )
+        XCTAssertTrue(
+            waitForElementToDisappear(app.buttons["terminal.window.tile.2"], timeout: 10),
+            "Window 2 should disappear after removal."
+        )
+        dismissTopSheetIfPresent()
+        waitForLiveTerminalReady(timeout: 30)
+
+        let keyboard = app.buttons["terminal.keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        keyboard.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 8))
+
+        openHomeFromTerminal()
+        XCTAssertTrue(activeSessionRows.firstMatch.waitForExistence(timeout: 5))
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 60)
+    }
+
     func testLiveWarmSSHRootReuseWhenConfigured() throws {
         let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
         defer {
@@ -535,6 +614,95 @@ final class RemuxAppUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(serverSession.waitForExistence(timeout: 3))
         serverSession.tap()
+    }
+
+    private func openWindowsSheet() {
+        if panePickerIsOpen {
+            dismissTopSheetIfPresent()
+        }
+
+        if !windowPickerIsOpen {
+            let windows = app.buttons["terminal.windows"]
+            XCTAssertTrue(windows.waitForExistence(timeout: 10))
+            windows.tap()
+        }
+
+        XCTAssertTrue(
+            app.otherElements["terminal.windows.sheet"].waitForExistence(timeout: 8)
+                || app.buttons["terminal.window.new"].waitForExistence(timeout: 2)
+                || app.buttons["New Window"].waitForExistence(timeout: 2)
+        )
+    }
+
+    private func openPanesSheet() {
+        if windowPickerIsOpen {
+            dismissTopSheetIfPresent()
+        }
+
+        if !panePickerIsOpen {
+            let panes = app.buttons["terminal.panes"]
+            XCTAssertTrue(panes.waitForExistence(timeout: 10))
+            panes.tap()
+        }
+
+        XCTAssertTrue(
+            app.otherElements["terminal.panes.sheet"].waitForExistence(timeout: 8)
+                || app.buttons["terminal.pane.split"].waitForExistence(timeout: 2)
+                || app.buttons["Split"].waitForExistence(timeout: 2)
+        )
+    }
+
+    private var windowPickerIsOpen: Bool {
+        app.otherElements["terminal.windows.sheet"].exists
+            || app.buttons["terminal.window.new"].exists
+            || app.buttons["New Window"].exists
+    }
+
+    private var panePickerIsOpen: Bool {
+        app.otherElements["terminal.panes.sheet"].exists
+            || app.buttons["terminal.pane.split"].exists
+            || app.buttons["Split"].exists
+    }
+
+    private func tapPickerButton(identifier: String, fallbackLabel: String) {
+        let identified = app.buttons.matching(identifier: identifier).firstMatch
+        if identified.waitForExistence(timeout: 5) {
+            identified.tap()
+            return
+        }
+
+        let labeled = app.buttons.matching(NSPredicate(format: "label == %@", fallbackLabel)).firstMatch
+        XCTAssertTrue(labeled.waitForExistence(timeout: 3), "Missing picker button \(identifier) / \(fallbackLabel)")
+        labeled.tap()
+    }
+
+    private func removePickerItem(
+        tileIdentifier: String,
+        actionIdentifier: String,
+        actionLabel: String,
+        confirmIdentifier: String,
+        confirmLabel: String
+    ) {
+        let tile = app.buttons[tileIdentifier]
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "Missing picker tile \(tileIdentifier)")
+        tile.press(forDuration: 1.0)
+
+        tapPickerButton(identifier: actionIdentifier, fallbackLabel: actionLabel)
+        tapPickerButton(identifier: confirmIdentifier, fallbackLabel: confirmLabel)
+    }
+
+    private func waitForElementToDisappear(
+        _ element: XCUIElement,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if !element.exists {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return !element.exists
     }
 
     private func openFirstServerDetail() {

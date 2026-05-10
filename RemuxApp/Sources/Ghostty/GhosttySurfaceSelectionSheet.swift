@@ -68,9 +68,11 @@ struct GhosttyWindowSelectionSheet: View {
                 onRemoveWindow(request.id)
                 pendingRemoval = nil
             }
+            .accessibilityIdentifier("terminal.window.remove.confirm.\(request.displayIndex)")
         } message: { request in
             Text(windowRemovalMessage(for: request))
         }
+        .accessibilityIdentifier("terminal.windows.sheet")
     }
 
     private func windowGrid(
@@ -101,6 +103,7 @@ struct GhosttyWindowSelectionSheet: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("terminal.window.tile.\(window.displayIndex)")
                 .contextMenu {
                     Button(role: .destructive) {
                         Haptic.warning()
@@ -112,6 +115,7 @@ struct GhosttyWindowSelectionSheet: View {
                     } label: {
                         Label("Remove Window \(window.displayIndex)", systemImage: "trash")
                     }
+                    .accessibilityIdentifier("terminal.window.remove.\(window.displayIndex)")
                 }
             }
 
@@ -122,6 +126,7 @@ struct GhosttyWindowSelectionSheet: View {
                 GhosttyWindowNewTile(layout: layout)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("terminal.window.new")
             .disabled(onCreateWindow == nil)
             .opacity(onCreateWindow == nil ? 0.5 : 1.0)
         }
@@ -183,12 +188,14 @@ struct GhosttyPaneSelectionSheet: View {
                     GhosttySheetActionButton(
                         title: "Split",
                         systemName: "square.split.2x1",
+                        accessibilityIdentifier: "terminal.pane.split",
                         action: onSplitPane
                     )
 
                     GhosttySheetActionButton(
                         title: "Stack",
                         systemName: "square.split.1x2",
+                        accessibilityIdentifier: "terminal.pane.stack",
                         action: onStackPane
                     )
                 }
@@ -218,9 +225,11 @@ struct GhosttyPaneSelectionSheet: View {
                 onRemovePane(request.id)
                 pendingRemoval = nil
             }
+            .accessibilityIdentifier("terminal.pane.remove.confirm.\(request.displayIndex)")
         } message: { request in
             Text(paneRemovalMessage(for: request))
         }
+        .accessibilityIdentifier("terminal.panes.sheet")
     }
 
     private func paneLayout(
@@ -250,6 +259,7 @@ struct GhosttyPaneSelectionSheet: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("terminal.pane.tile.\(pane.displayIndex)")
                 .contextMenu {
                     Button(role: .destructive) {
                         Haptic.warning()
@@ -257,6 +267,7 @@ struct GhosttyPaneSelectionSheet: View {
                     } label: {
                         Label("Remove Pane \(pane.displayIndex)", systemImage: "trash")
                     }
+                    .accessibilityIdentifier("terminal.pane.remove.\(pane.displayIndex)")
                 }
             }
         }
@@ -329,6 +340,7 @@ private struct GhosttySheetBottomActionBar<Content: View>: View {
 private struct GhosttySheetActionButton: View {
     let title: String
     let systemName: String
+    let accessibilityIdentifier: String
     let action: (() -> Void)?
     var isDestructive = false
 
@@ -357,6 +369,7 @@ private struct GhosttySheetActionButton: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
         .disabled(action == nil)
         .opacity(action == nil ? 0.5 : 1.0)
     }
