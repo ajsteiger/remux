@@ -287,6 +287,58 @@ final class RemuxAppUITests: XCTestCase {
         waitForLiveTerminalReady(timeout: 60)
     }
 
+    func testLiveSSHBackgroundForegroundRetainsTerminalWhenConfigured() throws {
+        let sessionName = "remux-latency-foreground-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        openPanesSheet()
+        tapPickerButton(identifier: "terminal.pane.split", fallbackLabel: "Split")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openPanesSheet()
+        XCTAssertTrue(app.buttons["terminal.pane.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["terminal.pane.tile.2"].waitForExistence(timeout: 10))
+        dismissTopSheetIfPresent()
+
+        sendTerminalCommand("echo REMUX_FOREGROUND_BEFORE")
+        backgroundAndReactivateApp(backgroundDuration: 4)
+        waitForLiveTerminalReady(timeout: 60)
+        XCTAssertFalse(app.staticTexts["terminal.status.failed"].exists)
+
+        openPanesSheet()
+        XCTAssertTrue(app.buttons["terminal.pane.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["terminal.pane.tile.2"].waitForExistence(timeout: 10))
+        tapPickerButton(identifier: "terminal.pane.tile.2", fallbackLabel: "Pane 2 of 2")
+        waitForLiveTerminalReady(timeout: 30)
+        sendTerminalCommand("echo REMUX_FOREGROUND_AFTER")
+
+        openPanesSheet()
+        removePickerItem(
+            tileIdentifier: "terminal.pane.tile.2",
+            actionIdentifier: "terminal.pane.remove.2",
+            actionLabel: "Remove Pane 2",
+            confirmIdentifier: "terminal.pane.remove.confirm.2",
+            confirmLabel: "Remove Pane 2"
+        )
+        XCTAssertTrue(
+            waitForElementToDisappear(app.buttons["terminal.pane.tile.2"], timeout: 10),
+            "Pane 2 should disappear after post-foreground removal."
+        )
+        dismissTopSheetIfPresent()
+        waitForLiveTerminalReady(timeout: 30)
+
+        openHomeFromTerminal()
+        XCTAssertTrue(activeSessionRows.firstMatch.waitForExistence(timeout: 5))
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 60)
+    }
+
     func testLiveWarmSSHRootReuseWhenConfigured() throws {
         let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
         defer {
@@ -689,6 +741,46 @@ final class RemuxAppUITests: XCTestCase {
 
         tapPickerButton(identifier: actionIdentifier, fallbackLabel: actionLabel)
         tapPickerButton(identifier: confirmIdentifier, fallbackLabel: confirmLabel)
+    }
+
+    private func sendTerminalCommand(_ command: String) {
+        if !app.keyboards.firstMatch.exists {
+            let keyboard = app.buttons["terminal.keyboard"]
+            XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+            keyboard.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 8))
+        }
+
+        app.typeText("\(command)\n")
+    }
+
+    private func backgroundAndReactivateApp(backgroundDuration: TimeInterval) {
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            waitForAppState(
+                [.runningBackground, .runningBackgroundSuspended],
+                timeout: 10
+            ),
+            "App should leave the foreground after pressing Home."
+        )
+
+        RunLoop.current.run(until: Date().addingTimeInterval(backgroundDuration))
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
+    }
+
+    private func waitForAppState(
+        _ states: [XCUIApplication.State],
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if states.contains(app.state) {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return states.contains(app.state)
     }
 
     private func waitForElementToDisappear(
