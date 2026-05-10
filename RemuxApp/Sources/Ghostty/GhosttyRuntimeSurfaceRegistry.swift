@@ -1130,16 +1130,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         let focusedLeafID = decodedRequest.focusedLeafIndex.map { leafSurfaces[$0].id }
 
         let replacingParentSurfaceID = decodedRequest.parent.flatMap { surfaceIDsByHandle[$0] }
-        let replacingTopLevelID = replacingParentSurfaceID == nil
-            ? topLevelID(overlappingManualIdentityFrom: leafSurfaces)
-            : nil
-
         installSurfaceTree(
             leafSurfaces: leafSurfaces,
             tree: tree,
             focusedLeafID: focusedLeafID,
             replacingTopLevelContaining: replacingParentSurfaceID,
-            replacingTopLevelID: replacingTopLevelID
+            replacingTopLevelID: nil,
+            allowManualIdentityReplacement: replacingParentSurfaceID == nil
         )
         installedLeafSurfaces = true
         if GhosttyRuntimeTrace.isEnabled {
@@ -1316,15 +1313,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         replacingTopLevelID: UUID? = nil,
         replaceByManualIdentity: Bool = false
     ) {
-        let inferredTopLevelID = replaceByManualIdentity
-            ? topLevelID(overlappingManualIdentityFrom: surfaces)
-            : nil
         installSurfaceTree(
             leafSurfaces: surfaces,
             tree: tree,
             focusedLeafID: focusedLeafID,
             replacingTopLevelContaining: parentSurfaceID,
-            replacingTopLevelID: replacingTopLevelID ?? inferredTopLevelID
+            replacingTopLevelID: replacingTopLevelID,
+            allowManualIdentityReplacement: replaceByManualIdentity
         )
     }
 
@@ -1354,114 +1349,55 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         tree: GhosttySurfaceTree,
         focusedLeafID: UUID?,
         replacingTopLevelContaining parentSurfaceID: UUID?,
-        replacingTopLevelID: UUID?
+        replacingTopLevelID: UUID?,
+        allowManualIdentityReplacement: Bool
     ) {
-        let previousSelectedTopLevelID = selectedTopLevelID
         let previousPresentation = currentPhonePresentationTarget()
+        let plan = GhosttyRuntimeSurfaceTreeInstallPlanner().plan(
+            .init(
+                topLevels: topLevels,
+                selectedTopLevelID: selectedTopLevelID,
+                parentSurfaceID: parentSurfaceID,
+                replacingTopLevelID: replacingTopLevelID,
+                allowManualIdentityReplacement: allowManualIdentityReplacement,
+                tree: tree,
+                focusedLeafID: focusedLeafID,
+                existingLeafIdentities: existingRuntimeSurfaceTreeLeafIdentities(),
+                incomingLeafIdentities: runtimeSurfaceTreeLeafIdentities(for: leafSurfaces)
+            )
+        )
+
         register(leafSurfaces)
+        topLevels = plan.topLevels
+        selectedTopLevelID = plan.selectedTopLevelID
 
-        if let parentSurfaceID,
-           let index = topLevels.firstIndex(where: { $0.tree.contains(parentSurfaceID) }) {
-            var updatedTopLevels = topLevels
-            let replacementFocusedLeafID = focusedLeafIDForReplacement(
-                explicitFocusedLeafID: focusedLeafID,
-                previousTopLevel: updatedTopLevels[index],
-                incomingLeafSurfaces: leafSurfaces
-            )
-            updatedTopLevels[index].tree = tree
-            updatedTopLevels[index].focusedLeafID = replacementFocusedLeafID
-            updatedTopLevels[index].normalizeFocus()
-            topLevels = updatedTopLevels
-            selectedTopLevelID = replacementSelection(
-                replacedTopLevelID: updatedTopLevels[index].id,
-                previousSelectedTopLevelID: previousSelectedTopLevelID
-            )
-            if selectedTopLevelID == updatedTopLevels[index].id,
-               let targetSurfaceID = updatedTopLevels[index].resolvedFocusedLeafID {
-                stagePhonePresentationIfNeeded(
-                    targetSurfaceID: targetSurfaceID,
-                    previousPresentation: previousPresentation
-                )
-            }
-            updateDebugSummary("replaced surface tree")
-            return
-        }
-
-        if let replacingTopLevelID,
-           let index = topLevels.firstIndex(where: { $0.id == replacingTopLevelID }) {
-            var updatedTopLevels = topLevels
-            let replacementFocusedLeafID = focusedLeafIDForReplacement(
-                explicitFocusedLeafID: focusedLeafID,
-                previousTopLevel: updatedTopLevels[index],
-                incomingLeafSurfaces: leafSurfaces
-            )
-            updatedTopLevels[index].tree = tree
-            updatedTopLevels[index].focusedLeafID = replacementFocusedLeafID
-            updatedTopLevels[index].normalizeFocus()
-            topLevels = updatedTopLevels
-            selectedTopLevelID = replacementSelection(
-                replacedTopLevelID: updatedTopLevels[index].id,
-                previousSelectedTopLevelID: previousSelectedTopLevelID
-            )
-            if selectedTopLevelID == updatedTopLevels[index].id,
-               let targetSurfaceID = updatedTopLevels[index].resolvedFocusedLeafID {
-                stagePhonePresentationIfNeeded(
-                    targetSurfaceID: targetSurfaceID,
-                    previousPresentation: previousPresentation
-                )
-            }
-            updateDebugSummary("replaced surface tree")
-            return
-        }
-
-        let topLevel = GhosttyTopLevelSurface(
-            tree: tree,
-            focusedLeafID: focusedLeafID
-        )
-        topLevels.append(topLevel)
-        selectedTopLevelID = normalizedSelectionID(
-            preferredID: previousSelectedTopLevelID,
-            fallbackID: topLevel.id
-        )
-        if selectedTopLevelID == topLevel.id,
-           let targetSurfaceID = topLevel.resolvedFocusedLeafID {
+        if let targetSurfaceID = plan.presentationTargetSurfaceID {
             stagePhonePresentationIfNeeded(
                 targetSurfaceID: targetSurfaceID,
                 previousPresentation: previousPresentation
             )
         }
-        updateDebugSummary("created surface tree")
+        updateDebugSummary(plan.debugSummary.rawValue)
     }
 
-    private func focusedLeafIDForReplacement(
-        explicitFocusedLeafID: UUID?,
-        previousTopLevel: GhosttyTopLevelSurface,
-        incomingLeafSurfaces: [GhosttyManagedSurface]
-    ) -> UUID? {
-        if let explicitFocusedLeafID {
-            return explicitFocusedLeafID
+    private func existingRuntimeSurfaceTreeLeafIdentities() -> [GhosttyRuntimeSurfaceTreeInstallPlanner.LeafIdentity] {
+        topLevels.flatMap(\.leafIDs).map { leafID in
+            GhosttyRuntimeSurfaceTreeInstallPlanner.LeafIdentity(
+                id: leafID,
+                manualUserdata: managedSurfaces[leafID]?.manualUserdata
+            )
         }
-
-        guard
-            let previousFocusedLeafID = previousTopLevel.resolvedFocusedLeafID,
-            let previousManualUserdata = managedSurfaces[previousFocusedLeafID]?.manualUserdata
-        else {
-            return nil
-        }
-
-        return incomingLeafSurfaces.first {
-            $0.manualUserdata == previousManualUserdata
-        }?.id
     }
 
-    private func replacementSelection(
-        replacedTopLevelID: UUID,
-        previousSelectedTopLevelID: UUID?
-    ) -> UUID {
-        normalizedSelectionID(
-            preferredID: previousSelectedTopLevelID,
-            fallbackID: replacedTopLevelID
-        ) ?? replacedTopLevelID
+    private func runtimeSurfaceTreeLeafIdentities(
+        for surfaces: [GhosttyManagedSurface]
+    ) -> [GhosttyRuntimeSurfaceTreeInstallPlanner.LeafIdentity] {
+        surfaces.map { surface in
+            GhosttyRuntimeSurfaceTreeInstallPlanner.LeafIdentity(
+                id: surface.id,
+                manualUserdata: surface.manualUserdata
+            )
+        }
     }
 
     private func normalizedSelectionID(
@@ -1475,27 +1411,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return fallbackID
         }
         return topLevels.first?.id
-    }
-
-    private func topLevelID(
-        overlappingManualIdentityFrom leafSurfaces: [GhosttyManagedSurface]
-    ) -> UUID? {
-        let incomingIdentities = leafSurfaces.compactMap(\.manualUserdata)
-        guard !incomingIdentities.isEmpty else { return nil }
-
-        for topLevel in topLevels {
-            let existingIdentities = topLevel.leafIDs.compactMap { leafID in
-                managedSurfaces[leafID]?.manualUserdata
-            }
-            guard existingIdentities.contains(where: { existing in
-                incomingIdentities.contains(existing)
-            }) else {
-                continue
-            }
-            return topLevel.id
-        }
-
-        return nil
     }
 
     private func insertSplitSurface(
