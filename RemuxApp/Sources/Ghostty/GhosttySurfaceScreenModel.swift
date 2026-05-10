@@ -63,14 +63,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     typealias TransportFactory = (TmuxConnectionTarget) -> any TmuxControlTransport
-    typealias RuntimeFactory = (GhosttyKitRuntimeSurfaceDelegate?) throws -> GhosttyKitRuntime
+    typealias RuntimeFactory = GhosttyTerminalRuntimePrecreationController.RuntimeFactory
 
     private let target: TmuxConnectionTarget
     private let sessionInstanceID: UUID
     private let transportFactory: TransportFactory
-    private let runtimeFactory: RuntimeFactory
     private let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
-    private var precreatedRuntime: Result<GhosttyKitRuntime, Error>?
+    private let runtimePrecreationController: GhosttyTerminalRuntimePrecreationController
     private let debugLatencyProbeController: GhosttyTerminalDebugLatencyProbeController
 
     private var hostSession: GhosttyHostSession?
@@ -109,12 +108,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         self.debugLatencyProbeController = GhosttyTerminalDebugLatencyProbeController(
             probe: debugLatencyProbe
         )
-        self.runtimeFactory = runtimeFactory ?? { delegate in
+        let selectedRuntimeFactory: RuntimeFactory = runtimeFactory ?? { delegate in
             try GhosttyKitRuntime(
                 surfaceDelegate: delegate,
                 terminalSettings: target.terminalSettings
             )
         }
+        self.runtimePrecreationController = GhosttyTerminalRuntimePrecreationController(
+            runtimeFactory: selectedRuntimeFactory
+        )
         surfaceRegistry.terminalSettings = target.terminalSettings
         surfaceRegistry.onChange = { [weak self] in
             Task { @MainActor [weak self] in
@@ -133,7 +135,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             self?.handleTmuxCommandFailure(failure)
         }
         if precreateRuntime {
-            precreateRuntimeIfNeeded()
+            runtimePrecreationController.precreateIfNeeded(
+                delegate: surfaceRegistry,
+                flowID: sessionOpenFlowID
+            )
         }
     }
 
@@ -174,7 +179,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         do {
             surfaceRegistry.reset()
-            let runtime = try claimRuntime()
+            let runtime = try runtimePrecreationController.claim(
+                delegate: surfaceRegistry,
+                flowID: sessionOpenFlowID
+            )
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.created")
             let transport = transportFactory(target)
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.created")
@@ -221,7 +229,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         runtimeStateReporter.suppress()
         clearCommandFailureMessage()
         debugLatencyProbeController.cancel()
-        precreatedRuntime = nil
+        runtimePrecreationController.clear()
         hostSession?.stop()
         hostSession = nil
         surfaceRegistry.prepareForRuntimeTeardown()
@@ -1068,53 +1076,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         Task {
             await failedSession?.close(disposition: closeDisposition)
-        }
-    }
-
-    private func precreateRuntimeIfNeeded() {
-        guard precreatedRuntime == nil, hostSession == nil else { return }
-
-        let start = GhosttyRuntimeTrace.nowNanos()
-        GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.precreate.begin")
-        do {
-            let runtime = try runtimeFactory(surfaceRegistry)
-            precreatedRuntime = .success(runtime)
-            GhosttyRuntimeTrace.flowEvent(
-                sessionOpenFlowID,
-                event: "model.runtime.precreate.end",
-                fields: ["elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start)]
-            )
-        } catch {
-            precreatedRuntime = .failure(error)
-            GhosttyRuntimeTrace.flowEvent(
-                sessionOpenFlowID,
-                event: "model.runtime.precreate.failed",
-                fields: [
-                    "elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start),
-                    "error": String(describing: error),
-                ]
-            )
-        }
-    }
-
-    private func claimRuntime() throws -> GhosttyKitRuntime {
-        switch precreatedRuntime {
-        case .success(let runtime):
-            precreatedRuntime = nil
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.precreate.claimed")
-            return runtime
-
-        case .failure(let error):
-            precreatedRuntime = nil
-            GhosttyRuntimeTrace.flowEvent(
-                sessionOpenFlowID,
-                event: "model.runtime.precreate.claimFailed",
-                fields: ["error": String(describing: error)]
-            )
-            throw error
-
-        case nil:
-            return try runtimeFactory(surfaceRegistry)
         }
     }
 
