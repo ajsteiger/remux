@@ -41,14 +41,6 @@ struct ActiveTerminalSession: Identifiable, Equatable, Sendable {
     }
 }
 
-enum ActiveSessionRuntimeTransitionOutcome: Equatable, Sendable {
-    case missingSession
-    case staleInstance(current: UUID, stale: UUID)
-    case applied(TerminalRuntimeState)
-    case automaticReconnectStarted(source: TerminalReconnectSource, state: TerminalRuntimeState)
-    case automaticReconnectSkipped(source: TerminalReconnectSource, state: TerminalRuntimeState)
-}
-
 @MainActor
 final class RemuxRootModel: ObservableObject {
     private static let libraryPrewarmServerLimit = 3
@@ -475,46 +467,16 @@ final class RemuxRootModel: ObservableObject {
     func handleTerminalRuntimeStateUpdate(
         _ update: TerminalRuntimeStateUpdate
     ) -> ActiveSessionRuntimeTransitionOutcome {
-        let outcome = applyTerminalRuntimeStateUpdate(update)
+        let outcome = RemuxActiveSessionRuntimeReducer.apply(
+            update,
+            to: &activeSessions,
+            requestedReconnectSource: automaticReconnectSource(for: update)
+        )
         traceTerminalRuntimeStateUpdate(update, outcome: outcome)
         if case .automaticReconnectStarted(let source, _) = outcome {
             reconnectActiveSession(update.workspaceID, source: source)
         }
         return outcome
-    }
-
-    private func applyTerminalRuntimeStateUpdate(
-        _ update: TerminalRuntimeStateUpdate
-    ) -> ActiveSessionRuntimeTransitionOutcome {
-        guard let index = activeSessions.firstIndex(where: { $0.id == update.workspaceID }) else {
-            return .missingSession
-        }
-        guard activeSessions[index].instanceID == update.instanceID else {
-            return .staleInstance(
-                current: activeSessions[index].instanceID,
-                stale: update.instanceID
-            )
-        }
-
-        let nextState = resolvedRuntimeState(
-            update.state,
-            current: activeSessions[index].runtimeState
-        )
-        activeSessions[index].applyRuntimeState(nextState)
-
-        guard let reconnectSource = automaticReconnectSource(for: update) else {
-            return .applied(nextState)
-        }
-        guard activeSessions[index].markAutomaticReconnectAttempted(source: reconnectSource) else {
-            return .automaticReconnectSkipped(
-                source: reconnectSource,
-                state: nextState
-            )
-        }
-        return .automaticReconnectStarted(
-            source: reconnectSource,
-            state: nextState
-        )
     }
 
     func closeActiveSession(_ id: SavedWorkspace.ID) {
@@ -702,17 +664,6 @@ final class RemuxRootModel: ObservableObject {
             password: password,
             terminalSettings: terminalSettings
         )
-    }
-
-    private func resolvedRuntimeState(
-        _ nextState: TerminalRuntimeState,
-        current: TerminalRuntimeState
-    ) -> TerminalRuntimeState {
-        if case .connecting = nextState,
-           case .reconnecting = current {
-            return current
-        }
-        return nextState
     }
 
     private func automaticReconnectSource(
