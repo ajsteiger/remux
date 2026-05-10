@@ -4,6 +4,7 @@ import Foundation
 struct RemuxAppDependencies: Sendable {
     let profileRepository: any ConnectionProfileRepository
     let settingsRepository: any TerminalSettingsRepository
+    let shortcutRepository: any ShortcutRepository
     let passwordStore: any PasswordStore
     let trustedHostStore: TrustedHostStore
     private let sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
@@ -17,10 +18,15 @@ struct RemuxAppDependencies: Sendable {
         _ trustedHostStore: TrustedHostStore,
         _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     ) async -> Void
+    private let debugConnectionSeeder: @Sendable (
+        _ profileRepository: any ConnectionProfileRepository,
+        _ passwordStore: any PasswordStore
+    ) async throws -> Bool
 
     init(
         profileRepository: any ConnectionProfileRepository,
         settingsRepository: any TerminalSettingsRepository,
+        shortcutRepository: any ShortcutRepository,
         passwordStore: any PasswordStore,
         trustedHostStore: TrustedHostStore,
         sshConnectionPool: SSHTmuxAuthenticatedConnectionPool = SSHTmuxAuthenticatedConnectionPool(),
@@ -33,15 +39,21 @@ struct RemuxAppDependencies: Sendable {
             _ target: TmuxConnectionTarget,
             _ trustedHostStore: TrustedHostStore,
             _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
-        ) async -> Void = RemuxAppDependencies.liveSSHConnectionPrewarmer
+        ) async -> Void = RemuxAppDependencies.liveSSHConnectionPrewarmer,
+        debugConnectionSeeder: @escaping @Sendable (
+            _ profileRepository: any ConnectionProfileRepository,
+            _ passwordStore: any PasswordStore
+        ) async throws -> Bool = RemuxAppDependencies.liveDebugConnectionSeeder
     ) {
         self.profileRepository = profileRepository
         self.settingsRepository = settingsRepository
+        self.shortcutRepository = shortcutRepository
         self.passwordStore = passwordStore
         self.trustedHostStore = trustedHostStore
         self.sshConnectionPool = sshConnectionPool
         self.transportFactory = transportFactory
         self.sshConnectionPrewarmer = sshConnectionPrewarmer
+        self.debugConnectionSeeder = debugConnectionSeeder
     }
 
     static func launch() -> Result<RemuxAppDependencies, Error> {
@@ -60,6 +72,7 @@ struct RemuxAppDependencies: Sendable {
         return RemuxAppDependencies(
             profileRepository: FileBackedConnectionProfileRepository(rootURL: root),
             settingsRepository: FileBackedTerminalSettingsRepository(rootURL: root),
+            shortcutRepository: FileBackedShortcutRepository(rootURL: root),
             passwordStore: KeychainPasswordStore(),
             trustedHostStore: TrustedHostStore(rootURL: root)
         )
@@ -152,6 +165,7 @@ struct RemuxAppDependencies: Sendable {
         return RemuxAppDependencies(
             profileRepository: InMemoryConnectionProfileRepository(),
             settingsRepository: InMemoryTerminalSettingsRepository(),
+            shortcutRepository: InMemoryShortcutRepository(),
             passwordStore: InMemoryPasswordStore(),
             trustedHostStore: TrustedHostStore(rootURL: root),
             transportFactory: { _, _, _ in
@@ -166,6 +180,13 @@ struct RemuxAppDependencies: Sendable {
 #if DEBUG
     @discardableResult
     func seedDebugConnectionIfRequested() async throws -> Bool {
+        try await debugConnectionSeeder(profileRepository, passwordStore)
+    }
+
+    private static func liveDebugConnectionSeeder(
+        profileRepository: any ConnectionProfileRepository,
+        passwordStore: any PasswordStore
+    ) async throws -> Bool {
         try await DebugConnectionProfileSeeder.seedIfRequested(
             profileRepository: profileRepository,
             passwordStore: passwordStore
@@ -237,6 +258,28 @@ private actor InMemoryTerminalSettingsRepository: TerminalSettingsRepository {
 
     func saveSettings(_ settings: TerminalSettings) async throws {
         self.settings = settings
+    }
+}
+
+private actor InMemoryShortcutRepository: ShortcutRepository {
+    private var snapshot: ShortcutStoreSnapshot
+    private let starters: [StarterShortcut]
+
+    init(
+        snapshot: ShortcutStoreSnapshot = ShortcutStoreSnapshot(),
+        starters: [StarterShortcut] = StarterShortcuts.all
+    ) {
+        self.snapshot = snapshot
+        self.starters = starters
+    }
+
+    func loadSnapshot() async throws -> ShortcutStoreSnapshot {
+        snapshot.installMissingStarters(starters)
+        return snapshot
+    }
+
+    func saveSnapshot(_ snapshot: ShortcutStoreSnapshot) async throws {
+        self.snapshot = snapshot
     }
 }
 

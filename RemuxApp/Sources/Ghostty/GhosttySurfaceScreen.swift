@@ -5,6 +5,7 @@ import GhosttyKit
 struct GhosttySurfaceScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: GhosttySurfaceScreenModel
+    private let shortcutStore: ShortcutStore
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
@@ -17,6 +18,9 @@ struct GhosttySurfaceScreen: View {
     @State private var isAwaitingSystemKeyboardPresentation = false
     @State private var pendingTopologyInputRefocus = GhosttyPendingTopologyInputRefocus()
     @State private var trackpadHUDState = GhosttyKeyboardCursorTrackpad.HUDState.hidden
+    @State private var isShortcutPalettePresented = false
+    @State private var isShortcutsSettingsPresented = false
+    @State private var shortcutEditorRequest: ShortcutEditorRequest?
 
     private let target: TmuxConnectionTarget
     private let onReconnect: () -> Void
@@ -25,12 +29,14 @@ struct GhosttySurfaceScreen: View {
     init(
         target: TmuxConnectionTarget,
         sessionInstanceID: UUID,
+        shortcutStore: ShortcutStore,
         transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
         onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void
     ) {
         self.target = target
+        self.shortcutStore = shortcutStore
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
         _model = StateObject(
@@ -186,6 +192,9 @@ struct GhosttySurfaceScreen: View {
                     }
                 }
             }
+            .overlay(alignment: .bottom) {
+                shortcutPaletteLayer()
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 GhosttyKeyboardChrome(
                     keyboardMode: renderedKeyboardMode,
@@ -201,6 +210,7 @@ struct GhosttySurfaceScreen: View {
                     onShowPanes: showPanes,
                     onToggleKeyboard: toggleKeyboardChrome,
                     onToggleControl: toggleControlModifier,
+                    onShowShortcuts: showShortcutPalette,
                     sendKey: sendTerminalKeyEvent
                 )
                 .padding(.horizontal, chrome.surfaceHorizontalPadding)
@@ -226,18 +236,22 @@ struct GhosttySurfaceScreen: View {
                 bottomChromeHeight = normalizedHeight
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
+                guard shouldHandleTerminalKeyboardNotification else { return }
                 GhosttyRuntimeTrace.perf("kbd.willChangeFrame")
                 updateKeyboardVisibility(with: $0)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { notification in
+                guard shouldHandleTerminalKeyboardNotification else { return }
                 GhosttyRuntimeTrace.perf("kbd.willHide")
                 updateKeyboardVisibility(with: notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                guard shouldHandleTerminalKeyboardNotification else { return }
                 GhosttyRuntimeTrace.perf("kbd.didShow")
                 completeKeyboardDidShow()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidHideNotification)) { _ in
+                guard shouldHandleTerminalKeyboardNotification else { return }
                 GhosttyRuntimeTrace.perf("kbd.didHide")
                 completeKeyboardDidHide()
             }
@@ -246,6 +260,27 @@ struct GhosttySurfaceScreen: View {
                     .presentationDetents(selectionSheetDetents(for: sheet))
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
+            }
+            .sheet(isPresented: $isShortcutsSettingsPresented) {
+                ShortcutsSettingsSheet(store: shortcutStore)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.regularMaterial)
+                    .presentationCornerRadius(28)
+            }
+            .sheet(item: $shortcutEditorRequest) { request in
+                ShortcutEditorSheet(request: request) { shortcut, favorite in
+                    shortcutStore.update {
+                        $0.upsertShortcut(shortcut)
+                        if favorite {
+                            $0.setFavorite(true, shortcutID: shortcut.id)
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(28)
             }
             .onChange(of: model.surfaceRegistryRevision) { _, _ in
                 guard case .panes(let topLevelID, _) = selectionSheet else {
@@ -303,6 +338,10 @@ struct GhosttySurfaceScreen: View {
 
     private var registry: GhosttyRuntimeSurfaceRegistry {
         model.surfaceRegistry
+    }
+
+    private var shouldHandleTerminalKeyboardNotification: Bool {
+        !isShortcutsSettingsPresented && shortcutEditorRequest == nil
     }
 
     private var selectionSheetBinding: Binding<GhosttySurfaceSelectionSheet?> {
@@ -521,6 +560,63 @@ struct GhosttySurfaceScreen: View {
             "topology.refocus cancel reason=tmuxCommandFailure token=\(event.token) failureReason=\(event.reason.traceLabel)"
         )
         cancelPendingTopologyInputRefocus()
+    }
+
+    @ViewBuilder
+    private func shortcutPaletteLayer() -> some View {
+        if isShortcutPalettePresented {
+            ZStack(alignment: .bottom) {
+                Color.clear
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        isShortcutPalettePresented = false
+                    }
+
+                ShortcutPalette(
+                    store: shortcutStore,
+                    executeShortcut: executeShortcut,
+                    onAddShortcut: {
+                        isShortcutPalettePresented = false
+                        guard let defaultCollection = shortcutStore.snapshot.defaultShortcutCollectionID else {
+                            isShortcutsSettingsPresented = true
+                            return
+                        }
+                        shortcutEditorRequest = .new(
+                            defaultCollection: defaultCollection,
+                            favoriteOnSave: true,
+                            snapshot: shortcutStore.snapshot
+                        )
+                    },
+                    onEditShortcut: {
+                        isShortcutPalettePresented = false
+                        shortcutEditorRequest = .edit($0, snapshot: shortcutStore.snapshot)
+                    },
+                    onOpenSettings: {
+                        isShortcutPalettePresented = false
+                        isShortcutsSettingsPresented = true
+                    }
+                )
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
+            }
+            .transition(.opacity)
+        }
+    }
+
+    private func showShortcutPalette() {
+        modifierState.clearControl()
+        isShortcutPalettePresented = true
+    }
+
+    private func executeShortcut(_ shortcut: Shortcut) {
+        let executor = ShortcutExecutor(
+            sendText: sendTerminalText,
+            sendKey: sendTerminalKeyEvent
+        )
+        if executor.execute(shortcut) {
+            isShortcutPalettePresented = false
+        }
     }
 
     private func toggleControlModifier() {

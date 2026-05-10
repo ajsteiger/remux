@@ -25,6 +25,10 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: RemuxApp/Sources
+      - path: RemuxApp/Assets.xcassets
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
     dependencies:
       - framework: ../ghostty-remux-option-c/macos/GhosttyKit.xcframework
         embed: false

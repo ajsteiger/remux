@@ -25,9 +25,13 @@ struct RootView: View {
 
 private struct RemuxRootContentView: View {
     @StateObject private var model: RemuxRootModel
+    @State private var shortcutStore: ShortcutStore
 
     init(dependencies: RemuxAppDependencies) {
         _model = StateObject(wrappedValue: RemuxRootModel(dependencies: dependencies))
+        _shortcutStore = State(
+            initialValue: ShortcutStore(repository: dependencies.shortcutRepository)
+        )
     }
 
     var body: some View {
@@ -35,11 +39,13 @@ private struct RemuxRootContentView: View {
         case .loading:
             ProgressView("Loading Remux")
                 .task {
-                    await model.load()
+                    async let modelLoad: Void = model.load()
+                    async let shortcutLoad: Void = shortcutStore.load()
+                    _ = await (modelLoad, shortcutLoad)
                 }
 
         case .library, .setup, .terminal:
-            RemuxWorkspaceShell(model: model)
+            RemuxWorkspaceShell(model: model, shortcutStore: shortcutStore)
 
         case .failed(let message):
             FailureView(message: message)
@@ -49,6 +55,7 @@ private struct RemuxRootContentView: View {
 
 private struct RemuxWorkspaceShell: View {
     @ObservedObject var model: RemuxRootModel
+    let shortcutStore: ShortcutStore
 
     var body: some View {
         ZStack {
@@ -71,6 +78,7 @@ private struct RemuxWorkspaceShell: View {
                 let isSelected = selectedTerminalID == session.id
                 ActiveTerminalSessionView(
                     session: session,
+                    shortcutStore: shortcutStore,
                     transportFactory: { model.makeTransport(for: $0) },
                     onRuntimeStateChange: { update in
                         _ = model.handleTerminalRuntimeStateUpdate(update)
@@ -202,6 +210,7 @@ private struct RemuxWorkspaceShell: View {
 
 private struct ActiveTerminalSessionView: View {
     let session: ActiveTerminalSession
+    let shortcutStore: ShortcutStore
     let transportFactory: GhosttySurfaceScreenModel.TransportFactory
     let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
     let onReconnect: () -> Void
@@ -211,6 +220,7 @@ private struct ActiveTerminalSessionView: View {
         GhosttySurfaceScreen(
             target: session.target,
             sessionInstanceID: session.instanceID,
+            shortcutStore: shortcutStore,
             transportFactory: transportFactory,
             onRuntimeStateChange: onRuntimeStateChange,
             onReconnect: onReconnect,
