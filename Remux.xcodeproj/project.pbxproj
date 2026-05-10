@@ -53,6 +53,8 @@
 		48124543E4A60E49F2B1051B /* GhosttyTerminalResponderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB7372853BCE26F35945D24A /* GhosttyTerminalResponderView.swift */; };
 		4C607CCE048705D4D93A7EBB /* GhosttyHostSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C78D9218B4DA76BC2D9106 /* GhosttyHostSession.swift */; };
 		4DE961CA3002BC6645DDEEF8 /* GhosttyTerminalInputSubmissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A607699A067C7A8280DD639F /* GhosttyTerminalInputSubmissionCoordinator.swift */; };
+		4DF6D2D4E5668EE584E1E1CB /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE99FC51EBF3F94B73928414 /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift */; };
+		50AE7AC63E5504EF8BDA0123 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A88D2F77D33C12B09B8F6A2 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift */; };
 		521EE36C02EDBE0FB9AD5A69 /* TrustedHostStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C944FBD600E4357E517F2DD3 /* TrustedHostStore.swift */; };
 		53A275DBC331E4F5DF34FD86 /* ShortcutPaletteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05617ECDC542A8A167C52296 /* ShortcutPaletteUITests.swift */; };
 		53AEFC2CD8D578C881DD093E /* Shortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EFEF4C2C61B013DA831F7D9 /* Shortcut.swift */; };
@@ -233,6 +235,7 @@
 		96D76300C343320C6DE2D629 /* RemuxUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = RemuxUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		96F24A0810E927B327E82D59 /* GhosttyKeyboardChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKeyboardChrome.swift; sourceTree = "<group>"; };
 		99082CEC90EA6D04B5BE5874 /* GhosttyTerminalDisconnectReasonClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalDisconnectReasonClassifier.swift; sourceTree = "<group>"; };
+		9A88D2F77D33C12B09B8F6A2 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift; sourceTree = "<group>"; };
 		9AC92D96015D360B52AA23FB /* GhosttyTerminalRuntimeStateReporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalRuntimeStateReporterTests.swift; sourceTree = "<group>"; };
 		9C76A9A6D14624AC5E1155D8 /* RemuxRootModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxRootModelTests.swift; sourceTree = "<group>"; };
 		A24231725D0E6A96EBC1D0B4 /* GhosttyRuntimeSurfaceTreeRequestDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceTreeRequestDecoder.swift; sourceTree = "<group>"; };
@@ -252,6 +255,7 @@
 		C6958616F9B9DFD9E0E38E6B /* GhosttySurfaceKeyEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceKeyEvent.swift; sourceTree = "<group>"; };
 		C7313F7C3049C269572F59B5 /* RemuxLibrarySSHPrewarmCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxLibrarySSHPrewarmCoordinatorTests.swift; sourceTree = "<group>"; };
 		C944FBD600E4357E517F2DD3 /* TrustedHostStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedHostStore.swift; sourceTree = "<group>"; };
+		CE99FC51EBF3F94B73928414 /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceTreeRemovalPlanner.swift; sourceTree = "<group>"; };
 		CFE401B861C30DA18E8BE1C9 /* ShortcutsSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsSettingsSheet.swift; sourceTree = "<group>"; };
 		D20F57C8C6D3F75E3E07DDC9 /* RemuxRootModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxRootModel.swift; sourceTree = "<group>"; };
 		D27C0B574FC84F887628D8D5 /* GhosttyTerminalHostSessionFactoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalHostSessionFactoryTests.swift; sourceTree = "<group>"; };
@@ -350,6 +354,7 @@
 				A9BEEA4655420D5DCEDE5C23 /* GhosttyPhoneChromeLayoutTests.swift */,
 				387E363FF06D5C7B2164FAA1 /* GhosttyRuntimeManagedSurfaceFactoryTests.swift */,
 				465203A2D5DB677882B33FE0 /* GhosttyRuntimeSurfaceTreeInstallPlannerTests.swift */,
+				9A88D2F77D33C12B09B8F6A2 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift */,
 				20D4B077940E7C6C08A14061 /* GhosttyRuntimeSurfaceTreeRequestDecoderTests.swift */,
 				4E84F774C17B5C4DB6B715A9 /* GhosttySurfaceKeyEventTests.swift */,
 				A88FBFD7D50B9817DC09FED6 /* GhosttySurfaceMouseEventTests.swift */,
@@ -480,6 +485,7 @@
 				A25303329936A058AF3B8D83 /* GhosttyRuntimeManagedSurfaceFactory.swift */,
 				4F1CDC62D73599BE511A9BD8 /* GhosttyRuntimeSurfaceRegistry.swift */,
 				6A0E7E159455EE43F98A88CC /* GhosttyRuntimeSurfaceTreeInstallPlanner.swift */,
+				CE99FC51EBF3F94B73928414 /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift */,
 				A24231725D0E6A96EBC1D0B4 /* GhosttyRuntimeSurfaceTreeRequestDecoder.swift */,
 				C6958616F9B9DFD9E0E38E6B /* GhosttySurfaceKeyEvent.swift */,
 				3EC4CAA9116316609CF030FC /* GhosttySurfaceMouseEvent.swift */,
@@ -658,6 +664,7 @@
 				8CA7E55C808A292E823AB1AA /* GhosttyRuntimeManagedSurfaceFactory.swift in Sources */,
 				E3BD44E80ED40A31E36F2059 /* GhosttyRuntimeSurfaceRegistry.swift in Sources */,
 				7757FFA0511C5E128787D975 /* GhosttyRuntimeSurfaceTreeInstallPlanner.swift in Sources */,
+				4DF6D2D4E5668EE584E1E1CB /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift in Sources */,
 				0B4E7D4271E6C485F89467B4 /* GhosttyRuntimeSurfaceTreeRequestDecoder.swift in Sources */,
 				5DE5C6D2008EA128479374F3 /* GhosttySurfaceKeyEvent.swift in Sources */,
 				E0B03B6D9CC8D0372605DAF2 /* GhosttySurfaceMouseEvent.swift in Sources */,
@@ -740,6 +747,7 @@
 				557B4DE97A72EE7ED2097407 /* GhosttyPhoneChromeLayoutTests.swift in Sources */,
 				78DA3C738D712ACF559811AC /* GhosttyRuntimeManagedSurfaceFactoryTests.swift in Sources */,
 				D6C5F561BD3C3F38BD57C461 /* GhosttyRuntimeSurfaceTreeInstallPlannerTests.swift in Sources */,
+				50AE7AC63E5504EF8BDA0123 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift in Sources */,
 				800B09E69509E3137D443D91 /* GhosttyRuntimeSurfaceTreeRequestDecoderTests.swift in Sources */,
 				14890862E5A8BFE9BE759DB0 /* GhosttySurfaceKeyEventTests.swift in Sources */,
 				93E74D57BD69427AFBA8674D /* GhosttySurfaceMouseEventTests.swift in Sources */,

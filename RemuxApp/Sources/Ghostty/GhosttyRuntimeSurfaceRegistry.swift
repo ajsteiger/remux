@@ -1644,47 +1644,17 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surfaceIDsByHandle.removeValue(forKey: removed.controlSurface.handle)
         removed.releaseBeforePermanentRemoval()
 
-        let previousSelectedTopLevelID = selectedTopLevelID
-        let previousSelectedIndex = selectedTopLevelIndex
-        var remainingTopLevels: [GhosttyTopLevelSurface] = []
-        remainingTopLevels.reserveCapacity(topLevels.count)
-
-        for var topLevel in topLevels {
-            guard topLevel.tree.contains(id) else {
-                remainingTopLevels.append(topLevel)
-                continue
-            }
-
-            guard let updatedTree = topLevel.tree.removingLeaf(id) else {
-                continue
-            }
-
-            topLevel.tree = updatedTree
-            topLevel.normalizeFocus()
-            remainingTopLevels.append(topLevel)
-        }
-
-        topLevels = remainingTopLevels
-        selectedTopLevelID = normalizedSelectionAfterRemoval(
-            previousSelectedTopLevelID: previousSelectedTopLevelID,
-            previousSelectedIndex: previousSelectedIndex
+        let plan = GhosttyRuntimeSurfaceTreeRemovalPlanner().plan(
+            .init(
+                topLevels: topLevels,
+                selectedTopLevelID: selectedTopLevelID,
+                removedLeafID: id
+            )
         )
+        topLevels = plan.topLevels
+        selectedTopLevelID = plan.selectedTopLevelID
         _ = removed
         updateDebugSummary("managed surfaces=\(managedSurfaces.count)")
-    }
-
-    private func normalizedSelectionAfterRemoval(
-        previousSelectedTopLevelID: UUID?,
-        previousSelectedIndex: Int?
-    ) -> UUID? {
-        if let previousSelectedTopLevelID,
-           topLevels.contains(where: { $0.id == previousSelectedTopLevelID }) {
-            return previousSelectedTopLevelID
-        }
-        guard !topLevels.isEmpty else { return nil }
-        guard let previousSelectedIndex else { return topLevels[0].id }
-        let replacementIndex = min(previousSelectedIndex, topLevels.count - 1)
-        return topLevels[replacementIndex].id
     }
 
     private func updateDebugSummary(_ event: String) {
