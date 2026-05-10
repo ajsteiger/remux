@@ -72,12 +72,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private let runtimePrecreationController: GhosttyTerminalRuntimePrecreationController
     private let debugLatencyProbeController: GhosttyTerminalDebugLatencyProbeController
 
-    private var hostSession: GhosttyHostSession?
+    private let hostSessionSlot = GhosttyTerminalHostSessionSlot()
     private let commandFailurePresenter = GhosttyTmuxCommandFailurePresenter()
     private lazy var tmuxActionCoordinator = GhosttyTmuxActionCoordinator(
         surfaceRegistry: surfaceRegistry,
         submitHostNewWindow: { [weak self] in
-            self?.hostSession?.submitHostTmuxNewWindow()
+            self?.hostSessionSlot.submitHostTmuxNewWindow()
         }
     )
     private lazy var inputSubmissionCoordinator = GhosttyTerminalInputSubmissionCoordinator(
@@ -145,19 +145,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     func attach(view: GhosttyKitSurfaceView, size: CGSize) {
         guard size.width > 1, size.height > 1 else { return }
 
-        if let hostSession {
-            let start = GhosttyRuntimeTrace.nowNanos()
-            let outcome: GhosttyHostSessionAttachmentOutcome
-            do {
-                outcome = try hostSession.attach(view: view, size: size)
-            } catch {
-                applyTransportTransition(
-                    GhosttyTerminalTransportTransitionPlanner.transportStartFailed(error)
+        let repeatAttachStart = GhosttyRuntimeTrace.nowNanos()
+        do {
+            if let currentAttachOutcome = try attachCurrentHostSession(view: view, size: size) {
+                GhosttyRuntimeTrace.perf(
+                    "model.attach route=repeat outcome=\(currentAttachOutcome == .refreshed ? "apply" : "skip") size=\(Int(size.width))x\(Int(size.height)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: repeatAttachStart))"
                 )
                 return
             }
-            GhosttyRuntimeTrace.perf(
-                "model.attach route=repeat outcome=\(outcome == .refreshed ? "apply" : "skip") size=\(Int(size.width))x\(Int(size.height)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        } catch {
+            applyTransportTransition(
+                GhosttyTerminalTransportTransitionPlanner.transportStartFailed(error)
             )
             return
         }
@@ -198,15 +196,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             )
             sessionToCloseOnFailure = hostSession
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.prepare.scheduled")
-            self.hostSession = hostSession
+            hostSessionSlot.install(hostSession)
             try hostSession.attach(view: view, size: size)
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.hostSurface.created")
             GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.hostPump.started")
 
             sessionToCloseOnFailure = nil
         } catch {
-            if let sessionToCloseOnFailure, self.hostSession === sessionToCloseOnFailure {
-                self.hostSession = nil
+            if let sessionToCloseOnFailure {
+                hostSessionSlot.clearIfCurrent(sessionToCloseOnFailure)
             }
             if let sessionToCloseOnFailure {
                 Task {
@@ -232,8 +230,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         clearCommandFailureMessage()
         debugLatencyProbeController.cancel()
         runtimePrecreationController.clear()
-        hostSession?.stop()
-        hostSession = nil
+        hostSessionSlot.stopCurrent()
         surfaceRegistry.prepareForRuntimeTeardown()
         surfaceRegistry.reset()
         state = .idle
@@ -246,6 +243,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         reportRuntimeStateIfNeeded(source: .readiness)
     }
 
+    private func attachCurrentHostSession(
+        view: GhosttyKitSurfaceView,
+        size: CGSize
+    ) throws -> GhosttyHostSessionAttachmentOutcome? {
+        try hostSessionSlot.attachCurrent(view: view, size: size)
+    }
+
     func handleAppLifecyclePhase(_ phase: AppLifecyclePhase) {
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.lifecycle",
@@ -253,7 +257,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             fields: [
                 "phase": "\(phase)",
                 "state": "\(state)",
-                "transportAvailable": "\(hostSession?.isWriteAvailable == true)",
+                "transportAvailable": "\(hostSessionSlot.isWriteAvailable)",
             ]
         )
 
@@ -851,7 +855,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private func handleHostSessionEvent(_ event: GhosttyHostSessionEvent, from session: GhosttyHostSession) {
-        guard hostSession === session else { return }
+        guard hostSessionSlot.isCurrent(session) else { return }
 
         switch event {
         case .debug(let event):
@@ -950,7 +954,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private var isTerminalTransportAvailable: Bool {
-        state == .running && hostSession?.isWriteAvailable == true
+        state == .running && hostSessionSlot.isWriteAvailable
     }
 
     private func updateDebugStatusForTerminalInputResult(
@@ -989,21 +993,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private func reconcileTransportAfterForeground() {
-        let hostStatus: GhosttyTerminalTransportHostStatus
-        if let hostSession {
-            hostStatus = GhosttyTerminalTransportHostStatus(
-                isPresent: true,
-                isRunning: hostSession.isRunning,
-                lastError: hostSession.lastError
-            )
-        } else {
-            hostStatus = .missing
-        }
-
         applyTransportTransition(
             GhosttyTerminalTransportTransitionPlanner.foreground(
                 phase: transportPhase,
-                hostStatus: hostStatus
+                hostStatus: hostSessionSlot.foregroundStatus()
             )
         )
     }
@@ -1049,7 +1042,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private func applyTransportStartFailedTransition(
         _ transition: GhosttyTerminalTransportStartFailedTransition
     ) {
-        hostSession = nil
+        hostSessionSlot.clearCurrent()
         GhosttyRuntimeTrace.flowEnd(
             sessionOpenFlowID,
             event: transition.traceEvent,
@@ -1076,8 +1069,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             fields: fields
         )
 
-        let failedSession = hostSession
-        hostSession = nil
+        let failedSession = hostSessionSlot.takeCurrent()
         state = .failed(transition.reason.message)
         failureReason = transition.reason
         debugStatus = transition.reason.message

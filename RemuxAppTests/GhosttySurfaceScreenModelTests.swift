@@ -3242,7 +3242,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     private static func hostControlSurface(from model: GhosttySurfaceScreenModel) -> GhosttyKitControlSurface? {
-        guard let sessionValue = Mirror(reflecting: model).children.first(where: { $0.label == "hostSession" })?.value else {
+        guard let slotValue = Mirror(reflecting: model).children.first(where: { $0.label == "hostSessionSlot" })?.value else {
+            return nil
+        }
+
+        guard let sessionValue = Mirror(reflecting: slotValue).children.first(where: { $0.label == "current" })?.value else {
             return nil
         }
 
