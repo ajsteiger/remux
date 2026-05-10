@@ -84,19 +84,19 @@ final class RemuxRootModel: ObservableObject {
     @Published private(set) var activeSessions: [ActiveTerminalSession] = []
 
     private let dependencies: RemuxAppDependencies
-    private var preparedTransportCache = RemuxPreparedTransportCache()
+    private let preparedTransportCoordinator: RemuxPreparedTransportCoordinator
     private var libraryPrewarmTask: Task<Void, Never>?
     private var libraryPrewarmGeneration: UInt64 = 0
 
     init(dependencies: RemuxAppDependencies) {
         self.dependencies = dependencies
+        self.preparedTransportCoordinator = RemuxPreparedTransportCoordinator { target in
+            dependencies.makeTransport(for: target)
+        }
     }
 
     deinit {
         libraryPrewarmTask?.cancel()
-        for preparedTransport in preparedTransportCache.drain() {
-            Task { await preparedTransport.transport.close(disposition: .reusable) }
-        }
     }
 
     func load() async {
@@ -461,7 +461,7 @@ final class RemuxRootModel: ObservableObject {
             state = .library
             return
         }
-        prepareTransport(for: session.target, reason: "reconnect")
+        prepareTransport(for: session.target, reason: .reconnect)
         state = .terminal(id)
         GhosttyRuntimeTrace.flowEvent(
             sessionReconnectFlowID(id),
@@ -543,45 +543,11 @@ final class RemuxRootModel: ObservableObject {
     }
 
     func makeTransport(for target: TmuxConnectionTarget) -> any TmuxControlTransport {
-        switch preparedTransportCache.claim(for: target) {
-        case .claimed(let prepared):
-            GhosttyRuntimeTrace.flowEvent(
-                sessionOpenFlowID(target.workspace.id),
-                event: "model.transport.prewarm.claimed",
-                fields: ["workspaceID": target.workspace.id.uuidString]
-            )
-            return prepared.transport
-
-        case .discardedStale(let prepared):
-            closePreparedTransport(prepared)
-            GhosttyRuntimeTrace.flowEvent(
-                sessionOpenFlowID(target.workspace.id),
-                event: "model.transport.prewarm.discarded",
-                fields: [
-                    "workspaceID": target.workspace.id.uuidString,
-                    "reason": "target_changed",
-                ]
-            )
-            return dependencies.makeTransport(for: target)
-
-        case .missing:
-            return dependencies.makeTransport(for: target)
-        }
-    }
-
-    private func closePreparedTransport(_ prepared: PreparedTmuxControlTransport) {
-        Task { await prepared.transport.close(disposition: .reusable) }
-    }
-
-    private func closePreparedTransports(_ preparedTransports: [PreparedTmuxControlTransport]) {
-        for prepared in preparedTransports {
-            closePreparedTransport(prepared)
-        }
+        preparedTransportCoordinator.claimOrCreateTransport(for: target)
     }
 
     private func closePreparedTransport(for workspaceID: SavedWorkspace.ID) {
-        guard let prepared = preparedTransportCache.remove(workspaceID: workspaceID) else { return }
-        closePreparedTransport(prepared)
+        preparedTransportCoordinator.remove(workspaceID: workspaceID)
     }
 
     private func closePreparedTransports(forServerID serverID: SavedServer.ID) {
@@ -592,11 +558,9 @@ final class RemuxRootModel: ObservableObject {
         forServerID serverID: SavedServer.ID,
         excludingWorkspaceID: SavedWorkspace.ID?
     ) {
-        closePreparedTransports(
-            preparedTransportCache.remove(
-                serverID: serverID,
-                excludingWorkspaceID: excludingWorkspaceID
-            )
+        preparedTransportCoordinator.remove(
+            serverID: serverID,
+            excludingWorkspaceID: excludingWorkspaceID
         )
     }
 
@@ -618,7 +582,7 @@ final class RemuxRootModel: ObservableObject {
         cancelLibrarySSHPrewarm()
         closePreparedTransports(forServerID: server.id, excludingWorkspaceID: workspace.id)
         let target = target(server: server, workspace: workspace, password: password)
-        prepareTransport(for: target, reason: "activation")
+        prepareTransport(for: target, reason: .activation)
         RemuxActiveSessionCollection.upsertActivatedSession(
             target: target,
             in: &activeSessions
@@ -719,48 +683,9 @@ final class RemuxRootModel: ObservableObject {
 
     private func prepareTransport(
         for target: TmuxConnectionTarget,
-        reason: String
+        reason: RemuxPreparedTransportPrepareReason
     ) {
-        guard target.server.transportKind == .ssh else { return }
-
-        if preparedTransportCache.containsReusableTransport(for: target) {
-            GhosttyRuntimeTrace.flowEvent(
-                sessionOpenFlowID(target.workspace.id),
-                event: "model.transport.prewarm.reused",
-                fields: [
-                    "reason": reason,
-                    "workspaceID": target.workspace.id.uuidString,
-                ]
-            )
-            return
-        }
-
-        let transport = dependencies.makeTransport(for: target)
-        if let existing = preparedTransportCache.store(
-            PreparedTmuxControlTransport(target: target, transport: transport)
-        ) {
-            closePreparedTransport(existing)
-        }
-
-        GhosttyRuntimeTrace.flowEvent(
-            sessionOpenFlowID(target.workspace.id),
-            event: "model.transport.prewarm.created",
-            fields: [
-                "reason": reason,
-                "workspaceID": target.workspace.id.uuidString,
-            ]
-        )
-        Task.detached(priority: .userInitiated) {
-            await transport.prepare()
-        }
-        GhosttyRuntimeTrace.flowEvent(
-            sessionOpenFlowID(target.workspace.id),
-            event: "model.transport.prewarm.scheduled",
-            fields: [
-                "reason": reason,
-                "workspaceID": target.workspace.id.uuidString,
-            ]
-        )
+        preparedTransportCoordinator.prepareTransport(for: target, reason: reason)
     }
 
     private func scheduleLibrarySSHPrewarm(snapshot: ConnectionLibrarySnapshot) {
@@ -860,7 +785,7 @@ final class RemuxRootModel: ObservableObject {
             hasActiveSessionOnServer: hasActiveSessionOnServer
         ) {
         case .eligible(let eligibleTarget):
-            prepareTransport(for: eligibleTarget, reason: "library")
+            prepareTransport(for: eligibleTarget, reason: .library)
         case .skipped(let reason):
             traceSkippedLibraryPrewarm(candidate: candidate, reason: reason.rawValue)
         }
