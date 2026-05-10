@@ -1458,6 +1458,89 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux transport ended: disconnected")
     }
 
+    func testModelInvalidatesTransportWhenStartFails() async {
+        let transport = ControlledScreenModelTmuxControlTransport(
+            startError: SSHTmuxControlTransportError.channelRequestFailed(.exec)
+        )
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didFail = await waitUntil(timeout: 2) {
+            guard case .failed(let message) = model.state else { return false }
+            return message.contains("SSH exec request failed")
+        }
+        let closeDispositions = await transport.closeDispositions()
+
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(closeDispositions, [.invalidated])
+        XCTAssertEqual(model.failureReason?.kind, .profile)
+        XCTAssertEqual(model.debugStatus, "SSH exec request failed")
+    }
+
+    func testModelStopDuringSuspendedStartKeepsReusableCloseAndIgnoresLateSuccess() async {
+        let transport = ControlledScreenModelTmuxControlTransport(suspendStart: true)
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didStartSuspend = await waitUntilAsync(timeout: 2) {
+            await transport.startCallCount() == 1
+        }
+        XCTAssertTrue(didStartSuspend)
+
+        model.stop()
+        await transport.completeSuspendedStart()
+        try? await Task.sleep(for: .milliseconds(50))
+        let closeDispositions = await transport.closeDispositions()
+
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.debugStatus, "stopped")
+        XCTAssertEqual(closeDispositions, [.reusable])
+    }
+
+    func testModelStopDuringSuspendedStartIgnoresLateFailure() async {
+        let transport = ControlledScreenModelTmuxControlTransport(suspendStart: true)
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didStartSuspend = await waitUntilAsync(timeout: 2) {
+            await transport.startCallCount() == 1
+        }
+        XCTAssertTrue(didStartSuspend)
+
+        model.stop()
+        await transport.failSuspendedStart(ScreenModelTransportError.disconnected)
+        try? await Task.sleep(for: .milliseconds(50))
+        let closeDispositions = await transport.closeDispositions()
+
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.debugStatus, "stopped")
+        XCTAssertEqual(closeDispositions, [.reusable])
+    }
+
     func testModelPreservesWriteSpecificFailureWhenHostWriteFails() async throws {
         let transport = ControlledScreenModelTmuxControlTransport(sendError: .disconnected)
         let model = Self.screenModel(
@@ -2894,6 +2977,18 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         return condition()
     }
 
+    private func waitUntilAsync(
+        timeout: TimeInterval = 1,
+        condition: @escaping () async -> Bool
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return await condition()
+    }
+
     private static func screenModel(
         target: TmuxConnectionTarget? = nil,
         sessionInstanceID: UUID = UUID(),
@@ -2917,7 +3012,20 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     private static func hostControlSurface(from model: GhosttySurfaceScreenModel) -> GhosttyKitControlSurface? {
-        guard let value = Mirror(reflecting: model).children.first(where: { $0.label == "controlSurface" })?.value else {
+        guard let sessionValue = Mirror(reflecting: model).children.first(where: { $0.label == "hostSession" })?.value else {
+            return nil
+        }
+
+        let sessionMirror = Mirror(reflecting: sessionValue)
+        let session: Any
+        if sessionMirror.displayStyle == .optional {
+            guard let wrapped = sessionMirror.children.first?.value else { return nil }
+            session = wrapped
+        } else {
+            session = sessionValue
+        }
+
+        guard let value = Mirror(reflecting: session).children.first(where: { $0.label == "controlSurface" })?.value else {
             return nil
         }
 
@@ -3004,10 +3112,20 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
 
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
     private let sendError: ScreenModelTransportError?
+    private let startError: (any Error)?
+    private let suspendStart: Bool
     private var recordedCloseDispositions: [TmuxControlTransportCloseDisposition] = []
+    private var recordedStartCallCount = 0
+    private var suspendedStart: CheckedContinuation<Void, any Error>?
 
-    init(sendError: ScreenModelTransportError? = nil) {
+    init(
+        sendError: ScreenModelTransportError? = nil,
+        startError: (any Error)? = nil,
+        suspendStart: Bool = false
+    ) {
         self.sendError = sendError
+        self.startError = startError
+        self.suspendStart = suspendStart
         var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
         receivedBytes = AsyncThrowingStream { continuation in
             capturedContinuation = continuation
@@ -3017,6 +3135,15 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
 
     func start(initialViewport: TmuxControlViewport?) async throws {
         _ = initialViewport
+        recordedStartCallCount += 1
+        if suspendStart {
+            try await withCheckedThrowingContinuation { continuation in
+                suspendedStart = continuation
+            }
+        }
+        if let startError {
+            throw startError
+        }
     }
 
     func send(_ data: Data) async throws {
@@ -3052,6 +3179,20 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
 
     func closeDispositions() -> [TmuxControlTransportCloseDisposition] {
         recordedCloseDispositions
+    }
+
+    func startCallCount() -> Int {
+        recordedStartCallCount
+    }
+
+    func completeSuspendedStart() {
+        suspendedStart?.resume()
+        suspendedStart = nil
+    }
+
+    func failSuspendedStart(_ error: any Error) {
+        suspendedStart?.resume(throwing: error)
+        suspendedStart = nil
     }
 }
 
