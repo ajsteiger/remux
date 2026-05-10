@@ -183,31 +183,22 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         clearCommandFailureMessage()
         failureReason = nil
 
-        var sessionToCloseOnFailure: GhosttyHostSession?
+        switch GhosttyTerminalInitialAttachTransaction.perform(
+            view: view,
+            size: size,
+            surfaceRegistry: surfaceRegistry,
+            runtimePrecreationController: runtimePrecreationController,
+            hostSessionFactory: hostSessionFactory,
+            hostSessionSlot: hostSessionSlot,
+            flowID: sessionOpenFlowID
+        ) {
+        case .succeeded:
+            break
 
-        do {
-            surfaceRegistry.reset()
-            let runtime = try runtimePrecreationController.claim(
-                delegate: surfaceRegistry,
-                flowID: sessionOpenFlowID
-            )
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.runtime.created")
-            let hostSession = hostSessionFactory.makeSession(runtime: runtime)
-            sessionToCloseOnFailure = hostSession
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.transport.prepare.scheduled")
-            hostSessionSlot.install(hostSession)
-            try hostSession.attach(view: view, size: size)
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.hostSurface.created")
-            GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.hostPump.started")
-
-            sessionToCloseOnFailure = nil
-        } catch {
-            if let sessionToCloseOnFailure {
-                hostSessionSlot.clearIfCurrent(sessionToCloseOnFailure)
-            }
-            if let sessionToCloseOnFailure {
+        case .failed(let error, let sessionToCloseReusable):
+            if let sessionToCloseReusable {
                 Task {
-                    await sessionToCloseOnFailure.close(disposition: .reusable)
+                    await sessionToCloseReusable.close(disposition: .reusable)
                 }
             }
             GhosttyRuntimeTrace.flowEnd(
