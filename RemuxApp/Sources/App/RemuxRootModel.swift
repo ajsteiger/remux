@@ -789,7 +789,11 @@ final class RemuxRootModel: ObservableObject {
     }
 
     private func scheduleLibrarySSHPrewarm(snapshot: ConnectionLibrarySnapshot) {
-        let candidates = libraryPrewarmCandidates(in: snapshot)
+        let activeServerIDs = Set(activeSessions.map(\.target.server.id))
+        let candidates = libraryPrewarmCandidates(
+            in: snapshot,
+            excludingServerIDs: activeServerIDs
+        )
         guard !candidates.isEmpty else {
             libraryPrewarmTask?.cancel()
             libraryPrewarmTask = nil
@@ -835,7 +839,10 @@ final class RemuxRootModel: ObservableObject {
         }
     }
 
-    private func libraryPrewarmCandidates(in snapshot: ConnectionLibrarySnapshot) -> [LibrarySSHPrewarmCandidate] {
+    private func libraryPrewarmCandidates(
+        in snapshot: ConnectionLibrarySnapshot,
+        excludingServerIDs excludedServerIDs: Set<SavedServer.ID> = []
+    ) -> [LibrarySSHPrewarmCandidate] {
         var seenServerIDs = Set<SavedServer.ID>()
         var candidates: [LibrarySSHPrewarmCandidate] = []
         let recentWorkspaces = snapshot.workspaces.sorted { lhs, rhs in
@@ -850,6 +857,7 @@ final class RemuxRootModel: ObservableObject {
             guard candidates.count < Self.libraryPrewarmServerLimit else { break }
             guard let server = snapshot.server(id: workspace.serverID) else { continue }
             guard server.transportKind == .ssh else { continue }
+            guard !excludedServerIDs.contains(server.id) else { continue }
             guard !seenServerIDs.contains(server.id) else { continue }
 
             seenServerIDs.insert(server.id)

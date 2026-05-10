@@ -147,6 +147,89 @@ final class RemuxRootModelTests: XCTestCase {
         )
     }
 
+    func testLibraryPrewarmSkipsServersWithActiveSessions() async throws {
+        let now = Date()
+        let activeServer = SavedServer(
+            displayName: "Active Host",
+            host: "active.example.test",
+            username: "active"
+        )
+        let secondServer = SavedServer(
+            displayName: "Second Host",
+            host: "second.example.test",
+            username: "second"
+        )
+        let activeWorkspace = SavedWorkspace(
+            serverID: activeServer.id,
+            sessionName: "active",
+            lastOpenedAt: now
+        )
+        let secondWorkspace = SavedWorkspace(
+            serverID: secondServer.id,
+            sessionName: "second",
+            lastOpenedAt: now.addingTimeInterval(-10)
+        )
+        let prewarmer = RecordingSSHConnectionPrewarmer()
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [activeServer],
+            workspaces: [activeWorkspace],
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            sshConnectionPrewarmer: { target, _, _ in
+                prewarmer.record(target)
+            }
+        )
+        try await harness.passwordStore.savePassword("active-secret", for: activeServer.id)
+
+        await harness.model.load()
+        let didInitialPrewarm = await waitUntil {
+            prewarmer.targets.count == 1
+                && transportFactory.events.filter { event in
+                    if case .prepared = event { return true }
+                    return false
+                }.count == 1
+        }
+        XCTAssertTrue(didInitialPrewarm)
+
+        await harness.model.connect(to: activeWorkspace.id)
+        XCTAssertEqual(harness.model.activeSessions.first?.target.server.id, activeServer.id)
+        prewarmer.reset()
+        transportFactory.reset()
+        try await harness.profileRepository.saveProfile(
+            server: secondServer,
+            workspace: secondWorkspace
+        )
+        try await harness.passwordStore.savePassword("second-secret", for: secondServer.id)
+
+        await harness.model.showLibrary()
+
+        let didPrewarmInactiveServers = await waitUntil {
+            prewarmer.targets.count == 1
+                && transportFactory.events.filter { event in
+                    if case .prepared = event { return true }
+                    return false
+                }.count == 1
+        }
+        XCTAssertTrue(didPrewarmInactiveServers)
+
+        XCTAssertEqual(
+            Set(prewarmer.targets.map(\.server.id)),
+            Set([secondServer.id])
+        )
+        XCTAssertFalse(prewarmer.targets.contains { $0.server.id == activeServer.id })
+        XCTAssertEqual(
+            Set(transportFactory.targets.map(\.server.id)),
+            Set([secondServer.id])
+        )
+        XCTAssertFalse(transportFactory.targets.contains { $0.server.id == activeServer.id })
+    }
+
     func testBeginNewWorkspaceUsesExistingServerAndNextSessionName() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -893,6 +976,12 @@ private final class RecordingSSHConnectionPrewarmer: @unchecked Sendable {
         recordedTargets.append(target)
         lock.unlock()
     }
+
+    func reset() {
+        lock.lock()
+        recordedTargets.removeAll()
+        lock.unlock()
+    }
 }
 
 private final class RecordingRootTransportFactory: @unchecked Sendable {
@@ -939,6 +1028,13 @@ private final class RecordingRootTransportFactory: @unchecked Sendable {
     func record(_ event: RecordingRootTransportEvent) {
         lock.lock()
         recordedEvents.append(event)
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        recordedEvents.removeAll()
+        recordedTargets.removeAll()
         lock.unlock()
     }
 }
