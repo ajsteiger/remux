@@ -25,105 +25,6 @@ enum GhosttySurfaceSelectionOutcome: Equatable, Sendable {
     }
 }
 
-struct GhosttyTerminalInteractionProjection: Equatable, Sendable {
-    let isInputAvailable: Bool
-    let hasFocusedSurface: Bool
-    let selectedActiveLeafID: UUID?
-    let selectedWindowIndex: Int?
-    let windowCount: Int
-    let selectedPaneIndex: Int?
-    let paneCount: Int
-    let isWaitingForPanes: Bool
-}
-
-struct GhosttyTerminalTreeTopLevelPresentation: Equatable {
-    let id: UUID
-    let phonePresentedLeafIDs: [UUID]
-    let phonePresentedTree: GhosttySurfaceTree
-    let resolvedFocusedLeafID: UUID?
-}
-
-struct GhosttyTerminalTreePresentationProjection: Equatable {
-    static var empty: GhosttyTerminalTreePresentationProjection {
-        GhosttyTerminalTreePresentationProjection(
-            topLevel: nil,
-            selectedActiveLeafID: nil,
-            windowCount: 0,
-            pendingPresentationSurfaceID: nil
-        )
-    }
-
-    let topLevel: GhosttyTerminalTreeTopLevelPresentation?
-    let selectedActiveLeafID: UUID?
-    let windowCount: Int
-    let pendingPresentationSurfaceID: UUID?
-
-    var canNavigateWindows: Bool {
-        windowCount > 1
-    }
-}
-
-enum GhosttyTmuxTopologyActionInteractionEffect: Equatable, Sendable {
-    case none
-    case refocusOnly
-    case refocusAndDismissOnQueued
-
-    var requestsInputRefocus: Bool {
-        switch self {
-        case .none:
-            false
-        case .refocusOnly, .refocusAndDismissOnQueued:
-            true
-        }
-    }
-
-    var dismissesSelectionSheetOnQueued: Bool {
-        self == .refocusAndDismissOnQueued
-    }
-}
-
-struct GhosttyWindowSheetPresentationProjection: Equatable, Sendable {
-    let previewLeafIDs: [UUID]
-    let cellCount: Int
-}
-
-struct GhosttyPaneSheetPresentationProjection: Equatable, Sendable {
-    let topLevelID: UUID
-    let previewLeafIDs: [UUID]
-    let paneCount: Int
-}
-
-struct GhosttyWindowSelectionSheetRenderProjection: Equatable, Sendable {
-    struct Window: Identifiable, Equatable, Sendable {
-        let id: UUID
-        let displayIndex: Int
-        let totalCount: Int
-        let paneCount: Int
-        let isSelected: Bool
-        let focusedPreviewPaneID: UUID?
-    }
-
-    let windows: [Window]
-    let selectedWindowID: UUID?
-    let previewLeafIDs: [UUID]
-    let cellCount: Int
-}
-
-struct GhosttyPaneSelectionSheetRenderProjection: Equatable, Sendable {
-    struct Pane: Identifiable, Equatable, Sendable {
-        let id: UUID
-        let displayIndex: Int
-        let totalCount: Int
-        let isSelected: Bool
-    }
-
-    let topLevelID: UUID
-    let panes: [Pane]
-    let selectedPaneID: UUID?
-    let previewLeafIDs: [UUID]
-    let paneCount: Int
-}
-
 @MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     enum State: Equatable {
@@ -149,41 +50,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     let surfaceRegistry: GhosttyRuntimeSurfaceRegistry
 
     var terminalInteractionProjection: GhosttyTerminalInteractionProjection {
-        let selectedTopLevel = surfaceRegistry.selectedTopLevel
-        let selectedActiveLeafID = surfaceRegistry.selectedActiveLeafID
-        let selectedPaneIndex = selectedTopLevel.flatMap { topLevel -> Int? in
-            guard let focusedLeafID = topLevel.resolvedFocusedLeafID else { return nil }
-            return topLevel.leafIDs.firstIndex(of: focusedLeafID)
-        }
-        let hasFocusedSurface = selectedActiveLeafID != nil
-
-        return GhosttyTerminalInteractionProjection(
-            isInputAvailable: state == .running && hasFocusedSurface,
-            hasFocusedSurface: hasFocusedSurface,
-            selectedActiveLeafID: selectedActiveLeafID,
-            selectedWindowIndex: surfaceRegistry.selectedTopLevelIndex,
-            windowCount: surfaceRegistry.topLevels.count,
-            selectedPaneIndex: selectedPaneIndex,
-            paneCount: selectedTopLevel?.leafIDs.count ?? 0,
-            isWaitingForPanes: state == .running && surfaceRegistry.topLevels.isEmpty
+        GhosttyTerminalPresentationProjector.terminalInteractionProjection(
+            isRunning: state == .running,
+            registry: surfaceRegistry
         )
     }
 
     var terminalTreePresentationProjection: GhosttyTerminalTreePresentationProjection {
-        let topLevel = surfaceRegistry.selectedTopLevel.map { topLevel in
-            GhosttyTerminalTreeTopLevelPresentation(
-                id: topLevel.id,
-                phonePresentedLeafIDs: topLevel.phonePresentedLeafIDs,
-                phonePresentedTree: topLevel.phonePresentedTree,
-                resolvedFocusedLeafID: topLevel.resolvedFocusedLeafID
-            )
-        }
-
-        return GhosttyTerminalTreePresentationProjection(
-            topLevel: topLevel,
-            selectedActiveLeafID: surfaceRegistry.selectedActiveLeafID,
-            windowCount: surfaceRegistry.topLevels.count,
-            pendingPresentationSurfaceID: surfaceRegistry.pendingPhonePresentationSurfaceIDForView
+        GhosttyTerminalPresentationProjector.terminalTreePresentationProjection(
+            registry: surfaceRegistry
         )
     }
 
@@ -477,119 +352,75 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     func createTmuxWindowInteractionEffect() -> GhosttyTmuxTopologyActionInteractionEffect {
-        .refocusAndDismissOnQueued
+        GhosttyTerminalPresentationProjector.createTmuxWindowInteractionEffect()
     }
 
     func splitFocusedTmuxPaneInteractionEffect() -> GhosttyTmuxTopologyActionInteractionEffect {
-        .refocusAndDismissOnQueued
+        GhosttyTerminalPresentationProjector.splitFocusedTmuxPaneInteractionEffect()
     }
 
     func closeTmuxWindowInteractionEffect(_ id: UUID) -> GhosttyTmuxTopologyActionInteractionEffect {
-        guard surfaceRegistry.topLevels.contains(where: { $0.id == id }) else {
-            return .none
-        }
-
-        return surfaceRegistry.topLevels.count <= 1 ? .refocusAndDismissOnQueued : .none
+        GhosttyTerminalPresentationProjector.closeTmuxWindowInteractionEffect(
+            id,
+            registry: surfaceRegistry
+        )
     }
 
     func closeTmuxPaneInteractionEffect(
         _ id: UUID,
         inTopLevel topLevelID: UUID
     ) -> GhosttyTmuxTopologyActionInteractionEffect {
-        guard
-            let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == topLevelID }),
-            topLevel.leafIDs.contains(id)
-        else {
-            return .none
-        }
-
-        return topLevel.leafIDs.count == 1 ? .refocusOnly : .none
+        GhosttyTerminalPresentationProjector.closeTmuxPaneInteractionEffect(
+            id,
+            inTopLevel: topLevelID,
+            registry: surfaceRegistry
+        )
     }
 
     func windowSheetPresentationProjection() -> GhosttyWindowSheetPresentationProjection? {
-        guard !surfaceRegistry.topLevels.isEmpty else { return nil }
-
-        return GhosttyWindowSheetPresentationProjection(
-            previewLeafIDs: surfaceRegistry.topLevels.compactMap(\.resolvedFocusedLeafID),
-            cellCount: windowSheetDetentCellCount()
+        GhosttyTerminalPresentationProjector.windowSheetPresentationProjection(
+            registry: surfaceRegistry
         )
     }
 
     func selectedPaneSheetPresentationProjection() -> GhosttyPaneSheetPresentationProjection? {
-        guard let topLevel = surfaceRegistry.selectedTopLevel else { return nil }
-
-        return GhosttyPaneSheetPresentationProjection(
-            topLevelID: topLevel.id,
-            previewLeafIDs: topLevel.leafIDs,
-            paneCount: topLevel.leafIDs.count
+        GhosttyTerminalPresentationProjector.selectedPaneSheetPresentationProjection(
+            registry: surfaceRegistry
         )
     }
 
     func paneSheetDetentPaneCount(topLevelID: UUID) -> Int {
-        surfaceRegistry.topLevels.first(where: { $0.id == topLevelID })?.leafIDs.count ?? 0
+        GhosttyTerminalPresentationProjector.paneSheetDetentPaneCount(
+            topLevelID: topLevelID,
+            registry: surfaceRegistry
+        )
     }
 
     func windowSheetDetentCellCount() -> Int {
-        surfaceRegistry.topLevels.count + 1
+        GhosttyTerminalPresentationProjector.windowSheetDetentCellCount(
+            registry: surfaceRegistry
+        )
     }
 
     func containsTopLevel(_ topLevelID: UUID) -> Bool {
-        surfaceRegistry.topLevels.contains(where: { $0.id == topLevelID })
+        GhosttyTerminalPresentationProjector.containsTopLevel(
+            topLevelID,
+            registry: surfaceRegistry
+        )
     }
 
     func windowSelectionSheetRenderProjection() -> GhosttyWindowSelectionSheetRenderProjection {
-        let topLevels = surfaceRegistry.topLevels
-        let selectedWindowID = surfaceRegistry.selectedTopLevel?.id
-        let totalCount = topLevels.count
-        let windows = topLevels.enumerated().map { index, topLevel in
-            GhosttyWindowSelectionSheetRenderProjection.Window(
-                id: topLevel.id,
-                displayIndex: index + 1,
-                totalCount: totalCount,
-                paneCount: topLevel.leafIDs.count,
-                isSelected: topLevel.id == selectedWindowID,
-                focusedPreviewPaneID: topLevel.resolvedFocusedLeafID
-            )
-        }
-
-        return GhosttyWindowSelectionSheetRenderProjection(
-            windows: windows,
-            selectedWindowID: selectedWindowID,
-            previewLeafIDs: windows.compactMap(\.focusedPreviewPaneID),
-            cellCount: totalCount + 1
+        GhosttyTerminalPresentationProjector.windowSelectionSheetRenderProjection(
+            registry: surfaceRegistry
         )
     }
 
     func paneSelectionSheetRenderProjection(
         topLevelID: UUID
     ) -> GhosttyPaneSelectionSheetRenderProjection {
-        guard let topLevel = surfaceRegistry.topLevels.first(where: { $0.id == topLevelID }) else {
-            return GhosttyPaneSelectionSheetRenderProjection(
-                topLevelID: topLevelID,
-                panes: [],
-                selectedPaneID: nil,
-                previewLeafIDs: [],
-                paneCount: 0
-            )
-        }
-
-        let selectedPaneID = topLevel.resolvedFocusedLeafID
-        let totalCount = topLevel.leafIDs.count
-        let panes = topLevel.leafIDs.enumerated().map { index, paneID in
-            GhosttyPaneSelectionSheetRenderProjection.Pane(
-                id: paneID,
-                displayIndex: index + 1,
-                totalCount: totalCount,
-                isSelected: paneID == selectedPaneID
-            )
-        }
-
-        return GhosttyPaneSelectionSheetRenderProjection(
+        GhosttyTerminalPresentationProjector.paneSelectionSheetRenderProjection(
             topLevelID: topLevelID,
-            panes: panes,
-            selectedPaneID: selectedPaneID,
-            previewLeafIDs: topLevel.leafIDs,
-            paneCount: totalCount
+            registry: surfaceRegistry
         )
     }
 
