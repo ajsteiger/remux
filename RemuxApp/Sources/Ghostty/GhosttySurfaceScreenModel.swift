@@ -151,7 +151,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             do {
                 outcome = try hostSession.attach(view: view, size: size)
             } catch {
-                handleTransportStartFailed(error)
+                applyTransportTransition(
+                    GhosttyTerminalTransportTransitionPlanner.transportStartFailed(error)
+                )
                 return
             }
             GhosttyRuntimeTrace.perf(
@@ -855,38 +857,28 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         case .debug(let event):
             debugStatus = event
         case .transportStarted:
-            handleTransportStarted()
+            applyTransportTransition(
+                GhosttyTerminalTransportTransitionPlanner.transportStarted()
+            )
         case .transportStartFailed(let error):
-            handleTransportStartFailed(error)
+            applyTransportTransition(
+                GhosttyTerminalTransportTransitionPlanner.transportStartFailed(error)
+            )
         case .transportCompleted(let completion):
-            handleTransportCompletion(completion)
+            applyTransportTransition(
+                GhosttyTerminalTransportTransitionPlanner.transportCompleted(
+                    completion,
+                    phase: transportPhase
+                )
+            )
         case .transportWriteFailed(let error):
-            handleTransportWriteFailure(error)
+            applyTransportTransition(
+                GhosttyTerminalTransportTransitionPlanner.transportWriteFailed(
+                    error,
+                    phase: transportPhase
+                )
+            )
         }
-    }
-
-    private func handleTransportStarted() {
-        state = .running
-        debugStatus = "transport started"
-        failureReason = nil
-        scheduleDebugLatencyProbeIfNeeded()
-        submitDebugLatencyProbeIfReady()
-        traceTerminalReadyIfNeeded()
-        reportRuntimeStateIfNeeded(source: .runtime)
-    }
-
-    private func handleTransportStartFailed(_ error: any Error) {
-        hostSession = nil
-        GhosttyRuntimeTrace.flowEnd(
-            sessionOpenFlowID,
-            event: "model.transport.failed",
-            fields: ["error": String(describing: error)]
-        )
-        let reason = GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(error)
-        state = .failed(reason.message)
-        failureReason = reason
-        debugStatus = reason.message
-        reportRuntimeStateIfNeeded(source: .runtime)
     }
 
     private var runtimeStateSnapshot: GhosttyTerminalRuntimeStateSnapshot {
@@ -912,15 +904,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         runtimeStateReporter.reportIfNeeded(
             snapshot: runtimeStateSnapshot,
             source: source
-        )
-    }
-
-    private func handleTransportWriteFailure(_ error: any Error) {
-        markTerminalTransportUnavailable(
-            reason: GhosttyTerminalDisconnectReasonClassifier.transportWriteFailure(error),
-            event: "model.transport.writeFailed",
-            error: error,
-            closeDisposition: .invalidated
         )
     }
 
@@ -1005,78 +988,109 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
     }
 
-    private func handleTransportCompletion(_ completion: GhosttyControlHostSurface.Completion) {
-        guard state == .running || state == .starting else { return }
+    private func reconcileTransportAfterForeground() {
+        let hostStatus: GhosttyTerminalTransportHostStatus
+        if let hostSession {
+            hostStatus = GhosttyTerminalTransportHostStatus(
+                isPresent: true,
+                isRunning: hostSession.isRunning,
+                lastError: hostSession.lastError
+            )
+        } else {
+            hostStatus = .missing
+        }
 
-        let classification = GhosttyTerminalDisconnectReasonClassifier.transportCompletion(completion)
-        markTerminalTransportUnavailable(
-            reason: classification.reason,
-            event: "model.transport.ended",
-            error: completion.error,
-            closeDisposition: classification.closeDisposition
+        applyTransportTransition(
+            GhosttyTerminalTransportTransitionPlanner.foreground(
+                phase: transportPhase,
+                hostStatus: hostStatus
+            )
         )
     }
 
-    private func reconcileTransportAfterForeground() {
-        guard state == .running || state == .starting else { return }
-
-        guard let hostSession else {
-            markTerminalTransportUnavailable(
-                reason: GhosttyTerminalDisconnectReasonClassifier.foregroundMissingHost(),
-                event: "model.transport.foregroundMissingHost",
-                error: nil,
-                closeDisposition: .invalidated,
-                reportSource: .foreground
-            )
-            return
+    private var transportPhase: GhosttyTerminalTransportPhase {
+        switch state {
+        case .idle:
+            .idle
+        case .starting:
+            .starting
+        case .running:
+            .running
+        case .failed:
+            .failed
         }
-
-        guard hostSession.isRunning else {
-            let reason = GhosttyTerminalDisconnectReasonClassifier.foregroundEnded(
-                lastError: hostSession.lastError
-            )
-            markTerminalTransportUnavailable(
-                reason: reason,
-                event: "model.transport.foregroundEnded",
-                error: hostSession.lastError,
-                closeDisposition: .invalidated,
-                reportSource: .foreground
-            )
-            return
-        }
-
-        debugStatus = "transport active after foreground"
     }
 
-    private func markTerminalTransportUnavailable(
-        reason: TerminalDisconnectReason,
-        event: String,
-        error: (any Error)?,
-        closeDisposition: TmuxControlTransportCloseDisposition,
-        reportSource: TerminalRuntimeStateUpdateSource = .runtime
+    private func applyTransportTransition(_ plan: GhosttyTerminalTransportTransitionPlan) {
+        switch plan {
+        case .none:
+            return
+
+        case .transportStarted:
+            state = .running
+            debugStatus = "transport started"
+            failureReason = nil
+            scheduleDebugLatencyProbeIfNeeded()
+            submitDebugLatencyProbeIfReady()
+            traceTerminalReadyIfNeeded()
+            reportRuntimeStateIfNeeded(source: .runtime)
+
+        case .transportStartFailed(let transition):
+            applyTransportStartFailedTransition(transition)
+
+        case .transportUnavailable(let transition):
+            applyTransportUnavailableTransition(transition)
+
+        case .foregroundActive(let debugStatus):
+            self.debugStatus = debugStatus
+        }
+    }
+
+    private func applyTransportStartFailedTransition(
+        _ transition: GhosttyTerminalTransportStartFailedTransition
+    ) {
+        hostSession = nil
+        GhosttyRuntimeTrace.flowEnd(
+            sessionOpenFlowID,
+            event: transition.traceEvent,
+            fields: traceFields(errorDescription: transition.traceErrorDescription)
+        )
+        state = .failed(transition.reason.message)
+        failureReason = transition.reason
+        debugStatus = transition.reason.message
+        reportRuntimeStateIfNeeded(source: .runtime)
+    }
+
+    private func applyTransportUnavailableTransition(
+        _ transition: GhosttyTerminalTransportUnavailableTransition
     ) {
         guard state != .idle else { return }
 
         var fields = ["state": "\(state)"]
-        if let error {
-            fields["error"] = String(describing: error)
+        if let traceErrorDescription = transition.traceErrorDescription {
+            fields["error"] = traceErrorDescription
         }
         GhosttyRuntimeTrace.flowEnd(
             sessionOpenFlowID,
-            event: event,
+            event: transition.traceEvent,
             fields: fields
         )
 
         let failedSession = hostSession
         hostSession = nil
-        state = .failed(reason.message)
-        failureReason = reason
-        debugStatus = reason.message
-        reportRuntimeStateIfNeeded(source: reportSource)
+        state = .failed(transition.reason.message)
+        failureReason = transition.reason
+        debugStatus = transition.reason.message
+        reportRuntimeStateIfNeeded(source: transition.reportSource)
 
         Task {
-            await failedSession?.close(disposition: closeDisposition)
+            await failedSession?.close(disposition: transition.closeDisposition)
         }
+    }
+
+    private func traceFields(errorDescription: String?) -> [String: String] {
+        guard let errorDescription else { return [:] }
+        return ["error": errorDescription]
     }
 
     private func traceTerminalReadyIfNeeded() {
