@@ -202,6 +202,27 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
     }
 
+    var materializationContext: GhosttyRuntimeSurfaceMaterializationContext {
+        GhosttyRuntimeSurfaceMaterializationContext(
+            sourceIdentity: ObjectIdentifier(self),
+            isAvailable: { [weak self] in
+                self != nil
+            },
+            allManagedSurfaces: { [weak self] in
+                self?.allManagedSurfaces() ?? []
+            },
+            managedSurface: { [weak self] id in
+                self?.managedSurface(for: id)
+            },
+            diagnosticSelectionSummary: { [weak self] in
+                self?.diagnosticSelectionSummary() ?? "runtime surface registry released"
+            },
+            recordSurfacePresentation: { [weak self] id, reason in
+                self?.recordSurfacePresentation(id, reason: reason)
+            }
+        )
+    }
+
     var selectedTopLevelIndex: Int? {
         guard let selectedTopLevelID else { return nil }
         return topLevels.firstIndex(where: { $0.id == selectedTopLevelID })

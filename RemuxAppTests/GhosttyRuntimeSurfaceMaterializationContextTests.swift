@@ -1,0 +1,55 @@
+import GhosttyKit
+import XCTest
+@testable import Remux
+
+@MainActor
+final class GhosttyRuntimeSurfaceMaterializationContextTests: XCTestCase {
+    func testRegistryContextVendsManagedSurfaceCapabilities() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface()
+        registry.registerManagedSurfaceForTesting(managed)
+
+        let context = registry.materializationContext
+
+        XCTAssertTrue(context.isAvailable)
+        XCTAssertEqual(context.allManagedSurfaces().map(\.id), [managed.id])
+        XCTAssertTrue(context.managedSurface(for: managed.id) === managed)
+        XCTAssertNil(context.managedSurface(for: UUID()))
+    }
+
+    func testRegistryContextDoesNotRetainRegistry() {
+        var registry: GhosttyRuntimeSurfaceRegistry? = GhosttyRuntimeSurfaceRegistry()
+        let weakRegistry = WeakBox(registry)
+        let context = registry!.materializationContext
+
+        registry = nil
+
+        XCTAssertNil(weakRegistry.value)
+        XCTAssertFalse(context.isAvailable)
+        XCTAssertTrue(context.allManagedSurfaces().isEmpty)
+        XCTAssertNil(context.managedSurface(for: UUID()))
+        XCTAssertEqual(context.diagnosticSelectionSummary(), "runtime surface registry released")
+        context.recordSurfacePresentation(UUID(), reason: "releasedRegistry")
+    }
+
+    private final class WeakBox<T: AnyObject> {
+        weak var value: T?
+
+        init(_ value: T?) {
+            self.value = value
+        }
+    }
+
+    private static func managedSurface(
+        handle: ghostty_surface_t = UnsafeMutableRawPointer(bitPattern: 0x1)!
+    ) -> GhosttyManagedSurface {
+        GhosttyManagedSurface(
+            id: UUID(),
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600)),
+            controlSurface: GhosttyKitControlSurface(
+                surface: handle,
+                ownership: .borrowed
+            )
+        )
+    }
+}

@@ -93,7 +93,7 @@ struct GhosttySurfaceScreen: View {
                             .allowsHitTesting(false)
 
                         GhosttyRuntimePaneTreeView(
-                            registry: registry,
+                            materializationContext: registry.materializationContext,
                             projection: model.terminalTreePresentationProjection,
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,

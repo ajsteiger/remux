@@ -6,7 +6,7 @@ private func diagnosticRect(_ rect: CGRect) -> String {
 }
 
 struct GhosttyRuntimePaneTreeView: View {
-    let registry: GhosttyRuntimeSurfaceRegistry
+    let materializationContext: GhosttyRuntimeSurfaceMaterializationContext
     let projection: GhosttyTerminalTreePresentationProjection
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
@@ -21,7 +21,7 @@ struct GhosttyRuntimePaneTreeView: View {
 
     var body: some View {
         GhosttySurfaceTreeContainerRepresentable(
-            registry: registry,
+            materializationContext: materializationContext,
             projection: projection,
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
@@ -39,7 +39,7 @@ struct GhosttyRuntimePaneTreeView: View {
 }
 
 private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
-    let registry: GhosttyRuntimeSurfaceRegistry
+    let materializationContext: GhosttyRuntimeSurfaceMaterializationContext
     let projection: GhosttyTerminalTreePresentationProjection
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
@@ -62,7 +62,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     func updateUIView(_ uiView: GhosttySurfaceTreeContainerUIView, context: Context) {
         uiView.update(
             projection: projection,
-            registry: registry,
+            materializationContext: materializationContext,
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
             onCopySelection: onCopySelection,
@@ -78,7 +78,7 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 }
 
 private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate, @preconcurrency UIEditMenuInteractionDelegate {
-    private weak var registry: GhosttyRuntimeSurfaceRegistry?
+    private var materializationContext = GhosttyRuntimeSurfaceMaterializationContext.empty
     private var projection = GhosttyTerminalTreePresentationProjection.empty
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
@@ -131,7 +131,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     func update(
         projection: GhosttyTerminalTreePresentationProjection,
-        registry: GhosttyRuntimeSurfaceRegistry,
+        materializationContext: GhosttyRuntimeSurfaceMaterializationContext,
         onSurfaceTap: ((UUID) -> Void)?,
         onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
         onCopySelection: (() -> Bool)?,
@@ -144,12 +144,12 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
     ) {
         let previousProjection = self.projection
-        let previousRegistry = self.registry
+        let previousSourceIdentity = self.materializationContext.sourceIdentity
         updatePresentationOverlay(
             pendingSurfaceID: projection.pendingPresentationSurfaceID
         )
         self.projection = projection
-        self.registry = registry
+        self.materializationContext = materializationContext
         self.onSurfaceTap = onSurfaceTap
         self.onWindowSwipe = onWindowSwipe
         self.onCopySelection = onCopySelection
@@ -161,11 +161,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         self.submitMouseScroll = submitMouseScroll
         self.submitMousePressure = submitMousePressure
         GhosttyRuntimeTrace.diagnostics(
-            "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(projection.topLevel?.id)) \(registry.diagnosticSelectionSummary())"
+            "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(projection.topLevel?.id)) \(materializationContext.diagnosticSelectionSummary())"
         )
         syncAttachedViews()
         layoutPresentationOverlay()
-        if previousProjection != projection || previousRegistry !== registry {
+        if previousProjection != projection || previousSourceIdentity != materializationContext.sourceIdentity {
             setNeedsLayout()
         }
     }
@@ -209,14 +209,15 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func syncAttachedViews() {
-        guard let registry else { return }
+        guard materializationContext.isAvailable else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        let managedSurfaces = materializationContext.allManagedSurfaces()
 
         let visibleIDs = Set(projection.topLevel?.phonePresentedLeafIDs ?? [])
         defer {
             if let perfStartedAt {
                 GhosttyRuntimeTrace.perf(
-                    "tree.sync managed=\(registry.allManagedSurfaces().count) visible=\(visibleIDs.count) containers=\(scrollContainersBySurfaceID.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
+                    "tree.sync managed=\(managedSurfaces.count) visible=\(visibleIDs.count) containers=\(scrollContainersBySurfaceID.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
                 )
             }
         }
@@ -229,7 +230,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             .sorted()
             .joined(separator: ",")
         GhosttyRuntimeTrace.diagnostics(
-            "tree.sync visible=[\(visibleSummary)] previous=[\(previousVisibleSummary)] bounds=\(diagnosticRect(bounds)) \(registry.diagnosticSelectionSummary())"
+            "tree.sync visible=[\(visibleSummary)] previous=[\(previousVisibleSummary)] bounds=\(diagnosticRect(bounds)) \(materializationContext.diagnosticSelectionSummary())"
         )
         if visibleIDs != visibleSurfaceIDs, activePanAxis == .vertical {
             resetActivePanState()
@@ -242,13 +243,13 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             resetActivePanState()
         }
         surfaceIDsByView = [:]
-        let managedIDs = Set(registry.allManagedSurfaces().map(\.id))
+        let managedIDs = Set(managedSurfaces.map(\.id))
         for (surfaceID, container) in scrollContainersBySurfaceID where !managedIDs.contains(surfaceID) {
             container.removeFromSuperview()
             scrollContainersBySurfaceID[surfaceID] = nil
         }
 
-        for surface in registry.allManagedSurfaces() {
+        for surface in managedSurfaces {
             if visibleIDs.contains(surface.id) {
                 surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
                 ensureInteractionRecognizers(for: surface.view)
@@ -280,7 +281,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func layoutVisibleTree() {
-        guard let registry, let topLevel = projection.topLevel else { return }
+        guard materializationContext.isAvailable, let topLevel = projection.topLevel else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
         let viewportTraceStartedAt = GhosttyRuntimeTrace.tmuxViewportEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
         GhosttyRuntimeTrace.tmuxViewport(
@@ -303,7 +304,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             node: topLevel.phonePresentedTree.root,
             in: bounds,
             focusedSurfaceID: focusedSurfaceID,
-            registry: registry
+            materializationContext: materializationContext
         )
     }
 
@@ -311,11 +312,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         node: GhosttySurfaceTree.Node,
         in rect: CGRect,
         focusedSurfaceID: UUID?,
-        registry: GhosttyRuntimeSurfaceRegistry
+        materializationContext: GhosttyRuntimeSurfaceMaterializationContext
     ) {
         switch node {
         case .leaf(let surfaceID):
-            guard let surface = registry.managedSurface(for: surfaceID) else { return }
+            guard let surface = materializationContext.managedSurface(for: surfaceID) else { return }
 
             let container = scrollContainer(for: surface)
             let targetFrame = rect.integral
@@ -339,7 +340,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             )
             surface.setVisible(true)
             surface.setFocused(surfaceID == focusedSurfaceID)
-            registry.recordSurfacePresentation(surfaceID, reason: "tree.layout")
+            materializationContext.recordSurfacePresentation(surfaceID, reason: "tree.layout")
             GhosttyRuntimeTrace.tmuxViewport(
                 "tree.layout applied leaf=\(ghosttyDiagnosticShortID(surfaceID)) visible=true focused=\(surfaceID == focusedSurfaceID) after=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
             )
@@ -364,8 +365,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                     height: rect.height
                 )
 
-                layout(node: left, in: leftRect, focusedSurfaceID: focusedSurfaceID, registry: registry)
-                layout(node: right, in: rightRect, focusedSurfaceID: focusedSurfaceID, registry: registry)
+                layout(node: left, in: leftRect, focusedSurfaceID: focusedSurfaceID, materializationContext: materializationContext)
+                layout(node: right, in: rightRect, focusedSurfaceID: focusedSurfaceID, materializationContext: materializationContext)
 
             case .vertical:
                 let topHeight = rect.height * ratio
@@ -382,8 +383,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                     height: rect.height - topHeight
                 )
 
-                layout(node: left, in: topRect, focusedSurfaceID: focusedSurfaceID, registry: registry)
-                layout(node: right, in: bottomRect, focusedSurfaceID: focusedSurfaceID, registry: registry)
+                layout(node: left, in: topRect, focusedSurfaceID: focusedSurfaceID, materializationContext: materializationContext)
+                layout(node: right, in: bottomRect, focusedSurfaceID: focusedSurfaceID, materializationContext: materializationContext)
             }
         }
     }
@@ -430,7 +431,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     @objc
     private func handleSelectionLongPress(_ recognizer: UILongPressGestureRecognizer) {
         guard
-            registry != nil,
+            materializationContext.isAvailable,
             let view = recognizer.view,
             let phase = GhosttySurfaceLongPressSelectionGesture.Phase(recognizer.state)
         else {
@@ -511,12 +512,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     @objc
     private func handleSurfaceTap(_ recognizer: UITapGestureRecognizer) {
-        guard
-            registry != nil,
-            let view = recognizer.view
-        else {
-            return
-        }
+        guard materializationContext.isAvailable, let view = recognizer.view else { return }
 
         guard let surfaceID = surfaceIDsByView[ObjectIdentifier(view)] else { return }
         let mouseCaptured = isMouseCaptured(surfaceID)
@@ -557,7 +553,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     @objc
     private func handleSurfacePan(_ recognizer: UIPanGestureRecognizer) {
         guard
-            let registry,
+            materializationContext.isAvailable,
             let phase = GhosttySurfacePanGesture.Phase(recognizer.state)
         else {
             return
@@ -581,7 +577,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             currentAxis: activePanAxis
         )
         GhosttyRuntimeTrace.diagnostics(
-            "tree.pan phase=\(phase) translation=\(translation.x),\(translation.y) velocity=\(recognizer.velocity(in: self).x),\(recognizer.velocity(in: self).y) axis=\(String(describing: activePanAxis)) didNavigate=\(didNavigateForActivePan) \(registry.diagnosticSelectionSummary())"
+            "tree.pan phase=\(phase) translation=\(translation.x),\(translation.y) velocity=\(recognizer.velocity(in: self).x),\(recognizer.velocity(in: self).y) axis=\(String(describing: activePanAxis)) didNavigate=\(didNavigateForActivePan) \(materializationContext.diagnosticSelectionSummary())"
         )
 
         guard let axis = activePanAxis else {
@@ -595,7 +591,6 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         case .horizontal:
             routeHorizontalNavigation(
-                registry: registry,
                 translation: translation,
                 velocity: recognizer.velocity(in: self)
             )
@@ -605,7 +600,6 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func routeHorizontalNavigation(
-        registry: GhosttyRuntimeSurfaceRegistry,
         translation: CGPoint,
         velocity: CGPoint
     ) {
@@ -635,7 +629,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             )
         }
         GhosttyRuntimeTrace.diagnostics(
-            "tree.horizontalNavigation direction=\(direction.runtimeSelectionDirection) translation=\(translation.x),\(translation.y) velocity=\(velocity.x),\(velocity.y) \(registry.diagnosticSelectionSummary())"
+            "tree.horizontalNavigation direction=\(direction.runtimeSelectionDirection) translation=\(translation.x),\(translation.y) velocity=\(velocity.x),\(velocity.y) \(materializationContext.diagnosticSelectionSummary())"
         )
         onWindowSwipe?(direction.runtimeSelectionDirection)
         if let traceStartedAt {
