@@ -207,6 +207,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             self?.hostSession?.submitHostTmuxNewWindow()
         }
     )
+    private lazy var inputSubmissionCoordinator = GhosttyTerminalInputSubmissionCoordinator(
+        surfaceRegistry: surfaceRegistry
+    )
     private lazy var runtimeStateReporter = GhosttyTerminalRuntimeStateReporter(
         workspaceID: target.workspace.id,
         sessionInstanceID: sessionInstanceID,
@@ -386,22 +389,26 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
-            debugStatus = "input dropped: no focused tmux pane"
-            GhosttyRuntimeTrace.latency(
-                "model.sendInput rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
-            )
-            return .noFocusedSurface
-        }
-        if let unavailable = terminalInputUnavailableResult(kind: "input") {
-            GhosttyRuntimeTrace.latency(
-                "model.sendInput rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
-            )
-            return unavailable
-        }
-        let result = surfaceRegistry.sendInputToFocusedSurface(text)
+        let result = inputSubmissionCoordinator.sendInputToFocusedSurface(
+            text,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "input")
+            switch result {
+            case .noFocusedSurface:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendInput rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .transportUnavailable:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendInput rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .accepted, .empty, .surfaceRejected:
+                break
+            }
         }
         GhosttyRuntimeTrace.latency(
             "model.sendInput end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
@@ -431,22 +438,26 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
-            debugStatus = "paste dropped: no focused tmux pane"
-            GhosttyRuntimeTrace.latency(
-                "model.sendPaste rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
-            )
-            return .noFocusedSurface
-        }
-        if let unavailable = terminalInputUnavailableResult(kind: "paste") {
-            GhosttyRuntimeTrace.latency(
-                "model.sendPaste rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
-            )
-            return unavailable
-        }
-        let result = surfaceRegistry.sendPasteToFocusedSurface(text)
+        let result = inputSubmissionCoordinator.sendPasteToFocusedSurface(
+            text,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "paste")
+            switch result {
+            case .noFocusedSurface:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendPaste rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .transportUnavailable:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendPaste rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .accepted, .empty, .surfaceRejected:
+                break
+            }
         }
         GhosttyRuntimeTrace.latency(
             "model.sendPaste end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
@@ -594,22 +605,26 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendKey begin event=\(event) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
-            debugStatus = "key dropped: no focused tmux pane"
-            GhosttyRuntimeTrace.latency(
-                "model.sendKey rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
-            )
-            return .noFocusedSurface
-        }
-        if let unavailable = terminalInputUnavailableResult(kind: "key") {
-            GhosttyRuntimeTrace.latency(
-                "model.sendKey rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
-            )
-            return unavailable
-        }
-        let result = surfaceRegistry.sendKeyEventToFocusedSurface(event)
+        let result = inputSubmissionCoordinator.sendKeyEventToFocusedSurface(
+            event,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "key")
+            switch result {
+            case .noFocusedSurface:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendKey rejected noFocusedPane elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .transportUnavailable:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendKey rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .accepted, .empty, .surfaceRejected:
+                break
+            }
         }
         GhosttyRuntimeTrace.latency(
             "model.sendKey end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
@@ -620,16 +635,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
-            debugStatus = "mouse button dropped: no focused tmux pane"
-            return .noFocusedSurface
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse button") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMouseButtonToFocusedSurface(event)
+        let outcome = inputSubmissionCoordinator.sendMouseButtonToFocusedSurface(
+            event,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "focused tmux pane")
         return outcome
     }
@@ -639,48 +648,31 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
-            debugStatus = "mouse position dropped: no focused tmux pane"
-            return .noFocusedSurface
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse position") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMousePositionToFocusedSurface(position, mods: mods)
+        let outcome = inputSubmissionCoordinator.sendMousePositionToFocusedSurface(
+            position,
+            mods: mods,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "focused tmux pane")
         return outcome
     }
 
     @discardableResult
     func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
-            debugStatus = "mouse scroll dropped: no focused tmux pane"
-            return .noFocusedSurface
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse scroll") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMouseScrollToFocusedSurface(event)
+        let outcome = inputSubmissionCoordinator.sendMouseScrollToFocusedSurface(
+            event,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "focused tmux pane")
         return outcome
     }
 
     @discardableResult
     func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
-            debugStatus = "mouse pressure dropped: no focused tmux pane"
-            return .noFocusedSurface
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse pressure") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMousePressureToFocusedSurface(event)
+        let outcome = inputSubmissionCoordinator.sendMousePressureToFocusedSurface(
+            event,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "focused tmux pane")
         return outcome
     }
@@ -690,16 +682,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseButtonEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
-            debugStatus = "mouse button dropped: target tmux pane missing"
-            return .missingTarget(surfaceID)
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse button") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMouseButton(to: surfaceID, event)
+        let outcome = inputSubmissionCoordinator.sendMouseButton(
+            to: surfaceID,
+            event,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "target tmux pane")
         return outcome
     }
@@ -710,16 +697,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
-            debugStatus = "mouse position dropped: target tmux pane missing"
-            return .missingTarget(surfaceID)
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse position") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMousePosition(to: surfaceID, position, mods: mods)
+        let outcome = inputSubmissionCoordinator.sendMousePosition(
+            to: surfaceID,
+            position,
+            mods: mods,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "target tmux pane")
         return outcome
     }
@@ -729,16 +712,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseScrollEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
-            debugStatus = "mouse scroll dropped: target tmux pane missing"
-            return .missingTarget(surfaceID)
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse scroll") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMouseScroll(to: surfaceID, event)
+        let outcome = inputSubmissionCoordinator.sendMouseScroll(
+            to: surfaceID,
+            event,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "target tmux pane")
         return outcome
     }
@@ -748,16 +726,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         to surfaceID: UUID,
         _ event: GhosttySurfaceMousePressureEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
-            debugStatus = "mouse pressure dropped: target tmux pane missing"
-            return .missingTarget(surfaceID)
-        }
-
-        if let unavailable = mouseInputUnavailableOutcome(kind: "mouse pressure") {
-            return unavailable
-        }
-
-        let outcome = surfaceRegistry.sendMousePressure(to: surfaceID, event)
+        let outcome = inputSubmissionCoordinator.sendMousePressure(
+            to: surfaceID,
+            event,
+            isTransportAvailable: isTerminalTransportAvailable
+        )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "target tmux pane")
         return outcome
     }
@@ -1229,20 +1202,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         commandFailureMessage = nil
     }
 
-    private func terminalInputUnavailableResult(kind: String) -> FocusedTerminalInputSubmissionResult? {
-        guard state == .running, hostSession?.isWriteAvailable == true else {
-            debugStatus = "\(kind) dropped: terminal transport unavailable"
-            return .transportUnavailable
-        }
-        return nil
-    }
-
-    private func mouseInputUnavailableOutcome(kind: String) -> GhosttyMouseInputSubmissionOutcome? {
-        guard state == .running, hostSession?.isWriteAvailable == true else {
-            debugStatus = "\(kind) dropped: terminal transport unavailable"
-            return .transportUnavailable
-        }
-        return nil
+    private var isTerminalTransportAvailable: Bool {
+        state == .running && hostSession?.isWriteAvailable == true
     }
 
     private func updateDebugStatusForTerminalInputResult(

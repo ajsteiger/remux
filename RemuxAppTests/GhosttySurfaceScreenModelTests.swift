@@ -2478,6 +2478,157 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "mouse scroll dropped: terminal transport unavailable")
     }
 
+    func testInputSubmissionCoordinatorFocusedInputHonorsFocusAndTransportBeforeRegistry() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
+        var shouldAcceptInput = true
+        var receivedInput: [String] = []
+        let managed = Self.managedSurface(sendInput: {
+            receivedInput.append($0)
+            return shouldAcceptInput
+        })
+
+        XCTAssertEqual(
+            coordinator.sendInputToFocusedSurface("echo nowhere\r", isTransportAvailable: true),
+            .noFocusedSurface
+        )
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(
+            coordinator.sendInputToFocusedSurface("echo unavailable\r", isTransportAvailable: false),
+            .transportUnavailable
+        )
+        XCTAssertEqual(receivedInput, [])
+
+        XCTAssertEqual(
+            coordinator.sendInputToFocusedSurface("", isTransportAvailable: true),
+            .empty
+        )
+        XCTAssertEqual(receivedInput, [])
+
+        XCTAssertEqual(
+            coordinator.sendInputToFocusedSurface("echo accepted\r", isTransportAvailable: true),
+            .accepted
+        )
+        XCTAssertEqual(receivedInput, ["echo accepted\r"])
+
+        shouldAcceptInput = false
+        XCTAssertEqual(
+            coordinator.sendInputToFocusedSurface("echo rejected\r", isTransportAvailable: true),
+            .surfaceRejected
+        )
+        XCTAssertEqual(receivedInput, ["echo accepted\r", "echo rejected\r"])
+    }
+
+    func testInputSubmissionCoordinatorPasteAndKeyRouteToFocusedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
+        var receivedPaste: [String] = []
+        var receivedKeys: [GhosttySurfaceKeyEvent] = []
+        let managed = Self.managedSurface(
+            sendPaste: {
+                receivedPaste.append($0)
+                return true
+            },
+            sendKeyEvent: {
+                receivedKeys.append($0)
+                return false
+            }
+        )
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(
+            coordinator.sendPasteToFocusedSurface("paste", isTransportAvailable: true),
+            .accepted
+        )
+        XCTAssertEqual(receivedPaste, ["paste"])
+
+        let event = GhosttySurfaceKeyEvent(keyCode: .tab)
+        XCTAssertEqual(
+            coordinator.sendKeyEventToFocusedSurface(event, isTransportAvailable: true),
+            .surfaceRejected
+        )
+        XCTAssertEqual(receivedKeys, [event])
+    }
+
+    func testInputSubmissionCoordinatorFocusedMouseHonorsFocusAndTransportBeforeRegistry() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
+        var shouldAcceptMouseButton = false
+        var receivedButtons: [GhosttySurfaceMouseButtonEvent] = []
+        let managed = Self.managedSurface(sendMouseButton: {
+            receivedButtons.append($0)
+            return shouldAcceptMouseButton
+        })
+        let event = GhosttySurfaceMouseButtonEvent(state: .press, button: .left)
+
+        XCTAssertEqual(
+            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: true),
+            .noFocusedSurface
+        )
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(
+            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: false),
+            .transportUnavailable
+        )
+        XCTAssertEqual(receivedButtons, [])
+
+        XCTAssertEqual(
+            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: true),
+            .surfaceRejected
+        )
+        XCTAssertEqual(receivedButtons, [event])
+
+        shouldAcceptMouseButton = true
+        XCTAssertEqual(
+            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: true),
+            .sent
+        )
+        XCTAssertEqual(receivedButtons, [event, event])
+    }
+
+    func testInputSubmissionCoordinatorTargetMouseChecksTargetBeforeTransportAndRoutesToRequestedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
+        var firstReceived: [GhosttySurfaceMouseScrollEvent] = []
+        var secondReceived: [GhosttySurfaceMouseScrollEvent] = []
+        let first = Self.managedSurface(sendMouseScroll: {
+            firstReceived.append($0)
+        })
+        let second = Self.managedSurface(sendMouseScroll: {
+            secondReceived.append($0)
+        })
+        let event = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+        let missingID = UUID()
+
+        XCTAssertEqual(
+            coordinator.sendMouseScroll(to: missingID, event, isTransportAvailable: false),
+            .missingTarget(missingID)
+        )
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(first.id)
+
+        XCTAssertEqual(
+            coordinator.sendMouseScroll(to: second.id, event, isTransportAvailable: false),
+            .transportUnavailable
+        )
+        XCTAssertEqual(firstReceived, [])
+        XCTAssertEqual(secondReceived, [])
+
+        XCTAssertEqual(
+            coordinator.sendMouseScroll(to: second.id, event, isTransportAvailable: true),
+            .sent
+        )
+        XCTAssertEqual(firstReceived, [])
+        XCTAssertEqual(secondReceived, [event])
+    }
+
     func testTmuxActionCoordinatorFocusPaneSelectsLocallyWhenRemoteFocusIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let coordinator = GhosttyTmuxActionCoordinator(
