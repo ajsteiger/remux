@@ -3,6 +3,10 @@ import Foundation
 struct GhosttyTopLevelSurface: Identifiable, Equatable {
     let id: UUID
     var tree: GhosttySurfaceTree
+
+    // Local native presentation/input focus for this materialized surface tree.
+    // Ghostty remains the source of truth for tmux server focus and validates
+    // all tmux-targeted commands.
     var focusedLeafID: UUID?
 
     init(

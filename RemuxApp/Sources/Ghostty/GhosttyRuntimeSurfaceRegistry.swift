@@ -1031,6 +1031,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_s
     ) -> ghostty_surface_t? {
+        // This callback materializes a surface that Ghostty already decided is
+        // needed. Remux owns the UIKit/Ghostty view binding; Ghostty owns tmux
+        // session, layout, and projection truth.
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(
             "registry.runtimeCreateSurface begin context=\(String(describing: request.config?.pointee.context))"
@@ -1474,6 +1477,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         parentHandle: ghostty_surface_t?,
         direction: ghostty_action_split_direction_e
     ) -> Bool {
+        // Split insertion consumes Ghostty's typed projection request for a
+        // missing native pane surface. It must not infer tmux layout from app
+        // state or transport bytes.
         guard let parentHandle, let parentID = surfaceIDsByHandle[parentHandle] else {
             return false
         }
