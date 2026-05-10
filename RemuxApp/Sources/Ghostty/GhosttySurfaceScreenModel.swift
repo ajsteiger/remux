@@ -52,13 +52,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     var terminalInteractionProjection: GhosttyTerminalInteractionProjection {
         GhosttyTerminalPresentationProjector.terminalInteractionProjection(
             isRunning: state == .running,
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
     var terminalTreePresentationProjection: GhosttyTerminalTreePresentationProjection {
         GhosttyTerminalPresentationProjector.terminalTreePresentationProjection(
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
@@ -385,7 +385,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     func closeTmuxWindowInteractionEffect(_ id: UUID) -> GhosttyTmuxTopologyActionInteractionEffect {
         GhosttyTerminalPresentationProjector.closeTmuxWindowInteractionEffect(
             id,
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
@@ -396,45 +396,45 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyTerminalPresentationProjector.closeTmuxPaneInteractionEffect(
             id,
             inTopLevel: topLevelID,
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
     func windowSheetPresentationProjection() -> GhosttyWindowSheetPresentationProjection? {
         GhosttyTerminalPresentationProjector.windowSheetPresentationProjection(
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
     func selectedPaneSheetPresentationProjection() -> GhosttyPaneSheetPresentationProjection? {
         GhosttyTerminalPresentationProjector.selectedPaneSheetPresentationProjection(
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
     func paneSheetDetentPaneCount(topLevelID: UUID) -> Int {
         GhosttyTerminalPresentationProjector.paneSheetDetentPaneCount(
             topLevelID: topLevelID,
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
     func windowSheetDetentCellCount() -> Int {
         GhosttyTerminalPresentationProjector.windowSheetDetentCellCount(
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
     func containsTopLevel(_ topLevelID: UUID) -> Bool {
         GhosttyTerminalPresentationProjector.containsTopLevel(
             topLevelID,
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
     func windowSelectionSheetRenderProjection() -> GhosttyWindowSelectionSheetRenderProjection {
         GhosttyTerminalPresentationProjector.windowSelectionSheetRenderProjection(
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 
@@ -443,7 +443,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     ) -> GhosttyPaneSelectionSheetRenderProjection {
         GhosttyTerminalPresentationProjector.paneSelectionSheetRenderProjection(
             topLevelID: topLevelID,
-            registry: surfaceRegistry
+            snapshot: surfaceRegistry.topologySnapshot
         )
     }
 

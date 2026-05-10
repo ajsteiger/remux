@@ -10,7 +10,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalInteractionProjection(
                 isRunning: false,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             GhosttyTerminalInteractionProjection(
                 isInputAvailable: false,
@@ -31,7 +31,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalInteractionProjection(
                 isRunning: true,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             GhosttyTerminalInteractionProjection(
                 isInputAvailable: false,
@@ -72,7 +72,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
 
         let projection = GhosttyTerminalPresentationProjector.terminalInteractionProjection(
             isRunning: true,
-            registry: registry
+            snapshot: registry.topologySnapshot
         )
 
         XCTAssertEqual(projection.selectedActiveLeafID, second.id)
@@ -105,19 +105,19 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalTreePresentationProjection(
-                registry: registry
+                snapshot: registry.topologySnapshot
             ).pendingPresentationSurfaceID,
             second.id
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalTreePresentationProjection(
-                registry: registry
+                snapshot: registry.topologySnapshot
             ).topLevel?.phonePresentedLeafIDs,
             [second.id]
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalTreePresentationProjection(
-                registry: registry
+                snapshot: registry.topologySnapshot
             ).topLevel?.phonePresentedTree,
             GhosttySurfaceTree(root: .leaf(second.id))
         )
@@ -137,7 +137,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.closeTmuxWindowInteractionEffect(
                 UUID(),
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             .none
         )
@@ -149,7 +149,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.closeTmuxWindowInteractionEffect(
                 singlePaneTopLevelID,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             .refocusAndDismissOnQueued
         )
@@ -157,7 +157,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
             GhosttyTerminalPresentationProjector.closeTmuxPaneInteractionEffect(
                 onlyPane.id,
                 inTopLevel: singlePaneTopLevelID,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             .refocusOnly
         )
@@ -180,7 +180,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.closeTmuxWindowInteractionEffect(
                 singlePaneTopLevelID,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             .none
         )
@@ -188,7 +188,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
             GhosttyTerminalPresentationProjector.closeTmuxPaneInteractionEffect(
                 first.id,
                 inTopLevel: multiPaneTopLevelID,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             .none
         )
@@ -216,7 +216,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.windowSheetPresentationProjection(
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             GhosttyWindowSheetPresentationProjection(
                 previewLeafIDs: [first.id, third.id],
@@ -225,7 +225,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.windowSheetDetentCellCount(
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             3
         )
@@ -257,7 +257,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.windowSelectionSheetRenderProjection(
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             GhosttyWindowSelectionSheetRenderProjection(
                 windows: [
@@ -292,7 +292,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.paneSelectionSheetRenderProjection(
                 topLevelID: topLevelID,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             GhosttyPaneSelectionSheetRenderProjection(
                 topLevelID: topLevelID,
@@ -332,7 +332,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.paneSelectionSheetRenderProjection(
                 topLevelID: topLevelID,
-                registry: registry
+                snapshot: registry.topologySnapshot
             ),
             GhosttyPaneSelectionSheetRenderProjection(
                 topLevelID: topLevelID,

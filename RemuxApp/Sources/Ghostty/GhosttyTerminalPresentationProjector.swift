@@ -103,10 +103,10 @@ struct GhosttyPaneSelectionSheetRenderProjection: Equatable, Sendable {
 enum GhosttyTerminalPresentationProjector {
     static func terminalInteractionProjection(
         isRunning: Bool,
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyTerminalInteractionProjection {
-        let selectedTopLevel = registry.selectedTopLevel
-        let selectedActiveLeafID = registry.selectedActiveLeafID
+        let selectedTopLevel = snapshot.selectedTopLevel
+        let selectedActiveLeafID = snapshot.selectedActiveLeafID
         let selectedPaneIndex = selectedTopLevel.flatMap { topLevel -> Int? in
             guard let focusedLeafID = topLevel.resolvedFocusedLeafID else { return nil }
             return topLevel.leafIDs.firstIndex(of: focusedLeafID)
@@ -117,18 +117,18 @@ enum GhosttyTerminalPresentationProjector {
             isInputAvailable: isRunning && hasFocusedSurface,
             hasFocusedSurface: hasFocusedSurface,
             selectedActiveLeafID: selectedActiveLeafID,
-            selectedWindowIndex: registry.selectedTopLevelIndex,
-            windowCount: registry.topLevels.count,
+            selectedWindowIndex: snapshot.selectedTopLevelIndex,
+            windowCount: snapshot.topLevels.count,
             selectedPaneIndex: selectedPaneIndex,
             paneCount: selectedTopLevel?.leafIDs.count ?? 0,
-            isWaitingForPanes: isRunning && registry.topLevels.isEmpty
+            isWaitingForPanes: isRunning && snapshot.topLevels.isEmpty
         )
     }
 
     static func terminalTreePresentationProjection(
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyTerminalTreePresentationProjection {
-        let topLevel = registry.selectedTopLevel.map { topLevel in
+        let topLevel = snapshot.selectedTopLevel.map { topLevel in
             GhosttyTerminalTreeTopLevelPresentation(
                 id: topLevel.id,
                 phonePresentedLeafIDs: topLevel.phonePresentedLeafIDs,
@@ -139,9 +139,9 @@ enum GhosttyTerminalPresentationProjector {
 
         return GhosttyTerminalTreePresentationProjection(
             topLevel: topLevel,
-            selectedActiveLeafID: registry.selectedActiveLeafID,
-            windowCount: registry.topLevels.count,
-            pendingPresentationSurfaceID: registry.pendingPhonePresentationSurfaceIDForView
+            selectedActiveLeafID: snapshot.selectedActiveLeafID,
+            windowCount: snapshot.topLevels.count,
+            pendingPresentationSurfaceID: snapshot.pendingPhonePresentationSurfaceID
         )
     }
 
@@ -155,22 +155,22 @@ enum GhosttyTerminalPresentationProjector {
 
     static func closeTmuxWindowInteractionEffect(
         _ id: UUID,
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyTmuxTopologyActionInteractionEffect {
-        guard registry.topLevels.contains(where: { $0.id == id }) else {
+        guard snapshot.topLevels.contains(where: { $0.id == id }) else {
             return .none
         }
 
-        return registry.topLevels.count <= 1 ? .refocusAndDismissOnQueued : .none
+        return snapshot.topLevels.count <= 1 ? .refocusAndDismissOnQueued : .none
     }
 
     static func closeTmuxPaneInteractionEffect(
         _ id: UUID,
         inTopLevel topLevelID: UUID,
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyTmuxTopologyActionInteractionEffect {
         guard
-            let topLevel = registry.topLevels.first(where: { $0.id == topLevelID }),
+            let topLevel = snapshot.topLevels.first(where: { $0.id == topLevelID }),
             topLevel.leafIDs.contains(id)
         else {
             return .none
@@ -180,20 +180,20 @@ enum GhosttyTerminalPresentationProjector {
     }
 
     static func windowSheetPresentationProjection(
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyWindowSheetPresentationProjection? {
-        guard !registry.topLevels.isEmpty else { return nil }
+        guard !snapshot.topLevels.isEmpty else { return nil }
 
         return GhosttyWindowSheetPresentationProjection(
-            previewLeafIDs: registry.topLevels.compactMap(\.resolvedFocusedLeafID),
-            cellCount: windowSheetDetentCellCount(registry: registry)
+            previewLeafIDs: snapshot.topLevels.compactMap(\.resolvedFocusedLeafID),
+            cellCount: windowSheetDetentCellCount(snapshot: snapshot)
         )
     }
 
     static func selectedPaneSheetPresentationProjection(
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyPaneSheetPresentationProjection? {
-        guard let topLevel = registry.selectedTopLevel else { return nil }
+        guard let topLevel = snapshot.selectedTopLevel else { return nil }
 
         return GhosttyPaneSheetPresentationProjection(
             topLevelID: topLevel.id,
@@ -204,27 +204,27 @@ enum GhosttyTerminalPresentationProjector {
 
     static func paneSheetDetentPaneCount(
         topLevelID: UUID,
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> Int {
-        registry.topLevels.first(where: { $0.id == topLevelID })?.leafIDs.count ?? 0
+        snapshot.topLevels.first(where: { $0.id == topLevelID })?.leafIDs.count ?? 0
     }
 
-    static func windowSheetDetentCellCount(registry: GhosttyRuntimeSurfaceRegistry) -> Int {
-        registry.topLevels.count + 1
+    static func windowSheetDetentCellCount(snapshot: GhosttyRuntimeSurfaceTopologySnapshot) -> Int {
+        snapshot.topLevels.count + 1
     }
 
     static func containsTopLevel(
         _ topLevelID: UUID,
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> Bool {
-        registry.topLevels.contains(where: { $0.id == topLevelID })
+        snapshot.topLevels.contains(where: { $0.id == topLevelID })
     }
 
     static func windowSelectionSheetRenderProjection(
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyWindowSelectionSheetRenderProjection {
-        let topLevels = registry.topLevels
-        let selectedWindowID = registry.selectedTopLevel?.id
+        let topLevels = snapshot.topLevels
+        let selectedWindowID = snapshot.selectedTopLevel?.id
         let totalCount = topLevels.count
         let windows = topLevels.enumerated().map { index, topLevel in
             GhosttyWindowSelectionSheetRenderProjection.Window(
@@ -247,9 +247,9 @@ enum GhosttyTerminalPresentationProjector {
 
     static func paneSelectionSheetRenderProjection(
         topLevelID: UUID,
-        registry: GhosttyRuntimeSurfaceRegistry
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyPaneSelectionSheetRenderProjection {
-        guard let topLevel = registry.topLevels.first(where: { $0.id == topLevelID }) else {
+        guard let topLevel = snapshot.topLevels.first(where: { $0.id == topLevelID }) else {
             return GhosttyPaneSelectionSheetRenderProjection(
                 topLevelID: topLevelID,
                 panes: [],

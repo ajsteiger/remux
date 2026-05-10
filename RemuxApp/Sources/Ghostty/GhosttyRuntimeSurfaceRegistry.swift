@@ -194,6 +194,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         pendingPhonePresentationSurfaceID
     }
 
+    var topologySnapshot: GhosttyRuntimeSurfaceTopologySnapshot {
+        GhosttyRuntimeSurfaceTopologySnapshot(
+            topLevels: topLevels,
+            selectedTopLevelID: selectedTopLevelID,
+            pendingPhonePresentationSurfaceID: pendingPhonePresentationSurfaceID
+        )
+    }
+
     var selectedTopLevelIndex: Int? {
         guard let selectedTopLevelID else { return nil }
         return topLevels.firstIndex(where: { $0.id == selectedTopLevelID })
