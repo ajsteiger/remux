@@ -111,88 +111,75 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertFalse(sequencer.enqueue(Data("send-keys -t %1 b\n".utf8)))
     }
 
-    func testTmuxProtocolTraceAccumulatorClassifiesInboundOutputAcrossChunks() {
-        var accumulator = TmuxControlProtocolTraceAccumulator()
+    func testControlByteLineTraceAccumulatorRecordsLinesAcrossChunks() {
+        var accumulator = ControlByteLineTraceAccumulator()
 
         let firstChunk = accumulator.append(
-            Data("%output %1 hello".utf8),
-            direction: .inbound,
+            Data("first line".utf8),
             previewLimit: 80
         )
         XCTAssertTrue(firstChunk.isEmpty)
-        XCTAssertEqual(accumulator.pendingByteCount, 16)
+        XCTAssertEqual(accumulator.pendingByteCount, 10)
 
         let records = accumulator.append(
-            Data(" world\n%window-pane-changed %1\n".utf8),
-            direction: .inbound,
+            Data(" continued\nsecond line\n".utf8),
             previewLimit: 80
         )
 
         XCTAssertEqual(records.count, 2)
         XCTAssertEqual(records[0].sequence, 1)
-        XCTAssertEqual(records[0].category, "%output")
-        XCTAssertEqual(records[0].target, "%1")
-        XCTAssertEqual(records[0].payloadByteCount, 11)
-        XCTAssertEqual(records[0].preview, "%output %1 hello world")
+        XCTAssertEqual(records[0].lineByteCount, 20)
+        XCTAssertEqual(records[0].preview, "first line continued")
         XCTAssertEqual(records[1].sequence, 2)
-        XCTAssertEqual(records[1].category, "%window-pane-changed")
-        XCTAssertEqual(records[1].target, "%1")
-        XCTAssertNil(records[1].payloadByteCount)
+        XCTAssertEqual(records[1].lineByteCount, 11)
+        XCTAssertEqual(records[1].preview, "second line")
         XCTAssertEqual(accumulator.pendingByteCount, 0)
     }
 
-    func testTmuxProtocolTraceAccumulatorClassifiesBinaryOutputPayload() {
-        var accumulator = TmuxControlProtocolTraceAccumulator()
+    func testControlByteLineTraceAccumulatorPreviewsBinaryBytes() {
+        var accumulator = ControlByteLineTraceAccumulator()
 
         let records = accumulator.append(
-            Data([0x25, 0x6F, 0x75, 0x74, 0x70, 0x75, 0x74, 0x20, 0x25, 0x31, 0x20, 0xE2, 0x0A]),
-            direction: .inbound,
+            Data([0x66, 0x6F, 0x6F, 0x20, 0xE2, 0x0A]),
             previewLimit: 80
         )
 
         XCTAssertEqual(records.count, 1)
-        XCTAssertEqual(records[0].category, "%output")
-        XCTAssertEqual(records[0].target, "%1")
-        XCTAssertEqual(records[0].payloadByteCount, 1)
-        XCTAssertEqual(records[0].preview, "%output %1 \\xE2")
+        XCTAssertEqual(records[0].sequence, 1)
+        XCTAssertEqual(records[0].lineByteCount, 5)
+        XCTAssertEqual(records[0].preview, "foo \\xE2")
     }
 
-    func testTmuxProtocolTraceAccumulatorNormalizesInitialControlModePrefix() {
-        var accumulator = TmuxControlProtocolTraceAccumulator()
+    func testControlByteLineTraceAccumulatorPreservesBytesWithoutProtocolNormalization() {
+        var accumulator = ControlByteLineTraceAccumulator()
         var bytes = Data([0x1B])
         bytes.append(Data("P1000p%begin 1 0\n".utf8))
 
         let records = accumulator.append(
             bytes,
-            direction: .inbound,
             previewLimit: 80
         )
 
         XCTAssertEqual(records.count, 1)
-        XCTAssertEqual(records[0].category, "%begin")
-        XCTAssertNil(records[0].target)
-        XCTAssertNil(records[0].payloadByteCount)
+        XCTAssertEqual(records[0].sequence, 1)
+        XCTAssertEqual(records[0].lineByteCount, bytes.count - 1)
         XCTAssertEqual(records[0].preview, "\\x1BP1000p%begin 1 0")
     }
 
-    func testTmuxProtocolTraceAccumulatorClassifiesOutboundCommandsAndTargets() {
-        var accumulator = TmuxControlProtocolTraceAccumulator()
+    func testControlByteLineTraceAccumulatorBoundsOversizedPendingLine() {
+        var accumulator = ControlByteLineTraceAccumulator()
+        let bytes = Data(repeating: 0x61, count: 16 * 1024 + 1)
 
         let records = accumulator.append(
-            Data("resize-pane -t %1 -x 45 -y 37\nsend-keys -H -t %1 61\n".utf8),
-            direction: .outbound,
-            previewLimit: 80
+            bytes,
+            previewLimit: 16
         )
 
-        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records[0].sequence, 1)
-        XCTAssertEqual(records[0].category, "resize-pane")
-        XCTAssertEqual(records[0].target, "%1")
-        XCTAssertNil(records[0].payloadByteCount)
-        XCTAssertEqual(records[1].sequence, 2)
-        XCTAssertEqual(records[1].category, "send-keys")
-        XCTAssertEqual(records[1].target, "%1")
-        XCTAssertNil(records[1].payloadByteCount)
+        XCTAssertEqual(records[0].lineByteCount, 16 * 1024)
+        XCTAssertEqual(records[0].preview, "aaaaaaaaaaaaaaaa")
+        XCTAssertEqual(accumulator.pendingByteCount, 0)
     }
 
     func testHostSurfaceTreatsCommandFailureBytesAsGhosttyInputOnly() async {
@@ -264,17 +251,23 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         )
     }
 
-    func testTmuxOutputPayloadExtractsContiguousPaneBytes() {
-        var data = Data("%begin 1 0 0\r\n%end 1 0 0\r\n%output %284 ".utf8)
-        data.append(0xC2)
-        data.append(Data("\r\n%output %284 ".utf8))
-        data.append(0xA7)
-        data.append(Data("\r\n".utf8))
+    func testLatencyProbeStoreDetectsMarkerInsideRawControlOutputBytes() {
+        let store = GhosttyLatencyProbeStore()
 
-        XCTAssertEqual(
-            GhosttyRuntimeTrace.tmuxOutputPayload(in: data),
-            Data(String(UnicodeScalar(0x00A7)!).utf8)
+        store.register(
+            marker: "__REMUX_LATENCY_CONTROL1234__",
+            label: "debug-input",
+            submittedAt: 200
         )
+
+        let hits = store.recordHits(
+            in: Data("%output %284 __REMUX_LATENCY_CONTROL1234__\r\n".utf8)
+        )
+
+        XCTAssertEqual(hits.count, 1)
+        XCTAssertEqual(hits.first?.marker, "__REMUX_LATENCY_CONTROL1234__")
+        XCTAssertEqual(hits.first?.label, "debug-input")
+        XCTAssertEqual(hits.first?.submittedAt, 200)
     }
 
     func testTransportResizeContractCanRecordGhosttyViewportChanges() async throws {

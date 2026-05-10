@@ -829,19 +829,18 @@ private final class SSHTmuxControlViewportTraceState: @unchecked Sendable {
     }
 }
 
-private func traceTmuxControlProtocolChunk(
+private func traceControlByteChunk(
     _ data: Data,
-    direction: TmuxControlProtocolTraceDirection,
+    direction: ControlByteTraceDirection,
     source: String,
     viewportDescription: String,
-    accumulator: inout TmuxControlProtocolTraceAccumulator
+    accumulator: inout ControlByteLineTraceAccumulator
 ) {
     guard GhosttyRuntimeTrace.tmuxViewportEnabled, !data.isEmpty else { return }
 
     let previewLimit = GhosttyRuntimeTrace.tmuxViewportFullIOEnabled ? 4096 : 220
     let records = accumulator.append(
         data,
-        direction: direction,
         previewLimit: previewLimit
     )
     GhosttyRuntimeTrace.tmuxViewport(
@@ -849,7 +848,7 @@ private func traceTmuxControlProtocolChunk(
     )
     for record in records {
         GhosttyRuntimeTrace.tmuxViewport(
-            "io.line dir=\(direction.rawValue) source=\(source) seq=\(record.sequence) category=\(record.category) target=\(record.target ?? "-") lineBytes=\(record.lineByteCount) payloadBytes=\(record.payloadByteCount.map(String.init) ?? "-") viewport=\(viewportDescription) preview=\(record.preview)"
+            "io.line dir=\(direction.rawValue) source=\(source) seq=\(record.sequence) lineBytes=\(record.lineByteCount) viewport=\(viewportDescription) preview=\(record.preview)"
         )
     }
 }
@@ -861,7 +860,7 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
     private let viewportTraceState: SSHTmuxControlViewportTraceState
     private let allocator = ByteBufferAllocator()
     private let closeLock = NIOLock()
-    private var outboundProtocolTrace = TmuxControlProtocolTraceAccumulator()
+    private var outboundByteTrace = ControlByteLineTraceAccumulator()
     private var didClose = false
 
     init(
@@ -879,12 +878,12 @@ private final class SSHTmuxControlConnection: @unchecked Sendable {
     func write(_ data: Data) async throws {
         guard !data.isEmpty else { return }
 
-        traceTmuxControlProtocolChunk(
+        traceControlByteChunk(
             data,
             direction: .outbound,
             source: "ssh.writeAndFlush",
             viewportDescription: viewportTraceState.description(),
-            accumulator: &outboundProtocolTrace
+            accumulator: &outboundByteTrace
         )
         var buffer = allocator.buffer(capacity: data.count)
         buffer.writeBytes(data)
@@ -1966,7 +1965,7 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
     private let onOutput: @Sendable (Data) -> Void
     private let onFinish: @Sendable (Error?) -> Void
     private let lock = NIOLock()
-    private var inboundProtocolTrace = TmuxControlProtocolTraceAccumulator()
+    private var inboundByteTrace = ControlByteLineTraceAccumulator()
     private var channelDataRouter = SSHTmuxControlChannelDataRouter()
     private var completionState = SSHTmuxControlChannelCompletionState()
     private var requestReplyTracker = SSHTmuxControlChannelRequestReplyTracker()
@@ -2049,12 +2048,12 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
     }
 
     private func handleStdout(_ data: Data, reportFirstOutput: Bool) {
-        traceTmuxControlProtocolChunk(
+        traceControlByteChunk(
             data,
             direction: .inbound,
             source: "ssh.channelRead",
             viewportDescription: viewportTraceState.description(),
-            accumulator: &inboundProtocolTrace
+            accumulator: &inboundByteTrace
         )
         GhosttyRuntimeTrace.latency(
             "ssh.channelRead bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"

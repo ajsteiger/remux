@@ -228,8 +228,7 @@ enum GhosttyRuntimeTrace {
         guard latencyEnabled, !data.isEmpty else { return }
 
         let now = nowNanos()
-        let payload = tmuxOutputPayload(in: data)
-        let hits = latencyProbeStore.recordHits(in: payload.isEmpty ? data : payload)
+        let hits = latencyProbeStore.recordHits(in: data)
         for hit in hits {
             latency(
                 "probe_hit label=\(hit.label) marker=\(hit.marker) hit=\(hit.hitCount) source=\(source) bytes=\(data.count) offset=\(hit.offset) delta_ms=\(elapsedMilliseconds(from: hit.submittedAt, to: now)) preview=\(preview(data, limit: 160))"
@@ -259,25 +258,6 @@ enum GhosttyRuntimeTrace {
                 return String(format: "\\x%02X", byte)
             }
             .joined()
-    }
-
-    static func tmuxOutputPayload(in data: Data) -> Data {
-        guard !data.isEmpty else { return Data() }
-
-        var payload = Data()
-        var lineStart = data.startIndex
-        while lineStart < data.endIndex {
-            let lineEnd = data[lineStart...].firstIndex(of: 0x0A) ?? data.endIndex
-            appendTmuxOutputPayload(
-                from: data[lineStart..<lineEnd],
-                to: &payload
-            )
-
-            guard lineEnd < data.endIndex else { break }
-            lineStart = data.index(after: lineEnd)
-        }
-
-        return payload
     }
 
     private static func isMinimalLatencyMessage(_ message: String) -> Bool {
@@ -314,177 +294,43 @@ enum GhosttyRuntimeTrace {
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\r", with: "\\r")
     }
-
-    private static func appendTmuxOutputPayload(
-        from rawLine: Data.SubSequence,
-        to payload: inout Data
-    ) {
-        let outputPrefix = Data("%output ".utf8)
-        guard rawLine.starts(with: outputPrefix) else { return }
-
-        var line = rawLine
-        if line.last == 0x0D {
-            line = line.dropLast()
-        }
-
-        let paneIDStart = line.index(line.startIndex, offsetBy: outputPrefix.count)
-        guard paneIDStart < line.endIndex else { return }
-        guard let paneIDEnd = line[paneIDStart...].firstIndex(of: 0x20) else { return }
-
-        let payloadStart = line.index(after: paneIDEnd)
-        guard payloadStart < line.endIndex else { return }
-        payload.append(contentsOf: line[payloadStart..<line.endIndex])
-    }
 }
 
-enum TmuxControlProtocolTraceDirection: String {
+enum ControlByteTraceDirection: String {
     case inbound = "rx"
     case outbound = "tx"
 }
 
-struct TmuxControlProtocolTraceLine: Equatable {
+struct ControlByteLineTraceLine: Equatable {
     let sequence: Int
-    let category: String
-    let target: String?
     let lineByteCount: Int
-    let payloadByteCount: Int?
     let preview: String
 
     init(
         sequence: Int,
         rawLine: Data.SubSequence,
-        direction: TmuxControlProtocolTraceDirection,
         previewLimit: Int
     ) {
         self.sequence = sequence
         self.lineByteCount = rawLine.count
         self.preview = GhosttyRuntimeTrace.preview(Data(rawLine), limit: previewLimit)
-
-        let metadata = Self.metadata(rawLine: rawLine, direction: direction)
-        self.category = metadata.category
-        self.target = metadata.target
-        self.payloadByteCount = metadata.payloadByteCount
-    }
-
-    private static func metadata(
-        rawLine: Data.SubSequence,
-        direction: TmuxControlProtocolTraceDirection
-    ) -> (category: String, target: String?, payloadByteCount: Int?) {
-        let fields = splitFields(rawLine)
-        let firstField = fields.first.flatMap(fieldString).map(normalizedCategory)
-        switch direction {
-        case .inbound:
-            return inboundMetadata(rawLine: rawLine, fields: fields, firstField: firstField)
-
-        case .outbound:
-            return outboundMetadata(fields: fields, firstField: firstField)
-        }
-    }
-
-    private static func inboundMetadata(
-        rawLine: Data.SubSequence,
-        fields: [Data.SubSequence],
-        firstField: String?
-    ) -> (category: String, target: String?, payloadByteCount: Int?) {
-        guard let firstField else { return ("empty", nil, nil) }
-
-        let target = fields.dropFirst()
-            .compactMap(fieldString)
-            .first(where: { $0.hasPrefix("%") })
-        let payloadByteCount: Int?
-        if firstField == "%output" || firstField == "%extended-output" {
-            payloadByteCount = outputPayloadByteCount(rawLine: rawLine)
-        } else {
-            payloadByteCount = nil
-        }
-
-        return (firstField, target, payloadByteCount)
-    }
-
-    private static func outboundMetadata(
-        fields: [Data.SubSequence],
-        firstField: String?
-    ) -> (category: String, target: String?, payloadByteCount: Int?) {
-        guard let firstField, !firstField.isEmpty else { return ("empty", nil, nil) }
-        return (firstField, outboundTarget(fields: fields), nil)
-    }
-
-    private static func outputPayloadByteCount(rawLine: Data.SubSequence) -> Int? {
-        var separatorCount = 0
-        var index = rawLine.startIndex
-        while index < rawLine.endIndex {
-            defer { index = rawLine.index(after: index) }
-            guard rawLine[index] == 0x20 else { continue }
-
-            separatorCount += 1
-            if separatorCount == 2 {
-                let payloadStart = rawLine.index(after: index)
-                return rawLine[payloadStart..<rawLine.endIndex].count
-            }
-        }
-
-        return nil
-    }
-
-    private static func outboundTarget(fields: [Data.SubSequence]) -> String? {
-        var shouldReadTarget = false
-        for field in fields.dropFirst() {
-            guard let fieldText = fieldString(field) else { continue }
-            if shouldReadTarget {
-                return fieldText
-            }
-
-            shouldReadTarget = fieldText == "-t" || fieldText == "-c"
-        }
-
-        return fields.dropFirst()
-            .compactMap(fieldString)
-            .first(where: { $0.hasPrefix("%") })
-    }
-
-    private static func splitFields(_ rawLine: Data.SubSequence) -> [Data.SubSequence] {
-        guard !rawLine.isEmpty else { return [] }
-
-        var fields: [Data.SubSequence] = []
-        var fieldStart = rawLine.startIndex
-        var index = rawLine.startIndex
-        while index < rawLine.endIndex {
-            if rawLine[index] == 0x20 {
-                fields.append(rawLine[fieldStart..<index])
-                fieldStart = rawLine.index(after: index)
-            }
-            index = rawLine.index(after: index)
-        }
-        fields.append(rawLine[fieldStart..<rawLine.endIndex])
-        return fields
-    }
-
-    private static func fieldString(_ field: Data.SubSequence) -> String? {
-        String(data: Data(field), encoding: .utf8)
-    }
-
-    private static func normalizedCategory(_ field: String) -> String {
-        let controlModePrefix = "\u{1B}P1000p"
-        guard field.hasPrefix(controlModePrefix) else { return field }
-
-        let strippedField = field.dropFirst(controlModePrefix.count)
-        return strippedField.isEmpty ? field : String(strippedField)
     }
 }
 
-struct TmuxControlProtocolTraceAccumulator {
+struct ControlByteLineTraceAccumulator {
+    private static let maximumBufferedByteCount = 16 * 1024
+
     private var bufferedBytes = Data()
     private var nextSequence = 1
 
     mutating func append(
         _ data: Data,
-        direction: TmuxControlProtocolTraceDirection,
         previewLimit: Int
-    ) -> [TmuxControlProtocolTraceLine] {
+    ) -> [ControlByteLineTraceLine] {
         guard !data.isEmpty else { return [] }
 
         bufferedBytes.append(data)
-        var records: [TmuxControlProtocolTraceLine] = []
+        var records: [ControlByteLineTraceLine] = []
         while let newlineIndex = bufferedBytes.firstIndex(of: 0x0A) {
             var lineBytes = bufferedBytes[..<newlineIndex]
             bufferedBytes.removeSubrange(bufferedBytes.startIndex...newlineIndex)
@@ -492,23 +338,21 @@ struct TmuxControlProtocolTraceAccumulator {
                 lineBytes = lineBytes.dropLast()
             }
             records.append(
-                TmuxControlProtocolTraceLine(
+                ControlByteLineTraceLine(
                     sequence: nextSequence,
                     rawLine: lineBytes,
-                    direction: direction,
                     previewLimit: previewLimit
                 )
             )
             nextSequence += 1
         }
 
-        if bufferedBytes.count > 16 * 1024 {
-            let lineBytes = bufferedBytes.prefix(16 * 1024)
+        if bufferedBytes.count > Self.maximumBufferedByteCount {
+            let lineBytes = bufferedBytes.prefix(Self.maximumBufferedByteCount)
             records.append(
-                TmuxControlProtocolTraceLine(
+                ControlByteLineTraceLine(
                     sequence: nextSequence,
                     rawLine: lineBytes,
-                    direction: direction,
                     previewLimit: previewLimit
                 )
             )
