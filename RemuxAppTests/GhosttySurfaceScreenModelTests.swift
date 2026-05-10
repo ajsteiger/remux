@@ -2478,6 +2478,72 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "mouse scroll dropped: terminal transport unavailable")
     }
 
+    func testTmuxActionCoordinatorFocusPaneSelectsLocallyWhenRemoteFocusIsRejected() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let coordinator = GhosttyTmuxActionCoordinator(
+            surfaceRegistry: registry,
+            submitHostNewWindow: { nil }
+        )
+        let first = Self.managedSurface()
+        var focusCallCount = 0
+        let second = Self.managedSurface(tmuxFocus: {
+            focusCallCount += 1
+            return .noTarget
+        })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(first.id)
+
+        XCTAssertEqual(coordinator.focusPane(second.id), .localSelectionOnly(.noTarget))
+        XCTAssertEqual(focusCallCount, 1)
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+    }
+
+    func testTmuxActionCoordinatorCreateWindowUsesCurrentHostSubmission() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var hostSubmission: TmuxActionSubmissionResult?
+        let coordinator = GhosttyTmuxActionCoordinator(
+            surfaceRegistry: registry,
+            submitHostNewWindow: { hostSubmission }
+        )
+
+        XCTAssertEqual(coordinator.createWindow(), .missingTarget(.host))
+
+        hostSubmission = .queued
+        XCTAssertEqual(coordinator.createWindow(), .queued)
+
+        hostSubmission = .queueFailed
+        XCTAssertEqual(coordinator.createWindow(), .rejected(.queueFailed))
+    }
+
+    func testTmuxActionCoordinatorCloseWindowRoutesThroughRequestedTopLevel() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let coordinator = GhosttyTmuxActionCoordinator(
+            surfaceRegistry: registry,
+            submitHostNewWindow: { nil }
+        )
+        var firstCloseCallCount = 0
+        var secondCloseCallCount = 0
+        let first = Self.managedSurface(tmuxCloseWindow: {
+            firstCloseCallCount += 1
+            return .queued
+        })
+        let second = Self.managedSurface(tmuxCloseWindow: {
+            secondCloseCallCount += 1
+            return .queued
+        })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        let secondTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+        registry.selectSurface(first.id)
+
+        XCTAssertEqual(coordinator.closeWindow(secondTopLevelID), .queued)
+        XCTAssertEqual(firstCloseCallCount, 0)
+        XCTAssertEqual(secondCloseCallCount, 1)
+    }
+
     func testModelFocusTmuxPaneRoutesToManagedSurface() {
         let model = Self.screenModel(
             target: Self.target(),
@@ -2551,6 +2617,23 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux focus dropped: pane missing")
     }
 
+    func testModelFocusTmuxTopLevelReportsMissingManagedPane() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let missingID = UUID()
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [],
+            tree: GhosttySurfaceTree(root: .leaf(missingID)),
+            focusedLeafID: missingID
+        )
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.last?.id)
+
+        XCTAssertEqual(model.focusTmuxTopLevel(topLevelID), .missingTarget(.pane(missingID)))
+        XCTAssertEqual(model.debugStatus, "tmux focus dropped: pane missing")
+    }
+
     func testModelFocusAdjacentTmuxTopLevelRoutesThroughTargetPane() {
         let model = Self.screenModel(
             target: Self.target(),
@@ -2574,6 +2657,27 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.focusAdjacentTmuxTopLevel(.next), .queued)
         XCTAssertEqual(focusCallCount, 1)
         XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+    }
+
+    func testModelFocusAdjacentTmuxTopLevelReportsMissingManagedPane() throws {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface()
+        let missingID = UUID()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [],
+            tree: GhosttySurfaceTree(root: .leaf(missingID)),
+            focusedLeafID: missingID
+        )
+        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.first?.id)
+        model.surfaceRegistry.selectTopLevel(firstTopLevelID)
+
+        XCTAssertEqual(model.focusAdjacentTmuxTopLevel(.next), .missingTarget(.pane(missingID)))
+        XCTAssertEqual(model.debugStatus, "tmux focus dropped: pane missing")
     }
 
     func testModelFocusAdjacentTmuxTopLevelReportsMissingAdjacentWindow() {
