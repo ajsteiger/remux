@@ -167,6 +167,10 @@ final class GhosttyKitRuntime {
     var appHandleForTesting: ghostty_app_t {
         state.app
     }
+
+    func deliverTmuxProtocolErrorForTesting(_ error: ghostty_tmux_protocol_error_s) {
+        GhosttyKitRuntimeCallbacks.tmuxProtocolError(state.app, error: error)
+    }
 #endif
 
     func makeManualHostSurface(
@@ -301,7 +305,8 @@ private final class GhosttyKitRuntimeState {
             select_surface_cb: GhosttyKitRuntimeCallbacks.selectSurfaceCallback,
             create_surface_cb: GhosttyKitRuntimeCallbacks.createSurfaceCallback,
             create_surface_tree_cb: GhosttyKitRuntimeCallbacks.createSurfaceTreeCallback,
-            tmux_command_failure_cb: GhosttyKitRuntimeCallbacks.tmuxCommandFailureCallback
+            tmux_command_failure_cb: GhosttyKitRuntimeCallbacks.tmuxCommandFailureCallback,
+            tmux_protocol_error_cb: GhosttyKitRuntimeCallbacks.tmuxProtocolErrorCallback
         )
 
         guard let app = ghostty_app_new(&runtimeConfig, config) else {
@@ -425,6 +430,12 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
     static var tmuxCommandFailureCallback: ghostty_runtime_tmux_command_failure_cb {
         { app, failure in
             GhosttyKitRuntimeCallbacks.tmuxCommandFailure(app, failure: failure)
+        }
+    }
+
+    static var tmuxProtocolErrorCallback: ghostty_runtime_tmux_protocol_error_cb {
+        { app, error in
+            GhosttyKitRuntimeCallbacks.tmuxProtocolError(app, error: error)
         }
     }
 
@@ -689,6 +700,35 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                         callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
                             app: appBox.value,
                             failure: failureBox.value
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    static func tmuxProtocolError(
+        _ app: ghostty_app_t?,
+        error: ghostty_tmux_protocol_error_s
+    ) {
+        guard let callbacks = from(app: app) else { return }
+        let appBox = UnsafeSendable(app)
+        let errorBox = UnsafeSendable(error)
+        if Thread.isMainThread {
+            GhosttyRuntimeTrace.perf("runtime.tmuxProtocolError route=main")
+            MainActor.assumeIsolated {
+                callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
+                    app: appBox.value,
+                    error: errorBox.value
+                )
+            }
+        } else {
+            GhosttyRuntimeTrace.perfMeasure("runtime.tmuxProtocolError route=sync") {
+                DispatchQueue.main.sync {
+                    MainActor.assumeIsolated {
+                        callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
+                            app: appBox.value,
+                            error: errorBox.value
                         )
                     }
                 }

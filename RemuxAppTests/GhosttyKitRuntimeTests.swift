@@ -191,6 +191,33 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         XCTAssertTrue(registry.topLevels.isEmpty)
     }
 
+    func testRuntimeTmuxProtocolErrorCallbackReachesRegistry() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        var delivered: TmuxControlProtocolError?
+        registry.onTmuxProtocolError = { error in
+            delivered = error
+        }
+
+        runtime.deliverTmuxProtocolErrorForTesting(
+            ghostty_tmux_protocol_error_s(
+                surface: nil,
+                reason: GHOSTTY_TMUX_PROTOCOL_ERROR_REASON_MALFORMED_NOTIFICATION,
+                byte_valid: false,
+                byte: 0,
+                command_valid: true,
+                command: GHOSTTY_TMUX_PROTOCOL_ERROR_COMMAND_OUTPUT
+            )
+        )
+
+        let expected = TmuxControlProtocolError(
+            reason: .malformedNotification,
+            command: .output
+        )
+        XCTAssertEqual(registry.lastTmuxProtocolError, expected)
+        XCTAssertEqual(delivered, expected)
+    }
+
     func testRuntimeCreateSurfaceTreeRejectsInvalidFocusedLeafIndexBeforeInstall() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)

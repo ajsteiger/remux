@@ -5,6 +5,56 @@ import XCTest
 
 @MainActor
 final class GhosttyControlHostSurfaceTests: XCTestCase {
+    func testTmuxProtocolErrorMapsIdleNonPercentByte() {
+        let native = ghostty_tmux_protocol_error_s(
+            surface: nil,
+            reason: GHOSTTY_TMUX_PROTOCOL_ERROR_REASON_IDLE_NON_PERCENT,
+            byte_valid: true,
+            byte: 88,
+            command_valid: false,
+            command: GHOSTTY_TMUX_PROTOCOL_ERROR_COMMAND_BEGIN
+        )
+
+        let error = TmuxControlProtocolError(native: native)
+
+        XCTAssertEqual(error.reason, .idleNonPercent)
+        XCTAssertEqual(error.byte, 88)
+        XCTAssertNil(error.command)
+    }
+
+    func testTmuxProtocolErrorMapsMalformedNotificationCommand() {
+        let native = ghostty_tmux_protocol_error_s(
+            surface: nil,
+            reason: GHOSTTY_TMUX_PROTOCOL_ERROR_REASON_MALFORMED_NOTIFICATION,
+            byte_valid: false,
+            byte: 0,
+            command_valid: true,
+            command: GHOSTTY_TMUX_PROTOCOL_ERROR_COMMAND_EXTENDED_OUTPUT
+        )
+
+        let error = TmuxControlProtocolError(native: native)
+
+        XCTAssertEqual(error.reason, .malformedNotification)
+        XCTAssertNil(error.byte)
+        XCTAssertEqual(error.command, .extendedOutput)
+    }
+
+    func testTmuxProtocolErrorValidityFlagsSuppressSentinelPayloads() {
+        let native = ghostty_tmux_protocol_error_s(
+            surface: nil,
+            reason: GHOSTTY_TMUX_PROTOCOL_ERROR_REASON_MALFORMED_NOTIFICATION,
+            byte_valid: false,
+            byte: 88,
+            command_valid: false,
+            command: GHOSTTY_TMUX_PROTOCOL_ERROR_COMMAND_EXIT
+        )
+
+        let error = TmuxControlProtocolError(native: native)
+
+        XCTAssertNil(error.byte)
+        XCTAssertNil(error.command)
+    }
+
     func testTmuxActionSubmissionResultMapsNativeCases() {
         XCTAssertEqual(
             TmuxActionSubmissionResult(native: GHOSTTY_TMUX_ACTION_SUBMISSION_QUEUED),

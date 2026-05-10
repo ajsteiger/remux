@@ -199,4 +199,9 @@ private final class TestSurfaceDelegate: GhosttyKitRuntimeSurfaceDelegate {
         app: ghostty_app_t?,
         failure: ghostty_tmux_command_failure_s
     ) {}
+
+    func runtimeTmuxProtocolError(
+        app: ghostty_app_t?,
+        error: ghostty_tmux_protocol_error_s
+    ) {}
 }

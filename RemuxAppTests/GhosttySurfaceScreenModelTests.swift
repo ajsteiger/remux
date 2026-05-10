@@ -460,6 +460,43 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.managedSurface(for: managed.id))
     }
 
+    func testRuntimeTmuxProtocolErrorRecordsDiagnosticWithoutTopologyMutation() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface()
+        var delivered: TmuxControlProtocolError?
+        registry.onTmuxProtocolError = { error in
+            delivered = error
+        }
+        registry.registerManagedSurfaceForTesting(managed)
+        let topLevelIDsBefore = registry.topLevels.map(\.id)
+
+        let error = TmuxControlProtocolError(
+            reason: .idleNonPercent,
+            byte: 88
+        )
+        registry.deliverTmuxProtocolError(error)
+
+        XCTAssertEqual(registry.lastTmuxProtocolError, error)
+        XCTAssertEqual(delivered, error)
+        XCTAssertEqual(registry.topLevels.map(\.id), topLevelIDsBefore)
+        XCTAssertEqual(registry.selectedActiveLeafID, managed.id)
+        XCTAssertNotNil(registry.managedSurface(for: managed.id))
+    }
+
+    func testRegistryResetClearsLastTmuxProtocolError() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        registry.deliverTmuxProtocolError(
+            TmuxControlProtocolError(
+                reason: .malformedNotification,
+                command: .output
+            )
+        )
+        registry.reset()
+
+        XCTAssertNil(registry.lastTmuxProtocolError)
+    }
+
     func testRuntimeSelectSurfaceFocusesManagedSurfaceForHandle() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x1001)!)
