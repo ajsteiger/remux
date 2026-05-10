@@ -230,6 +230,212 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertFalse(transportFactory.targets.contains { $0.server.id == activeServer.id })
     }
 
+    func testInFlightLibraryPrewarmDoesNotPrepareAfterActivation() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let prewarmer = SuspendingSSHConnectionPrewarmer()
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            sshConnectionPrewarmer: { target, _, _ in
+                await prewarmer.recordAndSuspend(target)
+            }
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        let didStartLibraryPrewarm = await waitUntil {
+            prewarmer.targets.map(\.workspace.id) == [workspace.id]
+        }
+        XCTAssertTrue(didStartLibraryPrewarm)
+
+        await harness.model.connect(to: workspace.id)
+        let didPrepareActivation = await waitUntil {
+            transportFactory.events.filter { event in
+                if case .prepared = event { return true }
+                return false
+            }.count == 1
+        }
+        XCTAssertTrue(didPrepareActivation)
+
+        prewarmer.resumeAll()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(transportFactory.targets.map(\.workspace.id), [workspace.id])
+        XCTAssertEqual(
+            transportFactory.events.filter { event in
+                if case .prepared = event { return true }
+                return false
+            }.count,
+            1
+        )
+    }
+
+    func testInFlightLibraryPrewarmDoesNotPrepareStaleTargetAfterServerEdit() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let prewarmer = SuspendingSSHConnectionPrewarmer()
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            sshConnectionPrewarmer: { target, _, _ in
+                await prewarmer.recordAndSuspend(target)
+            }
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        let didStartLibraryPrewarm = await waitUntil {
+            prewarmer.targets.map(\.workspace.id) == [workspace.id]
+        }
+        XCTAssertTrue(didStartLibraryPrewarm)
+
+        await harness.model.beginEditServer(serverID: server.id)
+        harness.model.updateDraft { draft in
+            draft.host = "new-build.example.test"
+            draft.password = "new-secret"
+        }
+        await harness.model.saveAndConnect()
+        XCTAssertEqual(harness.model.state, .library)
+
+        prewarmer.resumeAll()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(transportFactory.targets, [])
+    }
+
+    func testInFlightLibraryPrewarmDoesNotPrepareAfterSettingsChange() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let prewarmer = SuspendingSSHConnectionPrewarmer()
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            sshConnectionPrewarmer: { target, _, _ in
+                await prewarmer.recordAndSuspend(target)
+            }
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        let didStartLibraryPrewarm = await waitUntil {
+            prewarmer.targets.map(\.workspace.id) == [workspace.id]
+        }
+        XCTAssertTrue(didStartLibraryPrewarm)
+
+        await harness.model.updateTerminalSettings { settings in
+            settings.fontSize = TerminalSettings.defaultExplicitFontSize
+        }
+        XCTAssertEqual(harness.model.state, .library)
+
+        prewarmer.resumeAll()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(transportFactory.targets, [])
+    }
+
+    func testActivationClosesPassivePreparedTransportsForSameServer() async throws {
+        let now = Date()
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let warmedWorkspace = SavedWorkspace(
+            serverID: server.id,
+            sessionName: "warmed",
+            lastOpenedAt: now
+        )
+        let activatedWorkspace = SavedWorkspace(
+            serverID: server.id,
+            sessionName: "activated",
+            lastOpenedAt: now.addingTimeInterval(-60)
+        )
+        let prewarmer = RecordingSSHConnectionPrewarmer()
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [warmedWorkspace, activatedWorkspace],
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            sshConnectionPrewarmer: { target, _, _ in
+                prewarmer.record(target)
+            }
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        let didPrepareWarmedWorkspace = await waitUntil {
+            prewarmer.targets.map(\.workspace.id) == [warmedWorkspace.id]
+                && transportFactory.events.filter { event in
+                    if case .prepared = event { return true }
+                    return false
+                }.count == 1
+        }
+        XCTAssertTrue(didPrepareWarmedWorkspace)
+        let warmedTransportID = try XCTUnwrap(transportFactory.createdIDs.first)
+
+        await harness.model.connect(to: activatedWorkspace.id)
+
+        let didCloseWarmedAndPrepareActivated = await waitUntil {
+            transportFactory.events.contains(.closed(warmedTransportID))
+                && transportFactory.targets.map(\.workspace.id).contains(activatedWorkspace.id)
+                && transportFactory.events.filter { event in
+                    if case .prepared = event { return true }
+                    return false
+                }.count == 2
+        }
+        XCTAssertTrue(didCloseWarmedAndPrepareActivated)
+
+        let activeTarget = try XCTUnwrap(harness.model.activeSessions.first?.target)
+        XCTAssertEqual(activeTarget.workspace.id, activatedWorkspace.id)
+        let activatedTransportID = try XCTUnwrap(transportFactory.createdIDs.last)
+        let claimed = harness.model.makeTransport(for: activeTarget)
+        let claimedTransport = try XCTUnwrap(claimed as? RecordingRootTmuxControlTransport)
+        XCTAssertEqual(claimedTransport.id, activatedTransportID)
+    }
+
     func testBeginNewWorkspaceUsesExistingServerAndNextSessionName() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -959,6 +1165,38 @@ private enum RecordingRootTransportEvent: Equatable {
     case created(UUID)
     case prepared(UUID)
     case closed(UUID)
+}
+
+private final class SuspendingSSHConnectionPrewarmer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedTargets: [TmuxConnectionTarget] = []
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    var targets: [TmuxConnectionTarget] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedTargets
+    }
+
+    func recordAndSuspend(_ target: TmuxConnectionTarget) async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            recordedTargets.append(target)
+            continuations.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    func resumeAll() {
+        lock.lock()
+        let continuations = continuations
+        self.continuations.removeAll()
+        lock.unlock()
+
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
 }
 
 private final class RecordingSSHConnectionPrewarmer: @unchecked Sendable {
