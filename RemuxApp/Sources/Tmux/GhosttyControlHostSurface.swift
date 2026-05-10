@@ -646,7 +646,7 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
     typealias FailureHandler = @Sendable (_ error: any Error) async -> Void
 
     private let transport: any TmuxControlTransport
-    private let onFailure: FailureHandler?
+    private var onFailure: FailureHandler?
     private let lock = NSLock()
 
     private var pendingWrites: [Data] = []
@@ -659,6 +659,18 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
     ) {
         self.transport = transport
         self.onFailure = onFailure
+    }
+
+    func setFailureHandler(_ onFailure: FailureHandler?) {
+        withLockedState {
+            self.onFailure = onFailure
+        }
+    }
+
+    var isAcceptingWrites: Bool {
+        withLockedState {
+            !isClosed
+        }
     }
 
     @discardableResult
@@ -712,10 +724,16 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
                     "writeSequencer.send failed bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart)) error=\(String(describing: error))"
                 )
                 close()
-                await onFailure?(error)
+                await failureHandler()?(error)
                 await transport.close(disposition: .invalidated)
                 return
             }
+        }
+    }
+
+    private func failureHandler() -> FailureHandler? {
+        withLockedState {
+            onFailure
         }
     }
 
@@ -898,7 +916,7 @@ final class GhosttyControlHostSurface {
     func failOutboundWrite(_ error: any Error) {
         pumpTask?.cancel()
         pumpTask = nil
-        complete(error: error, markBackingExited: false)
+        complete(error: error, markBackingExited: false, notifyDebugEvent: false)
     }
 
     func stop() {
@@ -915,17 +933,20 @@ final class GhosttyControlHostSurface {
 
     private func complete(
         error: (any Error)?,
-        markBackingExited: Bool = true
+        markBackingExited: Bool = true,
+        notifyDebugEvent: Bool = true
     ) {
         guard !didComplete else { return }
         didComplete = true
         lastError = error
         isRunning = false
         pumpTask = nil
-        if let error {
-            onDebugEvent?("tmux transport ended: \(String(describing: error))")
-        } else {
-            onDebugEvent?("tmux transport ended after \(receivedByteCount) bytes")
+        if notifyDebugEvent {
+            if let error {
+                onDebugEvent?("tmux transport ended: \(String(describing: error))")
+            } else {
+                onDebugEvent?("tmux transport ended after \(receivedByteCount) bytes")
+            }
         }
         if markBackingExited {
             surface?.setBackingExited(true)

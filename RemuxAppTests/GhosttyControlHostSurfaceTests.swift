@@ -111,6 +111,185 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertFalse(sequencer.enqueue(Data("send-keys -t %1 b\n".utf8)))
     }
 
+    func testHostTransportBridgeWriteHandlerEnqueuesBytes() async {
+        let transport = RecordingTmuxControlTransport()
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in }
+        )
+        let command = Data("send-keys -H -t %1 61\n".utf8)
+
+        XCTAssertTrue(bridge.manualWriteHandler(command, false))
+
+        let didSend = await waitUntilAsync {
+            await transport.sentCommands() == [command]
+        }
+
+        XCTAssertTrue(didSend)
+        let sentCommands = await transport.sentCommands()
+        XCTAssertEqual(sentCommands, [command])
+    }
+
+    func testHostTransportBridgeWriteFailureInvalidatesTransportAndReportsOnce() async {
+        let transport = RecordingTmuxControlTransport(sendError: .disconnected)
+        let surface = RecordingGhosttyControlSurface()
+        var failures: [TestTransportError] = []
+        var callbackOrder: [String] = []
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in
+                callbackOrder.append("completion")
+            },
+            onWriteFailure: { error in
+                guard let error = error as? TestTransportError else { return }
+                failures.append(error)
+                callbackOrder.append("writeFailure")
+            }
+        )
+        bridge.bind(surface: surface)
+        bridge.startPump()
+
+        XCTAssertTrue(bridge.manualWriteHandler(Data("send-keys -t %1 a\n".utf8), false))
+
+        let didFail = await waitUntilAsync {
+            let closeDispositions = await transport.closeDispositions()
+            return failures == [.disconnected] && closeDispositions == [.invalidated]
+        }
+
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(callbackOrder, ["writeFailure", "completion"])
+        XCTAssertFalse(bridge.manualWriteHandler(Data("send-keys -t %1 b\n".utf8), false))
+        XCTAssertTrue(surface.backingExited.isEmpty)
+    }
+
+    func testHostTransportBridgeResizeHandlerForwardsViewport() async {
+        let transport = RecordingTmuxControlTransport()
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in }
+        )
+
+        XCTAssertTrue(
+            bridge.manualResizeHandler(
+                80,
+                24,
+                800,
+                600
+            )
+        )
+
+        let didResize = await waitUntilAsync {
+            await transport.resizeEvents() == [
+                RecordingTmuxControlTransport.ResizeEvent(
+                    columns: 80,
+                    rows: 24,
+                    width: 800,
+                    height: 600
+                ),
+            ]
+        }
+
+        XCTAssertTrue(didResize)
+    }
+
+    func testHostTransportBridgeResizeFailureInvalidatesTransport() async {
+        let transport = RecordingTmuxControlTransport(resizeError: .disconnected)
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in }
+        )
+
+        XCTAssertTrue(bridge.manualResizeHandler(80, 24, 800, 600))
+
+        let didClose = await waitUntilAsync {
+            await transport.closeDispositions() == [.invalidated]
+        }
+
+        XCTAssertTrue(didClose)
+    }
+
+    func testHostTransportBridgeStopClosesReusableAndRejectsWrites() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in }
+        )
+        bridge.bind(surface: surface)
+        bridge.startPump()
+
+        bridge.stop()
+
+        let didClose = await waitUntilAsync {
+            await transport.closeDispositions() == [.reusable]
+        }
+
+        XCTAssertTrue(didClose)
+        XCTAssertFalse(bridge.manualWriteHandler(Data("send-keys -t %1 a\n".utf8), false))
+        XCTAssertEqual(surface.backingExited, [true])
+    }
+
+    func testHostTransportBridgePumpForwardsInboundBytes() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in }
+        )
+        bridge.bind(surface: surface)
+        bridge.startPump()
+
+        let bytes = Data("%output %1 hello\r\n".utf8)
+        await transport.emit(bytes)
+
+        let didProcess = await waitUntil {
+            surface.processedOutput == [bytes]
+        }
+
+        XCTAssertTrue(didProcess)
+        XCTAssertTrue(bridge.isRunning)
+        XCTAssertNil(bridge.lastError)
+    }
+
+    func testHostTransportBridgeOutputRejectionClosesReusable() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface(rejectOutput: true)
+        var completions: [GhosttyControlHostSurface.Completion] = []
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { completion in
+                completions.append(completion)
+            },
+            onWriteFailure: { _ in }
+        )
+        bridge.bind(surface: surface)
+        bridge.startPump()
+
+        await transport.emit(Data("%bad\n".utf8))
+
+        let didComplete = await waitUntilAsync {
+            let closeDispositions = await transport.closeDispositions()
+            return closeDispositions == [.reusable] && !completions.isEmpty
+        }
+
+        XCTAssertTrue(didComplete)
+        XCTAssertFalse(bridge.isRunning)
+        XCTAssertEqual(bridge.lastError as? GhosttyControlHostSurface.Failure, .outputRejected)
+        XCTAssertEqual(surface.backingExited, [true])
+    }
+
     func testControlByteLineTraceAccumulatorRecordsLinesAcrossChunks() {
         var accumulator = ControlByteLineTraceAccumulator()
 
@@ -381,9 +560,13 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
     func testOutboundWriteFailureStopsPumpWithoutMarkingBackingExited() async {
         let transport = RecordingTmuxControlTransport()
         let surface = RecordingGhosttyControlSurface()
+        var debugEvents: [String] = []
         let host = GhosttyControlHostSurface(
             transport: transport,
-            surface: surface
+            surface: surface,
+            onDebugEvent: { event in
+                debugEvents.append(event)
+            }
         )
 
         host.start()
@@ -394,6 +577,7 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertEqual(host.lastError as? TestTransportError, .disconnected)
         XCTAssertTrue(surface.backingExited.isEmpty)
         XCTAssertTrue(surface.processedOutput.isEmpty)
+        XCTAssertTrue(debugEvents.isEmpty)
     }
 
     func testDeterministicTransportFeedsHostSurfaceThroughProductionContract() async {
@@ -466,6 +650,7 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
     private let sendDelay: Duration?
     private let sendError: TestTransportError?
+    private let resizeError: TestTransportError?
     private var commands: [Data] = []
     private var resizes: [ResizeEvent] = []
     private var recordedCloseDispositions: [TmuxControlTransportCloseDisposition] = []
@@ -477,9 +662,14 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
         let height: UInt32
     }
 
-    init(sendDelay: Duration? = nil, sendError: TestTransportError? = nil) {
+    init(
+        sendDelay: Duration? = nil,
+        sendError: TestTransportError? = nil,
+        resizeError: TestTransportError? = nil
+    ) {
         self.sendDelay = sendDelay
         self.sendError = sendError
+        self.resizeError = resizeError
         var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
         receivedBytes = AsyncThrowingStream { continuation in
             capturedContinuation = continuation
@@ -502,6 +692,9 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
     }
 
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
+        if let resizeError {
+            throw resizeError
+        }
         resizes.append(
             ResizeEvent(
                 columns: columns,

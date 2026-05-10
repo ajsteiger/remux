@@ -1458,6 +1458,37 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux transport ended: disconnected")
     }
 
+    func testModelPreservesWriteSpecificFailureWhenHostWriteFails() async throws {
+        let transport = ControlledScreenModelTmuxControlTransport(sendError: .disconnected)
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        let hostSurface = try XCTUnwrap(Self.hostControlSurface(from: model))
+        XCTAssertTrue(hostSurface.sendInput("q"))
+
+        let didFail = await waitUntil(timeout: 2) {
+            guard case .failed(let message) = model.state else { return false }
+            return message == "tmux transport write failed: disconnected"
+        }
+
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(model.debugStatus, "tmux transport write failed: disconnected")
+        XCTAssertEqual(model.failureReason?.kind, .transportIO)
+    }
+
     func testModelClassifiesSSHChannelRequestFailureAsProfileFailure() async {
         let transport = ControlledScreenModelTmuxControlTransport()
         let model = Self.screenModel(
@@ -2885,6 +2916,19 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
+    private static func hostControlSurface(from model: GhosttySurfaceScreenModel) -> GhosttyKitControlSurface? {
+        guard let value = Mirror(reflecting: model).children.first(where: { $0.label == "controlSurface" })?.value else {
+            return nil
+        }
+
+        let optionalMirror = Mirror(reflecting: value)
+        if optionalMirror.displayStyle == .optional {
+            return optionalMirror.children.first?.value as? GhosttyKitControlSurface
+        }
+
+        return value as? GhosttyKitControlSurface
+    }
+
     private static func target() -> TmuxConnectionTarget {
         let serverID = UUID()
         let server = SavedServer(
@@ -2959,9 +3003,11 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
     nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
 
     private let continuation: AsyncThrowingStream<Data, Error>.Continuation
+    private let sendError: ScreenModelTransportError?
     private var recordedCloseDispositions: [TmuxControlTransportCloseDisposition] = []
 
-    init() {
+    init(sendError: ScreenModelTransportError? = nil) {
+        self.sendError = sendError
         var capturedContinuation: AsyncThrowingStream<Data, Error>.Continuation?
         receivedBytes = AsyncThrowingStream { continuation in
             capturedContinuation = continuation
@@ -2975,6 +3021,9 @@ private actor ControlledScreenModelTmuxControlTransport: TmuxControlTransport {
 
     func send(_ data: Data) async throws {
         _ = data
+        if let sendError {
+            throw sendError
+        }
     }
 
     func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) async throws {
