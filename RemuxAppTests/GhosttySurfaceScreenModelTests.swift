@@ -483,6 +483,82 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNotNil(registry.managedSurface(for: managed.id))
     }
 
+    func testModelRoutesTmuxProtocolErrorToDebugStatusWithoutStateMutation() async {
+        let target = Self.target()
+        let sessionInstanceID = UUID()
+        let transport = ControlledScreenModelTmuxControlTransport()
+        var updates: [TerminalRuntimeStateUpdate] = []
+        let model = Self.screenModel(
+            target: target,
+            sessionInstanceID: sessionInstanceID,
+            transportFactory: { _ in transport },
+            onRuntimeStateChange: { updates.append($0) },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        let topLevelIDsBefore = model.surfaceRegistry.topLevels.map(\.id)
+        let updatesBefore = updates
+        let error = TmuxControlProtocolError(
+            reason: .malformedNotification,
+            command: .output
+        )
+
+        model.surfaceRegistry.deliverTmuxProtocolError(error)
+
+        XCTAssertEqual(model.debugStatus, "tmux protocol warning: malformed %output notification")
+        XCTAssertEqual(model.state, .running)
+        XCTAssertNil(model.failureReason)
+        XCTAssertNil(model.commandFailureMessage)
+        XCTAssertEqual(model.surfaceRegistry.lastTmuxProtocolError, error)
+        XCTAssertEqual(model.surfaceRegistry.topLevels.map(\.id), topLevelIDsBefore)
+        XCTAssertEqual(updates, updatesBefore)
+    }
+
+    func testModelProtocolErrorWhileFailedPreservesFailureDebugStatus() {
+        enum RuntimeFailure: Error {
+            case expected
+        }
+
+        var updates: [TerminalRuntimeStateUpdate] = []
+        let model = Self.screenModel(
+            target: Self.target(),
+            onRuntimeStateChange: { updates.append($0) },
+            runtimeFactory: { _ in throw RuntimeFailure.expected },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let failedDebugStatus = String(describing: RuntimeFailure.expected)
+        XCTAssertEqual(model.state, .failed(failedDebugStatus))
+        XCTAssertEqual(model.debugStatus, failedDebugStatus)
+        let updatesBefore = updates
+
+        let error = TmuxControlProtocolError(
+            reason: .idleNonPercent,
+            byte: 88
+        )
+        model.surfaceRegistry.deliverTmuxProtocolError(error)
+
+        XCTAssertEqual(model.surfaceRegistry.lastTmuxProtocolError, error)
+        XCTAssertEqual(model.state, .failed(failedDebugStatus))
+        XCTAssertEqual(model.debugStatus, failedDebugStatus)
+        XCTAssertEqual(updates, updatesBefore)
+    }
+
     func testRegistryResetClearsLastTmuxProtocolError() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 

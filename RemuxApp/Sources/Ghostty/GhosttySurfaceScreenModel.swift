@@ -142,6 +142,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         surfaceRegistry.onTmuxCommandFailure = { [weak self] failure in
             self?.handleTmuxCommandFailure(failure)
         }
+        surfaceRegistry.onTmuxProtocolError = { [weak self] error in
+            self?.handleTmuxProtocolError(error)
+        }
         if precreateRuntime {
             runtimePrecreationController.precreateIfNeeded(
                 delegate: surfaceRegistry,
@@ -946,6 +949,26 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 "reason": presentation.traceReason,
             ]
         )
+    }
+
+    private func handleTmuxProtocolError(_ error: TmuxControlProtocolError) {
+        let presentation = GhosttyTmuxProtocolErrorPresenter.present(error)
+
+        GhosttyRuntimeTrace.diagnostics(
+            "model.tmuxProtocolError reason=\(presentation.traceFields["reason"] ?? "unknown") byte=\(presentation.traceFields["byte"] ?? "none") command=\(presentation.traceFields["command"] ?? "none")"
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            sessionOpenFlowID,
+            event: "tmux.protocolError",
+            fields: presentation.traceFields
+        )
+
+        switch state {
+        case .starting, .running:
+            debugStatus = presentation.debugMessage
+        case .idle, .failed:
+            break
+        }
     }
 
     private func presentCommandFailureMessage(_ presentation: GhosttyTmuxCommandFailurePresentation) {
