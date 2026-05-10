@@ -239,9 +239,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         clearCommandFailureMessage()
         debugLatencyProbeController.cancel()
         runtimePrecreationController.clear()
-        hostSessionSlot.stopCurrent()
-        surfaceRegistry.prepareForRuntimeTeardown()
-        surfaceRegistry.reset()
+        hostSessionSlot.stopCurrent(retainingStoppedSessionFor: {
+            tearDownRuntimeSurfacesBeforeRuntimeRelease()
+        })
         state = .idle
         debugStatus = "stopped"
         failureReason = nil
@@ -1078,7 +1078,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private func applyTransportStartFailedTransition(
         _ transition: GhosttyTerminalTransportStartFailedTransition
     ) {
-        let failedSession = hostSessionSlot.takeCurrent()
         GhosttyRuntimeTrace.flowEnd(
             sessionOpenFlowID,
             event: transition.traceEvent,
@@ -1088,6 +1087,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         failureReason = transition.reason
         debugStatus = transition.reason.message
         reportRuntimeStateIfNeeded(source: .runtime)
+        let failedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
+            tearDownRuntimeSurfacesBeforeRuntimeRelease()
+        })
 
         Task {
             await failedSession?.close(disposition: transition.closeDisposition)
@@ -1109,15 +1111,24 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             fields: fields
         )
 
-        let failedSession = hostSessionSlot.takeCurrent()
         state = .failed(transition.reason.message)
         failureReason = transition.reason
         debugStatus = transition.reason.message
         reportRuntimeStateIfNeeded(source: transition.reportSource)
+        let failedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
+            tearDownRuntimeSurfacesBeforeRuntimeRelease()
+        })
 
         Task {
             await failedSession?.close(disposition: transition.closeDisposition)
         }
+    }
+
+    private func tearDownRuntimeSurfacesBeforeRuntimeRelease() {
+        // Runtime-managed ghostty_surface_t handles must be released before
+        // the owning GhosttyKitRuntime/ghostty_app_t is allowed to deinit.
+        surfaceRegistry.prepareForRuntimeTeardown()
+        surfaceRegistry.reset()
     }
 
     private func traceFields(errorDescription: String?) -> [String: String] {

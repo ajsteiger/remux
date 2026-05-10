@@ -319,6 +319,42 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(updates.map(\.state), [.connecting, .connected])
     }
 
+    func testModelStopReleasesRuntimeSurfacesBeforeRegistryReset() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+        let managedID = UUID()
+        var releaseCount = 0
+        var releaseSawSurfaceStillRegistered = false
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(Self.managedSurface(
+            id: managedID,
+            releaseBeforePermanentRemoval: {
+                releaseCount += 1
+                releaseSawSurfaceStillRegistered = model.surfaceRegistry.managedSurface(for: managedID) != nil
+            }
+        ))
+
+        model.stop()
+
+        XCTAssertEqual(releaseCount, 1)
+        XCTAssertTrue(releaseSawSurfaceStillRegistered)
+        XCTAssertTrue(model.surfaceRegistry.allManagedSurfaces().isEmpty)
+        XCTAssertTrue(model.surfaceRegistry.topLevels.isEmpty)
+    }
+
     func testModelReportsRuntimeFailureAndForegroundDisconnectedOnce() {
         enum RuntimeFailure: Error {
             case expected
@@ -1569,6 +1605,49 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(closeCount, 1)
         XCTAssertEqual(closeDispositions, [.invalidated])
         XCTAssertEqual(model.debugStatus, "tmux transport ended: disconnected")
+    }
+
+    func testModelTransportUnavailableReleasesRuntimeSurfacesBeforeRegistryReset() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+        let managedID = UUID()
+        var releaseCount = 0
+        var releaseSawSurfaceStillRegistered = false
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(Self.managedSurface(
+            id: managedID,
+            releaseBeforePermanentRemoval: {
+                releaseCount += 1
+                releaseSawSurfaceStillRegistered = model.surfaceRegistry.managedSurface(for: managedID) != nil
+            }
+        ))
+
+        await transport.fail(ScreenModelTransportError.disconnected)
+
+        let didFail = await waitUntil(timeout: 2) {
+            guard case .failed(let message) = model.state else { return false }
+            return message.contains("tmux transport ended")
+        }
+
+        XCTAssertTrue(didFail)
+        XCTAssertEqual(releaseCount, 1)
+        XCTAssertTrue(releaseSawSurfaceStillRegistered)
+        XCTAssertTrue(model.surfaceRegistry.allManagedSurfaces().isEmpty)
+        XCTAssertTrue(model.surfaceRegistry.topLevels.isEmpty)
     }
 
     func testModelInvalidatesTransportWhenStartFails() async {
@@ -3513,6 +3592,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     private static func managedSurface(
         handle: ghostty_surface_t = UnsafeMutableRawPointer(bitPattern: 0x1)!,
+        id: UUID = UUID(),
         manualUserdata: UnsafeMutableRawPointer? = nil,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendPaste: (@MainActor (String) -> Bool)? = nil,
@@ -3529,10 +3609,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
-        tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil
+        tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
-            id: UUID(),
+            id: id,
             view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600)),
             controlSurface: GhosttyKitControlSurface(
                 surface: handle,
@@ -3554,7 +3635,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tmuxFocus: tmuxFocus ?? { .noTarget },
             tmuxSplit: tmuxSplit ?? { _ in .noTarget },
             tmuxClosePane: tmuxClosePane ?? { .noTarget },
-            tmuxCloseWindow: tmuxCloseWindow ?? { .noTarget }
+            tmuxCloseWindow: tmuxCloseWindow ?? { .noTarget },
+            releaseBeforePermanentRemoval: releaseBeforePermanentRemoval
         )
     }
 }

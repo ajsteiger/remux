@@ -1769,6 +1769,7 @@ final class GhosttyManagedSurface {
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)?
     private let tmuxClosePaneHandler: (@MainActor () -> TmuxActionSubmissionResult)?
     private let tmuxCloseWindowHandler: (@MainActor () -> TmuxActionSubmissionResult)?
+    private let releaseBeforePermanentRemovalHandler: (@MainActor () -> Void)?
     private var displayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
@@ -1793,7 +1794,8 @@ final class GhosttyManagedSurface {
         tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
-        tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil
+        tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil
     ) {
         self.id = id
         self.view = view
@@ -1817,6 +1819,7 @@ final class GhosttyManagedSurface {
         self.tmuxSplitHandler = tmuxSplit
         self.tmuxClosePaneHandler = tmuxClosePane
         self.tmuxCloseWindowHandler = tmuxCloseWindow
+        self.releaseBeforePermanentRemovalHandler = releaseBeforePermanentRemoval
     }
 
     @MainActor
@@ -1850,6 +1853,10 @@ final class GhosttyManagedSurface {
 
     @MainActor
     func releaseBeforePermanentRemoval() {
+        if let releaseBeforePermanentRemovalHandler {
+            releaseBeforePermanentRemovalHandler()
+            return
+        }
         controlSurface.releaseRuntimeManagedSurface()
     }
 

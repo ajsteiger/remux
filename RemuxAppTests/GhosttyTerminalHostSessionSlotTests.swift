@@ -86,6 +86,36 @@ final class GhosttyTerminalHostSessionSlotTests: XCTestCase {
         XCTAssertFalse(slot.foregroundStatus().isPresent)
     }
 
+    func testStopCurrentRetainsStoppedSessionDuringTeardown() throws {
+        let slot = GhosttyTerminalHostSessionSlot()
+        let current = try Self.makeSession()
+        var teardownSawCurrentSession = false
+
+        slot.install(current)
+        slot.stopCurrent(retainingStoppedSessionFor: {
+            teardownSawCurrentSession = slot.isCurrent(current)
+        })
+
+        XCTAssertTrue(teardownSawCurrentSession)
+        XCTAssertFalse(slot.isCurrent(current))
+        XCTAssertFalse(slot.foregroundStatus().isPresent)
+    }
+
+    func testTakeCurrentRetainsSessionDuringTeardown() throws {
+        let slot = GhosttyTerminalHostSessionSlot()
+        let current = try Self.makeSession()
+        var teardownSawCurrentSession = false
+
+        slot.install(current)
+        let taken = slot.takeCurrent(retainingSessionFor: {
+            teardownSawCurrentSession = slot.isCurrent(current)
+        })
+
+        XCTAssertTrue(taken === current)
+        XCTAssertTrue(teardownSawCurrentSession)
+        XCTAssertFalse(slot.isCurrent(current))
+    }
+
     func testSubmitHostTmuxNewWindowReturnsNilWithoutAttachedControlSurface() throws {
         let slot = GhosttyTerminalHostSessionSlot()
         slot.install(try Self.makeSession())
