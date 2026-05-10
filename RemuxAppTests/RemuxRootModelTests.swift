@@ -698,6 +698,7 @@ final class RemuxRootModelTests: XCTestCase {
             workspaces: workspaces
         )
         let settingsRepository = TestTerminalSettingsRepository(settings: settings)
+        let shortcutRepository = FileBackedShortcutRepository(rootURL: temporaryRoot())
         let passwordStore = TestPasswordStore()
         let trustedHostStore = TrustedHostStore(rootURL: temporaryRoot())
         let resolvedTransportFactory = transportFactory ?? { _, _, _ in
@@ -707,6 +708,7 @@ final class RemuxRootModelTests: XCTestCase {
         let dependencies = RemuxAppDependencies(
             profileRepository: profileRepository,
             settingsRepository: settingsRepository,
+            shortcutRepository: shortcutRepository,
             passwordStore: passwordStore,
             trustedHostStore: trustedHostStore,
             transportFactory: resolvedTransportFactory,

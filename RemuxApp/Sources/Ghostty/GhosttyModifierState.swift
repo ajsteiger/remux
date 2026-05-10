@@ -18,6 +18,10 @@ struct GhosttyModifierState: Equatable {
         controlArmed.toggle()
     }
 
+    mutating func clearControl() {
+        controlArmed = false
+    }
+
     mutating func apply(to text: String) -> String {
         guard controlArmed else { return text }
         defer { controlArmed = false }
