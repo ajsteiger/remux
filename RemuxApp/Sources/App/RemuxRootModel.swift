@@ -92,7 +92,7 @@ final class RemuxRootModel: ObservableObject {
     @Published private(set) var activeSessions: [ActiveTerminalSession] = []
 
     private let dependencies: RemuxAppDependencies
-    private var preparedTransports: [SavedWorkspace.ID: PreparedTmuxControlTransport] = [:]
+    private var preparedTransportCache = RemuxPreparedTransportCache()
     private var libraryPrewarmTask: Task<Void, Never>?
     private var libraryPrewarmGeneration: UInt64 = 0
 
@@ -102,7 +102,7 @@ final class RemuxRootModel: ObservableObject {
 
     deinit {
         libraryPrewarmTask?.cancel()
-        for preparedTransport in preparedTransports.values {
+        for preparedTransport in preparedTransportCache.drain() {
             Task { await preparedTransport.transport.close(disposition: .reusable) }
         }
     }
@@ -570,29 +570,61 @@ final class RemuxRootModel: ObservableObject {
     }
 
     func makeTransport(for target: TmuxConnectionTarget) -> any TmuxControlTransport {
-        if let prepared = preparedTransports.removeValue(forKey: target.workspace.id) {
-            guard prepared.target.canReusePreparedTransport(for: target) else {
-                Task { await prepared.transport.close(disposition: .reusable) }
-                GhosttyRuntimeTrace.flowEvent(
-                    sessionOpenFlowID(target.workspace.id),
-                    event: "model.transport.prewarm.discarded",
-                    fields: [
-                        "workspaceID": target.workspace.id.uuidString,
-                        "reason": "target_changed",
-                    ]
-                )
-                return dependencies.makeTransport(for: target)
-            }
-
+        switch preparedTransportCache.claim(for: target) {
+        case .claimed(let prepared):
             GhosttyRuntimeTrace.flowEvent(
                 sessionOpenFlowID(target.workspace.id),
                 event: "model.transport.prewarm.claimed",
                 fields: ["workspaceID": target.workspace.id.uuidString]
             )
             return prepared.transport
-        }
 
-        return dependencies.makeTransport(for: target)
+        case .discardedStale(let prepared):
+            closePreparedTransport(prepared)
+            GhosttyRuntimeTrace.flowEvent(
+                sessionOpenFlowID(target.workspace.id),
+                event: "model.transport.prewarm.discarded",
+                fields: [
+                    "workspaceID": target.workspace.id.uuidString,
+                    "reason": "target_changed",
+                ]
+            )
+            return dependencies.makeTransport(for: target)
+
+        case .missing:
+            return dependencies.makeTransport(for: target)
+        }
+    }
+
+    private func closePreparedTransport(_ prepared: PreparedTmuxControlTransport) {
+        Task { await prepared.transport.close(disposition: .reusable) }
+    }
+
+    private func closePreparedTransports(_ preparedTransports: [PreparedTmuxControlTransport]) {
+        for prepared in preparedTransports {
+            closePreparedTransport(prepared)
+        }
+    }
+
+    private func closePreparedTransport(for workspaceID: SavedWorkspace.ID) {
+        guard let prepared = preparedTransportCache.remove(workspaceID: workspaceID) else { return }
+        closePreparedTransport(prepared)
+    }
+
+    private func closePreparedTransports(forServerID serverID: SavedServer.ID) {
+        closePreparedTransports(forServerID: serverID, excludingWorkspaceID: nil)
+    }
+
+    private func closePreparedTransports(
+        forServerID serverID: SavedServer.ID,
+        excludingWorkspaceID: SavedWorkspace.ID?
+    ) {
+        closePreparedTransports(
+            preparedTransportCache.remove(
+                serverID: serverID,
+                excludingWorkspaceID: excludingWorkspaceID
+            )
+        )
     }
 
     private func activate(
@@ -758,8 +790,7 @@ final class RemuxRootModel: ObservableObject {
     ) {
         guard target.server.transportKind == .ssh else { return }
 
-        if let existing = preparedTransports[target.workspace.id],
-           existing.target.canReusePreparedTransport(for: target) {
+        if preparedTransportCache.containsReusableTransport(for: target) {
             GhosttyRuntimeTrace.flowEvent(
                 sessionOpenFlowID(target.workspace.id),
                 event: "model.transport.prewarm.reused",
@@ -772,10 +803,11 @@ final class RemuxRootModel: ObservableObject {
         }
 
         let transport = dependencies.makeTransport(for: target)
-        replacePreparedTransport(
-            PreparedTmuxControlTransport(target: target, transport: transport),
-            for: target.workspace.id
-        )
+        if let existing = preparedTransportCache.store(
+            PreparedTmuxControlTransport(target: target, transport: transport)
+        ) {
+            closePreparedTransport(existing)
+        }
 
         GhosttyRuntimeTrace.flowEvent(
             sessionOpenFlowID(target.workspace.id),
@@ -946,44 +978,6 @@ final class RemuxRootModel: ObservableObject {
         return candidates
     }
 
-    private func replacePreparedTransport(
-        _ preparedTransport: PreparedTmuxControlTransport,
-        for workspaceID: SavedWorkspace.ID
-    ) {
-        if let existing = preparedTransports.updateValue(preparedTransport, forKey: workspaceID) {
-            Task { await existing.transport.close(disposition: .reusable) }
-        }
-    }
-
-    private func closePreparedTransport(for workspaceID: SavedWorkspace.ID) {
-        guard let prepared = preparedTransports.removeValue(forKey: workspaceID) else { return }
-        Task { await prepared.transport.close(disposition: .reusable) }
-    }
-
-    private func closePreparedTransports(forServerID serverID: SavedServer.ID) {
-        closePreparedTransports(forServerID: serverID, excludingWorkspaceID: nil)
-    }
-
-    private func closePreparedTransports(
-        forServerID serverID: SavedServer.ID,
-        excludingWorkspaceID: SavedWorkspace.ID?
-    ) {
-        let closing = preparedTransports.filter { _, prepared in
-            guard prepared.target.server.id == serverID else { return false }
-            if let excludingWorkspaceID,
-               prepared.target.workspace.id == excludingWorkspaceID {
-                return false
-            }
-            return true
-        }
-        for workspaceID in closing.keys {
-            preparedTransports.removeValue(forKey: workspaceID)
-        }
-        for prepared in closing.values {
-            Task { await prepared.transport.close(disposition: .reusable) }
-        }
-    }
-
     private func defaultSessionName(for serverID: SavedServer.ID) -> String {
         let workspaces = library.workspaces(for: serverID)
         guard !workspaces.isEmpty else { return "base" }
@@ -1022,23 +1016,7 @@ final class RemuxRootModel: ObservableObject {
     }
 }
 
-private struct PreparedTmuxControlTransport {
-    let target: TmuxConnectionTarget
-    let transport: any TmuxControlTransport
-}
-
 private struct LibrarySSHPrewarmCandidate: Sendable {
     let server: SavedServer
     let workspace: SavedWorkspace
-}
-
-private extension TmuxConnectionTarget {
-    func canReusePreparedTransport(for target: TmuxConnectionTarget) -> Bool {
-        server == target.server &&
-            workspace.id == target.workspace.id &&
-            workspace.serverID == target.workspace.serverID &&
-            workspace.sessionName == target.workspace.sessionName &&
-            password == target.password &&
-            terminalSettings == target.terminalSettings
-    }
 }
