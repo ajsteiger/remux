@@ -208,7 +208,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 event: "model.attach.failed",
                 fields: ["error": String(describing: error)]
             )
-            let reason = terminalRuntimeFailureReason(error)
+            let reason = GhosttyTerminalDisconnectReasonClassifier.runtimeFailure(error)
             state = .failed(reason.message)
             failureReason = reason
             debugStatus = reason.message
@@ -874,7 +874,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             event: "model.transport.failed",
             fields: ["error": String(describing: error)]
         )
-        let reason = terminalTransportStartFailureReason(error)
+        let reason = GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(error)
         state = .failed(reason.message)
         failureReason = reason
         debugStatus = reason.message
@@ -907,61 +907,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
     }
 
-    private func terminalRuntimeFailureReason(_ error: any Error) -> TerminalDisconnectReason {
-        TerminalDisconnectReason(
-            kind: .runtime,
-            message: String(describing: error)
-        )
-    }
-
-    private func terminalTransportStartFailureReason(_ error: any Error) -> TerminalDisconnectReason {
-        let message = String(describing: error)
-
-        if let transportAvailability = error as? TmuxTransportAvailabilityError {
-            switch transportAvailability {
-            case .unsupportedTransport:
-                return TerminalDisconnectReason(kind: .unsupportedTransport, message: message)
-            }
-        }
-
-        if let trustedHostError = error as? TrustedHostStoreError {
-            switch trustedHostError {
-            case .hostKeyChanged, .invalidHostKey:
-                return TerminalDisconnectReason(kind: .hostKey, message: message)
-            }
-        }
-
-        if let sshError = error as? SSHTmuxControlTransportError {
-            switch sshError {
-            case .remoteExit:
-                return TerminalDisconnectReason(kind: .remoteExit, message: message)
-            case .channelRequestFailed:
-                return TerminalDisconnectReason(kind: .profile, message: message)
-            case .closed:
-                return TerminalDisconnectReason(kind: .transportIO, message: message)
-            case .stalePreparedConnection:
-                return TerminalDisconnectReason(kind: .transportIO, message: message)
-            case .alreadyStarted, .unsupportedInboundChannel:
-                return TerminalDisconnectReason(kind: .profile, message: message)
-            }
-        }
-
-        let lowercasedMessage = message.lowercased()
-        if lowercasedMessage.contains("auth") ||
-            lowercasedMessage.contains("password") ||
-            lowercasedMessage.contains("permission denied") {
-            return TerminalDisconnectReason(kind: .authentication, message: message)
-        }
-
-        return TerminalDisconnectReason(kind: .unknown, message: message)
-    }
-
     private func handleTransportWriteFailure(_ error: any Error) {
         markTerminalTransportUnavailable(
-            reason: TerminalDisconnectReason(
-                kind: .transportIO,
-                message: "tmux transport write failed: \(String(describing: error))"
-            ),
+            reason: GhosttyTerminalDisconnectReasonClassifier.transportWriteFailure(error),
             event: "model.transport.writeFailed",
             error: error,
             closeDisposition: .invalidated
@@ -1052,34 +1000,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private func handleTransportCompletion(_ completion: GhosttyControlHostSurface.Completion) {
         guard state == .running || state == .starting else { return }
 
-        let reason: TerminalDisconnectReason
-        let closeDisposition: TmuxControlTransportCloseDisposition
-        if let error = completion.error {
-            let message = "tmux transport ended: \(String(describing: error))"
-            if let hostFailure = error as? GhosttyControlHostSurface.Failure,
-               hostFailure == .outputRejected {
-                reason = TerminalDisconnectReason(kind: .runtime, message: message)
-                closeDisposition = .reusable
-            } else if let sshError = error as? SSHTmuxControlTransportError,
-                      case .channelRequestFailed = sshError {
-                reason = TerminalDisconnectReason(kind: .profile, message: message)
-                closeDisposition = .invalidated
-            } else {
-                reason = TerminalDisconnectReason(kind: .transportIO, message: message)
-                closeDisposition = .invalidated
-            }
-        } else {
-            reason = TerminalDisconnectReason(
-                kind: .transportIO,
-                message: "tmux transport disconnected after \(completion.receivedByteCount) bytes"
-            )
-            closeDisposition = .invalidated
-        }
+        let classification = GhosttyTerminalDisconnectReasonClassifier.transportCompletion(completion)
         markTerminalTransportUnavailable(
-            reason: reason,
+            reason: classification.reason,
             event: "model.transport.ended",
             error: completion.error,
-            closeDisposition: closeDisposition
+            closeDisposition: classification.closeDisposition
         )
     }
 
@@ -1088,10 +1014,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
         guard let hostSession else {
             markTerminalTransportUnavailable(
-                reason: TerminalDisconnectReason(
-                    kind: .transportIO,
-                    message: "tmux transport unavailable after foreground"
-                ),
+                reason: GhosttyTerminalDisconnectReasonClassifier.foregroundMissingHost(),
                 event: "model.transport.foregroundMissingHost",
                 error: nil,
                 closeDisposition: .invalidated,
@@ -1101,18 +1024,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
 
         guard hostSession.isRunning else {
-            let reason: TerminalDisconnectReason
-            if let error = hostSession.lastError {
-                reason = TerminalDisconnectReason(
-                    kind: .transportIO,
-                    message: "tmux transport ended before foreground: \(String(describing: error))"
-                )
-            } else {
-                reason = TerminalDisconnectReason(
-                    kind: .transportIO,
-                    message: "tmux transport unavailable after foreground"
-                )
-            }
+            let reason = GhosttyTerminalDisconnectReasonClassifier.foregroundEnded(
+                lastError: hostSession.lastError
+            )
             markTerminalTransportUnavailable(
                 reason: reason,
                 event: "model.transport.foregroundEnded",
