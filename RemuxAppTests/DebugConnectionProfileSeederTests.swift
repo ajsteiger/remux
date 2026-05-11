@@ -29,7 +29,6 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
                 "REMUX_DEBUG_SERVER_HOST": "server.example.com",
                 "REMUX_DEBUG_SERVER_PORT": "22",
                 "REMUX_DEBUG_SERVER_USERNAME": "demo",
-                "REMUX_DEBUG_SERVER_TRANSPORT": "ssh",
                 "REMUX_DEBUG_SERVER_PASSWORD": "debug-password",
                 "REMUX_DEBUG_TMUX_SESSION": "base",
             ],
@@ -49,30 +48,6 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
         XCTAssertEqual(password, "debug-password")
     }
 
-    func testSeedRejectsUnsupportedTransport() async throws {
-        let repository = InMemoryConnectionProfileRepository()
-        let passwordStore = InMemoryPasswordStore()
-
-        do {
-            _ = try await DebugConnectionProfileSeeder.seedIfRequested(
-                environment: [
-                    "REMUX_DEBUG_SEED_CONNECTION": "1",
-                    "REMUX_DEBUG_SERVER_NAME": "Example Server",
-                    "REMUX_DEBUG_SERVER_HOST": "server.example.com",
-                    "REMUX_DEBUG_SERVER_PORT": "22",
-                    "REMUX_DEBUG_SERVER_USERNAME": "demo",
-                    "REMUX_DEBUG_SERVER_TRANSPORT": "mosh",
-                    "REMUX_DEBUG_SERVER_PASSWORD": "debug-password",
-                    "REMUX_DEBUG_TMUX_SESSION": "base",
-                ],
-                profileRepository: repository,
-                passwordStore: passwordStore
-            )
-            XCTFail("expected invalid environment")
-        } catch DebugConnectionProfileSeederError.invalidEnvironment(let validation) {
-            XCTAssertNotNil(validation.transportKind)
-        }
-    }
 }
 
 private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {

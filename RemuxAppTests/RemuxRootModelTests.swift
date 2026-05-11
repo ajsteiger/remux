@@ -70,12 +70,6 @@ final class RemuxRootModelTests: XCTestCase {
             host: "logs.example.test",
             username: "logger"
         )
-        let moshServer = SavedServer(
-            displayName: "Mosh Host",
-            host: "mosh.example.test",
-            username: "mosh",
-            transportKind: .mosh
-        )
         let olderFirstWorkspace = SavedWorkspace(
             serverID: firstServer.id,
             sessionName: "older",
@@ -91,20 +85,14 @@ final class RemuxRootModelTests: XCTestCase {
             sessionName: "logs",
             lastOpenedAt: now.addingTimeInterval(-30)
         )
-        let moshWorkspace = SavedWorkspace(
-            serverID: moshServer.id,
-            sessionName: "mosh",
-            lastOpenedAt: now.addingTimeInterval(30)
-        )
         let prewarmer = RecordingSSHConnectionPrewarmer()
         let transportFactory = RecordingRootTransportFactory()
         let harness = makeHarness(
-            servers: [firstServer, secondServer, moshServer],
+            servers: [firstServer, secondServer],
             workspaces: [
                 olderFirstWorkspace,
                 newestFirstWorkspace,
                 secondWorkspace,
-                moshWorkspace,
             ],
             transportFactory: { target, trustedHostStore, sshConnectionPool in
                 _ = sshConnectionPool
@@ -119,7 +107,6 @@ final class RemuxRootModelTests: XCTestCase {
         )
         try await harness.passwordStore.savePassword("first-secret", for: firstServer.id)
         try await harness.passwordStore.savePassword("second-secret", for: secondServer.id)
-        try await harness.passwordStore.savePassword("mosh-secret", for: moshServer.id)
 
         await harness.model.load()
 
@@ -132,7 +119,6 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(Set(targets.map(\.server.id)), Set([firstServer.id, secondServer.id]))
         XCTAssertTrue(targets.contains { $0.workspace.id == newestFirstWorkspace.id })
         XCTAssertFalse(targets.contains { $0.workspace.id == olderFirstWorkspace.id })
-        XCTAssertFalse(targets.contains { $0.server.id == moshServer.id })
 
         let didPrepareTransports = await waitUntil {
             transportFactory.events.filter { event in
@@ -569,30 +555,6 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(draft.password, "demo-password")
         XCTAssertEqual(validation, .empty)
         XCTAssertEqual(mode, .editWorkspace(server.id, logs.id))
-    }
-
-    func testConnectBlocksPersistedUnsupportedMoshProfile() async throws {
-        let server = SavedServer(
-            displayName: "Roaming Host",
-            host: "roam.example.test",
-            username: "runner",
-            transportKind: .mosh
-        )
-        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let harness = makeHarness(servers: [server], workspaces: [workspace])
-        try await harness.passwordStore.savePassword("demo-password", for: server.id)
-
-        await harness.model.load()
-        await harness.model.connect(to: workspace.id)
-
-        guard case .setup(let draft, let validation, let mode) = harness.model.state else {
-            XCTFail("expected setup state")
-            return
-        }
-
-        XCTAssertEqual(draft.transportKind, .mosh)
-        XCTAssertNotNil(validation.transportKind)
-        XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: workspace.id))
     }
 
     func testEditServerSavesServerWithoutCreatingWorkspaceOrOpeningTerminal() async throws {

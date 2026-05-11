@@ -16,13 +16,6 @@ enum GhosttyTerminalDisconnectReasonClassifier {
     static func transportStartFailure(_ error: any Error) -> TerminalDisconnectReason {
         let message = String(describing: error)
 
-        if let transportAvailability = error as? TmuxTransportAvailabilityError {
-            switch transportAvailability {
-            case .unsupportedTransport:
-                return TerminalDisconnectReason(kind: .unsupportedTransport, message: message)
-            }
-        }
-
         if let trustedHostError = error as? TrustedHostStoreError {
             switch trustedHostError {
             case .hostKeyChanged, .invalidHostKey:

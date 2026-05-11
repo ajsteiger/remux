@@ -358,23 +358,6 @@ final class RemuxRootModel: ObservableObject {
             return
         }
 
-        if server.transportKind == .mosh {
-            GhosttyRuntimeTrace.flowEnd(
-                flow,
-                event: "model.connect.unsupportedTransport",
-                fields: [
-                    "workspaceID": workspaceID.uuidString,
-                    "transport": server.transportKind.rawValue,
-                ]
-            )
-            state = .setup(
-                TmuxConnectionDraft(server: server, workspace: workspace, password: password),
-                unsupportedTransportValidation(for: server.transportKind),
-                .editServer(server.id, reconnectWorkspaceID: workspace.id)
-            )
-            return
-        }
-
         do {
             var openedWorkspace = workspace
             openedWorkspace.lastOpenedAt = Date()
@@ -731,19 +714,6 @@ final class RemuxRootModel: ObservableObject {
             index += 1
         }
         return "session-\(index)"
-    }
-
-    private func unsupportedTransportValidation(
-        for transportKind: ServerTransportKind
-    ) -> TmuxConnectionDraftValidation {
-        var validation = TmuxConnectionDraftValidation.empty
-        switch transportKind {
-        case .ssh:
-            break
-        case .mosh:
-            validation.transportKind = transportKind.connectionDraftValidationMessage
-        }
-        return validation
     }
 
     private func sessionOpenFlowID(_ workspaceID: SavedWorkspace.ID) -> String {

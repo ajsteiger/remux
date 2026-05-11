@@ -845,11 +845,11 @@ private struct TransportBadge: View {
     var body: some View {
         Text(kind.displayName.uppercased())
             .font(.caption2.weight(.bold))
-            .foregroundStyle(kind == .ssh ? .blue : .orange)
+            .foregroundStyle(.blue)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(
-                (kind == .ssh ? Color.blue : Color.orange).opacity(0.12),
+                Color.blue.opacity(0.12),
                 in: RoundedRectangle(cornerRadius: 5)
             )
     }
@@ -1029,20 +1029,6 @@ private struct ConnectionSetupView: View {
                     }
                     validationMessage(validation.username)
 
-                    LabeledContent("Protocol") {
-                        Picker("Protocol", selection: transportBinding) {
-                            ForEach(ServerTransportKind.allCases) { kind in
-                                Text(kind.displayName).tag(kind)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 190)
-                        .accessibilityIdentifier("connection.transport")
-                    }
-                    validationMessage(
-                        transportValidationMessage,
-                        accessibilityIdentifier: "connection.transport.validation"
-                    )
                 } header: {
                     Text("Server")
                 }
@@ -1298,20 +1284,6 @@ private struct ConnectionSetupView: View {
         }
     }
 
-    private var transportBinding: Binding<ServerTransportKind> {
-        Binding(
-            get: { draft.transportKind },
-            set: { newValue in
-                onChange { draft in
-                    draft.transportKind = newValue
-                }
-            }
-        )
-    }
-
-    private var transportValidationMessage: String? {
-        validation.transportKind ?? draft.transportKind.connectionDraftValidationMessage
-    }
 
     private func binding(for keyPath: WritableKeyPath<TmuxConnectionDraft, String>) -> Binding<String> {
         Binding(

@@ -14,12 +14,6 @@ final class GhosttyTerminalDisconnectReasonClassifierTests: XCTestCase {
     func testTransportStartFailureMapsKnownBoundaryErrors() {
         XCTAssertEqual(
             GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(
-                TmuxTransportAvailabilityError.unsupportedTransport(.mosh)
-            ).kind,
-            .unsupportedTransport
-        )
-        XCTAssertEqual(
-            GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(
                 TrustedHostStoreError.hostKeyChanged(host: "example.com")
             ).kind,
             .hostKey

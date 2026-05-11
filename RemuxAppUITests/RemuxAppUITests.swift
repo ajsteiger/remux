@@ -62,21 +62,6 @@ final class RemuxAppUITests: XCTestCase {
         XCTAssertTrue(runningSessions.element(boundBy: 1).waitForExistence(timeout: 5))
     }
 
-    func testMoshTransportShowsUnsupportedValidation() {
-        launchSimulatorApp()
-        openConnectionSetup()
-        fillConnectionForm()
-
-        let transport = app.segmentedControls["connection.transport"]
-        XCTAssertTrue(transport.waitForExistence(timeout: 2))
-        transport.buttons["Mosh"].tap()
-
-        XCTAssertTrue(
-            app.staticTexts["connection.transport.validation"].waitForExistence(timeout: 2)
-        )
-        XCTAssertFalse(app.buttons["connection.save"].isEnabled)
-    }
-
     func testSettingsExposeFontAndThemeControls() {
         launchSimulatorApp()
         XCTAssertTrue(app.buttons["library.settings"].waitForExistence(timeout: 5))
@@ -439,7 +424,6 @@ final class RemuxAppUITests: XCTestCase {
         app.launchEnvironment["REMUX_DEBUG_SERVER_HOST"] = configuration.host
         app.launchEnvironment["REMUX_DEBUG_SERVER_PORT"] = configuration.port ?? "22"
         app.launchEnvironment["REMUX_DEBUG_SERVER_USERNAME"] = configuration.username
-        app.launchEnvironment["REMUX_DEBUG_SERVER_TRANSPORT"] = "ssh"
         app.launchEnvironment["REMUX_DEBUG_SERVER_PASSWORD"] = configuration.password
         app.launchEnvironment["REMUX_DEBUG_TMUX_SESSION"] = sessionName
         if traceRuntime {
@@ -875,7 +859,7 @@ final class RemuxAppUITests: XCTestCase {
         sleep(1)
         attach(name: "12-connection-setup-empty")
 
-        // Fill the form so we can capture the populated state and Mosh validation.
+        // Fill the form so we can capture the populated state.
         let name = app.textFields["connection.name"]
         name.tap()
         name.typeText("Example SSH Server")
@@ -893,16 +877,6 @@ final class RemuxAppUITests: XCTestCase {
         pwd.typeText("demo-password")
         sleep(1)
         attach(name: "13-connection-setup-filled")
-
-        // Switch to Mosh and surface the unsupported validation.
-        let transport = app.segmentedControls["connection.transport"]
-        if transport.waitForExistence(timeout: 2) {
-            transport.buttons["Mosh"].tap()
-            app.buttons["connection.save"].tap()
-            sleep(1)
-            attach(name: "14-connection-mosh-unsupported")
-            transport.buttons["SSH"].tap()
-        }
 
         app.buttons["connection.cancel"].tap()
         XCTAssertTrue(app.buttons["library.add-server"].waitForExistence(timeout: 3))

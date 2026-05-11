@@ -12,7 +12,6 @@ enum DebugConnectionProfileSeederError: LocalizedError, Sendable {
                 validation.host,
                 validation.port,
                 validation.username,
-                validation.transportKind,
                 validation.password,
                 validation.sessionName,
             ].compactMap { $0 }
@@ -28,7 +27,6 @@ enum DebugConnectionProfileSeeder {
         static let host = "REMUX_DEBUG_SERVER_HOST"
         static let port = "REMUX_DEBUG_SERVER_PORT"
         static let username = "REMUX_DEBUG_SERVER_USERNAME"
-        static let transportKind = "REMUX_DEBUG_SERVER_TRANSPORT"
         static let password = "REMUX_DEBUG_SERVER_PASSWORD"
         static let sessionName = "REMUX_DEBUG_TMUX_SESSION"
     }
@@ -47,7 +45,6 @@ enum DebugConnectionProfileSeeder {
             host: environment[Key.host] ?? "",
             port: environment[Key.port] ?? "22",
             username: environment[Key.username] ?? "",
-            transportKind: ServerTransportKind(rawValue: environment[Key.transportKind] ?? "") ?? .ssh,
             password: environment[Key.password] ?? "",
             sessionName: environment[Key.sessionName] ?? "base"
         )
@@ -80,7 +77,6 @@ private extension TmuxConnectionDraft {
         host: String,
         port: String,
         username: String,
-        transportKind: ServerTransportKind,
         password: String,
         sessionName: String
     ) {
@@ -89,7 +85,6 @@ private extension TmuxConnectionDraft {
         self.host = host
         self.port = port
         self.username = username
-        self.transportKind = transportKind
         self.password = password
         self.sessionName = sessionName
     }

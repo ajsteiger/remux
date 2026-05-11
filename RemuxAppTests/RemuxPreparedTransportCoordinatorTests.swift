@@ -154,16 +154,6 @@ final class RemuxPreparedTransportCoordinatorTests: XCTestCase {
         XCTAssertTrue(didCloseBoth)
     }
 
-    func testPrepareIgnoresNonSSHTransport() async {
-        let factory = PreparedCoordinatorTransportFactory()
-        let coordinator = makeCoordinator(factory: factory)
-        let target = makePreparedCoordinatorTarget(transportKind: .mosh)
-
-        coordinator.prepareTransport(for: target, reason: .library)
-
-        XCTAssertEqual(factory.createdTargets(), [])
-        XCTAssertEqual(factory.events(), [])
-    }
 }
 
 private func makeCoordinator(

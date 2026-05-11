@@ -97,20 +97,14 @@ struct RemuxAppDependencies: Sendable {
         trustedHostStore: TrustedHostStore,
         sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     ) -> any TmuxControlTransport {
-        switch target.server.transportKind {
-        case .ssh:
-            return SSHTmuxControlTransport(
-                configuration: sshConfiguration(
-                    for: target,
-                    trustedHostStore: trustedHostStore,
-                    traceFlowID: "session.open.\(target.workspace.id.uuidString)"
-                ),
-                authenticatedConnectionPool: sshConnectionPool
-            )
-
-        case .mosh:
-            return UnavailableTmuxControlTransport(kind: .mosh)
-        }
+        SSHTmuxControlTransport(
+            configuration: sshConfiguration(
+                for: target,
+                trustedHostStore: trustedHostStore,
+                traceFlowID: "session.open.\(target.workspace.id.uuidString)"
+            ),
+            authenticatedConnectionPool: sshConnectionPool
+        )
     }
 
     private static func liveSSHConnectionPrewarmer(
@@ -118,8 +112,6 @@ struct RemuxAppDependencies: Sendable {
         trustedHostStore: TrustedHostStore,
         sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     ) async {
-        guard target.server.transportKind == .ssh else { return }
-
         let trace = SSHTmuxControlStartupTrace(flowID: nil)
         let configuration = sshConfiguration(
             for: target,

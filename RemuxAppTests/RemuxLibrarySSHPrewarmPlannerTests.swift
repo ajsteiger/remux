@@ -33,20 +33,14 @@ final class RemuxLibrarySSHPrewarmPlannerTests: XCTestCase {
         XCTAssertEqual(candidates.map(\.workspace.id), [newFirst.id, second.id])
     }
 
-    func testCandidatesSkipNonSSHAndApplyActiveServerExclusionBeforeLimit() {
+    func testCandidatesApplyActiveServerExclusionBeforeLimit() {
         let activeServer = makePrewarmServer(displayName: "Active")
-        let moshServer = makePrewarmServer(displayName: "Mosh", transportKind: .mosh)
         let eligibleServer = makePrewarmServer(displayName: "Eligible")
         let secondEligibleServer = makePrewarmServer(displayName: "Second Eligible")
         let activeWorkspace = makePrewarmWorkspace(
             serverID: activeServer.id,
             sessionName: "active",
             lastOpenedAt: Date(timeIntervalSince1970: 40)
-        )
-        let moshWorkspace = makePrewarmWorkspace(
-            serverID: moshServer.id,
-            sessionName: "mosh",
-            lastOpenedAt: Date(timeIntervalSince1970: 30)
         )
         let eligibleWorkspace = makePrewarmWorkspace(
             serverID: eligibleServer.id,
@@ -59,10 +53,9 @@ final class RemuxLibrarySSHPrewarmPlannerTests: XCTestCase {
             lastOpenedAt: Date(timeIntervalSince1970: 10)
         )
         let snapshot = ConnectionLibrarySnapshot(
-            servers: [activeServer, moshServer, eligibleServer, secondEligibleServer],
+            servers: [activeServer, eligibleServer, secondEligibleServer],
             workspaces: [
                 activeWorkspace,
-                moshWorkspace,
                 eligibleWorkspace,
                 secondEligibleWorkspace,
             ]
@@ -141,16 +134,6 @@ final class RemuxLibrarySSHPrewarmPlannerTests: XCTestCase {
         )
         XCTAssertEqual(
             context.eligibilityWithCurrent(currentServer: context.server, currentWorkspace: nil),
-            .skipped(.staleCandidate)
-        )
-        XCTAssertEqual(
-            context.eligibility(
-                currentServer: makePrewarmServer(
-                    id: context.server.id,
-                    displayName: "Mosh",
-                    transportKind: .mosh
-                )
-            ),
             .skipped(.staleCandidate)
         )
     }

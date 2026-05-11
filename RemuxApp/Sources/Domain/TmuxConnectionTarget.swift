@@ -2,26 +2,11 @@ import Foundation
 
 enum ServerTransportKind: String, CaseIterable, Codable, Identifiable, Sendable {
     case ssh
-    case mosh
 
     var id: String { rawValue }
 
     var displayName: String {
-        switch self {
-        case .ssh:
-            "SSH"
-        case .mosh:
-            "Mosh"
-        }
-    }
-
-    var connectionDraftValidationMessage: String? {
-        switch self {
-        case .ssh:
-            nil
-        case .mosh:
-            "Mosh needs a native mosh client integration before it can connect."
-        }
+        "SSH"
     }
 }
 
@@ -256,7 +241,6 @@ struct TmuxConnectionDraftValidation: Equatable, Sendable {
     var host: String?
     var port: String?
     var username: String?
-    var transportKind: String?
     var password: String?
     var sessionName: String?
 
@@ -267,7 +251,6 @@ struct TmuxConnectionDraftValidation: Equatable, Sendable {
             host == nil &&
             port == nil &&
             username == nil &&
-            transportKind == nil &&
             password == nil &&
             sessionName == nil
     }
@@ -372,10 +355,6 @@ enum TmuxConnectionDraftValidator {
             validation.username = "Username is required."
         }
 
-        if let transportValidationMessage = draft.transportKind.connectionDraftValidationMessage {
-            validation.transportKind = transportValidationMessage
-        }
-
         if password.isEmpty {
             validation.password = "Password is required."
         }
@@ -434,7 +413,6 @@ private extension TmuxConnectionDraftValidation {
         host = host ?? other.host
         port = port ?? other.port
         username = username ?? other.username
-        transportKind = transportKind ?? other.transportKind
         password = password ?? other.password
         sessionName = sessionName ?? other.sessionName
     }

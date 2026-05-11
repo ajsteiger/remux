@@ -713,19 +713,6 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         )
     }
 
-    func testUnavailableMoshTransportFailsExplicitly() async {
-        let transport = UnavailableTmuxControlTransport(kind: .mosh)
-
-        do {
-            try await transport.start(initialViewport: nil)
-            XCTFail("expected unavailable transport failure")
-        } catch let error as TmuxTransportAvailabilityError {
-            XCTAssertEqual(error, .unsupportedTransport(.mosh))
-        } catch {
-            XCTFail("unexpected error: \(error)")
-        }
-    }
-
     func testSendAfterCloseFailsInsteadOfQueueingBytes() async {
         let server = SavedServer(displayName: "Closed Host", host: "example.com", username: "tester")
         let trustedHostStore = TrustedHostStore(

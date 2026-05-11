@@ -99,35 +99,6 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertNotNil(validation.sessionName)
     }
 
-    func testMoshDraftReportsUnsupportedTransport() {
-        var draft = TmuxConnectionDraft()
-        draft.displayName = "Laptop"
-        draft.host = "laptop.example.com"
-        draft.port = "22"
-        draft.username = "demo"
-        draft.transportKind = .mosh
-        draft.password = "demo-password"
-        draft.sessionName = "base"
-
-        let result = TmuxConnectionDraftValidator.validate(
-            draft,
-            existingServerID: nil,
-            existingWorkspaceID: nil
-        )
-
-        guard case .invalid(let validation) = result else {
-            XCTFail("expected invalid submission")
-            return
-        }
-
-        XCTAssertNotNil(validation.transportKind)
-        XCTAssertNil(validation.displayName)
-        XCTAssertNil(validation.host)
-        XCTAssertNil(validation.username)
-        XCTAssertNil(validation.password)
-        XCTAssertNil(validation.sessionName)
-    }
-
     func testServerDraftValidationDoesNotRequireSessionName() {
         let serverID = UUID()
         var draft = TmuxConnectionDraft()
