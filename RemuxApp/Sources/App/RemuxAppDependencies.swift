@@ -184,6 +184,13 @@ struct RemuxAppDependencies: Sendable {
             passwordStore: passwordStore
         )
     }
+#else
+    private static func liveDebugConnectionSeeder(
+        profileRepository: any ConnectionProfileRepository,
+        passwordStore: any PasswordStore
+    ) async throws -> Bool {
+        false
+    }
 #endif
 }
 
