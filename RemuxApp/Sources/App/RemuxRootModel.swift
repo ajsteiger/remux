@@ -134,7 +134,7 @@ final class RemuxRootModel: ObservableObject {
         let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
         let workspace = SavedWorkspace(
             serverID: serverID,
-            sessionName: defaultSessionName(for: serverID)
+            sessionName: ""
         )
         state = .setup(
             TmuxConnectionDraft(server: server, workspace: workspace, password: password),
@@ -149,7 +149,7 @@ final class RemuxRootModel: ObservableObject {
         let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
         let workspace = library.workspaces(for: serverID).first ?? SavedWorkspace(
             serverID: serverID,
-            sessionName: defaultSessionName(for: serverID)
+            sessionName: ""
         )
         state = .setup(
             TmuxConnectionDraft(server: server, workspace: workspace, password: password),
@@ -190,8 +190,57 @@ final class RemuxRootModel: ObservableObject {
         case .editWorkspace(let serverID, let workspaceID):
             await saveWorkspace(draft, serverID: serverID, workspaceID: workspaceID, mode: mode)
 
-        case .newServer, .newWorkspace:
+        case .newServer:
             await saveProfileAndConnect(draft, mode: mode)
+        case .newWorkspace(let serverID):
+            await saveNewWorkspaceAndConnect(draft, serverID: serverID, mode: mode)
+        }
+    }
+
+    private func saveNewWorkspaceAndConnect(
+        _ draft: TmuxConnectionDraft,
+        serverID: SavedServer.ID,
+        mode: SetupMode
+    ) async {
+        switch TmuxConnectionDraftValidator.validateWorkspace(
+            draft,
+            serverID: serverID,
+            existingWorkspaceID: nil
+        ) {
+        case .invalid(let validation):
+            state = .setup(draft, validation, mode)
+
+        case .valid(let submission):
+            do {
+                guard let server = library.server(id: serverID) else {
+                    state = .library
+                    return
+                }
+
+                cancelLibrarySSHPrewarm()
+                try await dependencies.profileRepository.saveWorkspace(submission.workspace)
+                library = try await dependencies.profileRepository.loadSnapshot()
+
+                let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
+                guard !password.isEmpty else {
+                    var validation = TmuxConnectionDraftValidation.empty
+                    validation.password = "Password is required."
+                    state = .setup(
+                        TmuxConnectionDraft(server: server, workspace: submission.workspace, password: ""),
+                        validation,
+                        .editServer(serverID, reconnectWorkspaceID: submission.workspace.id)
+                    )
+                    return
+                }
+
+                activate(
+                    server: server,
+                    workspace: submission.workspace,
+                    password: password
+                )
+            } catch {
+                state = .failed(String(describing: error))
+            }
         }
     }
 
@@ -801,6 +850,11 @@ final class RemuxRootModel: ObservableObject {
         }
     }
 
+    private func cancelLibrarySSHPrewarm() {
+        libraryPrewarmTask?.cancel()
+        libraryPrewarmTask = nil
+    }
+
     private func libraryPrewarmCandidates(in snapshot: ConnectionLibrarySnapshot) -> [LibrarySSHPrewarmCandidate] {
         var seenServerIDs = Set<SavedServer.ID>()
         var candidates: [LibrarySSHPrewarmCandidate] = []
@@ -849,18 +903,6 @@ final class RemuxRootModel: ObservableObject {
         for prepared in closing.values {
             Task { await prepared.transport.close() }
         }
-    }
-
-    private func defaultSessionName(for serverID: SavedServer.ID) -> String {
-        let workspaces = library.workspaces(for: serverID)
-        guard !workspaces.isEmpty else { return "base" }
-
-        let existing = Set(workspaces.map(\.sessionName))
-        var index = max(2, workspaces.count + 1)
-        while existing.contains("session-\(index)") {
-            index += 1
-        }
-        return "session-\(index)"
     }
 
     private func unsupportedTransportValidation(

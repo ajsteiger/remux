@@ -147,7 +147,7 @@ final class RemuxRootModelTests: XCTestCase {
         )
     }
 
-    func testBeginNewWorkspaceUsesExistingServerAndNextSessionName() async throws {
+    func testBeginNewWorkspaceUsesExistingServerAndLeavesSessionNameForUserInput() async throws {
         let server = SavedServer(
             displayName: "Build Host",
             host: "build.example.test",
@@ -169,12 +169,12 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(draft.displayName, server.displayName)
         XCTAssertEqual(draft.host, server.host)
         XCTAssertEqual(draft.username, server.username)
-        XCTAssertEqual(draft.sessionName, "session-2")
+        XCTAssertEqual(draft.sessionName, "")
         XCTAssertEqual(validation, .empty)
         XCTAssertEqual(mode, .newWorkspace(server.id))
     }
 
-    func testBeginNewWorkspaceSkipsExistingGeneratedSessionNames() async throws {
+    func testBeginNewWorkspaceDoesNotGenerateSessionNameFromExistingWorkspaces() async throws {
         let server = SavedServer(
             displayName: "Build Host",
             host: "build.example.test",
@@ -193,9 +193,71 @@ final class RemuxRootModelTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(draft.sessionName, "session-3")
+        XCTAssertEqual(draft.sessionName, "")
         XCTAssertEqual(validation, .empty)
         XCTAssertEqual(mode, .newWorkspace(server.id))
+    }
+
+    func testNewWorkspaceSavesTypedSessionNameAndConnectsExistingServer() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let harness = makeHarness(servers: [server], workspaces: [])
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+        await harness.model.beginNewWorkspace(for: server.id)
+        harness.model.updateDraft { draft in
+            draft.sessionName = "claude"
+        }
+
+        await harness.model.saveAndConnect()
+
+        guard
+            case .terminal(let activeWorkspaceID) = harness.model.state,
+            let activeSession = harness.model.activeSessions.first
+        else {
+            XCTFail("expected terminal state")
+            return
+        }
+
+        XCTAssertEqual(activeWorkspaceID, activeSession.target.workspace.id)
+        XCTAssertEqual(activeSession.target.server, server)
+        XCTAssertEqual(activeSession.target.workspace.sessionName, "claude")
+        XCTAssertEqual(activeSession.target.password, "demo-password")
+
+        let snapshot = try await harness.profileRepository.loadSnapshot()
+        XCTAssertEqual(snapshot.workspaces.map(\.sessionName), ["claude"])
+    }
+
+    func testNewWorkspaceValidationDoesNotRequireHiddenServerFields() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let harness = makeHarness(servers: [server], workspaces: [])
+        await harness.model.load()
+        await harness.model.beginNewWorkspace(for: server.id)
+        harness.model.updateDraft { draft in
+            draft.sessionName = "scratch"
+            draft.password = ""
+        }
+
+        await harness.model.saveAndConnect()
+
+        let snapshot = try await harness.profileRepository.loadSnapshot()
+        XCTAssertEqual(snapshot.workspaces.map(\.sessionName), ["scratch"])
+
+        guard case .setup(let draft, let validation, let mode) = harness.model.state else {
+            XCTFail("expected setup state")
+            return
+        }
+
+        XCTAssertEqual(draft.sessionName, "scratch")
+        XCTAssertEqual(validation.password, "Password is required.")
+        XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: snapshot.workspaces.first?.id))
     }
 
     func testBeginEditServerLoadsServerScopedDraftWithoutReconnectTarget() async throws {
@@ -250,7 +312,7 @@ final class RemuxRootModelTests: XCTestCase {
         }
 
         XCTAssertEqual(draft.displayName, server.displayName)
-        XCTAssertEqual(draft.sessionName, "base")
+        XCTAssertEqual(draft.sessionName, "")
         XCTAssertEqual(draft.password, "demo-password")
         XCTAssertEqual(validation, .empty)
         XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: nil))

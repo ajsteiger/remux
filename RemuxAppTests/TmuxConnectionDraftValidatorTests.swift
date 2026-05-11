@@ -75,6 +75,7 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertNotNil(validation.host)
         XCTAssertNotNil(validation.username)
         XCTAssertNotNil(validation.password)
+        XCTAssertNotNil(validation.sessionName)
     }
 
     func testInvalidConnectionDraftReportsServerAndSessionFailuresTogether() {

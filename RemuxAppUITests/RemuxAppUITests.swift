@@ -53,6 +53,8 @@ final class RemuxAppUITests: XCTestCase {
         XCTAssertTrue(app.textFields["connection.session"].waitForExistence(timeout: 2))
         XCTAssertFalse(app.textFields["connection.name"].waitForExistence(timeout: 0.5))
         XCTAssertFalse(app.secureTextFields["connection.password"].exists)
+        app.textFields["connection.session"].tap()
+        app.textFields["connection.session"].typeText("logs")
         app.swipeUp()
         XCTAssertTrue(app.buttons["connection.save"].waitForExistence(timeout: 2))
         saveConnectionAndWaitForTerminal()
@@ -358,6 +360,12 @@ final class RemuxAppUITests: XCTestCase {
         let password = app.secureTextFields["connection.password"]
         XCTAssertTrue(password.waitForExistence(timeout: 2))
         password.typeText("demo-password")
+
+        app.swipeUp()
+        let session = app.textFields["connection.session"]
+        XCTAssertTrue(session.waitForExistence(timeout: 2))
+        session.tap()
+        session.typeText("base")
 
         app.swipeUp()
         XCTAssertTrue(app.buttons["connection.save"].waitForExistence(timeout: 2))

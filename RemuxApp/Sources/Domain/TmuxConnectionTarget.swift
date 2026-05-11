@@ -236,7 +236,7 @@ struct TmuxConnectionDraft: Equatable, Sendable {
     var username: String = ""
     var transportKind: ServerTransportKind = .ssh
     var password: String = ""
-    var sessionName: String = "base"
+    var sessionName: String = ""
 
     init() {}
 
