@@ -11,7 +11,7 @@ struct ShortcutExecutor {
         sendKey: @escaping (GhosttySurfaceKeyEvent) -> Bool,
         autoSubmitBoundary: @escaping () async -> Bool = {
             do {
-                try await Task.sleep(for: .milliseconds(10))
+                try await Task.sleep(for: .milliseconds(75))
                 return true
             } catch {
                 return false
@@ -58,7 +58,8 @@ struct ShortcutExecutor {
         guard sendKey(GhosttySurfaceKeyEvent(action: .press, keyCode: keyCode)) else {
             return false
         }
-        return sendKey(GhosttySurfaceKeyEvent(action: .release, keyCode: keyCode))
+        _ = sendKey(GhosttySurfaceKeyEvent(action: .release, keyCode: keyCode))
+        return true
     }
 }
 

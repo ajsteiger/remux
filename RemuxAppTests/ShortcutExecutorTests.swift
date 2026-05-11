@@ -83,6 +83,60 @@ final class ShortcutExecutorTests: XCTestCase {
         XCTAssertEqual(operations, [.text("/status")])
     }
 
+    func testTextShortcutAutoSubmitSucceedsWhenEnterReleaseIsIgnored() async {
+        var operations: [SentShortcutOperation] = []
+        let executor = ShortcutExecutor(
+            sendText: {
+                operations.append(.text($0))
+                return true
+            },
+            sendKey: {
+                operations.append(.key($0))
+                return $0.action == .press
+            },
+            autoSubmitBoundary: {
+                operations.append(.autoSubmitBoundary)
+                return true
+            }
+        )
+
+        let didExecute = await executor.execute(.text("/resume", submit: true))
+
+        XCTAssertTrue(didExecute)
+        XCTAssertEqual(
+            operations,
+            [
+                .text("/resume"),
+                .autoSubmitBoundary,
+                .key(GhosttySurfaceKeyEvent(action: .press, keyCode: .enter)),
+                .key(GhosttySurfaceKeyEvent(action: .release, keyCode: .enter)),
+            ]
+        )
+    }
+
+    func testTextShortcutStopsWhenAutoSubmitBoundaryIsCancelled() async {
+        var operations: [SentShortcutOperation] = []
+        let executor = ShortcutExecutor(
+            sendText: {
+                operations.append(.text($0))
+                return true
+            },
+            sendKey: {
+                operations.append(.key($0))
+                return true
+            },
+            autoSubmitBoundary: {
+                operations.append(.autoSubmitBoundary)
+                return false
+            }
+        )
+
+        let didExecute = await executor.execute(.text("/status", submit: true))
+
+        XCTAssertFalse(didExecute)
+        XCTAssertEqual(operations, [.text("/status"), .autoSubmitBoundary])
+    }
+
     func testControlShortcutSendsTranslatedControlCharacter() async {
         var sentTexts: [String] = []
         let executor = ShortcutExecutor(
