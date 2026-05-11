@@ -42,7 +42,6 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
         XCTAssertEqual(profile?.0.host, "server.example.com")
         XCTAssertEqual(profile?.0.port, 22)
         XCTAssertEqual(profile?.0.username, "demo")
-        XCTAssertEqual(profile?.0.transportKind, .ssh)
         XCTAssertEqual(profile?.1.sessionName, "base")
         let password = try await passwordStore.loadPassword(for: try XCTUnwrap(profile?.0.id))
         XCTAssertEqual(password, "debug-password")

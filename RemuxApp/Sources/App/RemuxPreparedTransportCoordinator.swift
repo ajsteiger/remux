@@ -51,8 +51,6 @@ final class RemuxPreparedTransportCoordinator {
         for target: TmuxConnectionTarget,
         reason: RemuxPreparedTransportPrepareReason
     ) {
-        guard target.server.transportKind == .ssh else { return }
-
         if cache.containsReusableTransport(for: target) {
             GhosttyRuntimeTrace.flowEvent(
                 sessionOpenFlowID(target.workspace.id),

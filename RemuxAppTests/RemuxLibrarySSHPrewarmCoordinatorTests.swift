@@ -491,15 +491,13 @@ private actor SuspendingLibraryPrewarmer {
 
 private func makePrewarmCoordinatorServer(
     id: SavedServer.ID = SavedServer.ID(),
-    displayName: String,
-    transportKind: ServerTransportKind = .ssh
+    displayName: String
 ) -> SavedServer {
     SavedServer(
         id: id,
         displayName: displayName,
         host: "\(displayName.lowercased()).example.test",
-        username: "builder",
-        transportKind: transportKind
+        username: "builder"
     )
 }
 

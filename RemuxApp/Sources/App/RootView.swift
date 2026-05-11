@@ -512,10 +512,6 @@ private struct ServerDetailView: View {
                         .textSelection(.enabled)
                 }
 
-                LabeledContent("Transport") {
-                    TransportBadge(kind: server.transportKind)
-                }
-
                 LabeledContent("Sessions") {
                     Text(
                         serverSummary(
@@ -715,10 +711,6 @@ private struct SessionLibraryRow: View {
                 RuntimeStateIndicator(state: runtimeState)
             }
 
-            if subtitleMode == .serverAndLastOpened {
-                TransportBadge(kind: server.transportKind)
-            }
-
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
@@ -765,12 +757,9 @@ private struct ServerLibraryRow: View {
                 .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(server.displayName)
-                        .font(.headline)
-                        .lineLimit(1)
-                    TransportBadge(kind: server.transportKind)
-                }
+                Text(server.displayName)
+                    .font(.headline)
+                    .lineLimit(1)
 
                 Text(serverAddress(server))
                     .font(.footnote.monospaced())
@@ -836,22 +825,6 @@ private struct RuntimeStateIndicator: View {
         case .disconnected:
             .red
         }
-    }
-}
-
-private struct TransportBadge: View {
-    let kind: ServerTransportKind
-
-    var body: some View {
-        Text(kind.displayName.uppercased())
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(.blue)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(
-                Color.blue.opacity(0.12),
-                in: RoundedRectangle(cornerRadius: 5)
-            )
     }
 }
 
@@ -1388,20 +1361,14 @@ private struct ConnectionServerSummaryRow: View {
     let draft: TmuxConnectionDraft
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(draft.displayName)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(draft.displayName)
+                .lineLimit(1)
 
-                Text("\(draft.username)@\(draft.host)\(draft.port == "22" ? "" : ":\(draft.port)")")
-                    .font(.footnote.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-
-            TransportBadge(kind: draft.transportKind)
+            Text("\(draft.username)@\(draft.host)\(draft.port == "22" ? "" : ":\(draft.port)")")
+                .font(.footnote.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, alignment: .leading)

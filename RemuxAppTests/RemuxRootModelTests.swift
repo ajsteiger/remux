@@ -962,7 +962,6 @@ final class RemuxRootModelTests: XCTestCase {
             TerminalDisconnectReason(kind: .authentication, message: "permission denied"),
             TerminalDisconnectReason(kind: .hostKey, message: "host key changed"),
             TerminalDisconnectReason(kind: .profile, message: "invalid profile"),
-            TerminalDisconnectReason(kind: .unsupportedTransport, message: "unsupported transport"),
             TerminalDisconnectReason(kind: .remoteExit, message: "remote exited"),
             TerminalDisconnectReason(kind: .runtime, message: "runtime rejected output"),
             TerminalDisconnectReason(kind: .userClosed, message: "closed by user"),

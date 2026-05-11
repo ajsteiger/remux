@@ -167,15 +167,13 @@ private func makeCoordinator(
 private func makePreparedCoordinatorTarget(
     serverID: SavedServer.ID = SavedServer.ID(),
     workspaceID: SavedWorkspace.ID = SavedWorkspace.ID(),
-    password: String = "secret",
-    transportKind: ServerTransportKind = .ssh
+    password: String = "secret"
 ) -> TmuxConnectionTarget {
     let server = SavedServer(
         id: serverID,
         displayName: "Build Host",
         host: "build.example.test",
-        username: "builder",
-        transportKind: transportKind
+        username: "builder"
     )
     let workspace = SavedWorkspace(
         id: workspaceID,

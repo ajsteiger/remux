@@ -26,7 +26,6 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertEqual(submission.server.host, "server.example.com")
         XCTAssertEqual(submission.server.port, 22)
         XCTAssertEqual(submission.server.username, "demo")
-        XCTAssertEqual(submission.server.transportKind, .ssh)
         XCTAssertEqual(submission.workspace.serverID, submission.server.id)
         XCTAssertEqual(submission.workspace.sessionName, "base")
         XCTAssertEqual(submission.password, "demo-password")

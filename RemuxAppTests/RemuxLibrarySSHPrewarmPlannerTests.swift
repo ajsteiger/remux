@@ -278,15 +278,13 @@ private func makeEligibilityContext() -> PrewarmEligibilityContext {
 
 private func makePrewarmServer(
     id: SavedServer.ID = SavedServer.ID(),
-    displayName: String,
-    transportKind: ServerTransportKind = .ssh
+    displayName: String
 ) -> SavedServer {
     SavedServer(
         id: id,
         displayName: displayName,
         host: "\(displayName.lowercased().replacingOccurrences(of: " ", with: "-")).example.test",
-        username: "builder",
-        transportKind: transportKind
+        username: "builder"
     )
 }
 

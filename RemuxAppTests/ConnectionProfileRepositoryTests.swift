@@ -138,7 +138,7 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         }
     }
 
-    func testLegacyServerJSONDefaultsTransportToSSH() throws {
+    func testLegacyServerJSONIgnoresRemovedTransportKind() throws {
         let id = UUID()
         let data = Data(
             """
@@ -147,7 +147,8 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
               "displayName": "Legacy",
               "host": "legacy.example.test",
               "port": 22,
-              "username": "demo"
+              "username": "demo",
+              "transportKind": "ssh"
             }
             """.utf8
         )
@@ -155,7 +156,10 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         let server = try JSONDecoder().decode(SavedServer.self, from: data)
 
         XCTAssertEqual(server.id, id)
-        XCTAssertEqual(server.transportKind, .ssh)
+        XCTAssertEqual(server.displayName, "Legacy")
+        XCTAssertEqual(server.host, "legacy.example.test")
+        XCTAssertEqual(server.port, 22)
+        XCTAssertEqual(server.username, "demo")
     }
 
     private func temporaryRoot() -> URL {

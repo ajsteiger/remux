@@ -1,56 +1,24 @@
 import Foundation
 
-enum ServerTransportKind: String, CaseIterable, Codable, Identifiable, Sendable {
-    case ssh
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        "SSH"
-    }
-}
-
 struct SavedServer: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
     var displayName: String
     var host: String
     var port: Int
     var username: String
-    var transportKind: ServerTransportKind
 
     init(
         id: UUID = UUID(),
         displayName: String,
         host: String,
         port: Int = 22,
-        username: String,
-        transportKind: ServerTransportKind = .ssh
+        username: String
     ) {
         self.id = id
         self.displayName = displayName
         self.host = host
         self.port = port
         self.username = username
-        self.transportKind = transportKind
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case displayName
-        case host
-        case port
-        case username
-        case transportKind
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        displayName = try container.decode(String.self, forKey: .displayName)
-        host = try container.decode(String.self, forKey: .host)
-        port = try container.decode(Int.self, forKey: .port)
-        username = try container.decode(String.self, forKey: .username)
-        transportKind = try container.decodeIfPresent(ServerTransportKind.self, forKey: .transportKind) ?? .ssh
     }
 }
 
@@ -98,7 +66,6 @@ struct TerminalDisconnectReason: Equatable, Sendable {
         case authentication
         case hostKey
         case profile
-        case unsupportedTransport
         case remoteExit
         case runtime
         case userClosed
@@ -115,7 +82,6 @@ struct TerminalDisconnectReason: Equatable, Sendable {
         case .authentication,
              .hostKey,
              .profile,
-             .unsupportedTransport,
              .remoteExit,
              .runtime,
              .userClosed,
@@ -219,7 +185,6 @@ struct TmuxConnectionDraft: Equatable, Sendable {
     var host: String = ""
     var port: String = "22"
     var username: String = ""
-    var transportKind: ServerTransportKind = .ssh
     var password: String = ""
     var sessionName: String = ""
 
@@ -230,7 +195,6 @@ struct TmuxConnectionDraft: Equatable, Sendable {
         self.host = server.host
         self.port = String(server.port)
         self.username = server.username
-        self.transportKind = server.transportKind
         self.password = password
         self.sessionName = workspace.sessionName
     }
@@ -370,8 +334,7 @@ enum TmuxConnectionDraftValidator {
                     displayName: displayName,
                     host: host,
                     port: port,
-                    username: username,
-                    transportKind: draft.transportKind
+                    username: username
                 ),
                 password: password
             )

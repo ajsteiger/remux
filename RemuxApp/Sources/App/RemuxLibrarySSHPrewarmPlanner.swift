@@ -40,7 +40,6 @@ enum RemuxLibrarySSHPrewarmPlanner {
         for workspace in recentWorkspaces {
             guard candidates.count < limit else { break }
             guard let server = snapshot.server(id: workspace.serverID) else { continue }
-            guard server.transportKind == .ssh else { continue }
             guard !excludedServerIDs.contains(server.id) else { continue }
             guard !seenServerIDs.contains(server.id) else { continue }
 
@@ -74,8 +73,7 @@ enum RemuxLibrarySSHPrewarmPlanner {
             let currentWorkspace,
             currentServer.id == candidate.server.id,
             currentWorkspace.id == candidate.workspace.id,
-            currentWorkspace.serverID == currentServer.id,
-            currentServer.transportKind == .ssh
+            currentWorkspace.serverID == currentServer.id
         else {
             return .skipped(.staleCandidate)
         }
