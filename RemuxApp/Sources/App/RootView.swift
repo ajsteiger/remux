@@ -982,51 +982,44 @@ private struct ConnectionSetupView: View {
         Form(content: {
             if showsEditableServerFields {
                 Section {
-                    LabeledContent("Name") {
-                        TextField("Mac mini", text: binding(for: \.displayName))
-                            .textInputAutocapitalization(.words)
-                            .multilineTextAlignment(.trailing)
-                            .focused($focusedField, equals: .displayName)
-                            .submitLabel(.next)
-                            .onSubmit { advance(from: .displayName) }
-                            .accessibilityIdentifier("connection.name")
-                    }
+                    textInputRow(
+                        title: "Name",
+                        placeholder: "Mac mini",
+                        keyPath: \.displayName,
+                        field: .displayName,
+                        textInputAutocapitalization: .words,
+                        autocorrectionDisabled: false,
+                        accessibilityIdentifier: "connection.name"
+                    )
                     validationMessage(validation.displayName)
 
-                    LabeledContent("Host") {
-                        TextField("Tailscale IP or hostname", text: binding(for: \.host))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                            .multilineTextAlignment(.trailing)
-                            .focused($focusedField, equals: .host)
-                            .submitLabel(.next)
-                            .onSubmit { advance(from: .host) }
-                            .accessibilityIdentifier("connection.host")
-                    }
+                    textInputRow(
+                        title: "Host",
+                        placeholder: "Tailscale IP or hostname",
+                        keyPath: \.host,
+                        field: .host,
+                        keyboardType: .URL,
+                        accessibilityIdentifier: "connection.host"
+                    )
                     validationMessage(validation.host)
 
-                    LabeledContent("Port") {
-                        TextField("22", text: binding(for: \.port))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .focused($focusedField, equals: .port)
-                            .accessibilityIdentifier("connection.port")
-                    }
+                    textInputRow(
+                        title: "Port",
+                        placeholder: "22",
+                        keyPath: \.port,
+                        field: .port,
+                        keyboardType: .numberPad,
+                        accessibilityIdentifier: "connection.port"
+                    )
                     validationMessage(validation.port)
 
-                    LabeledContent("User") {
-                        TextField("Username", text: binding(for: \.username))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .multilineTextAlignment(.trailing)
-                            .focused($focusedField, equals: .username)
-                            .submitLabel(.next)
-                            .onSubmit { advance(from: .username) }
-                            .accessibilityIdentifier("connection.username")
-                    }
+                    textInputRow(
+                        title: "User",
+                        placeholder: "Username",
+                        keyPath: \.username,
+                        field: .username,
+                        accessibilityIdentifier: "connection.username"
+                    )
                     validationMessage(validation.username)
 
                 } header: {
@@ -1042,18 +1035,7 @@ private struct ConnectionSetupView: View {
 
             if showsAuthenticationFields {
                 Section {
-                    LabeledContent("Password") {
-                        SecureField("Required", text: binding(for: \.password))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .textContentType(.oneTimeCode)
-                            .multilineTextAlignment(.trailing)
-                            .focused($focusedField, equals: .password)
-                            .submitLabel(showsSessionFields ? .next : .go)
-                            .onSubmit { advance(from: .password) }
-                            .frame(minHeight: 28)
-                            .accessibilityIdentifier("connection.password")
-                    }
+                    passwordInputRow()
                     validationMessage(validation.password)
                 } header: {
                     Text("Authentication")
@@ -1062,16 +1044,14 @@ private struct ConnectionSetupView: View {
 
             if showsSessionFields {
                 Section {
-                    LabeledContent("Name") {
-                        TextField("e.g. main, work", text: binding(for: \.sessionName))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .multilineTextAlignment(.trailing)
-                            .focused($focusedField, equals: .sessionName)
-                            .submitLabel(.go)
-                            .onSubmit { submitIfPossible() }
-                            .accessibilityIdentifier("connection.session")
-                    }
+                    textInputRow(
+                        title: "Name",
+                        placeholder: "e.g. main, work",
+                        keyPath: \.sessionName,
+                        field: .sessionName,
+                        submitLabel: .go,
+                        accessibilityIdentifier: "connection.session"
+                    )
                     validationMessage(validation.sessionName)
                 } header: {
                     Text(sessionSectionTitle)
@@ -1170,13 +1150,46 @@ private struct ConnectionSetupView: View {
     }
 
     private var canSubmit: Bool {
-        let result = TmuxConnectionDraftValidator.validate(
-            draft,
-            existingServerID: existingServerID,
-            existingWorkspaceID: existingWorkspaceID
-        )
-        if case .valid = result { return true }
-        return false
+        switch mode {
+        case .newServer:
+            if case .valid = TmuxConnectionDraftValidator.validate(
+                draft,
+                existingServerID: nil,
+                existingWorkspaceID: nil
+            ) {
+                return true
+            }
+            return false
+
+        case .newWorkspace(let serverID):
+            if case .valid = TmuxConnectionDraftValidator.validateWorkspace(
+                draft,
+                serverID: serverID,
+                existingWorkspaceID: nil
+            ) {
+                return true
+            }
+            return false
+
+        case .editServer(let serverID, _):
+            if case .valid = TmuxConnectionDraftValidator.validateServer(
+                draft,
+                existingServerID: serverID
+            ) {
+                return true
+            }
+            return false
+
+        case .editWorkspace(let serverID, let workspaceID):
+            if case .valid = TmuxConnectionDraftValidator.validateWorkspace(
+                draft,
+                serverID: serverID,
+                existingWorkspaceID: workspaceID
+            ) {
+                return true
+            }
+            return false
+        }
     }
 
     private var existingServerID: SavedServer.ID? {
@@ -1284,6 +1297,62 @@ private struct ConnectionSetupView: View {
         }
     }
 
+    private func textInputRow(
+        title: String,
+        placeholder: String,
+        keyPath: WritableKeyPath<TmuxConnectionDraft, String>,
+        field: Field,
+        textInputAutocapitalization: TextInputAutocapitalization = .never,
+        autocorrectionDisabled: Bool = true,
+        keyboardType: UIKeyboardType = .default,
+        submitLabel: SubmitLabel = .next,
+        accessibilityIdentifier: String
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 12)
+
+            TextField(placeholder, text: binding(for: keyPath))
+                .textInputAutocapitalization(textInputAutocapitalization)
+                .autocorrectionDisabled(autocorrectionDisabled)
+                .keyboardType(keyboardType)
+                .multilineTextAlignment(.trailing)
+                .focused($focusedField, equals: field)
+                .submitLabel(submitLabel)
+                .onSubmit { advance(from: field) }
+                .accessibilityIdentifier(accessibilityIdentifier)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            focusedField = field
+        }
+    }
+
+    private func passwordInputRow() -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Password")
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 12)
+
+            SecureField("Required", text: binding(for: \.password))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textContentType(.oneTimeCode)
+                .multilineTextAlignment(.trailing)
+                .focused($focusedField, equals: .password)
+                .submitLabel(showsSessionFields ? .next : .go)
+                .onSubmit { advance(from: .password) }
+                .frame(minHeight: 28)
+                .accessibilityIdentifier("connection.password")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            focusedField = .password
+        }
+    }
 
     private func binding(for keyPath: WritableKeyPath<TmuxConnectionDraft, String>) -> Binding<String> {
         Binding(
