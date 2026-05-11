@@ -618,12 +618,14 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func executeShortcut(_ shortcut: Shortcut) {
-        let executor = ShortcutExecutor(
-            sendText: sendTerminalText,
-            sendKey: sendTerminalKeyEvent
-        )
-        if executor.execute(shortcut) {
-            isShortcutPalettePresented = false
+        Task { @MainActor in
+            let executor = ShortcutExecutor(
+                sendText: sendTerminalText,
+                sendKey: sendTerminalKeyEvent
+            )
+            if await executor.execute(shortcut) {
+                isShortcutPalettePresented = false
+            }
         }
     }
 
