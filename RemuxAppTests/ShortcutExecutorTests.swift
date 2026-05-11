@@ -3,25 +3,141 @@ import XCTest
 
 @MainActor
 final class ShortcutExecutorTests: XCTestCase {
-    func testTextShortcutCanAppendReturn() {
-        var sentTexts: [String] = []
+    func testTextShortcutAutoSubmitSendsTextThenEnterKeyTap() async {
+        var operations: [SentShortcutOperation] = []
         let executor = ShortcutExecutor(
             sendText: {
-                sentTexts.append($0)
+                operations.append(.text($0))
                 return true
             },
-            sendKey: { _ in
-                XCTFail("Text shortcut should not send a key event")
+            sendKey: {
+                operations.append(.key($0))
+                return true
+            },
+            autoSubmitBoundary: {
+                operations.append(.autoSubmitBoundary)
+                return true
+            }
+        )
+
+        let didExecute = await executor.execute(.text("/clear", submit: true))
+
+        XCTAssertTrue(didExecute)
+
+        XCTAssertEqual(
+            operations,
+            [
+                .text("/clear"),
+                .autoSubmitBoundary,
+                .key(GhosttySurfaceKeyEvent(action: .press, keyCode: .enter)),
+                .key(GhosttySurfaceKeyEvent(action: .release, keyCode: .enter)),
+            ]
+        )
+    }
+
+    func testTextShortcutWithoutSubmitSendsOnlyText() async {
+        var operations: [SentShortcutOperation] = []
+        let executor = ShortcutExecutor(
+            sendText: {
+                operations.append(.text($0))
+                return true
+            },
+            sendKey: {
+                operations.append(.key($0))
+                return true
+            },
+            autoSubmitBoundary: {
+                operations.append(.autoSubmitBoundary)
+                return true
+            }
+        )
+
+        let didExecute = await executor.execute(.text("draft", submit: false))
+
+        XCTAssertTrue(didExecute)
+
+        XCTAssertEqual(operations, [.text("draft")])
+    }
+
+    func testTextShortcutRejectedBeforeSubmitDoesNotSendEnter() async {
+        var operations: [SentShortcutOperation] = []
+        let executor = ShortcutExecutor(
+            sendText: {
+                operations.append(.text($0))
+                return false
+            },
+            sendKey: {
+                operations.append(.key($0))
+                return true
+            },
+            autoSubmitBoundary: {
+                operations.append(.autoSubmitBoundary)
+                return true
+            }
+        )
+
+        let didExecute = await executor.execute(.text("/status", submit: true))
+
+        XCTAssertFalse(didExecute)
+
+        XCTAssertEqual(operations, [.text("/status")])
+    }
+
+    func testTextShortcutAutoSubmitSucceedsWhenEnterReleaseIsIgnored() async {
+        var operations: [SentShortcutOperation] = []
+        let executor = ShortcutExecutor(
+            sendText: {
+                operations.append(.text($0))
+                return true
+            },
+            sendKey: {
+                operations.append(.key($0))
+                return $0.action == .press
+            },
+            autoSubmitBoundary: {
+                operations.append(.autoSubmitBoundary)
+                return true
+            }
+        )
+
+        let didExecute = await executor.execute(.text("/resume", submit: true))
+
+        XCTAssertTrue(didExecute)
+        XCTAssertEqual(
+            operations,
+            [
+                .text("/resume"),
+                .autoSubmitBoundary,
+                .key(GhosttySurfaceKeyEvent(action: .press, keyCode: .enter)),
+                .key(GhosttySurfaceKeyEvent(action: .release, keyCode: .enter)),
+            ]
+        )
+    }
+
+    func testTextShortcutStopsWhenAutoSubmitBoundaryIsCancelled() async {
+        var operations: [SentShortcutOperation] = []
+        let executor = ShortcutExecutor(
+            sendText: {
+                operations.append(.text($0))
+                return true
+            },
+            sendKey: {
+                operations.append(.key($0))
+                return true
+            },
+            autoSubmitBoundary: {
+                operations.append(.autoSubmitBoundary)
                 return false
             }
         )
 
-        XCTAssertTrue(executor.execute(.text("/clear", submit: true)))
+        let didExecute = await executor.execute(.text("/status", submit: true))
 
-        XCTAssertEqual(sentTexts, ["/clear\r"])
+        XCTAssertFalse(didExecute)
+        XCTAssertEqual(operations, [.text("/status"), .autoSubmitBoundary])
     }
 
-    func testControlShortcutSendsTranslatedControlCharacter() {
+    func testControlShortcutSendsTranslatedControlCharacter() async {
         var sentTexts: [String] = []
         let executor = ShortcutExecutor(
             sendText: {
@@ -34,12 +150,14 @@ final class ShortcutExecutorTests: XCTestCase {
             }
         )
 
-        XCTAssertTrue(executor.execute(.control("c")))
+        let didExecute = await executor.execute(.control("c"))
+
+        XCTAssertTrue(didExecute)
 
         XCTAssertEqual(sentTexts, ["\u{03}"])
     }
 
-    func testInvalidControlShortcutIsRejected() {
+    func testInvalidControlShortcutIsRejected() async {
         let executor = ShortcutExecutor(
             sendText: { _ in
                 XCTFail("Invalid control shortcut should not send text")
@@ -51,10 +169,12 @@ final class ShortcutExecutorTests: XCTestCase {
             }
         )
 
-        XCTAssertFalse(executor.execute(.control("invalid")))
+        let didExecute = await executor.execute(.control("invalid"))
+
+        XCTAssertFalse(didExecute)
     }
 
-    func testKeyShortcutSendsMappedKeyEvent() {
+    func testKeyShortcutSendsMappedKeyEvent() async {
         var sentEvents: [GhosttySurfaceKeyEvent] = []
         let executor = ShortcutExecutor(
             sendText: { _ in
@@ -67,10 +187,18 @@ final class ShortcutExecutorTests: XCTestCase {
             }
         )
 
-        XCTAssertTrue(executor.execute(.key(.tab, modifiers: [.shift, .control])))
+        let didExecute = await executor.execute(.key(.tab, modifiers: [.shift, .control]))
+
+        XCTAssertTrue(didExecute)
 
         XCTAssertEqual(sentEvents.count, 1)
         XCTAssertEqual(sentEvents.first?.keyCode, .tab)
         XCTAssertEqual(sentEvents.first?.mods, [.shift, .ctrl])
     }
+}
+
+private enum SentShortcutOperation: Equatable {
+    case text(String)
+    case autoSubmitBoundary
+    case key(GhosttySurfaceKeyEvent)
 }
