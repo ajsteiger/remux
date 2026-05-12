@@ -82,7 +82,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHSeededServerOpensReadyTerminalWhenConfigured() throws {
-        try launchLiveSSHAppIfConfigured()
+        try launchLiveSSHAppIfConfigured(traceRuntime: true)
         openFirstSavedSession()
 
         waitForLiveTerminalReady(timeout: 60)
@@ -830,7 +830,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testCaptureDesignReviewScreens() throws {
-        try launchLiveSSHAppIfConfigured()
+        try launchLiveSSHAppIfConfigured(traceRuntime: true)
 
         XCTAssertTrue(app.buttons["library.add-server"].waitForExistence(timeout: 12))
         sleep(1)

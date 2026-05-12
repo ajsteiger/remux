@@ -95,6 +95,42 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         surface.setBackingExited(true)
     }
 
+    func testManualHostSurfaceTmuxBootstrapQueuesControlCommands() async throws {
+        let recorder = ManualWriteRecorder()
+        let runtime = try GhosttyKitRuntime()
+        let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let surface = try runtime.makeManualHostSurface(
+            view: view,
+            onWrite: { data, linefeed in
+                recorder.record(data: data, linefeed: linefeed)
+                return true
+            }
+        )
+
+        var chunk = Data([0x1B])
+        chunk.append(Data(
+            (
+                "P1000p%begin 1778596464 3801170 0\r\n" +
+                    "%end 1778596464 3801170 0\r\n" +
+                    "%session-changed $209 remux-fidelity-localssh\r\n"
+            ).utf8
+        ))
+
+        XCTAssertTrue(surface.processOutput(chunk))
+
+        let wroteBootstrapCommands = await waitUntil {
+            let writes = recorder.writes().map(\.data)
+            return writes.contains { data in
+                String(decoding: data, as: UTF8.self).contains("display-message -p '#{version}'")
+            } && writes.contains { data in
+                String(decoding: data, as: UTF8.self).contains("list-windows")
+            }
+        }
+
+        XCTAssertTrue(wroteBootstrapCommands)
+        surface.setBackingExited(true)
+    }
+
     func testRuntimeCreateSurfaceTreeUsesFocusedLeafIndex() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
