@@ -149,13 +149,18 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     }
 
     func insertText(_ text: String) {
+        submitTextInput(text, source: "insertText")
+    }
+
+    func submitTextInput(_ text: String, source: String) {
         guard isInputEnabled else { return }
+        guard !text.isEmpty else { return }
         GhosttyRuntimeTrace.diagnostics(
-            "responder.insertText bytes=\(text.lengthOfBytes(using: .utf8)) firstResponder=\(isFirstResponder) token=\(activationToken)"
+            "responder.\(source) bytes=\(text.lengthOfBytes(using: .utf8)) firstResponder=\(isFirstResponder) token=\(activationToken)"
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
-            event: "responder.insertText",
+            event: "responder.\(source)",
             fields: [
                 "bytes": "\(text.lengthOfBytes(using: .utf8))",
                 "firstResponder": "\(isFirstResponder)",

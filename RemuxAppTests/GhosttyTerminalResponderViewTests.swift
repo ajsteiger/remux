@@ -67,6 +67,29 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
     }
 
     @MainActor
+    func testReplaceTextSendsCommittedTerminalInputWhenEnabled() {
+        let view = GhosttyTerminalResponderUIView()
+        var receivedText: [String] = []
+
+        view.update(
+            isEnabled: true,
+            wantsFirstResponder: true,
+            activationToken: 1,
+            sendText: {
+                receivedText.append($0)
+                return true
+            },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true },
+            onTrackpadStateChange: { _ in }
+        )
+
+        view.replace(view.selectedTextRange!, withText: "hello")
+
+        XCTAssertEqual(receivedText, ["hello"])
+    }
+
+    @MainActor
     func testInsertTextIsIgnoredWhenDisabled() {
         let view = GhosttyTerminalResponderUIView()
         var receivedText: [String] = []
@@ -85,6 +108,29 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
 
         view.insertText("ignored")
+
+        XCTAssertTrue(receivedText.isEmpty)
+    }
+
+    @MainActor
+    func testReplaceTextIsIgnoredWhenDisabled() {
+        let view = GhosttyTerminalResponderUIView()
+        var receivedText: [String] = []
+
+        view.update(
+            isEnabled: false,
+            wantsFirstResponder: false,
+            activationToken: 1,
+            sendText: {
+                receivedText.append($0)
+                return true
+            },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true },
+            onTrackpadStateChange: { _ in }
+        )
+
+        view.replace(view.selectedTextRange!, withText: "ignored")
 
         XCTAssertTrue(receivedText.isEmpty)
     }

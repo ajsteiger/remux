@@ -6,7 +6,9 @@ import UIKit
 // document, so this file provides safe stubs over a virtual one-character
 // document. Everything here exists solely to keep UIKit's protocol-required
 // calls happy without surfacing autocorrect, marked text, an edit menu, or
-// other text-input behaviors.
+// other text-input behaviors. UIKit may still deliver committed software
+// keyboard input through `replace(_:withText:)`, so committed replacement text
+// is forwarded to the same terminal path as `insertText`.
 
 /// Stub UITextPosition backed by an integer offset in a virtual document of
 /// length 1.
@@ -59,7 +61,8 @@ extension GhosttyTerminalResponderUIView: UITextInput {
     func text(in range: UITextRange) -> String? { "" }
 
     func replace(_ range: UITextRange, withText text: String) {
-        _ = (range, text)
+        _ = range
+        submitTextInput(text, source: "replaceText")
     }
 
     func setMarkedText(_ markedText: String?, selectedRange: NSRange) {
