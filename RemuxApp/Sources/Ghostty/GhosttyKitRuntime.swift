@@ -23,6 +23,14 @@ struct GhosttyTerminalAppearance: Equatable {
     }
 }
 
+enum GhosttyTmuxHistoryCapturePolicy {
+    static let initialLimit = 1000
+
+    static func apply(to config: inout ghostty_surface_config_s) {
+        config.tmux_history_capture_limit = initialLimit
+    }
+}
+
 enum GhosttyTerminalDeviceClass {
     case phone
     case pad
@@ -190,6 +198,7 @@ final class GhosttyKitRuntime {
         GhosttyTerminalAppearancePolicy
             .currentDeviceAppearance(settings: state.terminalSettings)
             .apply(to: &surfaceConfig)
+        GhosttyTmuxHistoryCapturePolicy.apply(to: &surfaceConfig)
         surfaceConfig.platform_tag = GHOSTTY_PLATFORM_IOS
         surfaceConfig.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
             uiview: Unmanaged.passUnretained(view).toOpaque()

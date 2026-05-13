@@ -64,6 +64,14 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         XCTAssertEqual(config.font_size, 0)
     }
 
+    func testTmuxHistoryCapturePolicyUsesMobileInitialLimit() {
+        var config = ghostty_surface_config_new()
+
+        GhosttyTmuxHistoryCapturePolicy.apply(to: &config)
+
+        XCTAssertEqual(config.tmux_history_capture_limit, 1000)
+    }
+
     func testRuntimeCreatesManualHostSurfaceThatAcceptsOutput() throws {
         let runtime = try GhosttyKitRuntime()
         let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
