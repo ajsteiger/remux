@@ -784,6 +784,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfacePresentationForTesting(surfaceID: second.id)
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        XCTAssertTrue(Self.notifyRuntimeRender(registry, surface: second))
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
@@ -822,6 +825,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfacePresentationForTesting(surfaceID: second.id)
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        XCTAssertTrue(Self.notifyRuntimeRender(registry, surface: second))
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
@@ -855,6 +861,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfacePresentationForTesting(surfaceID: second.id)
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        XCTAssertTrue(Self.notifyRuntimeRender(registry, surface: second))
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
@@ -2366,6 +2375,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.terminalTreePresentationProjection.pendingPresentationSurfaceID, second.id)
 
         model.surfaceRegistry.recordSurfacePresentationForTesting(surfaceID: second.id)
+        XCTAssertEqual(model.terminalTreePresentationProjection.pendingPresentationSurfaceID, second.id)
+
+        XCTAssertTrue(Self.notifyRuntimeRender(model.surfaceRegistry, surface: second))
         XCTAssertNil(model.terminalTreePresentationProjection.pendingPresentationSurfaceID)
     }
 

@@ -1588,7 +1588,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
-        contentReadySurfaceIDs.insert(surfaceID)
         schedulePendingPhonePresentationRefresh(
             surfaceID: surfaceID,
             reason: "display.update"
