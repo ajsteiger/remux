@@ -184,6 +184,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
     private var deferredChangeNotificationTask: Task<Void, Never>?
     private var contentReadySurfaceIDs: Set<UUID> = []
+    private var viewPresentedSurfaceIDs: Set<UUID> = []
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
         guard let selectedTopLevelID else { return nil }
@@ -241,6 +242,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         pendingPhonePresentationSurfaceID = nil
         pendingPhonePresentationTrace = nil
         contentReadySurfaceIDs = []
+        viewPresentedSurfaceIDs = []
         notifyChanged()
     }
 
@@ -263,6 +265,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         pendingPhonePresentationSurfaceID = nil
         pendingPhonePresentationTrace = nil
         contentReadySurfaceIDs = []
+        viewPresentedSurfaceIDs = []
 
         // Release all surfaces still tracked by Remux before the Ghostty app is
         // freed. Surfaces removed earlier are released at the removal boundary.
@@ -440,7 +443,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return
         }
 
-        if surfaceHasPresentedContent(targetSurfaceID) {
+        if surfaceIsReadyForPhonePresentation(targetSurfaceID) {
             if pendingPhonePresentationSurfaceID == targetSurfaceID {
                 tracePendingPhonePresentation(
                     event: "ready",
@@ -596,6 +599,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         contentReadySurfaceIDs.contains(surfaceID)
     }
 
+    private func surfaceHasViewPresentation(_ surfaceID: UUID) -> Bool {
+        viewPresentedSurfaceIDs.contains(surfaceID)
+    }
+
+    private func surfaceIsReadyForPhonePresentation(_ surfaceID: UUID) -> Bool {
+        surfaceHasPresentedContent(surfaceID) && surfaceHasViewPresentation(surfaceID)
+    }
+
     @discardableResult
     private func promotePendingPhonePresentationIfReady(
         surfaceID: UUID,
@@ -611,7 +622,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             clearPendingPhonePresentation()
             return true
         }
-        guard surfaceHasPresentedContent(surfaceID) else { return false }
+        guard surfaceIsReadyForPhonePresentation(surfaceID) else { return false }
 
         tracePendingPhonePresentation(
             event: "ready",
@@ -1281,7 +1292,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func recordSurfacePresentation(_ surfaceID: UUID, reason: String) {
-        contentReadySurfaceIDs.insert(surfaceID)
+        viewPresentedSurfaceIDs.insert(surfaceID)
         if pendingPhonePresentationSurfaceID == surfaceID {
             _ = promotePendingPhonePresentationIfReady(
                 surfaceID: surfaceID,
@@ -1577,6 +1588,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
+        contentReadySurfaceIDs.insert(surfaceID)
         schedulePendingPhonePresentationRefresh(
             surfaceID: surfaceID,
             reason: "display.update"
@@ -1708,6 +1720,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private func removeManagedSurface(_ id: UUID) {
         guard let removed = managedSurfaces.removeValue(forKey: id) else { return }
         contentReadySurfaceIDs.remove(id)
+        viewPresentedSurfaceIDs.remove(id)
         if pendingPhonePresentationSurfaceID == id {
             clearPendingPhonePresentation()
         }

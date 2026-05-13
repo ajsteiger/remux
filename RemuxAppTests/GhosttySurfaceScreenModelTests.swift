@@ -742,8 +742,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     func testPhonePresentationStagesPaneOverlayUntilFocusedPaneIsPresented() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var secondInput: [String] = []
-        let first = Self.managedSurface()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x601)!)
         let second = Self.managedSurface(
+            handle: UnsafeMutableRawPointer(bitPattern: 0x602)!,
             sendInput: {
                 secondInput.append($0)
                 return true
@@ -788,8 +789,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testPhonePresentationKeepsPaneOverlayAcrossDuplicateSelectionUntilPresentation() {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        let first = Self.managedSurface()
-        let second = Self.managedSurface()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x603)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x604)!)
 
         registry.registerManagedSurfaceTreeForTesting(
             [first, second],
@@ -826,8 +827,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testPhonePresentationStagesWindowOverlayUntilSelectedWindowIsPresented() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        let first = Self.managedSurface()
-        let second = Self.managedSurface()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x605)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x606)!)
 
         registry.registerManagedSurfaceForTesting(first)
         let firstTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
@@ -857,7 +858,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
-    func testRuntimeRenderMarksPendingWindowPresentationReadyWithoutPreviewText() throws {
+    func testRuntimeRenderWaitsForPendingWindowPresentationLayoutWithoutPreviewText() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let firstHandle = UnsafeMutableRawPointer(bitPattern: 0x101)!
         let secondHandle = UnsafeMutableRawPointer(bitPattern: 0x102)!
@@ -870,10 +871,13 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         XCTAssertTrue(Self.notifyRuntimeRender(registry, surface: second))
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        registry.recordSurfacePresentationForTesting(surfaceID: second.id)
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
-    func testRuntimeRenderDefersPendingPresentationPublication() async throws {
+    func testPendingPresentationPublicationDefersUntilRenderAndLayout() async throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let firstHandle = UnsafeMutableRawPointer(bitPattern: 0x101)!
         let secondHandle = UnsafeMutableRawPointer(bitPattern: 0x102)!
@@ -891,6 +895,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         }
 
         XCTAssertTrue(Self.notifyRuntimeRender(registry, surface: second))
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+        XCTAssertEqual(notificationCount, 0)
+
+        registry.recordSurfacePresentationForTesting(surfaceID: second.id)
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
         XCTAssertEqual(notificationCount, 0)
 
@@ -900,33 +908,27 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(didNotify)
     }
 
-    func testDisplayUpdateDoesNotMarkPendingWindowPresentationReadyWithoutPresentation() throws {
+    func testLayoutDoesNotMarkPendingWindowPresentationReadyWithoutContentUpdate() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        let first = Self.managedSurface()
-        let second = Self.managedSurface()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x103)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x104)!)
 
         registry.registerManagedSurfaceForTesting(first)
         registry.registerManagedSurfaceForTesting(second)
 
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
-        registry.recordSurfaceDisplayUpdateForTesting(
-            surfaceID: second.id,
-            size: CGSize(width: 390, height: 641),
-            scale: 3
-        )
-        registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
-
+        registry.recordSurfacePresentationForTesting(surfaceID: second.id)
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
-        registry.recordSurfacePresentationForTesting(surfaceID: second.id)
+        XCTAssertTrue(Self.notifyRuntimeRender(registry, surface: second))
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
     func testPendingPhonePresentationTimeoutClearsWithoutPresentation() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        let first = Self.managedSurface()
-        let second = Self.managedSurface()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x607)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x608)!)
 
         registry.registerManagedSurfaceForTesting(first)
         registry.registerManagedSurfaceForTesting(second)
@@ -959,6 +961,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfacePresentationForTesting(surfaceID: second.id)
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        XCTAssertTrue(Self.notifyRuntimeRender(registry, surface: second))
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
@@ -988,8 +993,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testAdjacentTopLevelSelectionWrapsAcrossWindows() {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        let first = Self.managedSurface()
-        let second = Self.managedSurface()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x609)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x60A)!)
         let third = Self.managedSurface()
 
         registry.registerManagedSurfaceForTesting(first)
