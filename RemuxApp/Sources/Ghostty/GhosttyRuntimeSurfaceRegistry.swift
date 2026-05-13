@@ -183,7 +183,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var pendingPhonePresentationRefreshAttempt = 0
     private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
     private var deferredChangeNotificationTask: Task<Void, Never>?
-    private var contentReadySurfaceIDs: Set<UUID> = []
+    // Runtime presentation readiness means Ghostty has emitted a surface update
+    // that is safe for Remux to reveal. It may be a render or a scrollbar/state
+    // update; it does not require non-empty glyph content.
+    private var runtimePresentationReadySurfaceIDs: Set<UUID> = []
     private var viewPresentedSurfaceIDs: Set<UUID> = []
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
@@ -241,7 +244,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         interactiveReadinessTracker.reset()
         pendingPhonePresentationSurfaceID = nil
         pendingPhonePresentationTrace = nil
-        contentReadySurfaceIDs = []
+        runtimePresentationReadySurfaceIDs = []
         viewPresentedSurfaceIDs = []
         notifyChanged()
     }
@@ -264,7 +267,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     func prepareForRuntimeTeardown() {
         pendingPhonePresentationSurfaceID = nil
         pendingPhonePresentationTrace = nil
-        contentReadySurfaceIDs = []
+        runtimePresentationReadySurfaceIDs = []
         viewPresentedSurfaceIDs = []
 
         // Release all surfaces still tracked by Remux before the Ghostty app is
@@ -595,8 +598,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
     }
 
-    private func surfaceHasPresentedContent(_ surfaceID: UUID) -> Bool {
-        contentReadySurfaceIDs.contains(surfaceID)
+    private func surfaceHasRuntimePresentationReadiness(_ surfaceID: UUID) -> Bool {
+        runtimePresentationReadySurfaceIDs.contains(surfaceID)
     }
 
     private func surfaceHasViewPresentation(_ surfaceID: UUID) -> Bool {
@@ -604,15 +607,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func surfaceIsReadyForPhonePresentation(_ surfaceID: UUID) -> Bool {
-        surfaceHasPresentedContent(surfaceID) && surfaceHasViewPresentation(surfaceID)
+        surfaceHasRuntimePresentationReadiness(surfaceID) && surfaceHasViewPresentation(surfaceID)
     }
 
-    private func markSurfaceContentReady(
+    private func markSurfaceRuntimePresentationReady(
         _ surfaceID: UUID,
         reason: String,
         surface: GhosttyManagedSurface
     ) {
-        contentReadySurfaceIDs.insert(surfaceID)
+        runtimePresentationReadySurfaceIDs.insert(surfaceID)
         if pendingPhonePresentationSurfaceID == surfaceID {
             _ = promotePendingPhonePresentationIfReady(
                 surfaceID: surfaceID,
@@ -1337,12 +1340,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         switch action.tag {
         case GHOSTTY_ACTION_RENDER:
-            markSurfaceContentReady(id, reason: "runtime.render", surface: surface)
+            markSurfaceRuntimePresentationReady(id, reason: "runtime.render", surface: surface)
 
         case GHOSTTY_ACTION_SCROLLBAR:
             let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
             surface.updateScrollState(state)
-            markSurfaceContentReady(id, reason: "runtime.scrollbar", surface: surface)
+            markSurfaceRuntimePresentationReady(id, reason: "runtime.scrollbar", surface: surface)
 
         case GHOSTTY_ACTION_SCROLL_ROUTE:
             let route = GhosttySurfaceScrollRoute(cValue: action.action.scroll_route)
@@ -1663,7 +1666,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             selected: selectedActiveLeafID == surface.id,
             visible: surface.isVisible,
             focused: surface.isFocused,
-            contentReady: surfaceHasPresentedContent(surface.id),
+            runtimePresentationReady: surfaceHasRuntimePresentationReadiness(surface.id),
             presentationReady: pendingPhonePresentationSurfaceID != surface.id
         )
     }
@@ -1674,7 +1677,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         scale: CGFloat?
     ) {
         var fields = [
-            "contentReady": "\(completion.state.contentReady)",
+            "runtimePresentationReady": "\(completion.state.runtimePresentationReady)",
             "focused": "\(completion.state.focused)",
             "presentationReady": "\(completion.state.presentationReady)",
             "reason": reason,
@@ -1701,7 +1704,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         let state = interactiveReadinessState(for: surface)
         let renderStatus = interactiveReadinessTracker.renderStatus(for: surfaceID)
         var fields = [
-            "contentReady": "\(state.contentReady)",
+            "runtimePresentationReady": "\(state.runtimePresentationReady)",
             "focused": "\(state.focused)",
             "presentationReady": "\(state.presentationReady)",
             "reason": reason,
@@ -1723,7 +1726,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     private func removeManagedSurface(_ id: UUID) {
         guard let removed = managedSurfaces.removeValue(forKey: id) else { return }
-        contentReadySurfaceIDs.remove(id)
+        runtimePresentationReadySurfaceIDs.remove(id)
         viewPresentedSurfaceIDs.remove(id)
         if pendingPhonePresentationSurfaceID == id {
             clearPendingPhonePresentation()
@@ -2094,11 +2097,11 @@ struct GhosttyInteractiveSurfaceReadinessState: Equatable {
     let selected: Bool
     let visible: Bool
     let focused: Bool
-    let contentReady: Bool
+    let runtimePresentationReady: Bool
     let presentationReady: Bool
 
     var isInteractive: Bool {
-        selected && visible && focused && contentReady && presentationReady
+        selected && visible && focused && runtimePresentationReady && presentationReady
     }
 }
 

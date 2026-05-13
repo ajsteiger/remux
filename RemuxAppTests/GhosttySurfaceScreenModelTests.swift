@@ -790,7 +790,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
-    func testPhonePresentationAcceptsScrollbarAsContentReadyForEmbeddedRenderer() {
+    func testPhonePresentationAcceptsScrollbarAsRuntimePresentationReadyForEmbeddedRenderer() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x60A)!)
         let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x60B)!)
@@ -1458,35 +1458,35 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("input rejected"))
     }
 
-    func testInteractiveReadinessWaitsForRenderedFocusedVisibleSelectedContentReadySurface() {
+    func testInteractiveReadinessWaitsForRenderedFocusedVisibleSelectedRuntimePresentationReadySurface() {
         let tracker = GhosttyInteractiveReadinessTracker()
         let surfaceID = UUID()
         let notSelected = GhosttyInteractiveSurfaceReadinessState(
             selected: false,
             visible: true,
             focused: true,
-            contentReady: true,
+            runtimePresentationReady: true,
             presentationReady: true
         )
-        let waitingForContent = GhosttyInteractiveSurfaceReadinessState(
+        let waitingForRuntimePresentation = GhosttyInteractiveSurfaceReadinessState(
             selected: true,
             visible: true,
             focused: true,
-            contentReady: false,
+            runtimePresentationReady: false,
             presentationReady: true
         )
         let waitingForPresentation = GhosttyInteractiveSurfaceReadinessState(
             selected: true,
             visible: true,
             focused: true,
-            contentReady: true,
+            runtimePresentationReady: true,
             presentationReady: false
         )
         let ready = GhosttyInteractiveSurfaceReadinessState(
             selected: true,
             visible: true,
             focused: true,
-            contentReady: true,
+            runtimePresentationReady: true,
             presentationReady: true
         )
 
@@ -1509,7 +1509,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(
             tracker.updatePresentation(
                 surfaceID: surfaceID,
-                state: waitingForContent
+                state: waitingForRuntimePresentation
             ).isEmpty
         )
         XCTAssertTrue(
