@@ -445,7 +445,7 @@ struct GhosttySurfaceScreen: View {
                 beginKeyboardViewportTransition(
                     target: expectedMode == .system ? .shown : .hidden,
                     allowsTargetOverride: true,
-                    allowsLiveSizeCompletion: true
+                    fallbackDelay: keyboardViewportFallbackDelayForUserToggle(to: expectedMode)
                 )
             }
 
@@ -984,6 +984,7 @@ struct GhosttySurfaceScreen: View {
                 GhosttyRuntimeTrace.perf(
                     "kbd.transition ignoreDidHideByPolicy mode=\(inputCoordinator.keyboardMode.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
                 )
+                recoverSystemKeyboardAfterUnexpectedHideIfNeeded()
                 return
             }
             guard shouldCompleteKeyboardViewportTransition(for: .hidden) else {
@@ -1007,6 +1008,7 @@ struct GhosttySurfaceScreen: View {
         let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(
             liveSize: terminalViewportCoordinator.latestLiveSize
         )
+        isAwaitingSystemKeyboardPresentation = false
         terminalViewportCoordinator.completeKeyboardTransition(
             liveSize: terminalViewportCoordinator.latestLiveSize
         )
@@ -1071,6 +1073,41 @@ struct GhosttySurfaceScreen: View {
                 GhosttyKeyboardViewportTransitionTiming.minimumFallbackDelay
             ),
             GhosttyKeyboardViewportTransitionTiming.maximumFallbackDelay
+        )
+    }
+
+    private func keyboardViewportFallbackDelayForUserToggle(
+        to keyboardMode: GhosttyKeyboardChromeMode
+    ) -> TimeInterval {
+        switch keyboardMode {
+        case .system:
+            return GhosttyKeyboardViewportTransitionTiming.systemPresentationFallbackDelay
+        case .hidden:
+            return GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
+        }
+    }
+
+    private func recoverSystemKeyboardAfterUnexpectedHideIfNeeded() {
+        guard GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+            keyboardMode: inputCoordinator.keyboardMode,
+            isDismissSystemKeyboardRequested: inputCoordinator.isDismissSystemKeyboardRequested,
+            isInputAvailable: isTerminalInputAvailable,
+            isSelectionSheetPresented: selectionSheet != nil,
+            isAwaitingSystemKeyboardPresentation: isAwaitingSystemKeyboardPresentation,
+            isSceneActive: scenePhase == .active
+        ) else {
+            return
+        }
+
+        isAwaitingSystemKeyboardPresentation = true
+        beginKeyboardViewportTransition(
+            target: .shown,
+            allowsTargetOverride: true,
+            fallbackDelay: GhosttyKeyboardViewportTransitionTiming.systemPresentationFallbackDelay
+        )
+        refocusSystemKeyboardIfActive()
+        GhosttyRuntimeTrace.perf(
+            "kbd.transition recoverUnexpectedHide mode=\(inputCoordinator.keyboardMode.traceLabel) token=\(inputCoordinator.terminalActivationToken)"
         )
     }
 
@@ -1297,6 +1334,22 @@ enum GhosttyKeyboardViewportTransitionPolicy {
             return true
         }
     }
+
+    static func shouldRecoverSystemKeyboardAfterIgnoredHide(
+        keyboardMode: GhosttyKeyboardChromeMode,
+        isDismissSystemKeyboardRequested: Bool,
+        isInputAvailable: Bool,
+        isSelectionSheetPresented: Bool,
+        isAwaitingSystemKeyboardPresentation: Bool,
+        isSceneActive: Bool
+    ) -> Bool {
+        keyboardMode == .system
+            && !isDismissSystemKeyboardRequested
+            && isInputAvailable
+            && !isSelectionSheetPresented
+            && !isAwaitingSystemKeyboardPresentation
+            && isSceneActive
+    }
 }
 
 private enum GhosttyKeyboardViewportTransitionTiming {
@@ -1305,6 +1358,7 @@ private enum GhosttyKeyboardViewportTransitionTiming {
     static let minimumFallbackDelay: TimeInterval = 0.25
     static let maximumFallbackDelay: TimeInterval = 1.0
     static let defaultFallbackDelay: TimeInterval = 1.0
+    static let systemPresentationFallbackDelay: TimeInterval = 2.0
 }
 
 private extension Optional where Wrapped == GhosttyKeyboardViewportTransitionTarget {

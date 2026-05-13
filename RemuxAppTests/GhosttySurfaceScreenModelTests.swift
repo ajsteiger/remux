@@ -173,6 +173,69 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
+    func testKeyboardViewportTransitionPolicyRecoversUnexpectedHideOnlyForActiveTerminal() {
+        XCTAssertTrue(
+            GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+                keyboardMode: .system,
+                isDismissSystemKeyboardRequested: false,
+                isInputAvailable: true,
+                isSelectionSheetPresented: false,
+                isAwaitingSystemKeyboardPresentation: false,
+                isSceneActive: true
+            )
+        )
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+                keyboardMode: .hidden,
+                isDismissSystemKeyboardRequested: false,
+                isInputAvailable: true,
+                isSelectionSheetPresented: false,
+                isAwaitingSystemKeyboardPresentation: false,
+                isSceneActive: true
+            )
+        )
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+                keyboardMode: .system,
+                isDismissSystemKeyboardRequested: true,
+                isInputAvailable: true,
+                isSelectionSheetPresented: false,
+                isAwaitingSystemKeyboardPresentation: false,
+                isSceneActive: true
+            )
+        )
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+                keyboardMode: .system,
+                isDismissSystemKeyboardRequested: false,
+                isInputAvailable: true,
+                isSelectionSheetPresented: true,
+                isAwaitingSystemKeyboardPresentation: false,
+                isSceneActive: true
+            )
+        )
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+                keyboardMode: .system,
+                isDismissSystemKeyboardRequested: false,
+                isInputAvailable: false,
+                isSelectionSheetPresented: false,
+                isAwaitingSystemKeyboardPresentation: false,
+                isSceneActive: true
+            )
+        )
+        XCTAssertFalse(
+            GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+                keyboardMode: .system,
+                isDismissSystemKeyboardRequested: false,
+                isInputAvailable: true,
+                isSelectionSheetPresented: false,
+                isAwaitingSystemKeyboardPresentation: true,
+                isSceneActive: true
+            )
+        )
+    }
+
     func testKeyboardViewportTransitionPolicyAllowsRequestedSystemKeyboardShow() {
         XCTAssertTrue(
             GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(

@@ -71,6 +71,29 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
     }
 
+    func testSystemKeyboardShowKeepsPreviousViewportUntilPresentationCompletes() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let full = CGSize(width: 402, height: 726)
+        let keyboard = CGSize(width: 402, height: 452)
+
+        XCTAssertTrue(coordinator.observeLiveSize(full))
+        coordinator.beginKeyboardTransition(
+            target: .shown,
+            allowsTargetOverride: true,
+            allowsLiveSizeCompletion: false,
+            liveSize: full
+        )
+
+        XCTAssertFalse(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), full)
+        XCTAssertEqual(coordinator.lastStableSize, full)
+
+        coordinator.completeKeyboardTransition(liveSize: keyboard)
+
+        XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), keyboard)
+    }
+
     func testSheetDismissalDefersReleaseWhileKeyboardTransitionStillHoldsViewport() {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let keyboard = CGSize(width: 402, height: 452)

@@ -94,6 +94,19 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.isSoftwareKeyboardVisible)
     }
 
+    func testUnexpectedKeyboardHideCanRequestFreshActivationWhileSystemModeIsPreserved() {
+        var coordinator = GhosttyTerminalInputCoordinator()
+        coordinator.showSystemKeyboard(isInputAvailable: true)
+        coordinator.updateSoftwareKeyboardVisibility(true)
+        coordinator.updateSoftwareKeyboardVisibility(false)
+
+        coordinator.refocusSystemKeyboardIfActive(isInputAvailable: true)
+
+        XCTAssertEqual(coordinator.keyboardMode, .system)
+        XCTAssertEqual(coordinator.terminalActivationToken, 2)
+        XCTAssertFalse(coordinator.isDismissSystemKeyboardRequested)
+    }
+
     func testRefocusSystemKeyboardIfActiveRequestsFreshActivation() {
         var coordinator = GhosttyTerminalInputCoordinator()
         coordinator.showSystemKeyboard(isInputAvailable: true)
