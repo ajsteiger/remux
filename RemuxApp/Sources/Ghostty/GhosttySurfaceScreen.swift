@@ -260,6 +260,7 @@ struct GhosttySurfaceScreen: View {
                     .presentationDetents(selectionSheetDetents(for: sheet))
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
+                    .ghosttyTerminalChromePresentation()
             }
             .sheet(isPresented: $isShortcutsSettingsPresented) {
                 ShortcutsSettingsSheet(store: shortcutStore)
@@ -267,6 +268,7 @@ struct GhosttySurfaceScreen: View {
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(28)
+                    .ghosttyTerminalChromePresentation()
             }
             .sheet(item: $shortcutEditorRequest) { request in
                 ShortcutEditorSheet(request: request) { shortcut, favorite in
@@ -281,6 +283,7 @@ struct GhosttySurfaceScreen: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(28)
+                .ghosttyTerminalChromePresentation()
             }
             .onChange(of: model.surfaceRegistryRevision) { _, _ in
                 guard case .panes(let topLevelID, _) = selectionSheet else {
@@ -297,7 +300,6 @@ struct GhosttySurfaceScreen: View {
             .onChange(of: model.commandFailureEvent) { _, event in
                 handleTmuxCommandFailureEvent(event)
             }
-            .preferredColorScheme(.dark)
 #if DEBUG
             .task {
                 if CommandLine.arguments.contains("--open-panes-after-warmup") {
@@ -1617,6 +1619,12 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: GhosttyKitSurfaceView, coordinator: Coordinator) {
         coordinator.cancelPendingAttach()
+    }
+}
+
+private extension View {
+    func ghosttyTerminalChromePresentation() -> some View {
+        preferredColorScheme(.dark)
     }
 }
 
