@@ -373,7 +373,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "selectSurface end reason=\(reason) target=\(shortID(id)) topIndex=\(topIndexDescription) \(diagnosticSelectionSummary())"
             )
             notifyChanged()
-            recordSurfacePresentation(id, reason: reason)
+            completeInteractiveReadinessIfNeeded(surfaceID: id, reason: reason)
         }
     }
 
@@ -1281,8 +1281,16 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func recordSurfacePresentation(_ surfaceID: UUID, reason: String) {
-        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
-        completeInteractiveReadinessIfNeeded(surfaceID: surfaceID, reason: reason)
+        contentReadySurfaceIDs.insert(surfaceID)
+        if pendingPhonePresentationSurfaceID == surfaceID {
+            _ = promotePendingPhonePresentationIfReady(
+                surfaceID: surfaceID,
+                reason: reason,
+                notificationDelivery: .deferred
+            )
+        } else {
+            completeInteractiveReadinessIfNeeded(surfaceID: surfaceID, reason: reason)
+        }
     }
 
     func runtimeAction(
@@ -1395,6 +1403,17 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func recordSurfaceDisplayUpdateForTesting(surfaceID: UUID, size: CGSize, scale: CGFloat) {
         recordSurfaceDisplayUpdate(surfaceID: surfaceID, size: size, scale: scale)
+    }
+
+    func recordSurfacePresentationForTesting(surfaceID: UUID, reason: String = "test.presentation") {
+        recordSurfacePresentation(surfaceID, reason: reason)
+    }
+
+    func completePendingPhonePresentationAfterTimeoutForTesting(surfaceID: UUID) {
+        completePendingPhonePresentationAfterTimeout(
+            surfaceID: surfaceID,
+            reason: "test.timeout"
+        )
     }
 
     func managedSurfaceIDForTesting(handle: ghostty_surface_t?) -> UUID? {
@@ -1558,9 +1577,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
-        if size.width > 1, size.height > 1 {
-            contentReadySurfaceIDs.insert(surfaceID)
-        }
         schedulePendingPhonePresentationRefresh(
             surfaceID: surfaceID,
             reason: "display.update"
