@@ -59,7 +59,7 @@ struct GhosttySurfaceScreen: View {
             let interactionProjection = model.terminalInteractionProjection
 
             ZStack {
-                target.terminalSettings.theme.swiftUIBackground
+                target.terminalSettings.theme.terminalSurfaceBackground
                     .ignoresSafeArea(.all, edges: .all)
 
                 GeometryReader { proxy in
@@ -125,7 +125,7 @@ struct GhosttySurfaceScreen: View {
                                 height: terminalViewportSize.height,
                                 alignment: .topLeading
                             )
-                            .background(target.terminalSettings.theme.swiftUIBackground)
+                            .background(target.terminalSettings.theme.terminalSurfaceBackground)
 
                         GhosttyTerminalResponderRepresentable(
                             isEnabled: interactionProjection.isInputAvailable,
@@ -217,7 +217,7 @@ struct GhosttySurfaceScreen: View {
                 .padding(.top, 4)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
-                .background(target.terminalSettings.theme.swiftUIBackground)
+                .background(target.terminalSettings.theme.terminalSurfaceBackground)
                 .background {
                     GeometryReader { chromeProxy in
                         Color.clear.preference(
@@ -1619,6 +1619,17 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: GhosttyKitSurfaceView, coordinator: Coordinator) {
         coordinator.cancelPendingAttach()
+    }
+}
+
+private extension TerminalTheme {
+    var terminalSurfaceBackground: Color {
+        let hex = terminalBackgroundHex
+        return Color(
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0
+        )
     }
 }
 
