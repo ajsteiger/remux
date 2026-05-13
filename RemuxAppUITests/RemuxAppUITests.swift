@@ -92,9 +92,10 @@ final class RemuxAppUITests: XCTestCase {
         openFirstSavedSession()
 
         waitForLiveTerminalReady(timeout: 60)
-        let marker = "REMUX_RENDER_CHECK_\(UUID().uuidString.prefix(8).uppercased())"
-        sendTerminalCommand("printf '\(marker)\\n'")
-        assertLiveTerminalScreenshotContainsRenderedContent()
+        sendTerminalCommand(
+            "i=0; while [ $i -lt 120 ]; do printf 'REMUX_RENDER_CHECK_%03d ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\\n' $i; i=$((i+1)); done"
+        )
+        assertLiveTerminalScreenshotContainsRenderedContent(minNonBackgroundPixels: 30_000)
     }
 
     func testLiveSSHKeyboardResizeTraceWhenConfigured() throws {
@@ -509,6 +510,8 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     private func assertLiveTerminalScreenshotContainsRenderedContent(
+        minDistinctColors: Int = 8,
+        minNonBackgroundPixels: Int = 2_500,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
@@ -526,7 +529,7 @@ final class RemuxAppUITests: XCTestCase {
             }
             lastStats = stats
 
-            if stats.distinctColors > 8 && stats.nonBackgroundPixels > 2_500 {
+            if stats.distinctColors > minDistinctColors && stats.nonBackgroundPixels > minNonBackgroundPixels {
                 let attachment = XCTAttachment(screenshot: screenshot)
                 attachment.name = "live-terminal-render-check"
                 attachment.lifetime = .keepAlways
@@ -549,7 +552,7 @@ final class RemuxAppUITests: XCTestCase {
         } ?? ""
 
         XCTFail(
-            "Live terminal screenshot is visually flat; expected rendered terminal text or glyph variation.\(statsSummary)",
+            "Live terminal screenshot is visually flat; expected rendered terminal text or glyph variation with at least \(minDistinctColors) distinct colors and \(minNonBackgroundPixels) non-background pixels.\(statsSummary)",
             file: file,
             line: line
         )
