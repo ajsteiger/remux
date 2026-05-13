@@ -35,6 +35,11 @@ enum TerminalTheme: String, CaseIterable, Codable, Identifiable, Sendable {
         }
     }
 
+    /// Background color the terminal renders against, mirrored by Ghostty UI
+    /// chrome so surfaces can blend into the terminal area during keyboard
+    /// transitions. Values must stay in sync with `ghosttyConfigLines` and with
+    /// Ghostty's own default for `.ghosttyDefault`, sourced from
+    /// `src/config/Config.zig`.
     var terminalBackgroundHex: UInt32 {
         switch self {
         case .ghosttyDefault:
