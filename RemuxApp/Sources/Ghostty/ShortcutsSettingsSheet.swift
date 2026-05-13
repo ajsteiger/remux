@@ -3,6 +3,13 @@ import SwiftUI
 import UIKit
 #endif
 
+private enum ShortcutsSettingsSheetPalette {
+    static let background = GhosttyPhoneChromePalette.dock
+    static let iconSurface = GhosttyPhoneChromePalette.keySurface.opacity(0.72)
+    static let accent = GhosttyPhoneChromePalette.accent
+    static let accentSurface = GhosttyPhoneChromePalette.accent.opacity(0.14)
+}
+
 struct ShortcutsSettingsSheet: View {
     @ObservedObject var store: ShortcutStore
     @Environment(\.dismiss) private var dismiss
@@ -51,7 +58,7 @@ struct ShortcutsSettingsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(Color(.systemGroupedBackground))
+            .background(ShortcutsSettingsSheetPalette.background)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
@@ -222,7 +229,7 @@ private struct ShortcutCollectionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
+        .background(ShortcutsSettingsSheetPalette.background)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 EditButton()
@@ -356,7 +363,10 @@ private struct ShortcutCollectionSettingsRow: View {
             ShortcutCollectionIconView(icon: collection.icon)
                 .foregroundStyle(.primary)
                 .frame(width: 34, height: 34)
-                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(
+                    ShortcutsSettingsSheetPalette.iconSurface,
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(collection.title)
@@ -441,7 +451,10 @@ struct ShortcutCollectionEditorSheet: View {
                         ShortcutCollectionIconView(icon: resolvedIcon)
                             .foregroundStyle(.primary)
                             .frame(width: 44, height: 44)
-                            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(
+                                ShortcutsSettingsSheetPalette.iconSurface,
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            )
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(resolvedIcon.displayTitle)
@@ -465,12 +478,14 @@ struct ShortcutCollectionEditorSheet: View {
                                     selectIcon(icon)
                                 } label: {
                                     ShortcutCollectionIconView(icon: icon)
-                                        .foregroundStyle(isIconSelected(icon) ? Color.accentColor : .primary)
+                                        .foregroundStyle(
+                                            isIconSelected(icon) ? ShortcutsSettingsSheetPalette.accent : .primary
+                                        )
                                         .frame(width: 34, height: 34)
                                         .background(
                                             isIconSelected(icon)
-                                                ? Color.accentColor.opacity(0.14)
-                                                : Color(.secondarySystemGroupedBackground),
+                                                ? ShortcutsSettingsSheetPalette.accentSurface
+                                                : ShortcutsSettingsSheetPalette.iconSurface,
                                             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                                         )
                                 }
