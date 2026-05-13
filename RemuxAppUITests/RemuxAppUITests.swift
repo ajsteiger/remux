@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import XCTest
 
 final class RemuxAppUITests: XCTestCase {
@@ -82,10 +83,18 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHSeededServerOpensReadyTerminalWhenConfigured() throws {
-        try launchLiveSSHAppIfConfigured(traceRuntime: true)
+        let sessionName = "remux-latency-render-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
         openFirstSavedSession()
 
         waitForLiveTerminalReady(timeout: 60)
+        let marker = "REMUX_RENDER_CHECK_\(UUID().uuidString.prefix(8).uppercased())"
+        sendTerminalCommand("printf '\(marker)\\n'")
+        assertLiveTerminalScreenshotContainsRenderedContent()
     }
 
     func testLiveSSHKeyboardResizeTraceWhenConfigured() throws {
@@ -497,6 +506,110 @@ final class RemuxAppUITests: XCTestCase {
         }
 
         XCTFail("Timed out waiting for a live SSH terminal to become ready.")
+    }
+
+    private func assertLiveTerminalScreenshotContainsRenderedContent(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let deadline = Date().addingTimeInterval(8)
+        var lastScreenshot: XCUIScreenshot?
+        var lastStats: (distinctColors: Int, nonBackgroundPixels: Int)?
+
+        while Date() < deadline {
+            let screenshot = XCUIScreen.main.screenshot()
+            lastScreenshot = screenshot
+
+            guard let stats = liveTerminalRenderedPixelStats(screenshot: screenshot) else {
+                XCTFail("Unable to inspect live terminal screenshot.", file: file, line: line)
+                return
+            }
+            lastStats = stats
+
+            if stats.distinctColors > 8 && stats.nonBackgroundPixels > 2_500 {
+                let attachment = XCTAttachment(screenshot: screenshot)
+                attachment.name = "live-terminal-render-check"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        if let lastScreenshot {
+            let attachment = XCTAttachment(screenshot: lastScreenshot)
+            attachment.name = "live-terminal-render-check"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+
+        let statsSummary = lastStats.map {
+            " distinctColors=\($0.distinctColors) nonBackgroundPixels=\($0.nonBackgroundPixels)"
+        } ?? ""
+
+        XCTFail(
+            "Live terminal screenshot is visually flat; expected rendered terminal text or glyph variation.\(statsSummary)",
+            file: file,
+            line: line
+        )
+    }
+
+    private func liveTerminalRenderedPixelStats(
+        screenshot: XCUIScreenshot
+    ) -> (distinctColors: Int, nonBackgroundPixels: Int)? {
+        guard let cgImage = screenshot.image.cgImage else { return nil }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let crop = CGRect(
+            x: 0,
+            y: height * 7 / 100,
+            width: width,
+            height: height * 75 / 100
+        )
+        guard let cropped = cgImage.cropping(to: crop) else { return nil }
+
+        let cropWidth = cropped.width
+        let cropHeight = cropped.height
+        var pixels = [UInt8](repeating: 0, count: cropWidth * cropHeight * 4)
+        guard let context = CGContext(
+            data: &pixels,
+            width: cropWidth,
+            height: cropHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: cropWidth * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+
+        context.draw(
+            cropped,
+            in: CGRect(x: 0, y: 0, width: cropWidth, height: cropHeight)
+        )
+
+        var colorCounts: [UInt32: Int] = [:]
+        colorCounts.reserveCapacity(128)
+
+        var index = 0
+        let pixelCount = cropWidth * cropHeight
+        while index < pixelCount {
+            let offset = index * 4
+            let red = UInt32(pixels[offset] / 4)
+            let green = UInt32(pixels[offset + 1] / 4)
+            let blue = UInt32(pixels[offset + 2] / 4)
+            let color = red << 16 | green << 8 | blue
+            colorCounts[color, default: 0] += 1
+            index += 1
+        }
+
+        let dominantCount = colorCounts.values.max() ?? pixelCount
+        return (
+            distinctColors: colorCounts.count,
+            nonBackgroundPixels: pixelCount - dominantCount
+        )
     }
 
     private func openConnectionSetup() {

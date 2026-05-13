@@ -790,6 +790,38 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
     }
 
+    func testPhonePresentationAcceptsScrollbarAsContentReadyForEmbeddedRenderer() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x60A)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x60B)!)
+
+        registry.registerManagedSurfaceTreeForTesting(
+            [first, second],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .leaf(second.id)
+                )
+            ),
+            focusedLeafID: first.id
+        )
+
+        registry.selectSurface(second.id)
+        registry.recordSurfaceDisplayUpdateForTesting(
+            surfaceID: second.id,
+            size: CGSize(width: 390, height: 641),
+            scale: 3
+        )
+        registry.recordSurfacePresentationForTesting(surfaceID: second.id)
+
+        XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+
+        XCTAssertTrue(Self.notifyRuntimeScrollbar(registry, surface: second))
+        XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+    }
+
     func testPhonePresentationKeepsPaneOverlayAcrossDuplicateSelectionUntilPresentation() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x603)!)
@@ -3773,6 +3805,28 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         var action = ghostty_action_s()
         action.tag = GHOSTTY_ACTION_RENDER
+
+        return registry.runtimeAction(app: nil, target: target, action: action)
+    }
+
+    @discardableResult
+    private static func notifyRuntimeScrollbar(
+        _ registry: GhosttyRuntimeSurfaceRegistry,
+        surface: GhosttyManagedSurface
+    ) -> Bool {
+        var target = ghostty_target_s()
+        target.tag = GHOSTTY_TARGET_SURFACE
+        target.target.surface = surface.controlSurface.handle
+
+        var scrollbar = ghostty_surface_scrollbar_s()
+        scrollbar.total = 24
+        scrollbar.offset = 0
+        scrollbar.len = 24
+        scrollbar.cell_offset = 0
+
+        var action = ghostty_action_s()
+        action.tag = GHOSTTY_ACTION_SCROLLBAR
+        action.action.scrollbar = scrollbar
 
         return registry.runtimeAction(app: nil, target: target, action: action)
     }

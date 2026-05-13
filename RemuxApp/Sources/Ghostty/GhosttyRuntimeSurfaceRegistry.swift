@@ -607,6 +607,27 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surfaceHasPresentedContent(surfaceID) && surfaceHasViewPresentation(surfaceID)
     }
 
+    private func markSurfaceContentReady(
+        _ surfaceID: UUID,
+        reason: String,
+        surface: GhosttyManagedSurface
+    ) {
+        contentReadySurfaceIDs.insert(surfaceID)
+        if pendingPhonePresentationSurfaceID == surfaceID {
+            _ = promotePendingPhonePresentationIfReady(
+                surfaceID: surfaceID,
+                reason: reason,
+                notificationDelivery: .deferred
+            )
+        } else {
+            completeInteractiveReadinessIfNeeded(
+                surfaceID: surfaceID,
+                reason: reason,
+                surface: surface
+            )
+        }
+    }
+
     @discardableResult
     private func promotePendingPhonePresentationIfReady(
         surfaceID: UUID,
@@ -1310,34 +1331,18 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         action: ghostty_action_s
     ) -> Bool {
         _ = app
-        guard target.tag == GHOSTTY_TARGET_SURFACE else {
-            return true
-        }
+        guard target.tag == GHOSTTY_TARGET_SURFACE else { return true }
         guard let id = surfaceIDsByHandle[target.target.surface],
-              let surface = managedSurfaces[id] else {
-            return true
-        }
+              let surface = managedSurfaces[id] else { return true }
 
         switch action.tag {
         case GHOSTTY_ACTION_RENDER:
-            contentReadySurfaceIDs.insert(id)
-            if pendingPhonePresentationSurfaceID == id {
-                _ = promotePendingPhonePresentationIfReady(
-                    surfaceID: id,
-                    reason: "runtime.render",
-                    notificationDelivery: .deferred
-                )
-            } else {
-                completeInteractiveReadinessIfNeeded(
-                    surfaceID: id,
-                    reason: "runtime.render",
-                    surface: surface
-                )
-            }
+            markSurfaceContentReady(id, reason: "runtime.render", surface: surface)
 
         case GHOSTTY_ACTION_SCROLLBAR:
             let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
             surface.updateScrollState(state)
+            markSurfaceContentReady(id, reason: "runtime.scrollbar", surface: surface)
 
         case GHOSTTY_ACTION_SCROLL_ROUTE:
             let route = GhosttySurfaceScrollRoute(cValue: action.action.scroll_route)

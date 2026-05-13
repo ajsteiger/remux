@@ -134,6 +134,9 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
             }
             needsLayout = true
         }
+        surface.view.isHidden = false
+        surface.view.alpha = 1
+        surface.view.layer.opacity = 1
 
         needsLayout = synchronizeRoute() || needsLayout
         if needsLayout {
@@ -155,6 +158,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         self.surface = nil
         submitRouteForwardedMouseScroll = nil
         lastAppliedScrollRoute = nil
+        surface.view.isHidden = true
         surface.view.removeFromSuperview()
     }
 
