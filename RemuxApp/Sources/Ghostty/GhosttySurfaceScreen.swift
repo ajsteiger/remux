@@ -1633,12 +1633,6 @@ private extension TerminalTheme {
     }
 }
 
-private extension View {
-    func ghosttyTerminalChromePresentation() -> some View {
-        preferredColorScheme(.dark)
-    }
-}
-
 private extension GhosttySurfaceScreenModel.AppLifecyclePhase {
     init(scenePhase: ScenePhase) {
         switch scenePhase {

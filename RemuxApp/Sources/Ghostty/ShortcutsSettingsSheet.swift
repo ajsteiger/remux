@@ -87,6 +87,7 @@ struct ShortcutsSettingsSheet: View {
                 store.update { $0.upsertCollection(collection) }
             }
             .presentationDetents([.medium])
+            .ghosttyTerminalChromePresentation()
         }
         .sheet(item: $editorRequest) { request in
             ShortcutEditorSheet(request: request) { shortcut, favorite in
@@ -98,6 +99,7 @@ struct ShortcutsSettingsSheet: View {
                 }
             }
             .presentationDetents([.medium, .large])
+            .ghosttyTerminalChromePresentation()
         }
         .confirmationDialog(
             "Restore Default Shortcuts",

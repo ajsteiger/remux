@@ -469,3 +469,9 @@ enum GhosttyPhoneChromePalette {
         alpha: 1.0
     )
 }
+
+extension View {
+    func ghosttyTerminalChromePresentation() -> some View {
+        preferredColorScheme(.dark)
+    }
+}
