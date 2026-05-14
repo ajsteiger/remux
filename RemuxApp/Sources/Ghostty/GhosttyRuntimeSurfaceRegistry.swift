@@ -1829,6 +1829,7 @@ final class GhosttyManagedSurface {
     private let isMouseCapturedHandler: (@MainActor () -> Bool)?
     private let setFocusedHandler: (@MainActor (Bool) -> Void)?
     private let updateDisplayHandler: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)?
+    private let scrollToPositionHandler: (@MainActor (UInt64, Double) -> GhosttySurfaceScrollState)?
     private let tmuxFocusHandler: (@MainActor () -> TmuxActionSubmissionResult)?
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)?
     private let tmuxClosePaneHandler: (@MainActor () -> TmuxActionSubmissionResult)?
@@ -1855,6 +1856,7 @@ final class GhosttyManagedSurface {
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         setFocused: (@MainActor (Bool) -> Void)? = nil,
         updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
+        scrollToPosition: (@MainActor (UInt64, Double) -> GhosttySurfaceScrollState)? = nil,
         tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
@@ -1879,6 +1881,7 @@ final class GhosttyManagedSurface {
         self.isMouseCapturedHandler = isMouseCaptured
         self.setFocusedHandler = setFocused
         self.updateDisplayHandler = updateDisplay
+        self.scrollToPositionHandler = scrollToPosition
         self.tmuxFocusHandler = tmuxFocus
         self.tmuxSplitHandler = tmuxSplit
         self.tmuxClosePaneHandler = tmuxClosePane
@@ -2045,8 +2048,15 @@ final class GhosttyManagedSurface {
     @MainActor
     @discardableResult
     func scrollToPosition(row: UInt64, cellOffset: Double) -> GhosttySurfaceScrollState {
-        controlSurface.scrollToPosition(row: row, cellOffset: cellOffset)
-        scrollState = controlSurface.scrollState()
+        let nextState: GhosttySurfaceScrollState
+        if let scrollToPositionHandler {
+            nextState = scrollToPositionHandler(row, cellOffset)
+        } else {
+            controlSurface.scrollToPosition(row: row, cellOffset: cellOffset)
+            nextState = controlSurface.scrollState()
+        }
+
+        updateScrollState(nextState)
         return scrollState
     }
 

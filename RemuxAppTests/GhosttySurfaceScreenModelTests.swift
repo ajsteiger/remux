@@ -3680,6 +3680,40 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertFalse(model.isMouseCaptured(for: UUID()))
     }
 
+    func testManagedSurfaceScrollToPositionPublishesStateChange() {
+        let initialState = GhosttySurfaceScrollState(
+            total: 100,
+            offset: 0,
+            len: 20,
+            cellOffset: 0
+        )
+        let nextState = GhosttySurfaceScrollState(
+            total: 100,
+            offset: 12,
+            len: 20,
+            cellOffset: 0.5
+        )
+        var requests: [(row: UInt64, cellOffset: Double)] = []
+        let managed = Self.managedSurface(
+            scrollState: initialState,
+            scrollToPosition: { row, cellOffset in
+                requests.append((row, cellOffset))
+                return nextState
+            }
+        )
+        var changeCount = 0
+        managed.onScrollStateChange = {
+            changeCount += 1
+        }
+
+        XCTAssertEqual(managed.scrollToPosition(row: 12, cellOffset: 0.5), nextState)
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests.first?.row, 12)
+        XCTAssertEqual(requests.first?.cellOffset, 0.5)
+        XCTAssertEqual(managed.scrollState, nextState)
+        XCTAssertEqual(changeCount, 1)
+    }
+
     func testFocusedSurfaceMouseCapturedReflectsManagedSurfaceState() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let uncaptured = Self.managedSurface(isMouseCaptured: { false })
@@ -3820,6 +3854,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         handle: ghostty_surface_t = UnsafeMutableRawPointer(bitPattern: 0x1)!,
         id: UUID = UUID(),
         manualUserdata: UnsafeMutableRawPointer? = nil,
+        scrollState: GhosttySurfaceScrollState = .empty,
+        scrollRoute: GhosttySurfaceScrollRoute = .viewport,
         sendInput: (@MainActor (String) -> Bool)? = nil,
         sendPaste: (@MainActor (String) -> Bool)? = nil,
         hasSelection: (@MainActor () -> Bool)? = nil,
@@ -3832,6 +3868,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         setFocused: (@MainActor (Bool) -> Void)? = nil,
         updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
+        scrollToPosition: (@MainActor (UInt64, Double) -> GhosttySurfaceScrollState)? = nil,
         tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
@@ -3846,6 +3883,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 ownership: .borrowed
             ),
             manualUserdata: manualUserdata,
+            scrollState: scrollState,
+            scrollRoute: scrollRoute,
             sendInput: sendInput,
             sendPaste: sendPaste,
             hasSelection: hasSelection,
@@ -3858,6 +3897,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             isMouseCaptured: isMouseCaptured,
             setFocused: setFocused,
             updateDisplay: updateDisplay,
+            scrollToPosition: scrollToPosition,
             tmuxFocus: tmuxFocus ?? { .noTarget },
             tmuxSplit: tmuxSplit ?? { _ in .noTarget },
             tmuxClosePane: tmuxClosePane ?? { .noTarget },

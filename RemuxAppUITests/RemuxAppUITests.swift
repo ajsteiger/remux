@@ -250,6 +250,48 @@ final class RemuxAppUITests: XCTestCase {
         assertPreviewTileContainsRenderedImage(tileIdentifier: "terminal.window.tile.2")
     }
 
+    func testLiveTerminalScrollbackGestureWhenConfigured() throws {
+        let sessionName = "remux-latency-scroll-\(UUID().uuidString.prefix(8))"
+        let doneMarker = "REMUX_SCROLLBACK_DONE_\(UUID().uuidString.prefix(8).uppercased())"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        sendTerminalCommand(
+            "clear; i=0; while [ $i -lt 220 ]; do echo REMUX_SCROLLBACK_${i}_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789; i=$((i+1)); done; echo \(doneMarker)"
+        )
+        hideKeyboardIfPresent()
+        guard let before = waitForStableLiveTerminalScreenshot(
+            minNonBackgroundPixels: 30_000,
+            attachmentName: "live-terminal-scrollback-before"
+        ) else {
+            return
+        }
+
+        let terminal = app.otherElements["terminal.screen"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        terminal.swipeDown(velocity: .slow)
+        terminal.swipeDown(velocity: .slow)
+        guard let after = waitForStableLiveTerminalScreenshot(
+            minNonBackgroundPixels: 30_000,
+            attachmentName: "live-terminal-scrollback-after"
+        ) else {
+            return
+        }
+
+        let changedPixels = liveTerminalPixelDifference(before: before, after: after)
+        XCTAssertNotNil(changedPixels)
+        XCTAssertGreaterThan(
+            changedPixels ?? 0,
+            8_000,
+            "Scrollback swipe should visibly move terminal content."
+        )
+    }
+
     func testLiveSSHTmuxActionCycleWhenConfigured() throws {
         let sessionName = "remux-latency-action-\(UUID().uuidString.prefix(8))"
         defer {
@@ -633,9 +675,133 @@ final class RemuxAppUITests: XCTestCase {
         )
     }
 
+    private func waitForStableLiveTerminalScreenshot(
+        minDistinctColors: Int = 8,
+        minNonBackgroundPixels: Int = 2_500,
+        stablePixelDifferenceLimit: Int = 1_500,
+        timeout: TimeInterval = 8,
+        attachmentName: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIScreenshot? {
+        let deadline = Date().addingTimeInterval(timeout)
+        var previous: XCUIScreenshot?
+        var lastScreenshot: XCUIScreenshot?
+        var lastStats: (distinctColors: Int, nonBackgroundPixels: Int)?
+        var lastDifference: Int?
+
+        while Date() < deadline {
+            let screenshot = XCUIScreen.main.screenshot()
+            lastScreenshot = screenshot
+
+            guard let stats = liveTerminalRenderedPixelStats(screenshot: screenshot) else {
+                XCTFail("Unable to inspect live terminal screenshot.", file: file, line: line)
+                return nil
+            }
+            lastStats = stats
+
+            if let previous {
+                lastDifference = liveTerminalPixelDifference(before: previous, after: screenshot)
+            }
+
+            if
+                stats.distinctColors > minDistinctColors,
+                stats.nonBackgroundPixels > minNonBackgroundPixels,
+                let difference = lastDifference,
+                difference <= stablePixelDifferenceLimit
+            {
+                let attachment = XCTAttachment(screenshot: screenshot)
+                attachment.name = attachmentName
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                return screenshot
+            }
+
+            previous = screenshot
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        if let lastScreenshot {
+            let attachment = XCTAttachment(screenshot: lastScreenshot)
+            attachment.name = attachmentName
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+
+        let statsSummary = lastStats.map {
+            " distinctColors=\($0.distinctColors) nonBackgroundPixels=\($0.nonBackgroundPixels)"
+        } ?? ""
+        let differenceSummary = lastDifference.map { " pixelDifference=\($0)" } ?? ""
+
+        XCTFail(
+            "Live terminal screenshot did not settle before timeout.\(statsSummary)\(differenceSummary)",
+            file: file,
+            line: line
+        )
+        return nil
+    }
+
     private func liveTerminalRenderedPixelStats(
         screenshot: XCUIScreenshot
     ) -> (distinctColors: Int, nonBackgroundPixels: Int)? {
+        guard let snapshot = liveTerminalContentPixels(screenshot: screenshot) else { return nil }
+        let pixels = snapshot.pixels
+
+        var colorCounts: [UInt32: Int] = [:]
+        colorCounts.reserveCapacity(128)
+
+        var index = 0
+        let pixelCount = snapshot.width * snapshot.height
+        while index < pixelCount {
+            let offset = index * 4
+            let red = UInt32(pixels[offset] / 4)
+            let green = UInt32(pixels[offset + 1] / 4)
+            let blue = UInt32(pixels[offset + 2] / 4)
+            let color = red << 16 | green << 8 | blue
+            colorCounts[color, default: 0] += 1
+            index += 1
+        }
+
+        let dominantCount = colorCounts.values.max() ?? pixelCount
+        return (
+            distinctColors: colorCounts.count,
+            nonBackgroundPixels: pixelCount - dominantCount
+        )
+    }
+
+    private func liveTerminalPixelDifference(
+        before: XCUIScreenshot,
+        after: XCUIScreenshot
+    ) -> Int? {
+        guard
+            let beforeSnapshot = liveTerminalContentPixels(screenshot: before),
+            let afterSnapshot = liveTerminalContentPixels(screenshot: after),
+            beforeSnapshot.width == afterSnapshot.width,
+            beforeSnapshot.height == afterSnapshot.height
+        else {
+            return nil
+        }
+
+        var changedPixels = 0
+        var index = 0
+        let pixelCount = beforeSnapshot.width * beforeSnapshot.height
+        while index < pixelCount {
+            let offset = index * 4
+            let redDelta = abs(Int(beforeSnapshot.pixels[offset] / 4) - Int(afterSnapshot.pixels[offset] / 4))
+            let greenDelta = abs(Int(beforeSnapshot.pixels[offset + 1] / 4) - Int(afterSnapshot.pixels[offset + 1] / 4))
+            let blueDelta = abs(Int(beforeSnapshot.pixels[offset + 2] / 4) - Int(afterSnapshot.pixels[offset + 2] / 4))
+            if redDelta + greenDelta + blueDelta > 3 {
+                changedPixels += 1
+            }
+            index += 1
+        }
+
+        return changedPixels
+    }
+
+    private func liveTerminalContentPixels(
+        screenshot: XCUIScreenshot
+    ) -> (pixels: [UInt8], width: Int, height: Int)? {
         guard let cgImage = screenshot.image.cgImage else { return nil }
 
         let width = cgImage.width
@@ -761,27 +927,7 @@ final class RemuxAppUITests: XCTestCase {
             cropped,
             in: CGRect(x: 0, y: 0, width: cropWidth, height: cropHeight)
         )
-
-        var colorCounts: [UInt32: Int] = [:]
-        colorCounts.reserveCapacity(128)
-
-        var index = 0
-        let pixelCount = cropWidth * cropHeight
-        while index < pixelCount {
-            let offset = index * 4
-            let red = UInt32(pixels[offset] / 4)
-            let green = UInt32(pixels[offset + 1] / 4)
-            let blue = UInt32(pixels[offset + 2] / 4)
-            let color = red << 16 | green << 8 | blue
-            colorCounts[color, default: 0] += 1
-            index += 1
-        }
-
-        let dominantCount = colorCounts.values.max() ?? pixelCount
-        return (
-            distinctColors: colorCounts.count,
-            nonBackgroundPixels: pixelCount - dominantCount
-        )
+        return (pixels: pixels, width: cropWidth, height: cropHeight)
     }
 
     private func openConnectionSetup() {

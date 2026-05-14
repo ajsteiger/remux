@@ -363,13 +363,10 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
             return
         }
 
-        let state = surface.scrollToPosition(
+        surface.scrollToPosition(
             row: position.row,
             cellOffset: position.cellOffset
         )
-        if state != surface.scrollState {
-            synchronizeFromSurface()
-        }
     }
 
     @objc
