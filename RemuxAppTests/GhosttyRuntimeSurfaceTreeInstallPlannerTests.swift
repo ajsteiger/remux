@@ -238,6 +238,38 @@ final class GhosttyRuntimeSurfaceTreeInstallPlannerTests: XCTestCase {
         XCTAssertNil(plan.presentationTargetSurfaceID)
     }
 
+    func testManualOverlapAppendsWhenManualReplacementDisabled() {
+        let existingLeafID = Self.id(1)
+        let existingTopLevelID = Self.id(10)
+        let appendedLeafID = Self.id(2)
+        let appendedTopLevelID = Self.id(12)
+        let overlappingIdentity = Self.identity(0xA401)
+
+        let plan = makePlan(
+            topLevels: [
+                Self.topLevel(id: existingTopLevelID, tree: Self.leaf(existingLeafID)),
+            ],
+            selectedTopLevelID: existingTopLevelID,
+            allowManualIdentityReplacement: false,
+            tree: Self.leaf(appendedLeafID),
+            focusedLeafID: appendedLeafID,
+            existingIdentities: [
+                .init(id: existingLeafID, manualUserdata: overlappingIdentity),
+            ],
+            incomingIdentities: [
+                .init(id: appendedLeafID, manualUserdata: overlappingIdentity),
+            ],
+            newTopLevelID: appendedTopLevelID
+        )
+
+        XCTAssertEqual(plan.kind, .append)
+        XCTAssertEqual(plan.topLevels.map(\.id), [existingTopLevelID, appendedTopLevelID])
+        XCTAssertEqual(plan.topLevels[0].leafIDs, [existingLeafID])
+        XCTAssertEqual(plan.topLevels[1].leafIDs, [appendedLeafID])
+        XCTAssertEqual(plan.selectedTopLevelID, existingTopLevelID)
+        XCTAssertNil(plan.presentationTargetSurfaceID)
+    }
+
     private typealias Planner = GhosttyRuntimeSurfaceTreeInstallPlanner
 
     private func makePlan(

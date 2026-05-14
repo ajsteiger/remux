@@ -1230,7 +1230,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             focusedLeafID: focusedLeafID,
             replacingTopLevelContaining: replacingParentSurfaceID,
             replacingTopLevelID: nil,
-            allowManualIdentityReplacement: replacingParentSurfaceID == nil
+            allowManualIdentityReplacement: false
         )
         installedLeafSurfaces = true
         if GhosttyRuntimeTrace.isEnabled {

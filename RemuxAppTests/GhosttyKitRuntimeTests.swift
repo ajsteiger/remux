@@ -174,6 +174,70 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         registry.prepareForRuntimeTeardown()
     }
 
+    func testRuntimeCreateSurfaceTreeAppendsIndependentRootsWithOverlappingManualUserdata() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        defer {
+            registry.prepareForRuntimeTeardown()
+        }
+
+        var firstConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_TAB,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xA501)!
+        )
+        var secondConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xA502)!
+        )
+        var firstLeafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
+
+        let firstCreated = try withRuntimeTreeRequest(
+            firstConfig: &firstConfig,
+            secondConfig: &secondConfig,
+            leafSurfaces: &firstLeafSurfaces,
+            focusedLeafIndex: 0
+        ) { request in
+            registry.runtimeCreateSurfaceTree(
+                app: runtime.appHandleForTesting,
+                request: request
+            )
+        }
+
+        XCTAssertTrue(firstCreated)
+        XCTAssertEqual(registry.topLevels.count, 1)
+        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let firstTreeLeafIDs = registry.topLevels.first?.leafIDs ?? []
+
+        var overlappingConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_TAB,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xA501)!
+        )
+        var thirdConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT,
+            manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xA503)!
+        )
+        var secondLeafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
+
+        let secondCreated = try withRuntimeTreeRequest(
+            firstConfig: &overlappingConfig,
+            secondConfig: &thirdConfig,
+            leafSurfaces: &secondLeafSurfaces,
+            focusedLeafIndex: 1
+        ) { request in
+            registry.runtimeCreateSurfaceTree(
+                app: runtime.appHandleForTesting,
+                request: request
+            )
+        }
+
+        XCTAssertTrue(secondCreated)
+        XCTAssertEqual(registry.topLevels.count, 2)
+        XCTAssertEqual(registry.topLevels.first?.id, firstTopLevelID)
+        XCTAssertEqual(registry.topLevels.first?.leafIDs, firstTreeLeafIDs)
+        XCTAssertEqual(registry.topLevels.last?.leafIDs.count, 2)
+        XCTAssertNotEqual(registry.topLevels.first?.id, registry.topLevels.last?.id)
+    }
+
     func testRuntimeCloseSurfaceReleasesSurfaceBeforeRuntimeDeinit() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
@@ -375,12 +439,14 @@ final class GhosttyKitRuntimeTests: XCTestCase {
     }
 
     private static func manualRuntimeTreeConfig(
-        context: ghostty_surface_context_e
+        context: ghostty_surface_context_e,
+        manualUserdata: UnsafeMutableRawPointer? = nil
     ) -> ghostty_surface_config_s {
         var config = ghostty_surface_config_new()
         config.context = context
         config.backing = GHOSTTY_SURFACE_BACKING_MANUAL
         config.manual_write = runtimeTreeManualWrite
+        config.manual_userdata = manualUserdata
         return config
     }
 
