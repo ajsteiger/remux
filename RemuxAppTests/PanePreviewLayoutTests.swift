@@ -45,13 +45,13 @@ final class PanePreviewLayoutTests: XCTestCase {
         XCTAssertEqual(metrics.columnCount, 2)
         XCTAssertEqual(metrics.tilePointSize, CGSize(width: 175, height: 156))
         XCTAssertEqual(metrics.previewPointSize, CGSize(width: 159, height: 120))
-        XCTAssertEqual(metrics.sheetDetent, .fixed(252))
+        XCTAssertEqual(metrics.sheetDetent, .fixed(318))
     }
 
     func testWindowGridUsesLargeDetentAfterThreeRows() {
         XCTAssertEqual(
             PanePreviewLayout.windowMetrics(cellCount: 6, availableWidth: 361).sheetDetent,
-            .fixed(584)
+            .fixed(650)
         )
         XCTAssertEqual(
             PanePreviewLayout.windowMetrics(cellCount: 7, availableWidth: 361).sheetDetent,

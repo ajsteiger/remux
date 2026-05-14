@@ -46,7 +46,17 @@ struct GhosttyWindowSelectionSheet: View {
                     layout: layout
                 )
             }
+            .accessibilityIdentifier("terminal.windows.scroll")
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            GhosttySheetBottomActionBar {
+                GhosttySheetActionButton(
+                    title: "New Window",
+                    systemName: "plus",
+                    accessibilityIdentifier: "terminal.window.new",
+                    action: onCreateWindow
+                )
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.horizontal, 16)
@@ -119,16 +129,6 @@ struct GhosttyWindowSelectionSheet: View {
                 }
             }
 
-            Button {
-                Haptic.tap()
-                onCreateWindow?()
-            } label: {
-                GhosttyWindowNewTile(layout: layout)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("terminal.window.new")
-            .disabled(onCreateWindow == nil)
-            .opacity(onCreateWindow == nil ? 0.5 : 1.0)
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
@@ -181,6 +181,7 @@ struct GhosttyPaneSelectionSheet: View {
                     }
                 )
             }
+            .accessibilityIdentifier("terminal.panes.scroll")
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             GhosttySheetBottomActionBar {
@@ -482,50 +483,6 @@ private struct GhosttyWindowSelectionTile: View {
             return "\(positional), \(paneText), active"
         }
         return "\(positional), \(paneText)"
-    }
-}
-
-private struct GhosttyWindowNewTile: View {
-    let layout: PanePreviewLayout.Metrics
-
-    var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
-                    .frame(
-                        width: layout.previewPointSize.width,
-                        height: layout.previewPointSize.height
-                    )
-
-                Image(systemName: "plus")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(GhosttySheetPalette.primary)
-            }
-
-            HStack {
-                Text("New Window")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(GhosttySheetPalette.primary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 2)
-        }
-        .padding(layout.tilePadding)
-        .frame(
-            width: layout.tilePointSize.width,
-            height: layout.tilePointSize.height,
-            alignment: .topLeading
-        )
-        .background(GhosttySheetPalette.row.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(
-                    GhosttySheetPalette.stroke,
-                    style: StrokeStyle(lineWidth: 1, dash: [4, 3])
-                )
-        }
     }
 }
 

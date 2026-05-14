@@ -35,12 +35,12 @@ enum PanePreviewLayout {
     private static let sheetChromeHeight: CGFloat = 162
     private static let maxSingleTileWidth: CGFloat = 390
 
-    /// Window grid uses a fixed two-column layout and reserves the trailing
-    /// cell for the "New Window" affordance. Sheet chrome is lighter than the
-    /// pane sheet because the bottom action bar is gone.
+    /// Window grid uses a fixed two-column layout. The "New Window" affordance
+    /// is a fixed sheet action, not a trailing grid cell, so dense sessions can
+    /// scroll windows without hiding the create command.
     private static let windowGridColumnCount: Int = 2
     private static let windowGridSpacing: CGFloat = 10
-    private static let windowSheetChromeHeight: CGFloat = 96
+    private static let windowSheetChromeHeight: CGFloat = 162
 
     static func metrics(for paneCount: Int) -> Metrics {
         metrics(for: paneCount, availableWidth: defaultSheetContentWidth)

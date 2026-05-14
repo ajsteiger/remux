@@ -268,6 +268,7 @@ struct GhosttySurfaceScreen: View {
             .sheet(item: selectionSheetBinding) { sheet in
                 selectionSheetContent(sheet)
                     .presentationDetents(selectionSheetDetents(for: sheet))
+                    .presentationContentInteraction(.scrolls)
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
                     .ghosttyTerminalChromePresentation()

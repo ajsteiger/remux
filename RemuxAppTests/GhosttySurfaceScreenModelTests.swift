@@ -2621,10 +2621,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
 
         XCTAssertNil(model.windowSheetPresentationProjection())
-        XCTAssertEqual(model.windowSheetDetentCellCount(), 1)
+        XCTAssertEqual(model.windowSheetDetentCellCount(), 0)
     }
 
-    func testWindowSheetPresentationProjectionUsesFocusedLeafIDsAndCreateTileCount() {
+    func testWindowSheetPresentationProjectionUsesFocusedLeafIDsAndWindowCount() {
         let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
@@ -2651,10 +2651,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             model.windowSheetPresentationProjection(),
             GhosttyWindowSheetPresentationProjection(
                 previewLeafIDs: [first.id, third.id],
-                cellCount: 3
+                cellCount: 2
             )
         )
-        XCTAssertEqual(model.windowSheetDetentCellCount(), 3)
+        XCTAssertEqual(model.windowSheetDetentCellCount(), 2)
     }
 
     func testSelectedPaneSheetPresentationProjectionRequiresSelectedTopLevel() {
@@ -2775,7 +2775,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 ],
                 selectedWindowID: firstTopLevelID,
                 previewLeafIDs: [first.id, third.id],
-                cellCount: 3
+                cellCount: 2
             )
         )
     }

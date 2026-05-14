@@ -371,6 +371,43 @@ final class RemuxAppUITests: XCTestCase {
         waitForLiveTerminalReady(timeout: 60)
     }
 
+    func testLiveDenseWindowPickerReachabilityWhenConfigured() throws {
+        let sessionName = generatedLiveLatencySessionName("dense-windows")
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        sendTerminalCommand(
+            "i=2; while [ $i -le 10 ]; do tmux new-window -d -n remuxw$i; i=$((i+1)); done; printf 'REMUX_DENSE_WINDOWS_READY\\n'"
+        )
+        hideKeyboardIfPresent()
+
+        openWindowsSheet()
+        let window10 = waitForHittablePickerButton(
+            identifier: "terminal.window.tile.10",
+            fallbackLabel: "Window 10 of 10",
+            timeout: 30
+        )
+        XCTAssertNotNil(window10, "Window 10 should be reachable in the iPhone window picker.")
+
+        let newWindow = waitForHittablePickerButton(
+            identifier: "terminal.window.new",
+            fallbackLabel: "New Window",
+            timeout: 10
+        )
+        XCTAssertNotNil(newWindow, "New Window should remain reachable after scrolling dense windows.")
+
+        window10?.tap()
+        waitForLiveTerminalReady(timeout: 30)
+        sendTerminalCommand("printf 'REMUX_DENSE_WINDOW_10_SELECTED\\n'")
+        hideKeyboardIfPresent()
+        assertLiveTerminalScreenshotContainsRenderedContent(minNonBackgroundPixels: 2_500)
+    }
+
     func testLiveSSHBackgroundForegroundRetainsTerminalWhenConfigured() throws {
         let sessionName = generatedLiveLatencySessionName("foreground")
         defer {
@@ -1239,6 +1276,69 @@ final class RemuxAppUITests: XCTestCase {
             return
         }
         button.tap()
+    }
+
+    private func waitForHittablePickerButton(
+        identifier: String,
+        fallbackLabel: String,
+        timeout: TimeInterval
+    ) -> XCUIElement? {
+        let identified = app.buttons.matching(identifier: identifier).firstMatch
+        let labeled = app.buttons.matching(NSPredicate(format: "label == %@", fallbackLabel)).firstMatch
+        let deadline = Date().addingTimeInterval(timeout)
+
+        while Date() < deadline {
+            for button in [identified, labeled] where button.exists && button.isHittable {
+                return button
+            }
+
+            scrollOpenPickerUp()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+
+        return [identified, labeled].first { $0.exists && $0.isHittable }
+    }
+
+    private func scrollOpenPickerUp() {
+        if swipeFirstHittablePickerTile(identifierPrefix: "terminal.window.tile.") {
+            return
+        }
+
+        if swipeFirstHittablePickerTile(identifierPrefix: "terminal.pane.tile.") {
+            return
+        }
+
+        if elementWithIdentifier("terminal.windows.scroll").exists {
+            elementWithIdentifier("terminal.windows.scroll").swipeUp(velocity: .slow)
+            return
+        }
+
+        if elementWithIdentifier("terminal.panes.scroll").exists {
+            elementWithIdentifier("terminal.panes.scroll").swipeUp(velocity: .slow)
+            return
+        }
+
+        if elementWithIdentifier("terminal.windows.sheet").exists {
+            elementWithIdentifier("terminal.windows.sheet").swipeUp(velocity: .slow)
+            return
+        }
+
+        if elementWithIdentifier("terminal.panes.sheet").exists {
+            elementWithIdentifier("terminal.panes.sheet").swipeUp(velocity: .slow)
+            return
+        }
+
+        app.swipeUp(velocity: .slow)
+    }
+
+    private func swipeFirstHittablePickerTile(identifierPrefix: String) -> Bool {
+        let predicate = NSPredicate(format: "identifier BEGINSWITH %@", identifierPrefix)
+        for tile in app.buttons.matching(predicate).allElementsBoundByIndex where tile.exists && tile.isHittable {
+            tile.swipeUp(velocity: .slow)
+            return true
+        }
+
+        return false
     }
 
     private func waitForAnyPickerElement(

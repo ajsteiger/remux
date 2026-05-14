@@ -210,7 +210,7 @@ enum GhosttyTerminalPresentationProjector {
     }
 
     static func windowSheetDetentCellCount(snapshot: GhosttyRuntimeSurfaceTopologySnapshot) -> Int {
-        snapshot.topLevels.count + 1
+        snapshot.topLevels.count
     }
 
     static func containsTopLevel(
@@ -241,7 +241,7 @@ enum GhosttyTerminalPresentationProjector {
             windows: windows,
             selectedWindowID: selectedWindowID,
             previewLeafIDs: windows.compactMap(\.focusedPreviewPaneID),
-            cellCount: totalCount + 1
+            cellCount: totalCount
         )
     }
 

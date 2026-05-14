@@ -194,7 +194,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
     }
 
-    func testWindowSheetProjectionUsesFocusedLeafIDsAndCreateTileCount() {
+    func testWindowSheetProjectionUsesFocusedLeafIDsAndWindowCount() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let first = Self.managedSurface()
         let second = Self.managedSurface()
@@ -220,14 +220,14 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
             ),
             GhosttyWindowSheetPresentationProjection(
                 previewLeafIDs: [first.id, third.id],
-                cellCount: 3
+                cellCount: 2
             )
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.windowSheetDetentCellCount(
                 snapshot: registry.topologySnapshot
             ),
-            3
+            2
         )
     }
 
@@ -280,7 +280,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
                 ],
                 selectedWindowID: firstTopLevelID,
                 previewLeafIDs: [first.id, third.id],
-                cellCount: 3
+                cellCount: 2
             )
         )
     }
