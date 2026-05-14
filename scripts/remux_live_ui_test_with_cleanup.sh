@@ -134,6 +134,7 @@ port="${port:-22}"
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/remux-live-ui-cleanup.XXXXXX")"
 manifest="/tmp/remux-live-generated-sessions.txt"
+expectations="/tmp/remux-live-tmux-expectations.txt"
 askpass="$work_dir/askpass.sh"
 log_dir=".local/logs"
 mkdir -p "$log_dir"
@@ -148,6 +149,7 @@ printf '%s\n' "$REMUX_LIVE_SSH_PASSWORD"
 EOF
 chmod 700 "$askpass"
 rm -f "$manifest"
+rm -f "$expectations"
 
 cleanup_generated_sessions() {
   local status=0
@@ -185,6 +187,112 @@ cleanup_generated_sessions() {
   return "$status"
 }
 
+verify_tmux_expectations() {
+  local status=0
+
+  if [[ ! -s "$expectations" ]]; then
+    return 0
+  fi
+
+  while IFS=$'\t' read -r kind session arg1 arg2 extra || [[ -n "${kind:-}" ]]; do
+    [[ -n "${kind:-}" ]] || continue
+
+    if [[ -n "${extra:-}" ]]; then
+      printf 'invalid tmux expectation with extra fields: %s\n' "$kind" >&2
+      status=1
+      continue
+    fi
+
+    if [[ ! "$session" =~ $session_allowlist ]]; then
+      printf 'refusing non-allowlisted expectation session: %s\n' "$session" >&2
+      status=1
+      continue
+    fi
+
+    case "$kind" in
+      pane-count)
+        if [[ -n "${arg2:-}" ]]; then
+          printf 'invalid pane-count expectation with extra argument for %s\n' "$session" >&2
+          status=1
+          continue
+        fi
+
+        if [[ ! "$arg1" =~ ^[0-9]+$ ]]; then
+          printf 'invalid expected pane count for %s: %s\n' "$session" "$arg1" >&2
+          status=1
+          continue
+        fi
+
+        local remote_command
+        remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; count=0; for window_id in \$(\"\$tmux_bin\" list-windows -t \"\$session\" -F '#{window_id}' 2>/dev/null); do window_count=\$(\"\$tmux_bin\" list-panes -t \"\$window_id\" -F '#{pane_id}' 2>/dev/null | wc -l | tr -d ' '); count=\$((count + window_count)); done; printf '%s\n' \"\$count\""
+
+        local actual
+        if ! actual="$(REMUX_LIVE_SSH_PASSWORD="$password" \
+          SSH_ASKPASS="$askpass" \
+          SSH_ASKPASS_REQUIRE=force \
+          DISPLAY=remux \
+          ssh \
+            -p "$port" \
+            -o BatchMode=no \
+            -o NumberOfPasswordPrompts=1 \
+            -o ConnectTimeout=10 \
+            "$username@$host" \
+            "$remote_command" </dev/null)"; then
+          printf 'failed to verify tmux pane count for %s\n' "$session" >&2
+          status=1
+          continue
+        fi
+
+        if [[ "$actual" != "$arg1" ]]; then
+          printf 'tmux pane-count expectation failed for %s: expected %s, got %s\n' "$session" "$arg1" "$actual" >&2
+          status=1
+        else
+          printf 'Verified tmux pane-count expectation for %s: %s\n' "$session" "$arg1"
+        fi
+        ;;
+      pane-index-contains)
+        if [[ ! "$arg1" =~ ^[0-9]+$ || "$arg1" -eq 0 ]]; then
+          printf 'invalid pane index for %s: %s\n' "$session" "$arg1" >&2
+          status=1
+          continue
+        fi
+
+        if [[ ! "$arg2" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          printf 'invalid pane marker for %s: %s\n' "$session" "$arg2" >&2
+          status=1
+          continue
+        fi
+
+        local capture_command
+        capture_command="session=$session; marker=$arg2; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; pane_id=\$(\"\$tmux_bin\" list-panes -t \"\$session\" -F '#{pane_id}' 2>/dev/null | sed -n '${arg1}p'); if [ -z \"\$pane_id\" ]; then echo 'expected pane index not found' >&2; exit 1; fi; \"\$tmux_bin\" capture-pane -p -e -t \"\$pane_id\" 2>/dev/null | grep -F -- \"\$marker\" >/dev/null"
+
+        if ! REMUX_LIVE_SSH_PASSWORD="$password" \
+          SSH_ASKPASS="$askpass" \
+          SSH_ASKPASS_REQUIRE=force \
+          DISPLAY=remux \
+          ssh \
+            -p "$port" \
+            -o BatchMode=no \
+            -o NumberOfPasswordPrompts=1 \
+            -o ConnectTimeout=10 \
+            "$username@$host" \
+            "$capture_command" </dev/null; then
+          printf 'tmux pane-index-contains expectation failed for %s pane %s marker %s\n' "$session" "$arg1" "$arg2" >&2
+          status=1
+        else
+          printf 'Verified tmux pane-index-contains expectation for %s pane %s marker %s\n' "$session" "$arg1" "$arg2"
+        fi
+        ;;
+      *)
+        printf 'unknown tmux expectation: %s\n' "$kind" >&2
+        status=1
+        ;;
+    esac
+  done <"$expectations"
+
+  return "$status"
+}
+
 finish() {
   local status=$?
   if [[ "$cleanup_done" -eq 0 ]]; then
@@ -210,11 +318,18 @@ done
 
 set +e
 REMUX_LIVE_GENERATED_SESSION_MANIFEST="$manifest" \
+REMUX_LIVE_TMUX_EXPECTATION_MANIFEST="$expectations" \
 REMUX_TRACE_LATENCY=1 \
 REMUX_TRACE_PERF=1 \
 xcodebuild "${xcode_args[@]}" 2>&1 | tee "$log"
 xcode_status=$?
 set -e
+
+verify_status=0
+if [[ "$xcode_status" -eq 0 ]]; then
+  verify_tmux_expectations
+  verify_status=$?
+fi
 
 cleanup_generated_sessions
 cleanup_status=$?
@@ -222,11 +337,15 @@ cleanup_done=1
 trap - EXIT
 rm -rf "$work_dir"
 rm -f "$manifest"
+rm -f "$expectations"
 
 printf 'live UI test log: %s\n' "$log"
 printf 'live UI test result bundle: %s\n' "$result_bundle"
 
 if [[ "$xcode_status" -ne 0 ]]; then
   exit "$xcode_status"
+fi
+if [[ "$verify_status" -ne 0 ]]; then
+  exit "$verify_status"
 fi
 exit "$cleanup_status"

@@ -371,6 +371,45 @@ final class RemuxAppUITests: XCTestCase {
         waitForLiveTerminalReady(timeout: 60)
     }
 
+    func testLiveSSHStackPaneCreatesExactlyOneRemotePaneWhenConfigured() throws {
+        let sessionName = generatedLiveLatencySessionName("stack")
+        let marker = "REMUX_STACK_PANE2_\(UUID().uuidString.prefix(8).uppercased())"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        openPanesSheet()
+        XCTAssertTrue(app.buttons["terminal.pane.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertFalse(
+            app.buttons["terminal.pane.tile.2"].waitForExistence(timeout: 1),
+            "A fresh generated live session should start with one pane."
+        )
+
+        tapPickerButton(identifier: "terminal.pane.stack", fallbackLabel: "Stack")
+        waitForLiveTerminalReady(timeout: 30)
+
+        openPanesSheet()
+        XCTAssertTrue(app.buttons["terminal.pane.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["terminal.pane.tile.2"].waitForExistence(timeout: 10))
+        XCTAssertFalse(
+            app.buttons["terminal.pane.tile.3"].waitForExistence(timeout: 2),
+            "Stack should create exactly one additional pane."
+        )
+
+        tapPickerButton(identifier: "terminal.pane.tile.2", fallbackLabel: "Pane 2 of 2")
+        waitForLiveTerminalReady(timeout: 30)
+        sendTerminalCommand("printf '\(marker)\\n'")
+        hideKeyboardIfPresent()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+
+        recordLiveTmuxPaneCountExpectation(sessionName: sessionName, expectedCount: 2)
+        recordLiveTmuxPaneCaptureExpectation(sessionName: sessionName, paneIndex: 2, marker: marker)
+    }
+
     func testLiveDenseWindowPickerReachabilityWhenConfigured() throws {
         let sessionName = generatedLiveLatencySessionName("dense-windows")
         defer {
@@ -571,6 +610,51 @@ final class RemuxAppUITests: XCTestCase {
             }
         } catch {
             XCTFail("Failed to record generated live tmux session \(sessionName): \(error)")
+        }
+    }
+
+    private func recordLiveTmuxPaneCountExpectation(sessionName: String, expectedCount: Int) {
+        XCTAssertGreaterThanOrEqual(expectedCount, 0)
+        recordLiveTmuxExpectation(fields: ["pane-count", sessionName, "\(expectedCount)"])
+    }
+
+    private func recordLiveTmuxPaneCaptureExpectation(
+        sessionName: String,
+        paneIndex: Int,
+        marker: String
+    ) {
+        XCTAssertGreaterThan(paneIndex, 0)
+        XCTAssertTrue(
+            marker.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil,
+            "Refusing to record unsafe tmux capture marker \(marker)."
+        )
+        recordLiveTmuxExpectation(fields: ["pane-index-contains", sessionName, "\(paneIndex)", marker])
+    }
+
+    private func recordLiveTmuxExpectation(fields: [String]) {
+        let manifestPath = ProcessInfo.processInfo.environment["REMUX_LIVE_TMUX_EXPECTATION_MANIFEST"]
+            .flatMap { $0.isEmpty ? nil : $0 }
+            ?? "/tmp/remux-live-tmux-expectations.txt"
+
+        for field in fields {
+            XCTAssertFalse(field.contains("\t"), "Live tmux expectation fields cannot contain tabs.")
+            XCTAssertFalse(field.contains("\n"), "Live tmux expectation fields cannot contain newlines.")
+        }
+
+        let manifestURL = URL(fileURLWithPath: manifestPath)
+        let data = Data("\(fields.joined(separator: "\t"))\n".utf8)
+
+        do {
+            if FileManager.default.fileExists(atPath: manifestPath) {
+                let handle = try FileHandle(forWritingTo: manifestURL)
+                try handle.seekToEnd()
+                try handle.write(contentsOf: data)
+                try handle.close()
+            } else {
+                try data.write(to: manifestURL, options: .atomic)
+            }
+        } catch {
+            XCTFail("Failed to record live tmux expectation \(fields): \(error)")
         }
     }
 
