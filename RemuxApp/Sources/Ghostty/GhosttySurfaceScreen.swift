@@ -97,9 +97,11 @@ struct GhosttySurfaceScreen: View {
                             projection: model.terminalTreePresentationProjection,
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,
-                            onCopySelection: copyTerminalSelection,
-                            selectionAvailability: {
-                                model.focusedSelectionAvailability()
+                            onCopySelection: { surfaceID in
+                                copyTerminalSelection(from: surfaceID)
+                            },
+                            selectionAvailability: { surfaceID in
+                                model.selectionAvailability(for: surfaceID)
                             },
                             selectSurface: { surfaceID, reason in
                                 model.selectTerminalSurface(surfaceID, reason: reason)
@@ -144,6 +146,14 @@ struct GhosttySurfaceScreen: View {
                         )
                         .opacity(0.01)
                         .allowsHitTesting(false)
+
+                        GhosttyTerminalScreenAccessibilityMarker()
+                            .frame(
+                                width: terminalViewportSize.width,
+                                height: terminalViewportSize.height,
+                                alignment: .topLeading
+                            )
+                            .allowsHitTesting(false)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .overlay(alignment: .topLeading) {
@@ -314,9 +324,6 @@ struct GhosttySurfaceScreen: View {
                 }
             }
 #endif
-        }
-        .overlay(alignment: .topLeading) {
-            GhosttyTerminalScreenAccessibilityMarker()
         }
         .onAppear {
             GhosttyRuntimeTrace.flowEvent(
@@ -777,8 +784,8 @@ struct GhosttySurfaceScreen: View {
         model.sendPasteToFocusedSurface(text).isAccepted
     }
 
-    private func copyTerminalSelection() -> Bool {
-        guard case .text(let selection) = model.readSelectionFromFocusedSurface() else {
+    private func copyTerminalSelection(from surfaceID: UUID) -> Bool {
+        guard case .text(let selection) = model.readSelection(from: surfaceID) else {
             return false
         }
 
@@ -1265,7 +1272,6 @@ struct GhosttySurfaceScreen: View {
 private struct GhosttyTerminalScreenAccessibilityMarker: View {
     var body: some View {
         Color.clear
-            .frame(width: 1, height: 1)
             .accessibilityElement()
             .accessibilityLabel("Terminal")
             .accessibilityIdentifier("terminal.screen")

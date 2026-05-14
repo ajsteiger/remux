@@ -381,6 +381,37 @@ final class RemuxAppUITests: XCTestCase {
         waitForLiveTerminalReady(timeout: 60)
     }
 
+    func testLiveTerminalSelectionCopyWhenConfigured() throws {
+        let sessionName = "remux-latency-copy-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        let marker = "REMUX_COPY_TOKEN_\(UUID().uuidString.prefix(8).uppercased())"
+        UIPasteboard.general.string = "REMUX_COPY_SENTINEL"
+        sendTerminalCommand("clear; printf '\(marker) alpha beta gamma\\n'")
+        hideKeyboardIfPresent()
+
+        let terminal = app.otherElements["terminal.screen"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.001, dy: 0.02))
+            .press(
+                forDuration: 0.7,
+                thenDragTo: terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.02))
+            )
+
+        let copy = waitForCopyMenuItem(timeout: 5)
+        copy.tap()
+        XCTAssertTrue(
+            waitForPasteboard(containing: marker, timeout: 5),
+            "Copy should write selected terminal text to the simulator pasteboard."
+        )
+    }
+
     func testLiveWarmSSHRootReuseWhenConfigured() throws {
         let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
         defer {
@@ -892,6 +923,12 @@ final class RemuxAppUITests: XCTestCase {
                 return true
             }
 
+            let allowPaste = alert.buttons["Allow Paste"]
+            if allowPaste.exists {
+                allowPaste.tap()
+                return true
+            }
+
             return false
         }
     }
@@ -998,6 +1035,99 @@ final class RemuxAppUITests: XCTestCase {
         }
 
         app.typeText("\(command)\n")
+    }
+
+    private func hideKeyboardIfPresent() {
+        guard app.keyboards.firstMatch.exists else { return }
+
+        let keyboard = app.buttons["terminal.keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        keyboard.tap()
+        _ = waitForKeyboardPresence(false, label: "selection copy hide", timeout: 5)
+    }
+
+    private func waitForCopyMenuItem(timeout: TimeInterval) -> XCUIElement {
+        let deadline = Date().addingTimeInterval(timeout)
+        let menuItem = app.menuItems["Copy"].firstMatch
+        let button = app.buttons["Copy"].firstMatch
+        let labeledElement = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", "Copy"))
+            .firstMatch
+
+        repeat {
+            for element in [menuItem, button, labeledElement] where element.exists {
+                return element
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        } while Date() < deadline
+
+        XCTFail("Terminal selection should expose the Copy menu.")
+        return menuItem
+    }
+
+    private func waitForPasteboard(
+        containing marker: String,
+        timeout: TimeInterval,
+        pollInterval: TimeInterval = 0.1
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if readPasteboardStringAllowingPermission(timeout: 1)?.contains(marker) == true {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(pollInterval))
+        } while Date() < deadline
+
+        return readPasteboardStringAllowingPermission(timeout: 1)?.contains(marker) == true
+    }
+
+    private func readPasteboardStringAllowingPermission(timeout: TimeInterval) -> String? {
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var result: String?
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let pasteboardString = UIPasteboard.general.string
+            lock.lock()
+            result = pasteboardString
+            lock.unlock()
+            group.leave()
+        }
+
+        let deadline = Date().addingTimeInterval(timeout)
+        while group.wait(timeout: .now()) == .timedOut, Date() < deadline {
+            allowPastePermissionIfPresent(timeout: 0.05)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        allowPastePermissionIfPresent(timeout: 0.05)
+
+        guard group.wait(timeout: .now()) == .success else {
+            return nil
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+        return result
+    }
+
+    private func allowPastePermissionIfPresent(timeout: TimeInterval) {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let candidates = [
+            app.buttons["Allow Paste"].firstMatch,
+            springboard.buttons["Allow Paste"].firstMatch,
+        ]
+
+        for candidate in candidates where candidate.exists {
+            candidate.tap()
+            return
+        }
+
+        if timeout > 0 {
+            for candidate in candidates where candidate.waitForExistence(timeout: timeout) {
+                candidate.tap()
+                return
+            }
+        }
     }
 
     private func backgroundAndReactivateApp(backgroundDuration: TimeInterval) {

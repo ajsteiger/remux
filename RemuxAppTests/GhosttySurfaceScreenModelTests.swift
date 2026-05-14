@@ -1606,6 +1606,40 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("selection available"))
     }
 
+    func testReadSelectionCanTargetNonFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(readSelection: { "first" })
+        let second = Self.managedSurface(readSelection: { "second" })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(second.id)
+
+        XCTAssertEqual(registry.readSelection(from: first.id), .text("first"))
+        XCTAssertTrue(registry.debugSummary.contains("read selection"))
+    }
+
+    func testSelectionAvailabilityCanTargetNonFocusedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let first = Self.managedSurface(hasSelection: { true })
+        let second = Self.managedSurface(hasSelection: { false })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(second.id)
+
+        XCTAssertEqual(registry.selectionAvailability(for: first.id), .available)
+        XCTAssertTrue(registry.debugSummary.contains("selection available"))
+    }
+
+    func testSelectionAvailabilityRejectsMissingTargetSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let missingID = UUID()
+
+        XCTAssertEqual(registry.selectionAvailability(for: missingID), .missingSurface(missingID))
+        XCTAssertTrue(registry.debugSummary.contains("missing surface"))
+    }
+
     func testFocusedSelectionAvailabilityReportsEmptySelection() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let managed = Self.managedSurface(hasSelection: { false })
@@ -1648,6 +1682,14 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(registry.readSelectionFromFocusedSurface(), .emptySelection)
         XCTAssertTrue(registry.debugSummary.contains("empty selection"))
+    }
+
+    func testReadSelectionRejectsMissingTargetSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let missingID = UUID()
+
+        XCTAssertEqual(registry.readSelection(from: missingID), .missingSurface(missingID))
+        XCTAssertTrue(registry.debugSummary.contains("missing surface"))
     }
 
     func testKeyEventRoutesToFocusedManagedSurface() {
@@ -2168,6 +2210,21 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.readSelectionFromFocusedSurface(), .text("selected text"))
     }
 
+    func testModelReadSelectionCanTargetNonFocusedSurface() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface(readSelection: { "first" })
+        let second = Self.managedSurface(readSelection: { "second" })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        model.surfaceRegistry.selectSurface(second.id)
+
+        XCTAssertEqual(model.readSelection(from: first.id), .text("first"))
+    }
+
     func testModelReadSelectionWithoutFocusedSurfaceUpdatesDebugStatus() {
         let model = Self.screenModel(
             target: Self.target(),
@@ -2201,6 +2258,21 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertEqual(model.focusedSelectionAvailability(), .available)
+    }
+
+    func testModelSelectionAvailabilityCanTargetNonFocusedSurface() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let first = Self.managedSurface(hasSelection: { true })
+        let second = Self.managedSurface(hasSelection: { false })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        model.surfaceRegistry.selectSurface(second.id)
+
+        XCTAssertEqual(model.selectionAvailability(for: first.id), .available)
     }
 
     func testModelFocusedSelectionAvailabilityWithoutFocusedSurfaceIsRejected() {

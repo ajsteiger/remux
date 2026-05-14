@@ -65,6 +65,7 @@ enum GhosttyMouseInputSubmissionOutcome: Equatable, Sendable {
 enum GhosttyTerminalSelectionAvailabilityOutcome: Equatable, Sendable {
     case available
     case noFocusedSurface
+    case missingSurface(UUID)
     case emptySelection
 
     var isAvailable: Bool {
@@ -75,13 +76,14 @@ enum GhosttyTerminalSelectionAvailabilityOutcome: Equatable, Sendable {
 enum GhosttyTerminalSelectionReadOutcome: Equatable, Sendable {
     case text(String)
     case noFocusedSurface
+    case missingSurface(UUID)
     case emptySelection
 
     var selectedText: String? {
         switch self {
         case .text(let value):
             value
-        case .noFocusedSurface, .emptySelection:
+        case .noFocusedSurface, .missingSurface, .emptySelection:
             nil
         }
     }
@@ -869,9 +871,19 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     func readSelectionFromFocusedSurface() -> GhosttyTerminalSelectionReadOutcome {
-        guard let surface = selectedActiveSurface else {
+        guard let surfaceID = selectedActiveLeafID else {
             updateDebugSummary("copy dropped: no focused surface")
             return .noFocusedSurface
+        }
+
+        return readSelection(from: surfaceID)
+    }
+
+    @MainActor
+    func readSelection(from surfaceID: UUID) -> GhosttyTerminalSelectionReadOutcome {
+        guard let surface = managedSurfaces[surfaceID] else {
+            updateDebugSummary("copy dropped: missing surface")
+            return .missingSurface(surfaceID)
         }
 
         guard let selection = surface.readSelection(), !selection.isEmpty else {
@@ -885,9 +897,19 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     func focusedSelectionAvailability() -> GhosttyTerminalSelectionAvailabilityOutcome {
-        guard let surface = selectedActiveSurface else {
+        guard let surfaceID = selectedActiveLeafID else {
             updateDebugSummary("selection check dropped: no focused surface")
             return .noFocusedSurface
+        }
+
+        return selectionAvailability(for: surfaceID)
+    }
+
+    @MainActor
+    func selectionAvailability(for surfaceID: UUID) -> GhosttyTerminalSelectionAvailabilityOutcome {
+        guard let surface = managedSurfaces[surfaceID] else {
+            updateDebugSummary("selection check dropped: missing surface")
+            return .missingSurface(surfaceID)
         }
 
         let hasSelection = surface.hasSelection()

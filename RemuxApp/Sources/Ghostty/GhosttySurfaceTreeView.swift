@@ -10,8 +10,8 @@ struct GhosttyRuntimePaneTreeView: View {
     let projection: GhosttyTerminalTreePresentationProjection
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
-    let onCopySelection: (() -> Bool)?
-    let selectionAvailability: () -> GhosttyTerminalSelectionAvailabilityOutcome
+    let onCopySelection: ((UUID) -> Bool)?
+    let selectionAvailability: (UUID) -> GhosttyTerminalSelectionAvailabilityOutcome
     let selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome
     let isMouseCaptured: (UUID) -> Bool
     let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
@@ -43,8 +43,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     let projection: GhosttyTerminalTreePresentationProjection
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
-    let onCopySelection: (() -> Bool)?
-    let selectionAvailability: () -> GhosttyTerminalSelectionAvailabilityOutcome
+    let onCopySelection: ((UUID) -> Bool)?
+    let selectionAvailability: (UUID) -> GhosttyTerminalSelectionAvailabilityOutcome
     let selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome
     let isMouseCaptured: (UUID) -> Bool
     let submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?
@@ -82,8 +82,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var projection = GhosttyTerminalTreePresentationProjection.empty
     private var onSurfaceTap: ((UUID) -> Void)?
     private var onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
-    private var onCopySelection: (() -> Bool)?
-    private var selectionAvailability: () -> GhosttyTerminalSelectionAvailabilityOutcome = { .noFocusedSurface }
+    private var onCopySelection: ((UUID) -> Bool)?
+    private var selectionAvailability: (UUID) -> GhosttyTerminalSelectionAvailabilityOutcome = { _ in .noFocusedSurface }
     private var selectSurface: (UUID, String) -> GhosttySurfaceSelectionOutcome = { surfaceID, _ in
         .missingSurface(surfaceID)
     }
@@ -99,6 +99,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var isPanGestureActive = false
     private var didNavigateForActivePan = false
     private var activeSelectionSurfaceID: UUID?
+    private var selectionCopyMenuSurfaceID: UUID?
     private var presentationOverlayView: UIView?
     private var presentationOverlayPendingSurfaceID: UUID?
     private var selectionCopyMenuSourcePoint = CGPoint.zero
@@ -134,8 +135,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         materializationContext: GhosttyRuntimeSurfaceMaterializationContext,
         onSurfaceTap: ((UUID) -> Void)?,
         onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?,
-        onCopySelection: (() -> Bool)?,
-        selectionAvailability: @escaping () -> GhosttyTerminalSelectionAvailabilityOutcome,
+        onCopySelection: ((UUID) -> Bool)?,
+        selectionAvailability: @escaping (UUID) -> GhosttyTerminalSelectionAvailabilityOutcome,
         selectSurface: @escaping (UUID, String) -> GhosttySurfaceSelectionOutcome,
         isMouseCaptured: @escaping (UUID) -> Bool,
         submitMouseButton: ((UUID, GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome)?,
@@ -238,6 +239,9 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         visibleSurfaceIDs = visibleIDs
         if let activeSelectionSurfaceID, !visibleIDs.contains(activeSelectionSurfaceID) {
             self.activeSelectionSurfaceID = nil
+        }
+        if let selectionCopyMenuSurfaceID, !visibleIDs.contains(selectionCopyMenuSurfaceID) {
+            self.selectionCopyMenuSurfaceID = nil
         }
         if activePanAxis == .horizontal, !projection.canNavigateWindows {
             resetActivePanState()
@@ -478,6 +482,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
         if phase == .ended {
             presentSelectionCopyMenuIfAvailable(
+                surfaceID: surfaceID,
                 sourcePoint: recognizer.location(in: self)
             )
         }
@@ -490,12 +495,14 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func presentSelectionCopyMenuIfAvailable(
+        surfaceID: UUID,
         sourcePoint: CGPoint
     ) {
         guard onCopySelection != nil else { return }
-        guard selectionAvailability().isAvailable else { return }
+        guard selectionAvailability(surfaceID).isAvailable else { return }
 
         selectionCopyMenuSourcePoint = sourcePoint
+        selectionCopyMenuSurfaceID = surfaceID
         selectionEditMenuInteraction.presentEditMenu(
             with: UIEditMenuConfiguration(
                 identifier: nil,
@@ -693,12 +700,17 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         _ = interaction
         _ = configuration
         _ = suggestedActions
+        guard let surfaceID = selectionCopyMenuSurfaceID else { return nil }
+        guard selectionAvailability(surfaceID).isAvailable else { return nil }
 
         let copyAction = UIAction(
             title: "Copy",
             image: UIImage(systemName: "doc.on.doc")
         ) { [weak self] _ in
-            _ = self?.onCopySelection?()
+            _ = self?.onCopySelection?(surfaceID)
+            if self?.selectionCopyMenuSurfaceID == surfaceID {
+                self?.selectionCopyMenuSurfaceID = nil
+            }
         }
         return UIMenu(children: [copyAction])
     }

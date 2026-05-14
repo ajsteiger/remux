@@ -370,8 +370,21 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return outcome
     }
 
+    func readSelection(from surfaceID: UUID) -> GhosttyTerminalSelectionReadOutcome {
+        let outcome = surfaceRegistry.readSelection(from: surfaceID)
+        if outcome.selectedText == nil {
+            debugStatus = "copy dropped: no selection"
+        }
+
+        return outcome
+    }
+
     func focusedSelectionAvailability() -> GhosttyTerminalSelectionAvailabilityOutcome {
         surfaceRegistry.focusedSelectionAvailability()
+    }
+
+    func selectionAvailability(for surfaceID: UUID) -> GhosttyTerminalSelectionAvailabilityOutcome {
+        surfaceRegistry.selectionAvailability(for: surfaceID)
     }
 
     func createTmuxWindowInteractionEffect() -> GhosttyTmuxTopologyActionInteractionEffect {
