@@ -497,8 +497,8 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     private func closeActiveSessionFromLibraryIfPossible() {
-        if app.buttons["terminal.home"].waitForExistence(timeout: 2) {
-            app.buttons["terminal.home"].tap()
+        if let homeButton = optionalTerminalHomeButton(timeout: 2) {
+            tapTerminalHomeButton(homeButton)
         }
 
         let activeSession = app.buttons["library.active-session.show"].firstMatch
@@ -967,27 +967,38 @@ final class RemuxAppUITests: XCTestCase {
 
     private func openHomeFromTerminal() {
         let homeButton = waitForTerminalHomeButton()
-        if homeButton.isHittable {
-            homeButton.tap()
-        } else {
-            homeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
+        tapTerminalHomeButton(homeButton)
 
         XCTAssertTrue(app.descendants(matching: .any)["library.list"].waitForExistence(timeout: 5))
     }
 
     private func waitForTerminalHomeButton(timeout: TimeInterval = 2) -> XCUIElement {
+        if let button = terminalHomeButton(timeout: timeout, allowMissing: false) {
+            return button
+        }
+        XCTFail("Missing terminal Home button.")
+        return app.buttons["terminal.home"].firstMatch
+    }
+
+    private func optionalTerminalHomeButton(timeout: TimeInterval = 2) -> XCUIElement? {
+        terminalHomeButton(timeout: timeout, allowMissing: true)
+    }
+
+    private func terminalHomeButton(
+        timeout: TimeInterval,
+        allowMissing: Bool
+    ) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(timeout)
         let identifiedButtons = app.buttons.matching(identifier: "terminal.home")
         let labeledButtons = app.buttons.matching(NSPredicate(format: "label == %@", "Home"))
         var firstExisting: XCUIElement?
 
         while Date() < deadline {
-            if let button = firstHittableElement(in: identifiedButtons) {
+            if let button = uniqueHittableElement(in: identifiedButtons, description: "terminal.home") {
                 return button
             }
 
-            if let button = firstHittableElement(in: labeledButtons) {
+            if let button = uniqueHittableElement(in: labeledButtons, description: "Home") {
                 return button
             }
 
@@ -996,24 +1007,45 @@ final class RemuxAppUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         }
 
-        if let firstExisting {
+        if let firstExisting, !allowMissing {
             return firstExisting
         }
 
-        let fallback = app.buttons["terminal.home"]
-        XCTAssertTrue(fallback.waitForExistence(timeout: 1))
-        return fallback
+        if !allowMissing {
+            XCTFail("Missing terminal Home button.")
+        }
+        return nil
     }
 
-    private func firstHittableElement(in query: XCUIElementQuery) -> XCUIElement? {
+    private func uniqueHittableElement(
+        in query: XCUIElementQuery,
+        description: String
+    ) -> XCUIElement? {
+        let elements = hittableElements(in: query)
+        if elements.count > 1 {
+            XCTFail("Expected at most one hittable \(description) button, found \(elements.count).")
+        }
+        return elements.first
+    }
+
+    private func hittableElements(in query: XCUIElementQuery) -> [XCUIElement] {
+        var elements: [XCUIElement] = []
         for index in 0..<query.count {
             let element = query.element(boundBy: index)
             if element.exists && element.isHittable {
-                return element
+                elements.append(element)
             }
         }
 
-        return nil
+        return elements
+    }
+
+    private func tapTerminalHomeButton(_ button: XCUIElement) {
+        if button.isHittable {
+            button.tap()
+        } else {
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
     }
 
     private func firstExistingElement(in query: XCUIElementQuery) -> XCUIElement? {
@@ -1461,9 +1493,7 @@ final class RemuxAppUITests: XCTestCase {
             attach(name: "24-grouped-terminal-dock-ctrl-armed")
         }
 
-        let home = app.buttons["terminal.home"]
-        XCTAssertTrue(home.waitForExistence(timeout: 5))
-        if home.isHittable { home.tap() }
+        tapTerminalHomeButton(waitForTerminalHomeButton(timeout: 5))
         sleep(2)
         attach(name: "30-library-with-connected-session")
     }
@@ -1485,7 +1515,7 @@ final class RemuxAppUITests: XCTestCase {
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)).tap()
         sleep(1)
-        if app.buttons["terminal.home"].exists { return }
+        if optionalTerminalHomeButton(timeout: 0.2) != nil { return }
 
         app.swipeDown()
     }
