@@ -1141,9 +1141,15 @@ final class RemuxAppUITests: XCTestCase {
         }
 
         XCTAssertTrue(
-            app.otherElements["terminal.windows.sheet"].waitForExistence(timeout: 8)
-                || app.buttons["terminal.window.new"].waitForExistence(timeout: 2)
-                || app.buttons["New Window"].waitForExistence(timeout: 2)
+            waitForAnyPickerElement(
+                [
+                    elementWithIdentifier("terminal.windows.sheet"),
+                    app.buttons["terminal.window.new"],
+                    app.buttons["New Window"],
+                ],
+                timeout: 8
+            ),
+            "Window picker should present."
         )
     }
 
@@ -1159,34 +1165,64 @@ final class RemuxAppUITests: XCTestCase {
         }
 
         XCTAssertTrue(
-            app.otherElements["terminal.panes.sheet"].waitForExistence(timeout: 8)
-                || app.buttons["terminal.pane.split"].waitForExistence(timeout: 2)
-                || app.buttons["Split"].waitForExistence(timeout: 2)
+            waitForAnyPickerElement(
+                [
+                    elementWithIdentifier("terminal.panes.sheet"),
+                    app.buttons["terminal.pane.split"],
+                    app.buttons["Split"],
+                ],
+                timeout: 8
+            ),
+            "Pane picker should present."
         )
     }
 
     private var windowPickerIsOpen: Bool {
-        app.otherElements["terminal.windows.sheet"].exists
+        elementWithIdentifier("terminal.windows.sheet").exists
             || app.buttons["terminal.window.new"].exists
             || app.buttons["New Window"].exists
     }
 
     private var panePickerIsOpen: Bool {
-        app.otherElements["terminal.panes.sheet"].exists
+        elementWithIdentifier("terminal.panes.sheet").exists
             || app.buttons["terminal.pane.split"].exists
             || app.buttons["Split"].exists
     }
 
     private func tapPickerButton(identifier: String, fallbackLabel: String) {
         let identified = app.buttons.matching(identifier: identifier).firstMatch
-        if identified.waitForExistence(timeout: 5) {
-            identified.tap()
+        let labeled = app.buttons.matching(NSPredicate(format: "label == %@", fallbackLabel)).firstMatch
+        guard let button = firstExistingPickerElement([identified, labeled], timeout: 5) else {
+            XCTFail("Missing picker button \(identifier) / \(fallbackLabel)")
             return
         }
+        button.tap()
+    }
 
-        let labeled = app.buttons.matching(NSPredicate(format: "label == %@", fallbackLabel)).firstMatch
-        XCTAssertTrue(labeled.waitForExistence(timeout: 3), "Missing picker button \(identifier) / \(fallbackLabel)")
-        labeled.tap()
+    private func waitForAnyPickerElement(
+        _ elements: [XCUIElement],
+        timeout: TimeInterval
+    ) -> Bool {
+        firstExistingPickerElement(elements, timeout: timeout) != nil
+    }
+
+    private func firstExistingPickerElement(
+        _ elements: [XCUIElement],
+        timeout: TimeInterval
+    ) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            for element in elements where element.exists {
+                return element
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        return elements.first { $0.exists }
+    }
+
+    private func elementWithIdentifier(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 
     private func removePickerItem(
