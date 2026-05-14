@@ -93,6 +93,55 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertNil(host.lastError)
     }
 
+    func testInboundTmuxBurstsAreCoalescedBeforeGhosttySurface() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let host = GhosttyControlHostSurface(
+            transport: transport,
+            surface: surface
+        )
+        let payload = String(repeating: "x", count: 1000)
+        let chunks = (0..<200).map { index in
+            Data("%extended-output %1 0 : REMUX_BURST_\(index) \(payload)\r\n".utf8)
+        }
+        let expectedOutput = concatenated(chunks)
+
+        host.start()
+        for chunk in chunks {
+            await transport.emit(chunk)
+        }
+
+        let processed = await waitUntil(timeout: 2) {
+            self.concatenated(surface.processedOutput) == expectedOutput
+        }
+
+        XCTAssertTrue(processed)
+        XCTAssertLessThan(surface.processedOutput.count, chunks.count)
+        XCTAssertGreaterThan(surface.processedOutput.count, 1)
+        XCTAssertLessThanOrEqual(surface.processedOutput.map(\.count).max() ?? 0, 4 * 1024)
+    }
+
+    func testOversizedInboundTmuxChunkIsSplitBeforeGhosttySurface() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let host = GhosttyControlHostSurface(
+            transport: transport,
+            surface: surface
+        )
+        let chunk = Data(String(repeating: "x", count: 10 * 1024).utf8)
+
+        host.start()
+        await transport.emit(chunk)
+
+        let processed = await waitUntil(timeout: 2) {
+            self.concatenated(surface.processedOutput) == chunk
+        }
+
+        XCTAssertTrue(processed)
+        XCTAssertEqual(surface.processedOutput.count, 3)
+        XCTAssertLessThanOrEqual(surface.processedOutput.map(\.count).max() ?? 0, 4 * 1024)
+    }
+
     func testStopClosesTransportWithoutSendingTmuxCommand() async {
         let transport = RecordingTmuxControlTransport()
         let surface = RecordingGhosttyControlSurface()
@@ -717,7 +766,7 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         try? await transport.start(initialViewport: nil)
 
         let processed = await waitUntil {
-            surface.processedOutput == [first, second]
+            self.concatenated(surface.processedOutput) == self.concatenated([first, second])
         }
 
         XCTAssertTrue(processed)
@@ -735,6 +784,14 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(10))
         }
         return condition()
+    }
+
+    private func concatenated(_ chunks: [Data]) -> Data {
+        var result = Data()
+        for chunk in chunks {
+            result.append(chunk)
+        }
+        return result
     }
 
     private func waitUntilAsync(

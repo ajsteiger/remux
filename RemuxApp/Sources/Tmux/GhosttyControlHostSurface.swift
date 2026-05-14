@@ -689,6 +689,130 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
     }
 }
 
+private actor TmuxControlInboundOutputSequencer {
+    typealias OutputHandler = @Sendable (_ data: Data, _ chunkCount: Int) async -> Bool
+
+    private let maxBatchBytes: Int
+    private let coalescingDelay: Duration
+    private let interBatchDelay: Duration
+    private let outputHandler: OutputHandler
+
+    private var pendingChunks: [Data] = []
+    private var isClosed = false
+    private var isDrainScheduled = false
+    private var isDraining = false
+    private var drainWaiters: [CheckedContinuation<Bool, Never>] = []
+
+    init(
+        maxBatchBytes: Int = 4 * 1024,
+        coalescingDelay: Duration = .milliseconds(2),
+        interBatchDelay: Duration = .milliseconds(1),
+        outputHandler: @escaping OutputHandler
+    ) {
+        self.maxBatchBytes = maxBatchBytes
+        self.coalescingDelay = coalescingDelay
+        self.interBatchDelay = interBatchDelay
+        self.outputHandler = outputHandler
+    }
+
+    func enqueue(_ data: Data) {
+        guard !data.isEmpty, !isClosed else { return }
+
+        pendingChunks.append(data)
+        scheduleDrainIfNeeded()
+    }
+
+    func finish() async -> Bool {
+        isClosed = true
+        return await drainPending()
+    }
+
+    func cancel() {
+        isClosed = true
+        pendingChunks.removeAll(keepingCapacity: false)
+        isDrainScheduled = false
+        resumeDrainWaiters(accepted: false)
+    }
+
+    private func scheduleDrainIfNeeded() {
+        guard !isDrainScheduled, !isDraining else { return }
+
+        isDrainScheduled = true
+        Task { [weak self, coalescingDelay] in
+            try? await Task.sleep(for: coalescingDelay)
+            await self?.runScheduledDrain()
+        }
+    }
+
+    private func runScheduledDrain() async {
+        isDrainScheduled = false
+        _ = await drainPending()
+    }
+
+    private func drainPending() async -> Bool {
+        if isDraining {
+            return await withCheckedContinuation { continuation in
+                drainWaiters.append(continuation)
+            }
+        }
+
+        isDraining = true
+        var accepted = true
+
+        while accepted {
+            guard let batch = takeNextBatch() else { break }
+
+            accepted = await outputHandler(batch.data, batch.chunkCount)
+            if accepted, !pendingChunks.isEmpty {
+                try? await Task.sleep(for: interBatchDelay)
+            }
+        }
+
+        if !accepted {
+            isClosed = true
+            pendingChunks.removeAll(keepingCapacity: false)
+        }
+
+        isDraining = false
+        resumeDrainWaiters(accepted: accepted)
+        return accepted
+    }
+
+    private func takeNextBatch() -> (data: Data, chunkCount: Int)? {
+        guard !pendingChunks.isEmpty else { return nil }
+
+        if pendingChunks[0].count > maxBatchBytes {
+            let batch = Data(pendingChunks[0].prefix(maxBatchBytes))
+            pendingChunks[0].removeFirst(maxBatchBytes)
+            return (batch, 1)
+        }
+
+        var batch = Data()
+        var consumedChunks = 0
+
+        while consumedChunks < pendingChunks.count {
+            let chunk = pendingChunks[consumedChunks]
+            if !batch.isEmpty, batch.count + chunk.count > maxBatchBytes {
+                break
+            }
+
+            batch.append(chunk)
+            consumedChunks += 1
+        }
+
+        pendingChunks.removeFirst(consumedChunks)
+        return (batch, consumedChunks)
+    }
+
+    private func resumeDrainWaiters(accepted: Bool) {
+        let waiters = drainWaiters
+        drainWaiters.removeAll(keepingCapacity: false)
+        for waiter in waiters {
+            waiter.resume(returning: accepted)
+        }
+    }
+}
+
 enum TmuxControlCommandFailureReason: Equatable, Sendable {
     case noSpaceForNewPane
     case tmuxError(String)
@@ -758,6 +882,13 @@ final class GhosttyControlHostSurface {
         case outputRejected
     }
 
+    private enum InboundOutputOutcome {
+        case accepted
+        case noSurface
+        case rejected
+        case stopped
+    }
+
     struct Completion {
         let error: (any Error)?
         let receivedByteCount: Int
@@ -793,56 +924,50 @@ final class GhosttyControlHostSurface {
         isRunning = true
         lastError = nil
         didComplete = false
-        pumpTask = Task { [weak self] in
-            guard let self else { return }
+        let sequencer = TmuxControlInboundOutputSequencer { [weak self, transport] data, chunkCount in
+            let outcome = await MainActor.run {
+                self?.processInboundOutputBatch(data, chunkCount: chunkCount) ?? .stopped
+            }
 
+            switch outcome {
+            case .accepted:
+                return true
+            case .noSurface:
+                await transport.close(disposition: .reusable)
+                await MainActor.run { [weak self] in
+                    self?.complete(error: nil, markBackingExited: false)
+                }
+                return false
+            case .rejected:
+                await transport.close(disposition: .reusable)
+                await MainActor.run { [weak self] in
+                    self?.complete(error: Failure.outputRejected)
+                }
+                return false
+            case .stopped:
+                return false
+            }
+        }
+
+        pumpTask = Task.detached(priority: .userInitiated) { [weak self, transport] in
             do {
                 for try await bytes in transport.receivedBytes {
-                    receivedByteCount += bytes.count
-                    GhosttyRuntimeTrace.latency(
-                        "host.pump.receive bytes=\(bytes.count) total=\(receivedByteCount) preview=\(GhosttyRuntimeTrace.preview(bytes, limit: 160))"
-                    )
-                    GhosttyRuntimeTrace.observeInboundData(bytes, source: "host.pump")
-                    if GhosttyRuntimeTrace.isEnabled {
-                        NSLog(
-                            "Remux tmux rx total %d bytes; chunk %d: %@",
-                            receivedByteCount,
-                            bytes.count,
-                            Self.preview(bytes, limit: 512)
-                        )
-                        if !capturedFirstChunk {
-                            capturedFirstChunk = true
-                            onDebugEvent?("tmux rx \(bytes.count) bytes: \(Self.preview(bytes))")
-                        } else {
-                            onDebugEvent?(
-                                "tmux rx total \(receivedByteCount) bytes; last \(bytes.count): \(Self.preview(bytes))"
-                            )
-                        }
-                    }
-
-                    guard let surface else {
-                        GhosttyRuntimeTrace.latency("host.pump.noSurface closeTransport")
-                        await transport.close(disposition: .reusable)
-                        complete(error: nil, markBackingExited: false)
-                        return
-                    }
-
-                    let processStart = GhosttyRuntimeTrace.nowNanos()
-                    let accepted = surface.processOutput(bytes)
-                    GhosttyRuntimeTrace.latency(
-                        "host.pump.processOutput end accepted=\(accepted) bytes=\(bytes.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: processStart))"
-                    )
-                    guard accepted else {
-                        await transport.close(disposition: .reusable)
-                        onDebugEvent?("Ghostty rejected tmux output after \(receivedByteCount) bytes")
-                        complete(error: Failure.outputRejected)
-                        return
-                    }
+                    try Task.checkCancellation()
+                    await sequencer.enqueue(bytes)
                 }
 
-                complete(error: nil)
+                guard await sequencer.finish() else { return }
+
+                await MainActor.run { [weak self] in
+                    self?.complete(error: nil)
+                }
+            } catch is CancellationError {
+                await sequencer.cancel()
             } catch {
-                complete(error: error)
+                await sequencer.cancel()
+                await MainActor.run { [weak self] in
+                    self?.complete(error: error)
+                }
             }
         }
     }
@@ -899,5 +1024,49 @@ final class GhosttyControlHostSurface {
 
     nonisolated static func preview(_ data: Data, limit: Int = 48) -> String {
         GhosttyRuntimeTrace.preview(data, limit: limit)
+    }
+
+    private func processInboundOutputBatch(_ data: Data, chunkCount: Int) -> InboundOutputOutcome {
+        guard isRunning else { return .stopped }
+
+        receivedByteCount += data.count
+        GhosttyRuntimeTrace.latency(
+            "host.pump.receive bytes=\(data.count) chunks=\(chunkCount) total=\(receivedByteCount) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
+        )
+        GhosttyRuntimeTrace.observeInboundData(data, source: "host.pump")
+        if GhosttyRuntimeTrace.isEnabled {
+            NSLog(
+                "Remux tmux rx total %d bytes; batch %d bytes from %d chunks: %@",
+                receivedByteCount,
+                data.count,
+                chunkCount,
+                Self.preview(data, limit: 512)
+            )
+            if !capturedFirstChunk {
+                capturedFirstChunk = true
+                onDebugEvent?("tmux rx \(data.count) bytes: \(Self.preview(data))")
+            } else {
+                onDebugEvent?(
+                    "tmux rx total \(receivedByteCount) bytes; last \(data.count): \(Self.preview(data))"
+                )
+            }
+        }
+
+        guard let surface else {
+            GhosttyRuntimeTrace.latency("host.pump.noSurface closeTransport")
+            return .noSurface
+        }
+
+        let processStart = GhosttyRuntimeTrace.nowNanos()
+        let accepted = surface.processOutput(data)
+        GhosttyRuntimeTrace.latency(
+            "host.pump.processOutput end accepted=\(accepted) bytes=\(data.count) chunks=\(chunkCount) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: processStart))"
+        )
+        guard accepted else {
+            onDebugEvent?("Ghostty rejected tmux output after \(receivedByteCount) bytes")
+            return .rejected
+        }
+
+        return .accepted
     }
 }
