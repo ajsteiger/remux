@@ -68,12 +68,31 @@ struct RemuxAppDependencies: Sendable {
     }
 
     static func live() throws -> RemuxAppDependencies {
+#if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        let usesEphemeralDebugStorage = environment[DebugLiveEnvironmentKey.ephemeralStorage] == "1"
+        let root: URL
+        let passwordStore: any PasswordStore
+        if usesEphemeralDebugStorage {
+            root = try ApplicationStorage.remuxRoot(
+                overridePath: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("RemuxLiveDebug-\(UUID().uuidString)", isDirectory: true)
+                    .path
+            )
+            passwordStore = InMemoryPasswordStore()
+        } else {
+            root = try ApplicationStorage.remuxRoot()
+            passwordStore = KeychainPasswordStore()
+        }
+#else
         let root = try ApplicationStorage.remuxRoot()
+        let passwordStore: any PasswordStore = KeychainPasswordStore()
+#endif
         return RemuxAppDependencies(
             profileRepository: FileBackedConnectionProfileRepository(rootURL: root),
             settingsRepository: FileBackedTerminalSettingsRepository(rootURL: root),
             shortcutRepository: FileBackedShortcutRepository(rootURL: root),
-            passwordStore: KeychainPasswordStore(),
+            passwordStore: passwordStore,
             trustedHostStore: TrustedHostStore(rootURL: root)
         )
     }
@@ -150,6 +169,10 @@ struct RemuxAppDependencies: Sendable {
     }
 
 #if DEBUG
+    private enum DebugLiveEnvironmentKey {
+        static let ephemeralStorage = "REMUX_DEBUG_EPHEMERAL_STORAGE"
+    }
+
     static func uiTesting() throws -> RemuxAppDependencies {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("RemuxUITesting", isDirectory: true)

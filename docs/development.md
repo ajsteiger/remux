@@ -59,3 +59,13 @@ REMUX_DEBUG_TMUX_SESSION="base"
 
 Live validation should stay opt-in and local. Keep any real host, username,
 password, or test-control files out of the tracked repository.
+
+When running generated live UI tests, use the tracked host-side wrapper so the
+app runs with ephemeral debug storage, the test records the exact disposable
+`remux-latency-*` tmux sessions it creates, and the wrapper removes only those
+allowlisted sessions after the run:
+
+```bash
+scripts/remux_live_ui_test_with_cleanup.sh \
+  --only-testing RemuxUITests/RemuxAppUITests/testLiveSSHTmuxActionCycleWhenConfigured
+```

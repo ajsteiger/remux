@@ -83,7 +83,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHSeededServerOpensReadyTerminalWhenConfigured() throws {
-        let sessionName = "remux-latency-render-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("render")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -99,7 +99,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHKeyboardResizeTraceWhenConfigured() throws {
-        let sessionName = "remux-latency-keyboard-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("keyboard")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -129,7 +129,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveLatencyProfileRealRuntimeWhenConfigured() throws {
-        let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("profile")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -165,7 +165,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveHighOutputRuntimeWhenConfigured() throws {
-        let sessionName = "remux-latency-flow-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("flow")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -251,7 +251,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveTerminalScrollbackGestureWhenConfigured() throws {
-        let sessionName = "remux-latency-scroll-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("scroll")
         let doneMarker = "REMUX_SCROLLBACK_DONE_\(UUID().uuidString.prefix(8).uppercased())"
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
@@ -293,7 +293,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHTmuxActionCycleWhenConfigured() throws {
-        let sessionName = "remux-latency-action-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("action")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -372,7 +372,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHBackgroundForegroundRetainsTerminalWhenConfigured() throws {
-        let sessionName = "remux-latency-foreground-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("foreground")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -424,7 +424,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveTerminalSelectionCopyWhenConfigured() throws {
-        let sessionName = "remux-latency-copy-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("copy")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -455,7 +455,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveWarmSSHRootReuseWhenConfigured() throws {
-        let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("warm")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -472,7 +472,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveLibraryPrewarmedSSHRootWhenConfigured() throws {
-        let sessionName = "remux-latency-\(UUID().uuidString.prefix(8))"
+        let sessionName = generatedLiveLatencySessionName("prewarm")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -494,6 +494,47 @@ final class RemuxAppUITests: XCTestCase {
         guard sessionName.hasPrefix("remux-latency-") else { return }
 
         closeActiveSessionFromLibraryIfPossible()
+    }
+
+    private func generatedLiveLatencySessionName(_ purpose: String) -> String {
+        let safePurpose = purpose.replacingOccurrences(
+            of: #"[^A-Za-z0-9._-]"#,
+            with: "-",
+            options: .regularExpression
+        )
+        let sessionName = "remux-latency-\(safePurpose)-\(UUID().uuidString.prefix(8))"
+        recordGeneratedLiveLatencySession(sessionName)
+        return sessionName
+    }
+
+    private func recordGeneratedLiveLatencySession(_ sessionName: String) {
+        let manifestPath = ProcessInfo.processInfo.environment["REMUX_LIVE_GENERATED_SESSION_MANIFEST"]
+            .flatMap { $0.isEmpty ? nil : $0 }
+            ?? "/tmp/remux-live-generated-sessions.txt"
+
+        XCTAssertTrue(
+            sessionName.range(
+                of: #"^remux-latency-[A-Za-z0-9._-]+$"#,
+                options: .regularExpression
+            ) != nil,
+            "Refusing to record non-allowlisted generated live tmux session \(sessionName)."
+        )
+
+        let manifestURL = URL(fileURLWithPath: manifestPath)
+        let data = Data("\(sessionName)\n".utf8)
+
+        do {
+            if FileManager.default.fileExists(atPath: manifestPath) {
+                let handle = try FileHandle(forWritingTo: manifestURL)
+                try handle.seekToEnd()
+                try handle.write(contentsOf: data)
+                try handle.close()
+            } else {
+                try data.write(to: manifestURL, options: .atomic)
+            }
+        } catch {
+            XCTFail("Failed to record generated live tmux session \(sessionName): \(error)")
+        }
     }
 
     private func closeActiveSessionFromLibraryIfPossible() {
@@ -556,6 +597,7 @@ final class RemuxAppUITests: XCTestCase {
         app.launchEnvironment["REMUX_DEBUG_SERVER_USERNAME"] = configuration.username
         app.launchEnvironment["REMUX_DEBUG_SERVER_PASSWORD"] = configuration.password
         app.launchEnvironment["REMUX_DEBUG_TMUX_SESSION"] = sessionName
+        app.launchEnvironment["REMUX_DEBUG_EPHEMERAL_STORAGE"] = "1"
         if traceRuntime {
             app.launchEnvironment["REMUX_TRACE_FLOWS"] = "1"
             app.launchEnvironment["REMUX_TRACE_LATENCY"] = "1"
