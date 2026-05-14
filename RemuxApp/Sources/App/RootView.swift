@@ -307,9 +307,10 @@ private struct ConnectionLibraryView: View {
                     }
                     .buttonStyle(.plain)
                     .swipeActions(edge: .trailing) {
-                        Button("Close", role: .destructive) {
-                            onCloseActiveSession(session.id)
+                        Button("Close") {
+                            closeActiveSession(session.id)
                         }
+                        .tint(.red)
                     }
                 }
 
@@ -488,6 +489,15 @@ private struct ConnectionLibraryView: View {
         activeSessions.filter {
             $0.target.server.id == serverID && $0.runtimeState.isConnected
         }.count
+    }
+
+    private func closeActiveSession(_ sessionID: SavedWorkspace.ID) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+
+        withTransaction(transaction) {
+            onCloseActiveSession(sessionID)
+        }
     }
 }
 
