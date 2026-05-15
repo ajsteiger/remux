@@ -1060,28 +1060,7 @@ final class RemuxAppUITests: XCTestCase {
         screenshot: XCUIScreenshot
     ) -> (distinctColors: Int, nonBackgroundPixels: Int)? {
         guard let snapshot = liveTerminalContentPixels(screenshot: screenshot) else { return nil }
-        let pixels = snapshot.pixels
-
-        var colorCounts: [UInt32: Int] = [:]
-        colorCounts.reserveCapacity(128)
-
-        var index = 0
-        let pixelCount = snapshot.width * snapshot.height
-        while index < pixelCount {
-            let offset = index * 4
-            let red = UInt32(pixels[offset] / 4)
-            let green = UInt32(pixels[offset + 1] / 4)
-            let blue = UInt32(pixels[offset + 2] / 4)
-            let color = red << 16 | green << 8 | blue
-            colorCounts[color, default: 0] += 1
-            index += 1
-        }
-
-        let dominantCount = colorCounts.values.max() ?? pixelCount
-        return (
-            distinctColors: colorCounts.count,
-            nonBackgroundPixels: pixelCount - dominantCount
-        )
+        return pixelStats(snapshot)
     }
 
     private func liveTerminalPixelDifference(
@@ -1127,7 +1106,7 @@ final class RemuxAppUITests: XCTestCase {
             width: width,
             height: height * 75 / 100
         )
-        return renderedPixelStats(cgImage: cgImage, crop: crop)
+        return renderedPixels(cgImage: cgImage, crop: crop)
     }
 
     private func assertPreviewTileContainsRenderedImage(
@@ -1206,13 +1185,44 @@ final class RemuxAppUITests: XCTestCase {
             height: previewFrame.height * scaleY
         )
 
-        return renderedPixelStats(cgImage: cgImage, crop: pixelCrop)
+        guard let snapshot = renderedPixels(cgImage: cgImage, crop: pixelCrop) else {
+            return nil
+        }
+
+        return pixelStats(snapshot)
     }
 
-    private func renderedPixelStats(
+    private func pixelStats(
+        _ snapshot: (pixels: [UInt8], width: Int, height: Int)
+    ) -> (distinctColors: Int, nonBackgroundPixels: Int) {
+        let pixels = snapshot.pixels
+
+        var colorCounts: [UInt32: Int] = [:]
+        colorCounts.reserveCapacity(128)
+
+        var index = 0
+        let pixelCount = snapshot.width * snapshot.height
+        while index < pixelCount {
+            let offset = index * 4
+            let red = UInt32(pixels[offset] / 4)
+            let green = UInt32(pixels[offset + 1] / 4)
+            let blue = UInt32(pixels[offset + 2] / 4)
+            let color = red << 16 | green << 8 | blue
+            colorCounts[color, default: 0] += 1
+            index += 1
+        }
+
+        let dominantCount = colorCounts.values.max() ?? pixelCount
+        return (
+            distinctColors: colorCounts.count,
+            nonBackgroundPixels: pixelCount - dominantCount
+        )
+    }
+
+    private func renderedPixels(
         cgImage: CGImage,
         crop: CGRect
-    ) -> (distinctColors: Int, nonBackgroundPixels: Int)? {
+    ) -> (pixels: [UInt8], width: Int, height: Int)? {
         let imageBounds = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
         let boundedCrop = crop.integral.intersection(imageBounds)
         guard !boundedCrop.isNull,
