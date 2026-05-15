@@ -206,6 +206,50 @@ final class RemuxAppUITests: XCTestCase {
         XCTAssertTrue(activeSessionRows.firstMatch.waitForExistence(timeout: 5))
     }
 
+    func testLiveSSHPreviewSheetsRenderTerminalImagesWhenConfigured() throws {
+        let sessionName = "remux-latency-preview-\(UUID().uuidString.prefix(8))"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        sendTerminalCommand(
+            "i=0; while [ $i -lt 80 ]; do printf 'REMUX_PREVIEW_WINDOW1_%03d alpha beta gamma delta\\n' $i; i=$((i+1)); done"
+        )
+
+        openPanesSheet()
+        tapPickerButton(identifier: "terminal.pane.split", fallbackLabel: "Split")
+        waitForLiveTerminalReady(timeout: 30)
+
+        sendTerminalCommand(
+            "i=0; while [ $i -lt 80 ]; do printf 'REMUX_PREVIEW_PANE2_%03d one two three four\\n' $i; i=$((i+1)); done"
+        )
+
+        openPanesSheet()
+        XCTAssertTrue(app.buttons["terminal.pane.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["terminal.pane.tile.2"].waitForExistence(timeout: 10))
+        assertPreviewTileContainsRenderedImage(tileIdentifier: "terminal.pane.tile.1")
+        assertPreviewTileContainsRenderedImage(tileIdentifier: "terminal.pane.tile.2")
+        dismissTopSheetIfPresent()
+
+        openWindowsSheet()
+        tapPickerButton(identifier: "terminal.window.new", fallbackLabel: "New Window")
+        waitForLiveTerminalReady(timeout: 30)
+
+        sendTerminalCommand(
+            "i=0; while [ $i -lt 80 ]; do printf 'REMUX_PREVIEW_WINDOW2_%03d red green blue yellow\\n' $i; i=$((i+1)); done"
+        )
+
+        openWindowsSheet()
+        XCTAssertTrue(app.buttons["terminal.window.tile.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["terminal.window.tile.2"].waitForExistence(timeout: 10))
+        assertPreviewTileContainsRenderedImage(tileIdentifier: "terminal.window.tile.1")
+        assertPreviewTileContainsRenderedImage(tileIdentifier: "terminal.window.tile.2")
+    }
+
     func testLiveSSHTmuxActionCycleWhenConfigured() throws {
         let sessionName = "remux-latency-action-\(UUID().uuidString.prefix(8))"
         defer {
@@ -571,7 +615,101 @@ final class RemuxAppUITests: XCTestCase {
             width: width,
             height: height * 75 / 100
         )
-        guard let cropped = cgImage.cropping(to: crop) else { return nil }
+        return renderedPixelStats(cgImage: cgImage, crop: crop)
+    }
+
+    private func assertPreviewTileContainsRenderedImage(
+        tileIdentifier: String,
+        minDistinctColors: Int = 6,
+        minNonBackgroundPixels: Int = 400,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let tile = app.buttons[tileIdentifier]
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "Missing preview tile \(tileIdentifier)", file: file, line: line)
+
+        let deadline = Date().addingTimeInterval(15)
+        var lastScreenshot: XCUIScreenshot?
+        var lastStats: (distinctColors: Int, nonBackgroundPixels: Int)?
+
+        while Date() < deadline {
+            let screenshot = XCUIScreen.main.screenshot()
+            lastScreenshot = screenshot
+
+            if let stats = previewTileRenderedPixelStats(screenshot: screenshot, tile: tile) {
+                lastStats = stats
+                if stats.distinctColors > minDistinctColors &&
+                    stats.nonBackgroundPixels > minNonBackgroundPixels {
+                    let attachment = XCTAttachment(screenshot: screenshot)
+                    attachment.name = "preview-render-check-\(tileIdentifier)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                    return
+                }
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        if let lastScreenshot {
+            let attachment = XCTAttachment(screenshot: lastScreenshot)
+            attachment.name = "preview-render-check-\(tileIdentifier)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+
+        let statsSummary = lastStats.map {
+            " distinctColors=\($0.distinctColors) nonBackgroundPixels=\($0.nonBackgroundPixels)"
+        } ?? ""
+
+        XCTFail(
+            "Preview tile \(tileIdentifier) stayed visually flat; expected a rendered terminal preview image.\(statsSummary)",
+            file: file,
+            line: line
+        )
+    }
+
+    private func previewTileRenderedPixelStats(
+        screenshot: XCUIScreenshot,
+        tile: XCUIElement
+    ) -> (distinctColors: Int, nonBackgroundPixels: Int)? {
+        guard let cgImage = screenshot.image.cgImage else { return nil }
+        guard app.frame.width > 0, app.frame.height > 0 else { return nil }
+
+        let scaleX = CGFloat(cgImage.width) / app.frame.width
+        let scaleY = CGFloat(cgImage.height) / app.frame.height
+        let tileFrame = tile.frame
+        guard tileFrame.width > 0, tileFrame.height > 0 else { return nil }
+
+        let previewFrame = CGRect(
+            x: tileFrame.minX + tileFrame.width * 0.08,
+            y: tileFrame.minY + tileFrame.height * 0.08,
+            width: tileFrame.width * 0.84,
+            height: tileFrame.height * 0.68
+        )
+        let pixelCrop = CGRect(
+            x: previewFrame.minX * scaleX,
+            y: previewFrame.minY * scaleY,
+            width: previewFrame.width * scaleX,
+            height: previewFrame.height * scaleY
+        )
+
+        return renderedPixelStats(cgImage: cgImage, crop: pixelCrop)
+    }
+
+    private func renderedPixelStats(
+        cgImage: CGImage,
+        crop: CGRect
+    ) -> (distinctColors: Int, nonBackgroundPixels: Int)? {
+        let imageBounds = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
+        let boundedCrop = crop.integral.intersection(imageBounds)
+        guard !boundedCrop.isNull,
+              boundedCrop.width >= 1,
+              boundedCrop.height >= 1,
+              let cropped = cgImage.cropping(to: boundedCrop)
+        else {
+            return nil
+        }
 
         let cropWidth = cropped.width
         let cropHeight = cropped.height
