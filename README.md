@@ -4,6 +4,10 @@
   <img src="docs/media/remux-readme.webp" alt="Remux demo" width="900">
 </p>
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=WZXKzUdI6mQ">Watch demo on YouTube</a>
+</p>
+
 Remux is a native iOS client for remote tmux workspaces.
 
 Remux brings tmux's session, window, and pane model into a native iPhone
