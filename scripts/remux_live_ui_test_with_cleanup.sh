@@ -210,6 +210,46 @@ verify_tmux_expectations() {
     fi
 
     case "$kind" in
+      window-count)
+        if [[ -n "${arg2:-}" ]]; then
+          printf 'invalid window-count expectation with extra argument for %s\n' "$session" >&2
+          status=1
+          continue
+        fi
+
+        if [[ ! "$arg1" =~ ^[0-9]+$ ]]; then
+          printf 'invalid expected window count for %s: %s\n' "$session" "$arg1" >&2
+          status=1
+          continue
+        fi
+
+        local remote_command
+        remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; \"\$tmux_bin\" list-windows -t \"\$session\" -F '#{window_id}' 2>/dev/null | wc -l | tr -d ' '"
+
+        local actual
+        if ! actual="$(REMUX_LIVE_SSH_PASSWORD="$password" \
+          SSH_ASKPASS="$askpass" \
+          SSH_ASKPASS_REQUIRE=force \
+          DISPLAY=remux \
+          ssh \
+            -p "$port" \
+            -o BatchMode=no \
+            -o NumberOfPasswordPrompts=1 \
+            -o ConnectTimeout=10 \
+            "$username@$host" \
+            "$remote_command" </dev/null)"; then
+          printf 'failed to verify tmux window count for %s\n' "$session" >&2
+          status=1
+          continue
+        fi
+
+        if [[ "$actual" != "$arg1" ]]; then
+          printf 'tmux window-count expectation failed for %s: expected %s, got %s\n' "$session" "$arg1" "$actual" >&2
+          status=1
+        else
+          printf 'Verified tmux window-count expectation for %s: %s\n' "$session" "$arg1"
+        fi
+        ;;
       pane-count)
         if [[ -n "${arg2:-}" ]]; then
           printf 'invalid pane-count expectation with extra argument for %s\n' "$session" >&2
@@ -281,6 +321,39 @@ verify_tmux_expectations() {
           status=1
         else
           printf 'Verified tmux pane-index-contains expectation for %s pane %s marker %s\n' "$session" "$arg1" "$arg2"
+        fi
+        ;;
+      window-index-contains)
+        if [[ ! "$arg1" =~ ^[0-9]+$ || "$arg1" -eq 0 ]]; then
+          printf 'invalid window index for %s: %s\n' "$session" "$arg1" >&2
+          status=1
+          continue
+        fi
+
+        if [[ ! "$arg2" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          printf 'invalid window marker for %s: %s\n' "$session" "$arg2" >&2
+          status=1
+          continue
+        fi
+
+        local capture_command
+        capture_command="session=$session; marker=$arg2; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; window_id=\$(\"\$tmux_bin\" list-windows -t \"\$session\" -F '#{window_id}' 2>/dev/null | sed -n '${arg1}p'); if [ -z \"\$window_id\" ]; then echo 'expected window index not found' >&2; exit 1; fi; pane_id=\$(\"\$tmux_bin\" display-message -p -t \"\$window_id\" '#{pane_id}' 2>/dev/null); if [ -z \"\$pane_id\" ]; then echo 'expected window active pane not found' >&2; exit 1; fi; \"\$tmux_bin\" capture-pane -p -e -t \"\$pane_id\" 2>/dev/null | grep -F -- \"\$marker\" >/dev/null"
+
+        if ! REMUX_LIVE_SSH_PASSWORD="$password" \
+          SSH_ASKPASS="$askpass" \
+          SSH_ASKPASS_REQUIRE=force \
+          DISPLAY=remux \
+          ssh \
+            -p "$port" \
+            -o BatchMode=no \
+            -o NumberOfPasswordPrompts=1 \
+            -o ConnectTimeout=10 \
+            "$username@$host" \
+            "$capture_command" </dev/null; then
+          printf 'tmux window-index-contains expectation failed for %s window %s marker %s\n' "$session" "$arg1" "$arg2" >&2
+          status=1
+        else
+          printf 'Verified tmux window-index-contains expectation for %s window %s marker %s\n' "$session" "$arg1" "$arg2"
         fi
         ;;
       *)

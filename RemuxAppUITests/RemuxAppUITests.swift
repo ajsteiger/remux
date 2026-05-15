@@ -442,9 +442,13 @@ final class RemuxAppUITests: XCTestCase {
 
         window10?.tap()
         waitForLiveTerminalReady(timeout: 30)
-        sendTerminalCommand("printf 'REMUX_DENSE_WINDOW_10_SELECTED\\n'")
+        let marker = "REMUX_DENSE_WINDOW_10_SELECTED_\(UUID().uuidString.prefix(8).uppercased())"
+        sendTerminalCommand("printf '\(marker)\\n'")
         hideKeyboardIfPresent()
         assertLiveTerminalScreenshotContainsRenderedContent(minNonBackgroundPixels: 2_500)
+
+        recordLiveTmuxWindowCountExpectation(sessionName: sessionName, expectedCount: 10)
+        recordLiveTmuxWindowCaptureExpectation(sessionName: sessionName, windowIndex: 10, marker: marker)
     }
 
     func testLiveSSHBackgroundForegroundRetainsTerminalWhenConfigured() throws {
@@ -618,6 +622,11 @@ final class RemuxAppUITests: XCTestCase {
         recordLiveTmuxExpectation(fields: ["pane-count", sessionName, "\(expectedCount)"])
     }
 
+    private func recordLiveTmuxWindowCountExpectation(sessionName: String, expectedCount: Int) {
+        XCTAssertGreaterThanOrEqual(expectedCount, 0)
+        recordLiveTmuxExpectation(fields: ["window-count", sessionName, "\(expectedCount)"])
+    }
+
     private func recordLiveTmuxPaneCaptureExpectation(
         sessionName: String,
         paneIndex: Int,
@@ -629,6 +638,19 @@ final class RemuxAppUITests: XCTestCase {
             "Refusing to record unsafe tmux capture marker \(marker)."
         )
         recordLiveTmuxExpectation(fields: ["pane-index-contains", sessionName, "\(paneIndex)", marker])
+    }
+
+    private func recordLiveTmuxWindowCaptureExpectation(
+        sessionName: String,
+        windowIndex: Int,
+        marker: String
+    ) {
+        XCTAssertGreaterThan(windowIndex, 0)
+        XCTAssertTrue(
+            marker.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil,
+            "Refusing to record unsafe tmux capture marker \(marker)."
+        )
+        recordLiveTmuxExpectation(fields: ["window-index-contains", sessionName, "\(windowIndex)", marker])
     }
 
     private func recordLiveTmuxExpectation(fields: [String]) {
