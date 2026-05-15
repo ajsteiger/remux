@@ -3619,6 +3619,55 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux close-window dropped: window missing")
     }
 
+    func testModelEnterFocusedTmuxCopyModeRoutesToManagedSurfaceWithoutSendingInput() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        var receivedInput: [String] = []
+        var copyModeCallCount = 0
+        let managed = Self.managedSurface(
+            sendInput: {
+                receivedInput.append($0)
+                return true
+            },
+            tmuxCopyMode: {
+                copyModeCallCount += 1
+                return .queued
+            }
+        )
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(model.enterFocusedTmuxCopyMode(), .queued)
+        XCTAssertEqual(copyModeCallCount, 1)
+        XCTAssertEqual(receivedInput, [])
+        XCTAssertEqual(model.debugStatus, "tmux copy-mode queued")
+    }
+
+    func testModelEnterFocusedTmuxCopyModeReportsSubmissionRejectionReason() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface(tmuxCopyMode: { .notTmuxBound })
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(model.enterFocusedTmuxCopyMode(), .rejected(.notTmuxBound))
+        XCTAssertEqual(model.debugStatus, "tmux copy-mode rejected: not tmux backed")
+    }
+
+    func testModelEnterFocusedTmuxCopyModeReportsMissingFocusedPane() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+
+        XCTAssertEqual(model.enterFocusedTmuxCopyMode(), .missingTarget(.focusedPane))
+        XCTAssertEqual(model.debugStatus, "tmux copy-mode dropped: no focused pane")
+    }
+
     func testModelSelectTerminalSurfaceRoutesExistingSurface() {
         let model = Self.screenModel(
             target: Self.target(),
@@ -3873,6 +3922,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        tmuxCopyMode: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
@@ -3902,6 +3952,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tmuxSplit: tmuxSplit ?? { _ in .noTarget },
             tmuxClosePane: tmuxClosePane ?? { .noTarget },
             tmuxCloseWindow: tmuxCloseWindow ?? { .noTarget },
+            tmuxCopyMode: tmuxCopyMode ?? { .noTarget },
             releaseBeforePermanentRemoval: releaseBeforePermanentRemoval
         )
     }

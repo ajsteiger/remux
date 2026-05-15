@@ -955,4 +955,8 @@ private final class RecordingGhosttyControlSurface: GhosttyControlSurface {
     func tmuxCloseWindow() -> TmuxActionSubmissionResult {
         .queued
     }
+
+    func tmuxCopyMode() -> TmuxActionSubmissionResult {
+        .queued
+    }
 }

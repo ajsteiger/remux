@@ -144,6 +144,23 @@ final class GhosttyTmuxActionCoordinator {
         return submission.isQueued ? .queued : .rejected(submission)
     }
 
+    @discardableResult
+    func enterCopyModeForFocusedPane() -> GhosttyTmuxModelActionOutcome {
+        let surfaceID: UUID
+        switch targetResolver.focusedPane() {
+        case .resolved(let resolvedSurfaceID):
+            surfaceID = resolvedSurfaceID
+        case .missing(let target):
+            return .missingTarget(target)
+        }
+        guard let surface = surfaceRegistry.managedSurface(for: surfaceID) else {
+            return .missingTarget(.focusedPane)
+        }
+
+        let submission = surface.tmuxCopyMode()
+        return submission.isQueued ? .queued : .rejected(submission)
+    }
+
     private var targetResolver: GhosttyTmuxActionTargetResolver {
         GhosttyTmuxActionTargetResolver(snapshot: surfaceRegistry.topologySnapshot)
     }

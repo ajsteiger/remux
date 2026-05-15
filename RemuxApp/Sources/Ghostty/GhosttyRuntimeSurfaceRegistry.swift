@@ -1834,6 +1834,7 @@ final class GhosttyManagedSurface {
     private let tmuxSplitHandler: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)?
     private let tmuxClosePaneHandler: (@MainActor () -> TmuxActionSubmissionResult)?
     private let tmuxCloseWindowHandler: (@MainActor () -> TmuxActionSubmissionResult)?
+    private let tmuxCopyModeHandler: (@MainActor () -> TmuxActionSubmissionResult)?
     private let releaseBeforePermanentRemovalHandler: (@MainActor () -> Void)?
     private var displayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
@@ -1861,6 +1862,7 @@ final class GhosttyManagedSurface {
         tmuxSplit: (@MainActor (ghostty_action_split_direction_e) -> TmuxActionSubmissionResult)? = nil,
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
+        tmuxCopyMode: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil
     ) {
         self.id = id
@@ -1886,6 +1888,7 @@ final class GhosttyManagedSurface {
         self.tmuxSplitHandler = tmuxSplit
         self.tmuxClosePaneHandler = tmuxClosePane
         self.tmuxCloseWindowHandler = tmuxCloseWindow
+        self.tmuxCopyModeHandler = tmuxCopyMode
         self.releaseBeforePermanentRemovalHandler = releaseBeforePermanentRemoval
     }
 
@@ -2117,6 +2120,16 @@ final class GhosttyManagedSurface {
         }
 
         return controlSurface.tmuxCloseWindow()
+    }
+
+    @MainActor
+    @discardableResult
+    func tmuxCopyMode() -> TmuxActionSubmissionResult {
+        if let tmuxCopyModeHandler {
+            return tmuxCopyModeHandler()
+        }
+
+        return controlSurface.tmuxCopyMode()
     }
 
     @MainActor

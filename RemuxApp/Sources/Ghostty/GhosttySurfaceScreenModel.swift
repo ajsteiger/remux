@@ -837,6 +837,26 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return outcome
     }
 
+    @discardableResult
+    func enterFocusedTmuxCopyMode() -> GhosttyTmuxModelActionOutcome {
+        let outcome = tmuxActionCoordinator.enterCopyModeForFocusedPane()
+        switch outcome {
+        case .queued:
+            debugStatus = "tmux copy-mode queued"
+        case .rejected(let submission):
+            debugStatus = "tmux copy-mode rejected: \(submission.description)"
+        case .missingTarget(.focusedPane):
+            debugStatus = "tmux copy-mode dropped: no focused pane"
+        case .missingTarget(.pane):
+            debugStatus = "tmux copy-mode dropped: pane missing"
+        case .missingTarget:
+            debugStatus = "tmux copy-mode dropped: target missing"
+        case .localSelectionOnly:
+            break
+        }
+        return outcome
+    }
+
     private func traceTmuxFocusPaneEnd(
         targetID: UUID,
         submissionDescription: String

@@ -278,6 +278,12 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     @discardableResult
+    func tmuxCopyMode() -> TmuxActionSubmissionResult {
+        TmuxActionSubmissionResult(native: ghostty_surface_tmux_copy_mode(storage.surface))
+    }
+
+    @MainActor
+    @discardableResult
     func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(

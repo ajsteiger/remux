@@ -21,10 +21,14 @@ struct GhosttySurfaceScreen: View {
     @State private var isShortcutPalettePresented = false
     @State private var isShortcutsSettingsPresented = false
     @State private var shortcutEditorRequest: ShortcutEditorRequest?
+    @State private var pendingTmuxPrefixInput: String?
+    @State private var tmuxPrefixFlushToken: UInt64 = 0
 
     private let target: TmuxConnectionTarget
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
+    private static let defaultTmuxPrefixInput = "\u{2}"
+    private static let tmuxPrefixFlushDelay: Duration = .milliseconds(750)
 
     init(
         target: TmuxConnectionTarget,
@@ -742,6 +746,14 @@ struct GhosttySurfaceScreen: View {
 
     private func sendTerminalText(_ text: String) -> Bool {
         let outbound = modifierState.apply(to: text)
+        if let handled = handleTmuxPrefixInput(outbound) {
+            return handled
+        }
+
+        return submitTerminalText(outbound)
+    }
+
+    private func submitTerminalText(_ outbound: String) -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
         let submittedAt = GhosttyRuntimeTrace.latencyEnabled ? start : nil
         if let submittedAt {
@@ -781,8 +793,59 @@ struct GhosttySurfaceScreen: View {
         return result.isAccepted
     }
 
+    private func handleTmuxPrefixInput(_ outbound: String) -> Bool? {
+        if let pendingPrefix = pendingTmuxPrefixInput {
+            pendingTmuxPrefixInput = nil
+            tmuxPrefixFlushToken &+= 1
+
+            guard outbound == "[" else {
+                return submitTerminalText(pendingPrefix + outbound)
+            }
+
+            let outcome = model.enterFocusedTmuxCopyMode()
+            if outcome.isQueued {
+                GhosttyRuntimeTrace.flowEventIfActive(
+                    "terminal.input",
+                    event: "ui.tmuxPrefix.copyMode.queued"
+                )
+                return true
+            }
+
+            return submitTerminalText(pendingPrefix + outbound)
+        }
+
+        guard outbound == Self.defaultTmuxPrefixInput else { return nil }
+        armTmuxPrefixInput(outbound)
+        return true
+    }
+
+    private func armTmuxPrefixInput(_ input: String) {
+        pendingTmuxPrefixInput = input
+        tmuxPrefixFlushToken &+= 1
+        let token = tmuxPrefixFlushToken
+
+        Task { @MainActor in
+            do {
+                try await Task.sleep(for: Self.tmuxPrefixFlushDelay)
+            } catch {
+                return
+            }
+
+            guard tmuxPrefixFlushToken == token else { return }
+            flushPendingTmuxPrefixInputIfNeeded()
+        }
+    }
+
+    private func flushPendingTmuxPrefixInputIfNeeded() {
+        guard let pendingPrefix = pendingTmuxPrefixInput else { return }
+        pendingTmuxPrefixInput = nil
+        tmuxPrefixFlushToken &+= 1
+        _ = submitTerminalText(pendingPrefix)
+    }
+
     private func sendTerminalPaste(_ text: String) -> Bool {
-        model.sendPasteToFocusedSurface(text).isAccepted
+        flushPendingTmuxPrefixInputIfNeeded()
+        return model.sendPasteToFocusedSurface(text).isAccepted
     }
 
     private func copyTerminalSelection(from surfaceID: UUID) -> Bool {
@@ -795,6 +858,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        flushPendingTmuxPrefixInputIfNeeded()
         let outbound = modifierState.apply(to: event)
         let start = GhosttyRuntimeTrace.nowNanos()
         let result = model.sendKeyEventToFocusedSurface(outbound)

@@ -583,6 +583,34 @@ final class RemuxAppUITests: XCTestCase {
         )
     }
 
+    func testLiveTmuxPrefixEntersCopyModeWhenConfigured() throws {
+        let sessionName = generatedLiveLatencySessionName("copy-mode")
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        sendTerminalCommand("clear; printf 'REMUX_COPY_MODE_READY\\n'")
+        hideKeyboardIfPresent()
+
+        let keyboard = app.buttons["terminal.keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        keyboard.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 8))
+
+        let ctrl = app.buttons["terminal.ctrl"]
+        XCTAssertTrue(ctrl.waitForExistence(timeout: 5))
+        ctrl.tap()
+        app.typeText("b")
+        app.typeText("[")
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+
+        recordLiveTmuxPaneModeExpectation(sessionName: sessionName, paneIndex: 1, expectedInMode: true)
+    }
+
     func testLiveWarmSSHRootReuseWhenConfigured() throws {
         let sessionName = generatedLiveLatencySessionName("warm")
         defer {
@@ -720,6 +748,20 @@ final class RemuxAppUITests: XCTestCase {
     private func recordLiveTmuxPaneCountExpectation(sessionName: String, expectedCount: Int) {
         XCTAssertGreaterThanOrEqual(expectedCount, 0)
         recordLiveTmuxExpectation(fields: ["pane-count", sessionName, "\(expectedCount)"])
+    }
+
+    private func recordLiveTmuxPaneModeExpectation(
+        sessionName: String,
+        paneIndex: Int,
+        expectedInMode: Bool
+    ) {
+        XCTAssertGreaterThan(paneIndex, 0)
+        recordLiveTmuxExpectation(fields: [
+            "pane-mode",
+            sessionName,
+            "\(paneIndex)",
+            expectedInMode ? "1" : "0",
+        ])
     }
 
     private func recordLiveTmuxWindowCountExpectation(sessionName: String, expectedCount: Int) {

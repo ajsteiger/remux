@@ -574,6 +574,10 @@ protocol GhosttyControlSurface: AnyObject {
     /// Queue close for the tmux window containing the pane bound to this surface.
     @MainActor
     func tmuxCloseWindow() -> TmuxActionSubmissionResult
+
+    /// Queue copy-mode entry for the pane bound to this surface.
+    @MainActor
+    func tmuxCopyMode() -> TmuxActionSubmissionResult
 }
 
 final class TmuxControlWriteSequencer: @unchecked Sendable {
@@ -823,6 +827,7 @@ enum TmuxControlCommandFailureKind: Equatable, Sendable {
     case splitPane
     case closePane
     case closeWindow
+    case copyMode
 
     init(native: ghostty_tmux_command_failure_kind_e) {
         switch native {
@@ -834,6 +839,8 @@ enum TmuxControlCommandFailureKind: Equatable, Sendable {
             self = .closePane
         case GHOSTTY_TMUX_COMMAND_FAILURE_KIND_CLOSE_WINDOW:
             self = .closeWindow
+        case GHOSTTY_TMUX_COMMAND_FAILURE_KIND_COPY_MODE:
+            self = .copyMode
         default:
             preconditionFailure("unknown tmux command failure kind: \(native.rawValue)")
         }

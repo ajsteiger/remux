@@ -413,6 +413,46 @@ verify_tmux_expectations() {
           printf 'Verified tmux pane-count expectation for %s: %s\n' "$session" "$arg1"
         fi
         ;;
+      pane-mode)
+        if [[ ! "$arg1" =~ ^[0-9]+$ || "$arg1" -eq 0 ]]; then
+          printf 'invalid pane index for %s: %s\n' "$session" "$arg1" >&2
+          status=1
+          continue
+        fi
+
+        if [[ "$arg2" != "0" && "$arg2" != "1" ]]; then
+          printf 'invalid expected pane mode for %s pane %s: %s\n' "$session" "$arg1" "$arg2" >&2
+          status=1
+          continue
+        fi
+
+        local remote_command
+        remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; pane_id=\$(\"\$tmux_bin\" list-panes -t \"\$session\" -F '#{pane_id}' 2>/dev/null | sed -n '${arg1}p'); if [ -z \"\$pane_id\" ]; then echo 'expected pane index not found' >&2; exit 1; fi; \"\$tmux_bin\" display-message -p -t \"\$pane_id\" '#{pane_in_mode}' 2>/dev/null"
+
+        local actual
+        if ! actual="$(REMUX_LIVE_SSH_PASSWORD="$password" \
+          SSH_ASKPASS="$askpass" \
+          SSH_ASKPASS_REQUIRE=force \
+          DISPLAY=remux \
+          ssh \
+            -p "$port" \
+            -o BatchMode=no \
+            -o NumberOfPasswordPrompts=1 \
+            -o ConnectTimeout=10 \
+            "$username@$host" \
+            "$remote_command" </dev/null)"; then
+          printf 'failed to verify tmux pane mode for %s pane %s\n' "$session" "$arg1" >&2
+          status=1
+          continue
+        fi
+
+        if [[ "$actual" != "$arg2" ]]; then
+          printf 'tmux pane-mode expectation failed for %s pane %s: expected %s, got %s\n' "$session" "$arg1" "$arg2" "$actual" >&2
+          status=1
+        else
+          printf 'Verified tmux pane-mode expectation for %s pane %s: %s\n' "$session" "$arg1" "$arg2"
+        fi
+        ;;
       pane-index-contains)
         if [[ ! "$arg1" =~ ^[0-9]+$ || "$arg1" -eq 0 ]]; then
           printf 'invalid pane index for %s: %s\n' "$session" "$arg1" >&2
