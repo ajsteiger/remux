@@ -1,7 +1,9 @@
 # Remux
 
 <p align="center">
-  <img src="docs/media/remux-readme.webp" alt="Remux demo" width="900">
+  <a href="https://www.youtube.com/watch?v=WZXKzUdI6mQ">
+    <img src="docs/media/remux-readme.webp" alt="Remux demo" width="900">
+  </a>
 </p>
 
 <p align="center">
