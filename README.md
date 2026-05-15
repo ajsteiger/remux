@@ -1,11 +1,14 @@
 # Remux
 
+<p align="center">
+  <img src="docs/media/remux-readme.webp" alt="Remux demo" width="900">
+</p>
+
 Remux is a native iOS client for remote tmux workspaces.
 
 Remux brings tmux's session, window, and pane model into a native iPhone
-interface. Connect to a server, open or create a tmux session, then switch
-sessions, browse windows, split panes, close panes, and send input through
-native iOS controls.
+interface. Connect to a server, open or create tmux sessions, swipe between
+windows, open the pane picker as a bottom sheet, and split or close panes.
 
 ## What Works Today
 
@@ -27,7 +30,7 @@ native iOS controls.
 
 - This is early development work, not a daily-driver terminal yet.
 - SSH is the only transport available today. Mosh support is planned.
-- Source builds currently require a local terminal-renderer XCFramework at the
+- Source builds currently require a local GhosttyKit XCFramework at the
   path configured in [project.yml](project.yml). The framework is not
   distributed in this repository, so it must be available at that path before
   generating or building the project.
@@ -38,7 +41,7 @@ Requirements:
 
 - Xcode with iOS 18 SDK support
 - XcodeGen
-- the terminal-renderer XCFramework configured in [project.yml](project.yml)
+- the GhosttyKit XCFramework configured in [project.yml](project.yml)
 
 Generate the Xcode project:
 
