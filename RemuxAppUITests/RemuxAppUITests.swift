@@ -451,6 +451,55 @@ final class RemuxAppUITests: XCTestCase {
         recordLiveTmuxWindowCaptureExpectation(sessionName: sessionName, windowIndex: 10, marker: marker)
     }
 
+    func testLiveDenseMixedTopologySelectsDeepPaneWhenConfigured() throws {
+        try requireLivePreparedFixture("dense-mixed")
+
+        let sessionName = generatedLiveLatencySessionName("dense-mixed")
+        let marker = "REMUXDENSEMIXEDW10P4\(UUID().uuidString.prefix(8).uppercased())"
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        openWindowsSheet()
+        let window10 = waitForHittablePickerButton(
+            identifier: "terminal.window.tile.10",
+            fallbackLabel: "Window 10 of 10",
+            timeout: 30
+        )
+        XCTAssertNotNil(window10, "Window 10 should be reachable in the mixed dense topology.")
+
+        window10?.tap()
+        waitForLiveTerminalReady(timeout: 30)
+
+        openPanesSheet()
+        let pane4 = waitForHittablePickerButton(
+            identifier: "terminal.pane.tile.4",
+            fallbackLabel: "Pane 4 of 4",
+            timeout: 20
+        )
+        XCTAssertNotNil(pane4, "Pane 4 in Window 10 should be reachable in the mixed dense topology.")
+
+        pane4?.tap()
+        waitForLiveTerminalReady(timeout: 30)
+        sendTerminalCommand("printf '\(marker)\\n'")
+        hideKeyboardIfPresent()
+        assertLiveTerminalScreenshotContainsRenderedContent(minNonBackgroundPixels: 2_500)
+
+        recordLiveTmuxWindowCountExpectation(sessionName: sessionName, expectedCount: 10)
+        recordLiveTmuxPaneCountExpectation(sessionName: sessionName, expectedCount: 15)
+        recordLiveTmuxWindowPaneCountExpectation(sessionName: sessionName, windowIndex: 10, expectedCount: 4)
+        recordLiveTmuxWindowPaneCaptureExpectation(
+            sessionName: sessionName,
+            windowIndex: 10,
+            paneIndex: 4,
+            marker: marker
+        )
+    }
+
     func testLiveSSHBackgroundForegroundRetainsTerminalWhenConfigured() throws {
         let sessionName = generatedLiveLatencySessionName("foreground")
         defer {
@@ -577,6 +626,18 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     private func generatedLiveLatencySessionName(_ purpose: String) -> String {
+        if let override = liveSessionNameOverride() {
+            XCTAssertTrue(
+                override.range(
+                    of: #"^remux-latency-[A-Za-z0-9._-]+$"#,
+                    options: .regularExpression
+                ) != nil,
+                "Refusing to use non-allowlisted live tmux session override \(override)."
+            )
+            recordGeneratedLiveLatencySession(override)
+            return override
+        }
+
         let safePurpose = purpose.replacingOccurrences(
             of: #"[^A-Za-z0-9._-]"#,
             with: "-",
@@ -585,6 +646,45 @@ final class RemuxAppUITests: XCTestCase {
         let sessionName = "remux-latency-\(safePurpose)-\(UUID().uuidString.prefix(8))"
         recordGeneratedLiveLatencySession(sessionName)
         return sessionName
+    }
+
+    private func requireLivePreparedFixture(_ fixtureName: String) throws {
+        let preparedFixture = livePreparedFixtureName()
+        guard preparedFixture == fixtureName else {
+            throw XCTSkip("Run this live SSH UI test through scripts/remux_live_ui_test_with_cleanup.sh so it can prepare the \(fixtureName) tmux fixture.")
+        }
+    }
+
+    private func liveSessionNameOverride() -> String? {
+        liveHarnessValue(
+            environmentKey: "REMUX_LIVE_SESSION_NAME_OVERRIDE",
+            fallbackPath: "/tmp/remux-live-session-name-override.txt"
+        )
+    }
+
+    private func livePreparedFixtureName() -> String? {
+        liveHarnessValue(
+            environmentKey: "REMUX_LIVE_PREPARED_FIXTURE",
+            fallbackPath: "/tmp/remux-live-prepared-fixture.txt"
+        )
+    }
+
+    private func liveHarnessValue(environmentKey: String, fallbackPath: String) -> String? {
+        if let environmentValue = ProcessInfo.processInfo.environment[environmentKey],
+           !environmentValue.isEmpty {
+            return environmentValue
+        }
+
+        let url = URL(fileURLWithPath: fallbackPath)
+        guard
+            let data = try? Data(contentsOf: url),
+            let rawValue = String(data: data, encoding: .utf8)
+        else {
+            return nil
+        }
+
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 
     private func recordGeneratedLiveLatencySession(_ sessionName: String) {
@@ -627,6 +727,16 @@ final class RemuxAppUITests: XCTestCase {
         recordLiveTmuxExpectation(fields: ["window-count", sessionName, "\(expectedCount)"])
     }
 
+    private func recordLiveTmuxWindowPaneCountExpectation(
+        sessionName: String,
+        windowIndex: Int,
+        expectedCount: Int
+    ) {
+        XCTAssertGreaterThan(windowIndex, 0)
+        XCTAssertGreaterThanOrEqual(expectedCount, 0)
+        recordLiveTmuxExpectation(fields: ["window-pane-count", sessionName, "\(windowIndex)", "\(expectedCount)"])
+    }
+
     private func recordLiveTmuxPaneCaptureExpectation(
         sessionName: String,
         paneIndex: Int,
@@ -651,6 +761,26 @@ final class RemuxAppUITests: XCTestCase {
             "Refusing to record unsafe tmux capture marker \(marker)."
         )
         recordLiveTmuxExpectation(fields: ["window-index-contains", sessionName, "\(windowIndex)", marker])
+    }
+
+    private func recordLiveTmuxWindowPaneCaptureExpectation(
+        sessionName: String,
+        windowIndex: Int,
+        paneIndex: Int,
+        marker: String
+    ) {
+        XCTAssertGreaterThan(windowIndex, 0)
+        XCTAssertGreaterThan(paneIndex, 0)
+        XCTAssertTrue(
+            marker.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil,
+            "Refusing to record unsafe tmux capture marker \(marker)."
+        )
+        recordLiveTmuxExpectation(fields: [
+            "window-pane-index-contains",
+            sessionName,
+            "\(windowIndex).\(paneIndex)",
+            marker,
+        ])
     }
 
     private func recordLiveTmuxExpectation(fields: [String]) {
