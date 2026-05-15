@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=WZXKzUdI6mQ">Watch demo on YouTube</a>
+  <a href="https://www.youtube.com/watch?v=WZXKzUdI6mQ">Watch high-quality demo</a>
 </p>
 
 Remux is a native iOS client for remote tmux workspaces.
