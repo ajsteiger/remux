@@ -455,7 +455,7 @@ final class RemuxAppUITests: XCTestCase {
         try requireLivePreparedFixture("dense-mixed")
 
         let sessionName = generatedLiveLatencySessionName("dense-mixed")
-        let marker = "REMUXDENSEMIXEDW10P4\(UUID().uuidString.prefix(8).uppercased())"
+        let marker = "RDX10P4OK"
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
