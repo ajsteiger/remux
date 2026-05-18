@@ -4,49 +4,50 @@ import XCTest
 
 @MainActor
 final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
-    func testReadinessProjectionMatchesRuntimeStateReporterSemantics() {
+    func testReadinessProjectionReportsRuntimeStateSemantics() {
         let reason = TerminalDisconnectReason(
             kind: .transportIO,
             message: "tmux transport ended: closed"
         )
-        let cases: [(TerminalReadinessSnapshot, GhosttyTerminalRuntimeStateSnapshot)] = [
+        let cases: [(TerminalReadinessSnapshot, TerminalRuntimeState)] = [
             (
                 Self.readinessSnapshot(phase: .idle, focused: false),
-                GhosttyTerminalRuntimeStateSnapshot(phase: .idle, hasFocusedSurface: false)
+                .connecting
             ),
             (
                 Self.readinessSnapshot(phase: .starting, focused: true),
-                GhosttyTerminalRuntimeStateSnapshot(phase: .starting, hasFocusedSurface: true)
+                .connecting
             ),
             (
                 Self.readinessSnapshot(phase: .running, focused: false),
-                GhosttyTerminalRuntimeStateSnapshot(phase: .running, hasFocusedSurface: false)
+                .connecting
             ),
             (
-                Self.readinessSnapshot(phase: .running, focused: true),
-                GhosttyTerminalRuntimeStateSnapshot(phase: .running, hasFocusedSurface: true)
+                Self.readinessSnapshot(
+                    phase: .running,
+                    transportWritable: false,
+                    topLevelCount: 0,
+                    focused: true
+                ),
+                .connected
             ),
             (
                 Self.readinessSnapshot(phase: .failed(message: "fallback", reason: reason), focused: false),
-                GhosttyTerminalRuntimeStateSnapshot(
-                    phase: .failed(message: "fallback", reason: reason),
-                    hasFocusedSurface: false
-                )
+                .disconnected(reason)
             ),
             (
                 Self.readinessSnapshot(phase: .failed(message: "runtime failed", reason: nil), focused: true),
-                GhosttyTerminalRuntimeStateSnapshot(
-                    phase: .failed(message: "runtime failed", reason: nil),
-                    hasFocusedSurface: true
+                .disconnected(
+                    TerminalDisconnectReason(
+                        kind: .unknown,
+                        message: "runtime failed"
+                    )
                 )
             ),
         ]
 
-        for (readiness, runtimeSnapshot) in cases {
-            XCTAssertEqual(
-                TerminalReadinessProjector.runtimeState(readiness),
-                GhosttyTerminalRuntimeStateReporter.runtimeState(from: runtimeSnapshot)
-            )
+        for (readiness, expectedState) in cases {
+            XCTAssertEqual(TerminalReadinessProjector.runtimeState(readiness), expectedState)
         }
     }
 

@@ -956,16 +956,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
     }
 
-    private var runtimeStateSnapshot: GhosttyTerminalRuntimeStateSnapshot {
-        return GhosttyTerminalRuntimeStateSnapshot(
-            phase: terminalRuntimePhase,
-            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
-        )
-    }
-
     private func reportRuntimeStateIfNeeded(source: TerminalRuntimeStateUpdateSource) {
         runtimeStateReporter.reportIfNeeded(
-            snapshot: runtimeStateSnapshot,
+            snapshot: terminalReadinessSnapshot,
             source: source
         )
     }

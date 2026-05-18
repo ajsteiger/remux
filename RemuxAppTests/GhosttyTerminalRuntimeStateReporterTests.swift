@@ -13,10 +13,7 @@ final class GhosttyTerminalRuntimeStateReporterTests: XCTestCase {
             sessionInstanceID: sessionInstanceID,
             onRuntimeStateChange: { updates.append($0) }
         )
-        let snapshot = GhosttyTerminalRuntimeStateSnapshot(
-            phase: .idle,
-            hasFocusedSurface: false
-        )
+        let snapshot = Self.readinessSnapshot(phase: .idle)
 
         XCTAssertTrue(reporter.reportIfNeeded(snapshot: snapshot, source: .readiness))
         XCTAssertFalse(reporter.reportIfNeeded(snapshot: snapshot, source: .readiness))
@@ -36,19 +33,23 @@ final class GhosttyTerminalRuntimeStateReporterTests: XCTestCase {
 
     func testRuntimeStateRequiresRunningAndFocusedSurfaceForConnected() {
         XCTAssertEqual(
-            GhosttyTerminalRuntimeStateReporter.runtimeState(
-                from: GhosttyTerminalRuntimeStateSnapshot(
+            TerminalReadinessProjector.runtimeState(
+                Self.readinessSnapshot(
                     phase: .running,
-                    hasFocusedSurface: false
+                    transportWritable: true,
+                    topLevelCount: 1,
+                    focused: false
                 )
             ),
             .connecting
         )
         XCTAssertEqual(
-            GhosttyTerminalRuntimeStateReporter.runtimeState(
-                from: GhosttyTerminalRuntimeStateSnapshot(
+            TerminalReadinessProjector.runtimeState(
+                Self.readinessSnapshot(
                     phase: .running,
-                    hasFocusedSurface: true
+                    transportWritable: false,
+                    topLevelCount: 0,
+                    focused: true
                 )
             ),
             .connected
@@ -70,9 +71,9 @@ final class GhosttyTerminalRuntimeStateReporterTests: XCTestCase {
         )
 
         reporter.reportIfNeeded(
-            snapshot: GhosttyTerminalRuntimeStateSnapshot(
+            snapshot: Self.readinessSnapshot(
                 phase: .failed(message: "fallback", reason: reason),
-                hasFocusedSurface: false
+                focused: false
             ),
             source: .runtime
         )
@@ -84,10 +85,10 @@ final class GhosttyTerminalRuntimeStateReporterTests: XCTestCase {
     }
 
     func testFailedSnapshotWithoutReasonUsesUnknownMessage() {
-        let state = GhosttyTerminalRuntimeStateReporter.runtimeState(
-            from: GhosttyTerminalRuntimeStateSnapshot(
+        let state = TerminalReadinessProjector.runtimeState(
+            Self.readinessSnapshot(
                 phase: .failed(message: "runtime failed", reason: nil),
-                hasFocusedSurface: false
+                focused: false
             )
         )
 
@@ -109,10 +110,7 @@ final class GhosttyTerminalRuntimeStateReporterTests: XCTestCase {
             sessionInstanceID: UUID(),
             onRuntimeStateChange: { updates.append($0) }
         )
-        let snapshot = GhosttyTerminalRuntimeStateSnapshot(
-            phase: .idle,
-            hasFocusedSurface: false
-        )
+        let snapshot = Self.readinessSnapshot(phase: .idle)
 
         reporter.suppress()
 
@@ -136,9 +134,9 @@ final class GhosttyTerminalRuntimeStateReporterTests: XCTestCase {
             sessionInstanceID: UUID(),
             onRuntimeStateChange: { updates.append($0) }
         )
-        let snapshot = GhosttyTerminalRuntimeStateSnapshot(
+        let snapshot = Self.readinessSnapshot(
             phase: .failed(message: reason.message, reason: reason),
-            hasFocusedSurface: false
+            focused: false
         )
 
         XCTAssertTrue(reporter.reportIfNeeded(snapshot: snapshot, source: .runtime))
@@ -150,6 +148,20 @@ final class GhosttyTerminalRuntimeStateReporterTests: XCTestCase {
         XCTAssertEqual(
             updates.map(\.source),
             [.runtime, .foreground]
+        )
+    }
+
+    private static func readinessSnapshot(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool = false,
+        topLevelCount: Int = 0,
+        focused: Bool = false
+    ) -> TerminalReadinessSnapshot {
+        TerminalReadinessProjector.snapshot(
+            phase: phase,
+            transportWritable: transportWritable,
+            topLevelCount: topLevelCount,
+            selectedActiveLeafID: focused ? UUID() : nil
         )
     }
 }

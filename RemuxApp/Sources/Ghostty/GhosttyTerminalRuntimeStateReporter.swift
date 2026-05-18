@@ -7,11 +7,6 @@ enum GhosttyTerminalRuntimePhase: Equatable, Sendable {
     case failed(message: String, reason: TerminalDisconnectReason?)
 }
 
-struct GhosttyTerminalRuntimeStateSnapshot: Equatable, Sendable {
-    let phase: GhosttyTerminalRuntimePhase
-    let hasFocusedSurface: Bool
-}
-
 @MainActor
 final class GhosttyTerminalRuntimeStateReporter {
     private let workspaceID: SavedWorkspace.ID
@@ -41,12 +36,12 @@ final class GhosttyTerminalRuntimeStateReporter {
 
     @discardableResult
     func reportIfNeeded(
-        snapshot: GhosttyTerminalRuntimeStateSnapshot,
+        snapshot: TerminalReadinessSnapshot,
         source: TerminalRuntimeStateUpdateSource
     ) -> Bool {
         guard !isSuppressed else { return false }
 
-        let state = Self.runtimeState(from: snapshot)
+        let state = TerminalReadinessProjector.runtimeState(snapshot)
         guard reportTracker.shouldReport(state: state, source: source) else {
             return false
         }
@@ -60,25 +55,5 @@ final class GhosttyTerminalRuntimeStateReporter {
             )
         )
         return true
-    }
-
-    static func runtimeState(
-        from snapshot: GhosttyTerminalRuntimeStateSnapshot
-    ) -> TerminalRuntimeState {
-        if snapshot.phase == .running, snapshot.hasFocusedSurface {
-            return .connected
-        }
-
-        switch snapshot.phase {
-        case .idle, .starting, .running:
-            return .connecting
-        case .failed(let message, let reason):
-            return .disconnected(
-                reason ?? TerminalDisconnectReason(
-                    kind: .unknown,
-                    message: message
-                )
-            )
-        }
     }
 }
