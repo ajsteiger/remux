@@ -102,6 +102,34 @@ def latest_event_after(
     return max(matched, key=lambda event: event.timestamp)
 
 
+def first_event_between(
+    instance: FlowInstance,
+    start: FlowEvent,
+    end: FlowEvent,
+    predicate: Callable[[str], bool],
+) -> FlowEvent | None:
+    for event in instance.events:
+        if start.timestamp <= event.timestamp <= end.timestamp and predicate(event.event):
+            return event
+    return None
+
+
+def latest_event_between(
+    instance: FlowInstance,
+    start: FlowEvent,
+    end: FlowEvent,
+    predicate: Callable[[str], bool],
+) -> FlowEvent | None:
+    matched = [
+        event
+        for event in instance.events
+        if start.timestamp <= event.timestamp <= end.timestamp and predicate(event.event)
+    ]
+    if not matched:
+        return None
+    return max(matched, key=lambda event: event.timestamp)
+
+
 def after_event(
     anchor: Callable[[FlowInstance], FlowEvent | None],
     predicate: Callable[[str], bool],
@@ -144,6 +172,10 @@ def process_output_end(instance: FlowInstance) -> FlowEvent | None:
     return first_event(instance, prefix("tmux.signal.host.pump.processOutput.end."))
 
 
+def tmux_response(instance: FlowInstance) -> FlowEvent | None:
+    return first_event(instance, prefix("tmux.response."))
+
+
 def runtime_callback_entry(instance: FlowInstance) -> FlowEvent | None:
     return after_event(
         process_output_end,
@@ -151,6 +183,65 @@ def runtime_callback_entry(instance: FlowInstance) -> FlowEvent | None:
             "runtime.callback.createSurfaceTree.entry",
             "runtime.callback.createSurface.entry",
         ),
+    )(instance)
+
+
+def runtime_wakeup_entry(instance: FlowInstance) -> FlowEvent | None:
+    response = tmux_response(instance)
+    callback = runtime_callback_entry(instance)
+    if response is None or callback is None:
+        return None
+    return latest_event_between(
+        instance,
+        response,
+        callback,
+        exact("runtime.wakeup.entry"),
+    )
+
+
+def runtime_wakeup_main_actor_schedule(instance: FlowInstance) -> FlowEvent | None:
+    entry = runtime_wakeup_entry(instance)
+    callback = runtime_callback_entry(instance)
+    if entry is None or callback is None:
+        return None
+    return first_event_between(
+        instance,
+        entry,
+        callback,
+        exact("runtime.wakeup.mainActor.schedule"),
+    )
+
+
+def runtime_wakeup_main_actor_begin(instance: FlowInstance) -> FlowEvent | None:
+    schedule = runtime_wakeup_main_actor_schedule(instance)
+    callback = runtime_callback_entry(instance)
+    if schedule is None or callback is None:
+        return None
+    return first_event_between(
+        instance,
+        schedule,
+        callback,
+        exact("runtime.wakeup.mainActor.begin"),
+    )
+
+
+def runtime_wakeup_app_tick_begin(instance: FlowInstance) -> FlowEvent | None:
+    begin = runtime_wakeup_main_actor_begin(instance)
+    callback = runtime_callback_entry(instance)
+    if begin is None or callback is None:
+        return None
+    return first_event_between(
+        instance,
+        begin,
+        callback,
+        exact("runtime.wakeup.appTick.begin"),
+    )
+
+
+def runtime_wakeup_app_tick_end(instance: FlowInstance) -> FlowEvent | None:
+    return after_event(
+        runtime_wakeup_app_tick_begin,
+        exact("runtime.wakeup.appTick.end"),
     )(instance)
 
 
@@ -233,9 +324,49 @@ SEGMENTS = [
         process_output_end,
     ),
     Segment(
+        "tmux_response->runtime_wakeup_entry",
+        tmux_response,
+        runtime_wakeup_entry,
+    ),
+    Segment(
+        "runtime_wakeup_entry->processOutput_end",
+        runtime_wakeup_entry,
+        process_output_end,
+    ),
+    Segment(
         "processOutput_end->runtime_callback_entry",
         process_output_end,
         runtime_callback_entry,
+    ),
+    Segment(
+        "processOutput_end->runtime_wakeup_entry",
+        process_output_end,
+        runtime_wakeup_entry,
+    ),
+    Segment(
+        "runtime_wakeup_entry->wakeup_mainActor_schedule",
+        runtime_wakeup_entry,
+        runtime_wakeup_main_actor_schedule,
+    ),
+    Segment(
+        "wakeup_mainActor_schedule->wakeup_mainActor_begin",
+        runtime_wakeup_main_actor_schedule,
+        runtime_wakeup_main_actor_begin,
+    ),
+    Segment(
+        "wakeup_mainActor_begin->app_tick_begin",
+        runtime_wakeup_main_actor_begin,
+        runtime_wakeup_app_tick_begin,
+    ),
+    Segment(
+        "app_tick_begin->runtime_callback_entry",
+        runtime_wakeup_app_tick_begin,
+        runtime_callback_entry,
+    ),
+    Segment(
+        "app_tick_begin->app_tick_end",
+        runtime_wakeup_app_tick_begin,
+        runtime_wakeup_app_tick_end,
     ),
     Segment(
         "runtime_callback_entry->mainActor_schedule",
@@ -518,10 +649,15 @@ Remux flow t=8300000 flow=tmux.newWindow event=runtime.callback.createSurfaceTre
 Remux flow t=8400000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.begin since_ms=7.400
 Remux flow t=8450000 flow=tmux.newWindow event=registry.createSurfaceTree.begin since_ms=7.450
 Remux flow t=8500000 flow=tmux.newWindow event=tmux.signal.host.pump.processOutput.end.window-add since_ms=7.500
-Remux flow t=8600000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.entry since_ms=7.600
-Remux flow t=8700000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.schedule since_ms=7.700
-Remux flow t=8900000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.begin since_ms=7.900
-Remux flow t=9000000 flow=tmux.newWindow event=registry.createSurfaceTree.begin since_ms=8.000
+Remux flow t=8550000 flow=tmux.newWindow event=runtime.wakeup.entry since_ms=7.550
+Remux flow t=8600000 flow=tmux.newWindow event=runtime.wakeup.mainActor.schedule since_ms=7.600
+Remux flow t=8700000 flow=tmux.newWindow event=runtime.wakeup.mainActor.begin since_ms=7.700
+Remux flow t=8750000 flow=tmux.newWindow event=runtime.wakeup.appTick.begin since_ms=7.750
+Remux flow t=8900000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.entry since_ms=7.900
+Remux flow t=8950000 flow=tmux.newWindow event=runtime.wakeup.appTick.end since_ms=7.950
+Remux flow t=9000000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.schedule since_ms=8.000
+Remux flow t=9200000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.begin since_ms=8.200
+Remux flow t=9300000 flow=tmux.newWindow event=registry.createSurfaceTree.begin since_ms=8.300
 Remux flow t=12000000 flow=tmux.newWindow event=registry.topology.installed since_ms=11.000
 Remux flow t=12100000 flow=tmux.newWindow event=model.surfaceRegistryRevision.published since_ms=11.100
 Remux flow t=12200000 flow=tmux.newWindow event=ui.updateUIView.begin since_ms=11.200
@@ -543,8 +679,13 @@ Remux flow t=23000000 flow=tmux.splitPane event=tmux.signal.host.pump.receive.la
 Remux flow t=24000000 flow=tmux.splitPane event=tmux.signal.sequencer.enqueue.layout-change since_ms=4.000
 Remux flow t=25000000 flow=tmux.splitPane event=tmux.signal.sequencer.drain.layout-change since_ms=5.000
 Remux flow t=26000000 flow=tmux.splitPane event=tmux.response.layout-change since_ms=6.000
+Remux flow t=26450000 flow=tmux.splitPane event=runtime.wakeup.entry since_ms=6.450
+Remux flow t=26460000 flow=tmux.splitPane event=runtime.wakeup.mainActor.schedule since_ms=6.460
 Remux flow t=26500000 flow=tmux.splitPane event=tmux.signal.host.pump.processOutput.end.layout-change since_ms=6.500
+Remux flow t=26570000 flow=tmux.splitPane event=runtime.wakeup.mainActor.begin since_ms=6.570
+Remux flow t=26580000 flow=tmux.splitPane event=runtime.wakeup.appTick.begin since_ms=6.580
 Remux flow t=26600000 flow=tmux.splitPane event=runtime.callback.createSurface.entry since_ms=6.600
+Remux flow t=26650000 flow=tmux.splitPane event=runtime.wakeup.appTick.end since_ms=6.650
 Remux flow t=26700000 flow=tmux.splitPane event=runtime.callback.createSurface.mainActor.begin since_ms=6.700
 Remux flow t=27000000 flow=tmux.splitPane event=registry.createSurface.begin since_ms=7.000
 Remux flow t=28000000 flow=tmux.splitPane event=registry.topology.installed since_ms=8.000
@@ -572,11 +713,30 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     output = report(instances)
     assert "distinct_action_flows=2" in output
     assert "send_end->ssh_channel_read: n=1 p50_ms=1.000" in output
-    assert "processOutput_end->runtime_callback_entry: n=1 p50_ms=0.100" in output
+    assert "processOutput_end->runtime_callback_entry: n=1 p50_ms=0.400" in output
+    assert "tmux_response->runtime_wakeup_entry: n=1 p50_ms=0.550" in output
+    assert "tmux_response->runtime_wakeup_entry: n=1 p50_ms=0.450" in output
+    assert "runtime_wakeup_entry->processOutput_end: n=1 p50_ms=0.050" in output
+    assert "processOutput_end->runtime_wakeup_entry: n=1 p50_ms=0.050" in output
+    assert (
+        "processOutput_end->runtime_wakeup_entry: "
+        "n=0 missing=0 out_of_order=1"
+    ) in output
+    assert (
+        "runtime_wakeup_entry->wakeup_mainActor_schedule: "
+        "n=1 p50_ms=0.050"
+    ) in output
+    assert (
+        "wakeup_mainActor_schedule->wakeup_mainActor_begin: "
+        "n=1 p50_ms=0.100"
+    ) in output
+    assert "wakeup_mainActor_begin->app_tick_begin: n=1 p50_ms=0.050" in output
+    assert "app_tick_begin->runtime_callback_entry: n=1 p50_ms=0.150" in output
+    assert "app_tick_begin->app_tick_end: n=1 p50_ms=0.200" in output
     assert "mainActor_schedule->mainActor_begin: n=1 p50_ms=0.200" in output
     assert "runtime_callback_entry->registry_callback_begin: n=1 p50_ms=0.400" in output
     assert "mainActor_begin->registry_callback_begin: n=1 p50_ms=0.100" in output
-    assert "processOutput_end->registry_callback_begin: n=1 p50_ms=0.500" in output
+    assert "processOutput_end->registry_callback_begin: n=1 p50_ms=0.800" in output
     assert "topology_installed->model_revision_published: n=1 p50_ms=0.100" in output
     assert "managed_update_display_applied->display_rendered: n=1 p50_ms=0.300" in output
     assert "record_presentation_begin->view_presented: n=1 p50_ms=0.800" in output

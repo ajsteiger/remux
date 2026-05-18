@@ -430,6 +430,16 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         ]
     }
 
+    private static func wakeupTraceFields(
+        route: String,
+        entryThread: String
+    ) -> [String: String] {
+        [
+            "entryThread": entryThread,
+            "route": route,
+        ]
+    }
+
     static var wakeupCallback: ghostty_runtime_wakeup_cb {
         { userdata in
             GhosttyKitRuntimeCallbacks.wakeup(userdata)
@@ -510,10 +520,31 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
     static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
         guard let callbacks = from(userdata: userdata) else { return }
         guard callbacks.acceptsWakeupCallback() else { return }
+        let entryThread = GhosttyRuntimeTrace.flowTraceEnabled ? callbackThreadField() : ""
+        traceTopologyCallback(
+            "runtime.wakeup.entry",
+            fields: wakeupTraceFields(route: "async", entryThread: entryThread)
+        )
+        traceTopologyCallback(
+            "runtime.wakeup.mainActor.schedule",
+            fields: wakeupTraceFields(route: "async", entryThread: entryThread)
+        )
         Task { @MainActor in
             guard callbacks.acceptsWakeupCallback() else { return }
             guard let app = callbacks.app else { return }
+            traceTopologyCallback(
+                "runtime.wakeup.mainActor.begin",
+                fields: wakeupTraceFields(route: "async", entryThread: entryThread)
+            )
+            traceTopologyCallback(
+                "runtime.wakeup.appTick.begin",
+                fields: wakeupTraceFields(route: "async", entryThread: entryThread)
+            )
             ghostty_app_tick(app)
+            traceTopologyCallback(
+                "runtime.wakeup.appTick.end",
+                fields: wakeupTraceFields(route: "async", entryThread: entryThread)
+            )
         }
     }
 
