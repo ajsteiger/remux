@@ -3073,6 +3073,37 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "mouse scroll dropped: terminal transport unavailable")
     }
 
+    func testModelMouseScrollToTargetUsesTransportGateWithoutFocusedSelection() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+        var received: [GhosttySurfaceMouseScrollEvent] = []
+        let managed = Self.managedSurface(sendMouseScroll: {
+            received.append($0)
+        })
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+        model.surfaceRegistry.forceSelectedTopLevelIDForTesting(nil)
+        XCTAssertNil(model.surfaceRegistry.selectedActiveLeafID)
+
+        let event = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+        XCTAssertEqual(model.sendMouseScroll(to: managed.id, event), .sent)
+        XCTAssertEqual(received, [event])
+    }
+
     func testInputSubmissionCoordinatorFocusedInputHonorsFocusAndTransportBeforeRegistry() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)

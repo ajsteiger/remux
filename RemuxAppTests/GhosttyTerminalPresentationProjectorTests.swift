@@ -100,6 +100,27 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
     }
 
+    func testScalarCanSubmitInputProjectionMatchesSnapshotProjection() {
+        let cases: [TerminalReadinessSnapshot] = [
+            Self.readinessSnapshot(phase: .idle, transportWritable: true, focused: true),
+            Self.readinessSnapshot(phase: .starting, transportWritable: true, focused: true),
+            Self.readinessSnapshot(phase: .running, transportWritable: false, focused: true),
+            Self.readinessSnapshot(phase: .running, transportWritable: true, focused: false),
+            Self.readinessSnapshot(phase: .running, transportWritable: true, focused: true),
+        ]
+
+        for snapshot in cases {
+            XCTAssertEqual(
+                TerminalReadinessProjector.canSubmitInput(
+                    phase: snapshot.phase,
+                    transportWritable: snapshot.transportWritable,
+                    hasFocusedSurface: snapshot.hasFocusedSurface
+                ),
+                TerminalReadinessProjector.canSubmitInput(snapshot)
+            )
+        }
+    }
+
     func testReadinessProjectionPreservesStatusAndTraceConditions() {
         XCTAssertTrue(
             TerminalReadinessProjector.isWaitingForPanes(

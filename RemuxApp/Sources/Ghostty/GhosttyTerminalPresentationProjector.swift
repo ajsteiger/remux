@@ -96,7 +96,20 @@ enum TerminalReadinessProjector {
     }
 
     static func canSubmitInput(_ snapshot: TerminalReadinessSnapshot) -> Bool {
-        isInputAvailable(snapshot) && isTransportAvailableForInput(snapshot)
+        canSubmitInput(
+            phase: snapshot.phase,
+            transportWritable: snapshot.transportWritable,
+            hasFocusedSurface: snapshot.hasFocusedSurface
+        )
+    }
+
+    static func canSubmitInput(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool,
+        hasFocusedSurface: Bool
+    ) -> Bool {
+        isInputAvailable(phase: phase, hasFocusedSurface: hasFocusedSurface)
+            && isTransportAvailableForInput(phase: phase, transportWritable: transportWritable)
     }
 
     static func isWaitingForPanes(_ snapshot: TerminalReadinessSnapshot) -> Bool {

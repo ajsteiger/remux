@@ -295,7 +295,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
         let result = inputSubmissionCoordinator.sendInputToFocusedSurface(
             text,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: canSubmitInputToFocusedSurface
         )
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "input")
@@ -344,7 +344,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
         let result = inputSubmissionCoordinator.sendPasteToFocusedSurface(
             text,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: canSubmitInputToFocusedSurface
         )
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "paste")
@@ -480,7 +480,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
         let result = inputSubmissionCoordinator.sendKeyEventToFocusedSurface(
             event,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: canSubmitInputToFocusedSurface
         )
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "key")
@@ -510,7 +510,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome {
         let outcome = inputSubmissionCoordinator.sendMouseButtonToFocusedSurface(
             event,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: canSubmitInputToFocusedSurface
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "focused tmux pane")
         return outcome
@@ -524,7 +524,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         let outcome = inputSubmissionCoordinator.sendMousePositionToFocusedSurface(
             position,
             mods: mods,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: canSubmitInputToFocusedSurface
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "focused tmux pane")
         return outcome
@@ -534,7 +534,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome {
         let outcome = inputSubmissionCoordinator.sendMouseScrollToFocusedSurface(
             event,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: canSubmitInputToFocusedSurface
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "focused tmux pane")
         return outcome
@@ -544,7 +544,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome {
         let outcome = inputSubmissionCoordinator.sendMousePressureToFocusedSurface(
             event,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: canSubmitInputToFocusedSurface
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "focused tmux pane")
         return outcome
@@ -558,7 +558,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         let outcome = inputSubmissionCoordinator.sendMouseButton(
             to: surfaceID,
             event,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: isTerminalTransportAvailableForInput
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "target tmux pane")
         return outcome
@@ -574,7 +574,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             to: surfaceID,
             position,
             mods: mods,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: isTerminalTransportAvailableForInput
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "target tmux pane")
         return outcome
@@ -588,7 +588,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         let outcome = inputSubmissionCoordinator.sendMouseScroll(
             to: surfaceID,
             event,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: isTerminalTransportAvailableForInput
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "target tmux pane")
         return outcome
@@ -602,7 +602,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         let outcome = inputSubmissionCoordinator.sendMousePressure(
             to: surfaceID,
             event,
-            isTransportAvailable: isTerminalTransportAvailable
+            isTransportAvailable: isTerminalTransportAvailableForInput
         )
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "target tmux pane")
         return outcome
@@ -1032,8 +1032,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         commandFailureMessage = nil
     }
 
-    private var isTerminalTransportAvailable: Bool {
-        state == .running && hostSessionSlot.isWriteAvailable
+    private var canSubmitInputToFocusedSurface: Bool {
+        TerminalReadinessProjector.canSubmitInput(
+            phase: terminalRuntimePhase,
+            transportWritable: hostSessionSlot.isWriteAvailable,
+            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
+        )
+    }
+
+    private var isTerminalTransportAvailableForInput: Bool {
+        TerminalReadinessProjector.isTransportAvailableForInput(
+            phase: terminalRuntimePhase,
+            transportWritable: hostSessionSlot.isWriteAvailable
+        )
     }
 
     private func updateDebugStatusForTerminalInputResult(
