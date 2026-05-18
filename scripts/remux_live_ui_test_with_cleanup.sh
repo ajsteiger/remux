@@ -178,12 +178,20 @@ fixture_name=""
 fixture_session=""
 for target in "${only_testing[@]}"; do
   case "$target" in
+    *testLiveSSHTmuxActionCycleWhenConfigured)
+      fixture_session="remux-latency-action-${stamp}"
+      ;;
     *testLiveDenseMixedTopologySelectsDeepPaneWhenConfigured)
       fixture_name="dense-mixed"
       fixture_session="remux-latency-dense-mixed-${stamp}"
       ;;
   esac
 done
+
+if [[ -n "$fixture_session" ]]; then
+  printf '%s\n' "$fixture_session" >>"$manifest"
+  printf '%s\n' "$fixture_session" >"$fixture_session_file"
+fi
 
 prepare_dense_mixed_fixture() {
   local session="$1"
@@ -248,9 +256,7 @@ REMOTE
 
 if [[ "$fixture_name" == "dense-mixed" ]]; then
   prepare_dense_mixed_fixture "$fixture_session"
-  printf '%s\n' "$fixture_session" >>"$manifest"
   printf '%s\n' "$fixture_name" >"$fixture_name_file"
-  printf '%s\n' "$fixture_session" >"$fixture_session_file"
 fi
 
 cleanup_generated_sessions() {
