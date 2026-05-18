@@ -370,6 +370,32 @@ def overlay_snapshot_end(instance: FlowInstance) -> FlowEvent | None:
     )
 
 
+def overlay_hold_begin(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_update_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.hold.begin"),
+    )
+
+
+def overlay_hold_end(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_hold_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.hold.end"),
+    )
+
+
 def overlay_add_snapshot_end(instance: FlowInstance) -> FlowEvent | None:
     start = overlay_snapshot_end(instance)
     end = tree_sync_begin(instance)
@@ -542,6 +568,21 @@ SEGMENTS = [
     Segment(
         "addSnapshot_end->tree_sync_begin",
         overlay_add_snapshot_end,
+        tree_sync_begin,
+    ),
+    Segment(
+        "overlay_update_begin->hold_begin",
+        overlay_update_begin,
+        overlay_hold_begin,
+    ),
+    Segment(
+        "hold_begin->hold_end",
+        overlay_hold_begin,
+        overlay_hold_end,
+    ),
+    Segment(
+        "hold_end->tree_sync_begin",
+        overlay_hold_end,
         tree_sync_begin,
     ),
     Segment(
@@ -794,9 +835,8 @@ Remux flow t=12100000 flow=tmux.newWindow event=model.surfaceRegistryRevision.pu
 Remux flow t=12200000 flow=tmux.newWindow event=ui.updateUIView.begin since_ms=11.200
 Remux flow t=12300000 flow=tmux.newWindow event=ui.tree.update.begin since_ms=11.300
 Remux flow t=12310000 flow=tmux.newWindow event=ui.presentationOverlay.update.begin since_ms=11.310
-Remux flow t=12320000 flow=tmux.newWindow event=ui.presentationOverlay.snapshot.begin since_ms=11.320
-Remux flow t=12370000 flow=tmux.newWindow event=ui.presentationOverlay.snapshot.end since_ms=11.370
-Remux flow t=12380000 flow=tmux.newWindow event=ui.presentationOverlay.addSnapshot.end since_ms=11.380
+Remux flow t=12320000 flow=tmux.newWindow event=ui.presentationOverlay.hold.begin since_ms=11.320
+Remux flow t=12370000 flow=tmux.newWindow event=ui.presentationOverlay.hold.end since_ms=11.370
 Remux flow t=12390000 flow=tmux.newWindow event=ui.presentationOverlay.update.end since_ms=11.390
 Remux flow t=12400000 flow=tmux.newWindow event=ui.tree.sync.begin since_ms=11.400
 Remux flow t=12410000 flow=tmux.newWindow event=ui.tree.sync.end since_ms=11.410
@@ -876,10 +916,9 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     assert "processOutput_end->registry_callback_begin: n=1 p50_ms=0.800" in output
     assert "topology_installed->model_revision_published: n=1 p50_ms=0.100" in output
     assert "tree_update_begin->overlay_update_begin: n=1 p50_ms=0.010" in output
-    assert "overlay_update_begin->snapshot_begin: n=1 p50_ms=0.010" in output
-    assert "snapshot_begin->snapshot_end: n=1 p50_ms=0.050" in output
-    assert "snapshot_end->addSnapshot_end: n=1 p50_ms=0.010" in output
-    assert "addSnapshot_end->tree_sync_begin: n=1 p50_ms=0.020" in output
+    assert "overlay_update_begin->hold_begin: n=1 p50_ms=0.010" in output
+    assert "hold_begin->hold_end: n=1 p50_ms=0.050" in output
+    assert "hold_end->tree_sync_begin: n=1 p50_ms=0.030" in output
     assert "overlay_update_begin->overlay_update_end: n=1 p50_ms=0.080" in output
     assert "overlay_update_end->tree_sync_begin: n=1 p50_ms=0.010" in output
     assert "managed_update_display_applied->display_rendered: n=1 p50_ms=0.300" in output

@@ -120,6 +120,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var selectionCopyMenuSurfaceID: UUID?
     private var presentationOverlayView: UIView?
     private var presentationOverlayPendingSurfaceID: UUID?
+    private var presentationOverlayHeldSurfaceIDs: Set<UUID> = []
+    private var presentationOverlayHeldInteractionStates: [UUID: Bool] = [:]
     private var selectionCopyMenuSourcePoint = CGPoint.zero
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
@@ -169,7 +171,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         let previousProjection = self.projection
         let previousSourceIdentity = self.materializationContext.sourceIdentity
         updatePresentationOverlay(
-            pendingSurfaceID: projection.pendingPresentationSurfaceID
+            pendingSurfaceID: projection.pendingPresentationSurfaceID,
+            canRetainCurrentSurfaceContainers: previousSourceIdentity == materializationContext.sourceIdentity
         )
         self.projection = projection
         self.materializationContext = materializationContext
@@ -204,10 +207,14 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         layoutPresentationOverlay()
     }
 
-    private func updatePresentationOverlay(pendingSurfaceID: UUID?) {
+    private func updatePresentationOverlay(
+        pendingSurfaceID: UUID?,
+        canRetainCurrentSurfaceContainers: Bool
+    ) {
         let shouldTrace = pendingSurfaceID != nil ||
             presentationOverlayView != nil ||
-            presentationOverlayPendingSurfaceID != nil
+            presentationOverlayPendingSurfaceID != nil ||
+            !presentationOverlayHeldSurfaceIDs.isEmpty
         if shouldTrace {
             tracePresentationOverlay(
                 "ui.presentationOverlay.update.begin",
@@ -226,15 +233,19 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             clearPresentationOverlay(reason: "noPending")
             return
         }
-        guard presentationOverlayPendingSurfaceID != pendingSurfaceID else {
-            tracePresentationOverlay(
-                "ui.presentationOverlay.skip.samePending",
-                pendingSurfaceID: pendingSurfaceID
-            )
-            return
+        if presentationOverlayPendingSurfaceID == pendingSurfaceID {
+            guard !canRetainCurrentSurfaceContainers else {
+                tracePresentationOverlay(
+                    "ui.presentationOverlay.skip.samePending",
+                    pendingSurfaceID: pendingSurfaceID
+                )
+                return
+            }
+            clearPresentationOverlay(reason: "sourceChanged")
+        } else {
+            clearPresentationOverlay(reason: "replace")
         }
 
-        clearPresentationOverlay(reason: "replace")
         guard bounds.width > 1, bounds.height > 1 else {
             tracePresentationOverlay(
                 "ui.presentationOverlay.skip.emptyBounds",
@@ -242,35 +253,55 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             )
             return
         }
+        installPresentationOverlay(
+            pendingSurfaceID: pendingSurfaceID,
+            canRetainCurrentSurfaceContainers: canRetainCurrentSurfaceContainers
+        )
+    }
+
+    private func installPresentationOverlay(
+        pendingSurfaceID: UUID,
+        canRetainCurrentSurfaceContainers: Bool
+    ) {
         tracePresentationOverlay(
-            "ui.presentationOverlay.snapshot.begin",
+            "ui.presentationOverlay.hold.begin",
             pendingSurfaceID: pendingSurfaceID
         )
-        let snapshot = snapshotView(afterScreenUpdates: false)
+        let overlay = UIView(frame: bounds)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        overlay.clipsToBounds = true
+        overlay.isUserInteractionEnabled = false
+
+        let heldSurfaceIDs = canRetainCurrentSurfaceContainers
+            ? moveCurrentVisibleSurfaceContainers(to: overlay)
+            : []
+        if heldSurfaceIDs.isEmpty {
+            overlay.backgroundColor = GhosttyPhoneChromePalette.uiBackground
+        } else {
+            overlay.backgroundColor = .clear
+        }
+
+        addSubview(overlay)
+        presentationOverlayView = overlay
+        presentationOverlayPendingSurfaceID = pendingSurfaceID
+        presentationOverlayHeldSurfaceIDs = heldSurfaceIDs
         tracePresentationOverlay(
-            "ui.presentationOverlay.snapshot.end",
+            "ui.presentationOverlay.hold.end",
             pendingSurfaceID: pendingSurfaceID,
             fields: [
-                "result": snapshot == nil ? "nil" : "view",
+                "heldSurfaces": heldSurfaceIDs
+                    .map(ghosttyDiagnosticShortID)
+                    .sorted()
+                    .joined(separator: ","),
+                "mode": heldSurfaceIDs.isEmpty ? "cover" : "retainedContainers",
             ]
-        )
-        guard let snapshot else { return }
-
-        snapshot.frame = bounds
-        snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        snapshot.isUserInteractionEnabled = false
-        addSubview(snapshot)
-        presentationOverlayView = snapshot
-        presentationOverlayPendingSurfaceID = pendingSurfaceID
-        tracePresentationOverlay(
-            "ui.presentationOverlay.addSnapshot.end",
-            pendingSurfaceID: pendingSurfaceID
         )
     }
 
     private func clearPresentationOverlay(reason: String) {
         let shouldTrace = presentationOverlayView != nil ||
-            presentationOverlayPendingSurfaceID != nil
+            presentationOverlayPendingSurfaceID != nil ||
+            !presentationOverlayHeldSurfaceIDs.isEmpty
         if shouldTrace {
             tracePresentationOverlay(
                 "ui.presentationOverlay.clear.begin",
@@ -280,9 +311,12 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 ]
             )
         }
+        releaseHeldPresentationOverlaySurfaces()
         presentationOverlayView?.removeFromSuperview()
         presentationOverlayView = nil
         presentationOverlayPendingSurfaceID = nil
+        presentationOverlayHeldSurfaceIDs = []
+        presentationOverlayHeldInteractionStates = [:]
         if shouldTrace {
             tracePresentationOverlay(
                 "ui.presentationOverlay.clear.end",
@@ -291,6 +325,59 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                     "reason": reason,
                 ]
             )
+        }
+    }
+
+    private func moveCurrentVisibleSurfaceContainers(to overlay: UIView) -> Set<UUID> {
+        let visibleIDs = Set(projection.topLevel?.phonePresentedLeafIDs ?? [])
+        guard !visibleIDs.isEmpty else { return [] }
+
+        var idsByContainer: [ObjectIdentifier: UUID] = [:]
+        for (surfaceID, container) in scrollContainersBySurfaceID {
+            idsByContainer[ObjectIdentifier(container)] = surfaceID
+        }
+
+        var heldSurfaceIDs: Set<UUID> = []
+        for subview in subviews {
+            guard let container = subview as? GhosttyPaneScrollContainerView else { continue }
+            guard let surfaceID = idsByContainer[ObjectIdentifier(container)] else { continue }
+            guard visibleIDs.contains(surfaceID) else { continue }
+
+            presentationOverlayHeldInteractionStates[surfaceID] = container.isUserInteractionEnabled
+            container.isUserInteractionEnabled = false
+            container.removeFromSuperview()
+            overlay.addSubview(container)
+            heldSurfaceIDs.insert(surfaceID)
+        }
+        return heldSurfaceIDs
+    }
+
+    private func releaseHeldPresentationOverlaySurfaces() {
+        guard !presentationOverlayHeldSurfaceIDs.isEmpty else { return }
+
+        let visibleIDs = Set(projection.topLevel?.phonePresentedLeafIDs ?? [])
+        for surfaceID in presentationOverlayHeldSurfaceIDs {
+            guard let container = scrollContainersBySurfaceID[surfaceID] else { continue }
+            container.isUserInteractionEnabled = presentationOverlayHeldInteractionStates[surfaceID] ?? true
+
+            guard visibleIDs.contains(surfaceID),
+                  materializationContext.isAvailable,
+                  let surface = materializationContext.managedSurface(for: surfaceID)
+            else {
+                if let surface = materializationContext.managedSurface(for: surfaceID) {
+                    surface.setFocused(false)
+                    surface.setVisible(false)
+                    container.detachSurfaceIfNeeded(surface)
+                }
+                container.removeFromSuperview()
+                continue
+            }
+
+            if container.superview !== self {
+                container.removeFromSuperview()
+                addSubview(container)
+            }
+            surface.setVisible(true)
         }
     }
 
@@ -348,14 +435,23 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         surfaceIDsByView = [:]
         let managedIDs = Set(managedSurfaces.map(\.id))
         for (surfaceID, container) in scrollContainersBySurfaceID where !managedIDs.contains(surfaceID) {
+            presentationOverlayHeldSurfaceIDs.remove(surfaceID)
+            presentationOverlayHeldInteractionStates[surfaceID] = nil
             container.removeFromSuperview()
             scrollContainersBySurfaceID[surfaceID] = nil
         }
 
         for surface in managedSurfaces {
+            let isHeldForPresentationOverlay = presentationOverlayHeldSurfaceIDs.contains(surface.id)
             if visibleIDs.contains(surface.id) {
                 surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
                 ensureInteractionRecognizers(for: surface.view)
+                if isHeldForPresentationOverlay {
+                    surface.setVisible(true)
+                    surface.setFocused(surface.id == projection.selectedActiveLeafID)
+                    continue
+                }
+
                 let container = scrollContainer(for: surface)
                 let didChangeContainer = container.update(
                     surface: surface,
@@ -370,6 +466,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                     container.layoutIfNeeded()
                 }
             } else {
+                if isHeldForPresentationOverlay {
+                    surface.setFocused(false)
+                    continue
+                }
+
                 if let container = scrollContainersBySurfaceID[surface.id] {
                     container.detachSurfaceIfNeeded(surface)
                     container.removeFromSuperview()
@@ -429,6 +530,19 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         case .leaf(let surfaceID):
             guard let surface = materializationContext.managedSurface(for: surfaceID) else { return }
 
+            if presentationOverlayHeldSurfaceIDs.contains(surfaceID) {
+                GhosttyRuntimeTrace.tmuxViewport(
+                    "tree.layout heldOverlay leaf=\(ghosttyDiagnosticShortID(surfaceID)) focused=\(surfaceID == focusedSurfaceID) before=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
+                )
+                markSurfacePresented(
+                    surface,
+                    surfaceID: surfaceID,
+                    focused: surfaceID == focusedSurfaceID,
+                    materializationContext: materializationContext
+                )
+                return
+            }
+
             let container = scrollContainer(for: surface)
             let targetFrame = rect.integral
             let didChangeFrame = container.frame != targetFrame
@@ -449,22 +563,11 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             GhosttyRuntimeTrace.diagnostics(
                 "tree.layout leaf=\(ghosttyDiagnosticShortID(surfaceID)) rect=\(diagnosticRect(rect)) container=\(diagnosticRect(container.frame)) focused=\(surfaceID == focusedSurfaceID) beforeSurface={\(surface.diagnosticSummary())}"
             )
-            surface.setVisible(true)
-            surface.setFocused(surfaceID == focusedSurfaceID)
-            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                event: "ui.recordSurfacePresentation.begin",
-                fields: [
-                    "focused": "\(surfaceID == focusedSurfaceID)",
-                    "surface": ghosttyDiagnosticShortID(surfaceID),
-                ]
-            )
-            materializationContext.recordSurfacePresentation(surfaceID, reason: "tree.layout")
-            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                event: "ui.recordSurfacePresentation.end",
-                fields: [
-                    "focused": "\(surfaceID == focusedSurfaceID)",
-                    "surface": ghosttyDiagnosticShortID(surfaceID),
-                ]
+            markSurfacePresented(
+                surface,
+                surfaceID: surfaceID,
+                focused: surfaceID == focusedSurfaceID,
+                materializationContext: materializationContext
             )
             GhosttyRuntimeTrace.tmuxViewport(
                 "tree.layout applied leaf=\(ghosttyDiagnosticShortID(surfaceID)) visible=true focused=\(surfaceID == focusedSurfaceID) after=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
@@ -512,6 +615,31 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
                 layout(node: right, in: bottomRect, focusedSurfaceID: focusedSurfaceID, materializationContext: materializationContext)
             }
         }
+    }
+
+    private func markSurfacePresented(
+        _ surface: GhosttyManagedSurface,
+        surfaceID: UUID,
+        focused: Bool,
+        materializationContext: GhosttyRuntimeSurfaceMaterializationContext
+    ) {
+        surface.setVisible(true)
+        surface.setFocused(focused)
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.recordSurfacePresentation.begin",
+            fields: [
+                "focused": "\(focused)",
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
+        materializationContext.recordSurfacePresentation(surfaceID, reason: "tree.layout")
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.recordSurfacePresentation.end",
+            fields: [
+                "focused": "\(focused)",
+                "surface": ghosttyDiagnosticShortID(surfaceID),
+            ]
+        )
     }
 
     private func scrollContainer(for surface: GhosttyManagedSurface) -> GhosttyPaneScrollContainerView {
