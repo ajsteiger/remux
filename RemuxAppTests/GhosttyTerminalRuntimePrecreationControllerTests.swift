@@ -170,38 +170,44 @@ private enum RuntimeFailure: Error {
 private final class TestSurfaceDelegate: GhosttyKitRuntimeSurfaceDelegate {
     func runtimeCreateSurface(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_s
+        request: ghostty_runtime_create_surface_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> ghostty_surface_t? {
         nil
     }
 
     func runtimeCreateSurfaceTree(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_tree_s
+        request: ghostty_runtime_create_surface_tree_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         false
     }
 
     func runtimeSelectSurface(
         app: ghostty_app_t?,
-        surface: ghostty_surface_t?
+        surface: ghostty_surface_t?,
+        lease: GhosttyRuntimeCallbackLease
     ) {}
 
     func runtimeAction(
         app: ghostty_app_t?,
         target: ghostty_target_s,
-        action: ghostty_action_s
+        action: ghostty_action_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         false
     }
 
     func runtimeTmuxCommandFailure(
         app: ghostty_app_t?,
-        failure: ghostty_tmux_command_failure_s
+        failure: ghostty_tmux_command_failure_s,
+        lease: GhosttyRuntimeCallbackLease
     ) {}
 
     func runtimeTmuxProtocolError(
         app: ghostty_app_t?,
-        error: ghostty_tmux_protocol_error_s
+        error: ghostty_tmux_protocol_error_s,
+        lease: GhosttyRuntimeCallbackLease
     ) {}
 }

@@ -300,7 +300,8 @@ private final class GhosttyKitRuntimeState {
         try Self.loadSettings(terminalSettings, into: config)
         ghostty_config_finalize(config)
 
-        let callbacks = GhosttyKitRuntimeCallbacks()
+        let callbackLease = surfaceDelegate?.makeRuntimeCallbackLease()
+        let callbacks = GhosttyKitRuntimeCallbacks(callbackLease: callbackLease)
         callbacks.surfaceDelegate = surfaceDelegate
         var runtimeConfig = ghostty_runtime_config_s(
             userdata: callbacks.userdata,
@@ -319,6 +320,7 @@ private final class GhosttyKitRuntimeState {
         )
 
         guard let app = ghostty_app_new(&runtimeConfig, config) else {
+            callbacks.invalidateCallbackLease()
             ghostty_config_free(config)
             throw GhosttyKitRuntimeError.appCreationFailed
         }
@@ -334,6 +336,7 @@ private final class GhosttyKitRuntimeState {
         // A wakeup callback may have queued a MainActor tick. Clear the pointer
         // before freeing so the queued task cannot tick a destroyed app.
         callbacks.app = nil
+        callbacks.invalidateCallbackLease()
         ghostty_app_free(app)
         ghostty_config_free(config)
         _ = callbacks
@@ -366,9 +369,29 @@ private final class GhosttyKitRuntimeState {
 private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
     var app: ghostty_app_t?
     weak var surfaceDelegate: GhosttyKitRuntimeSurfaceDelegate?
+    let callbackLease: GhosttyRuntimeCallbackLease?
+
+    init(callbackLease: GhosttyRuntimeCallbackLease?) {
+        self.callbackLease = callbackLease
+    }
 
     var userdata: UnsafeMutableRawPointer {
         Unmanaged.passUnretained(self).toOpaque()
+    }
+
+    func acceptsRuntimeCallback() -> Bool {
+        guard let callbackLease else { return false }
+        return surfaceDelegate?.acceptsRuntimeCallback(callbackLease) ?? false
+    }
+
+    func acceptsWakeupCallback() -> Bool {
+        guard callbackLease != nil else { return true }
+        return acceptsRuntimeCallback()
+    }
+
+    func invalidateCallbackLease() {
+        guard let callbackLease else { return }
+        surfaceDelegate?.runtimeCallbackLeaseDidEnd(callbackLease)
     }
 
     static var wakeupCallback: ghostty_runtime_wakeup_cb {
@@ -450,7 +473,9 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
 
     static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
         guard let callbacks = from(userdata: userdata) else { return }
+        guard callbacks.acceptsWakeupCallback() else { return }
         Task { @MainActor in
+            guard callbacks.acceptsWakeupCallback() else { return }
             guard let app = callbacks.app else { return }
             ghostty_app_tick(app)
         }
@@ -462,16 +487,23 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         action: ghostty_action_s
     ) -> Bool {
         guard let callbacks = from(app: app) else { return true }
+        guard let lease = callbacks.callbackLease,
+              callbacks.acceptsRuntimeCallback()
+        else {
+            return true
+        }
         let appBox = UnsafeSendable(app)
         let targetBox = UnsafeSendable(target)
         let actionBox = UnsafeSendable(action)
+        let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.action route=main")
             return MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeAction(
                     app: appBox.value,
                     target: targetBox.value,
-                    action: actionBox.value
+                    action: actionBox.value,
+                    lease: leaseBox.value
                 ) ?? true
             }
         } else {
@@ -481,7 +513,8 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                         callbacks.surfaceDelegate?.runtimeAction(
                             app: appBox.value,
                             target: targetBox.value,
-                            action: actionBox.value
+                            action: actionBox.value,
+                            lease: leaseBox.value
                         ) ?? true
                     }
                 }
@@ -502,16 +535,10 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         else {
             return false
         }
-        guard let text = readPasteboardString() else { return false }
+        guard lifecycle.acceptsRuntimeCallback() else { return false }
+        guard let text = readPasteboardString(for: lifecycle) else { return false }
 
-        text.withCString { pointer in
-            ghostty_surface_complete_clipboard_request(
-                surface,
-                pointer,
-                request,
-                false
-            )
-        }
+        completeClipboardRequest(surface: surface, text: text, request: request, confirmed: false)
         return true
     }
 
@@ -522,10 +549,11 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         kind: ghostty_clipboard_request_e
     ) {
         guard let request else { return }
-        guard
-            let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
-            let surface = lifecycle.surfaceHandle
-        else {
+        guard let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
+              let surface = lifecycle.surfaceHandle
+        else { return }
+        guard lifecycle.acceptsRuntimeCallback() else {
+            completeClipboardRequest(surface: surface, text: "", request: request, confirmed: true)
             return
         }
 
@@ -539,14 +567,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
             text = ""
         }
 
-        text.withCString { pointer in
-            ghostty_surface_complete_clipboard_request(
-                surface,
-                pointer,
-                request,
-                true
-            )
-        }
+        completeClipboardRequest(surface: surface, text: text, request: request, confirmed: true)
     }
 
     static func writeClipboard(
@@ -556,9 +577,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         count: Int,
         confirm: Bool
     ) {
-        _ = userdata
         guard clipboard == GHOSTTY_CLIPBOARD_STANDARD else { return }
         guard !confirm else { return }
+        guard
+            let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
+            lifecycle.acceptsRuntimeCallback()
+        else {
+            return
+        }
         guard let text = GhosttyClipboardContentDecoder.plainText(
             contents: contents,
             count: count
@@ -567,19 +593,38 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         }
 
         DispatchQueue.main.async {
+            guard lifecycle.acceptsRuntimeCallback() else { return }
             UIPasteboard.general.string = text
         }
     }
 
-    private static func readPasteboardString() -> String? {
+    private static func completeClipboardRequest(
+        surface: ghostty_surface_t,
+        text: String,
+        request: UnsafeMutableRawPointer,
+        confirmed: Bool
+    ) {
+        text.withCString { pointer in
+            ghostty_surface_complete_clipboard_request(
+                surface,
+                pointer,
+                request,
+                confirmed
+            )
+        }
+    }
+
+    private static func readPasteboardString(for lifecycle: GhosttyRuntimeSurfaceLifecycle) -> String? {
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.readPasteboard route=main")
+            guard lifecycle.acceptsRuntimeCallback() else { return nil }
             return UIPasteboard.general.string
         }
 
         return GhosttyRuntimeTrace.perfMeasure("runtime.readPasteboard route=sync") {
             DispatchQueue.main.sync {
-                UIPasteboard.general.string
+                guard lifecycle.acceptsRuntimeCallback() else { return nil }
+                return UIPasteboard.general.string
             }
         }
     }
@@ -591,11 +636,13 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         guard let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata) else {
             return
         }
+        guard lifecycle.acceptsRuntimeCallback() else { return }
 
         Task { @MainActor [weak registry = lifecycle.registry] in
             registry?.runtimeCloseSurface(
                 id: lifecycle.surfaceID,
-                processAlive: processAlive
+                processAlive: processAlive,
+                lease: lifecycle.callbackLease
             )
         }
     }
@@ -605,14 +652,21 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         request: ghostty_runtime_create_surface_s
     ) -> ghostty_surface_t? {
         guard let callbacks = from(app: app) else { return nil }
+        guard let lease = callbacks.callbackLease,
+              callbacks.acceptsRuntimeCallback()
+        else {
+            return nil
+        }
         let appBox = UnsafeSendable(app)
         let requestBox = UnsafeSendable(request)
+        let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.createSurface route=main")
             return MainActor.assumeIsolated {
                 UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
                     app: appBox.value,
-                    request: requestBox.value
+                    request: requestBox.value,
+                    lease: leaseBox.value
                 ))
             }.value
         } else {
@@ -621,7 +675,8 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     MainActor.assumeIsolated {
                         UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
                             app: appBox.value,
-                            request: requestBox.value
+                            request: requestBox.value,
+                            lease: leaseBox.value
                         ))
                     }
                 }
@@ -634,14 +689,21 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         request: ghostty_runtime_create_surface_tree_s
     ) -> Bool {
         guard let callbacks = from(app: app) else { return false }
+        guard let lease = callbacks.callbackLease,
+              callbacks.acceptsRuntimeCallback()
+        else {
+            return false
+        }
         let appBox = UnsafeSendable(app)
         let requestBox = UnsafeSendable(request)
+        let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.createSurfaceTree route=main")
             return MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
                     app: appBox.value,
-                    request: requestBox.value
+                    request: requestBox.value,
+                    lease: leaseBox.value
                 ) ?? false
             }
         } else {
@@ -650,7 +712,8 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     MainActor.assumeIsolated {
                         callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
                             app: appBox.value,
-                            request: requestBox.value
+                            request: requestBox.value,
+                            lease: leaseBox.value
                         ) ?? false
                     }
                 }
@@ -663,14 +726,21 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         surface: ghostty_surface_t?
     ) {
         guard let callbacks = from(app: app) else { return }
+        guard let lease = callbacks.callbackLease,
+              callbacks.acceptsRuntimeCallback()
+        else {
+            return
+        }
         let appBox = UnsafeSendable(app)
         let surfaceBox = UnsafeSendable(surface)
+        let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.selectSurface route=main")
             MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeSelectSurface(
                     app: appBox.value,
-                    surface: surfaceBox.value
+                    surface: surfaceBox.value,
+                    lease: leaseBox.value
                 )
             }
         } else {
@@ -679,7 +749,8 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     MainActor.assumeIsolated {
                         callbacks.surfaceDelegate?.runtimeSelectSurface(
                             app: appBox.value,
-                            surface: surfaceBox.value
+                            surface: surfaceBox.value,
+                            lease: leaseBox.value
                         )
                     }
                 }
@@ -692,14 +763,21 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         failure: ghostty_tmux_command_failure_s
     ) {
         guard let callbacks = from(app: app) else { return }
+        guard let lease = callbacks.callbackLease,
+              callbacks.acceptsRuntimeCallback()
+        else {
+            return
+        }
         let appBox = UnsafeSendable(app)
         let failureBox = UnsafeSendable(failure)
+        let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.tmuxCommandFailure route=main")
             MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
                     app: appBox.value,
-                    failure: failureBox.value
+                    failure: failureBox.value,
+                    lease: leaseBox.value
                 )
             }
         } else {
@@ -708,7 +786,8 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     MainActor.assumeIsolated {
                         callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
                             app: appBox.value,
-                            failure: failureBox.value
+                            failure: failureBox.value,
+                            lease: leaseBox.value
                         )
                     }
                 }
@@ -721,14 +800,21 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         error: ghostty_tmux_protocol_error_s
     ) {
         guard let callbacks = from(app: app) else { return }
+        guard let lease = callbacks.callbackLease,
+              callbacks.acceptsRuntimeCallback()
+        else {
+            return
+        }
         let appBox = UnsafeSendable(app)
         let errorBox = UnsafeSendable(error)
+        let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.tmuxProtocolError route=main")
             MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
                     app: appBox.value,
-                    error: errorBox.value
+                    error: errorBox.value,
+                    lease: leaseBox.value
                 )
             }
         } else {
@@ -737,7 +823,8 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     MainActor.assumeIsolated {
                         callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
                             app: appBox.value,
-                            error: errorBox.value
+                            error: errorBox.value,
+                            lease: leaseBox.value
                         )
                     }
                 }

@@ -89,38 +89,117 @@ enum GhosttyTerminalSelectionReadOutcome: Equatable, Sendable {
     }
 }
 
-@MainActor
+struct GhosttyRuntimeCallbackLease: Equatable, Sendable {
+    let registryID: ObjectIdentifier
+    let epoch: UInt64
+}
+
+final class GhosttyRuntimeCallbackLeaseStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextEpoch: UInt64 = 0
+    private var activeLease: GhosttyRuntimeCallbackLease?
+
+    func makeLease(registryID: ObjectIdentifier) -> GhosttyRuntimeCallbackLease {
+        lock.withLock {
+            nextEpoch &+= 1
+            let lease = GhosttyRuntimeCallbackLease(
+                registryID: registryID,
+                epoch: nextEpoch
+            )
+            activeLease = lease
+            return lease
+        }
+    }
+
+    func accepts(_ lease: GhosttyRuntimeCallbackLease) -> Bool {
+        lock.withLock {
+            activeLease == lease
+        }
+    }
+
+    func currentLease() -> GhosttyRuntimeCallbackLease? {
+        lock.withLock {
+            activeLease
+        }
+    }
+
+    func invalidate(_ lease: GhosttyRuntimeCallbackLease) {
+        lock.withLock {
+            guard activeLease == lease else { return }
+            activeLease = nil
+        }
+    }
+
+    func invalidateActiveLease() {
+        lock.withLock {
+            activeLease = nil
+        }
+    }
+}
+
 protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
+    @MainActor
+    func makeRuntimeCallbackLease() -> GhosttyRuntimeCallbackLease?
+
+    nonisolated func acceptsRuntimeCallback(_ lease: GhosttyRuntimeCallbackLease) -> Bool
+
+    nonisolated func runtimeCallbackLeaseDidEnd(_ lease: GhosttyRuntimeCallbackLease)
+
+    @MainActor
     func runtimeCreateSurface(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_s
+        request: ghostty_runtime_create_surface_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> ghostty_surface_t?
 
+    @MainActor
     func runtimeCreateSurfaceTree(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_tree_s
+        request: ghostty_runtime_create_surface_tree_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> Bool
 
+    @MainActor
     func runtimeSelectSurface(
         app: ghostty_app_t?,
-        surface: ghostty_surface_t?
+        surface: ghostty_surface_t?,
+        lease: GhosttyRuntimeCallbackLease
     )
 
+    @MainActor
     func runtimeAction(
         app: ghostty_app_t?,
         target: ghostty_target_s,
-        action: ghostty_action_s
+        action: ghostty_action_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> Bool
 
+    @MainActor
     func runtimeTmuxCommandFailure(
         app: ghostty_app_t?,
-        failure: ghostty_tmux_command_failure_s
+        failure: ghostty_tmux_command_failure_s,
+        lease: GhosttyRuntimeCallbackLease
     )
 
+    @MainActor
     func runtimeTmuxProtocolError(
         app: ghostty_app_t?,
-        error: ghostty_tmux_protocol_error_s
+        error: ghostty_tmux_protocol_error_s,
+        lease: GhosttyRuntimeCallbackLease
     )
+}
+
+extension GhosttyKitRuntimeSurfaceDelegate {
+    @MainActor
+    func makeRuntimeCallbackLease() -> GhosttyRuntimeCallbackLease? {
+        nil
+    }
+
+    nonisolated func acceptsRuntimeCallback(_ lease: GhosttyRuntimeCallbackLease) -> Bool {
+        false
+    }
+
+    nonisolated func runtimeCallbackLeaseDidEnd(_ lease: GhosttyRuntimeCallbackLease) {}
 }
 
 func ghosttyDiagnosticShortID(_ id: UUID?) -> String {
@@ -157,6 +236,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private static let phonePresentationRefreshRetryDelay: Duration = .milliseconds(16)
     private static let phonePresentationRefreshMaxAttempts = 16
     private static let windowSwipeFlow = "tmux.windowSwipe"
+
+    nonisolated private let runtimeCallbackLeaseStore = GhosttyRuntimeCallbackLeaseStore()
 
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
     @Published private(set) var selectedTopLevelID: UUID?
@@ -251,6 +332,18 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         notifyChanged()
     }
 
+    func makeRuntimeCallbackLease() -> GhosttyRuntimeCallbackLease? {
+        runtimeCallbackLeaseStore.makeLease(registryID: ObjectIdentifier(self))
+    }
+
+    nonisolated func acceptsRuntimeCallback(_ lease: GhosttyRuntimeCallbackLease) -> Bool {
+        runtimeCallbackLeaseStore.accepts(lease)
+    }
+
+    nonisolated func runtimeCallbackLeaseDidEnd(_ lease: GhosttyRuntimeCallbackLease) {
+        runtimeCallbackLeaseStore.invalidate(lease)
+    }
+
     func deliverTmuxCommandFailure(_ failure: TmuxControlCommandFailure) {
         GhosttyRuntimeTrace.diagnostics(
             "registry.tmuxCommandFailure kind=\(failure.kind) reason=\(String(describing: failure.reason)) message=\(failure.message)"
@@ -267,6 +360,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func prepareForRuntimeTeardown() {
+        runtimeCallbackLeaseStore.invalidateActiveLease()
         pendingPhonePresentationSurfaceID = nil
         pendingPhonePresentationTrace = nil
         runtimePresentationReadySurfaceIDs = []
@@ -1086,8 +1180,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func runtimeCreateSurface(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_s
+        request: ghostty_runtime_create_surface_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> ghostty_surface_t? {
+        guard acceptsRuntimeCallback(lease) else { return nil }
         // This callback materializes a surface that Ghostty already decided is
         // needed. Remux owns the UIKit/Ghostty view binding; Ghostty owns tmux
         // session, layout, and projection truth.
@@ -1110,7 +1206,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return nil
         }
 
-        guard let managed = createManagedSurface(app: app, baseConfig: configPtr.pointee) else {
+        guard let managed = createManagedSurface(app: app, baseConfig: configPtr.pointee, lease: lease) else {
             updateDebugSummary("create_surface failed")
             return nil
         }
@@ -1178,8 +1274,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func runtimeCreateSurfaceTree(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_tree_s
+        request: ghostty_runtime_create_surface_tree_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
+        guard acceptsRuntimeCallback(lease) else { return false }
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.tmuxViewport(
             "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index) parent=\(String(describing: request.parent))"
@@ -1219,7 +1317,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
 
         for (index, leafConfig) in decodedRequest.leafConfigs.enumerated() {
-            guard let managed = createManagedSurface(app: app, baseConfig: leafConfig) else {
+            guard let managed = createManagedSurface(app: app, baseConfig: leafConfig, lease: lease) else {
                 NSLog("Remux failed to create managed surface for decoded leaf[%d]", index)
                 updateDebugSummary("create_surface_tree leaf surface creation failed")
                 return false
@@ -1301,7 +1399,16 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         return true
     }
 
-    func runtimeCloseSurface(id: UUID, processAlive: Bool) {
+    func runtimeCloseSurface(
+        id: UUID,
+        processAlive: Bool,
+        lease: GhosttyRuntimeCallbackLease
+    ) {
+        guard acceptsRuntimeCallback(lease) else { return }
+        closeRuntimeSurface(id: id, processAlive: processAlive)
+    }
+
+    private func closeRuntimeSurface(id: UUID, processAlive: Bool) {
 #if DEBUG
         NSLog(
             "Remux close_surface id=%@ processAlive=%@ managed=%d top=%d",
@@ -1324,6 +1431,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func runtimeSelectSurface(
+        app: ghostty_app_t?,
+        surface: ghostty_surface_t?,
+        lease: GhosttyRuntimeCallbackLease
+    ) {
+        guard acceptsRuntimeCallback(lease) else { return }
+        applyRuntimeSelectSurface(app: app, surface: surface)
+    }
+
+    private func applyRuntimeSelectSurface(
         app: ghostty_app_t?,
         surface: ghostty_surface_t?
     ) {
@@ -1351,6 +1467,16 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func runtimeAction(
+        app: ghostty_app_t?,
+        target: ghostty_target_s,
+        action: ghostty_action_s,
+        lease: GhosttyRuntimeCallbackLease
+    ) -> Bool {
+        guard acceptsRuntimeCallback(lease) else { return true }
+        return applyRuntimeAction(app: app, target: target, action: action)
+    }
+
+    private func applyRuntimeAction(
         app: ghostty_app_t?,
         target: ghostty_target_s,
         action: ghostty_action_s
@@ -1382,21 +1508,72 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func runtimeTmuxCommandFailure(
         app: ghostty_app_t?,
-        failure: ghostty_tmux_command_failure_s
+        failure: ghostty_tmux_command_failure_s,
+        lease: GhosttyRuntimeCallbackLease
     ) {
+        guard acceptsRuntimeCallback(lease) else { return }
         _ = app
         deliverTmuxCommandFailure(TmuxControlCommandFailure(native: failure))
     }
 
     func runtimeTmuxProtocolError(
         app: ghostty_app_t?,
-        error: ghostty_tmux_protocol_error_s
+        error: ghostty_tmux_protocol_error_s,
+        lease: GhosttyRuntimeCallbackLease
     ) {
+        guard acceptsRuntimeCallback(lease) else { return }
         _ = app
         deliverTmuxProtocolError(TmuxControlProtocolError(native: error))
     }
 
 #if DEBUG
+    var activeRuntimeCallbackLeaseForTesting: GhosttyRuntimeCallbackLease? {
+        runtimeCallbackLeaseStore.currentLease()
+    }
+
+    func runtimeCreateSurface(
+        app: ghostty_app_t?,
+        request: ghostty_runtime_create_surface_s
+    ) -> ghostty_surface_t? {
+        guard let lease = runtimeCallbackLeaseStore.currentLease() else { return nil }
+        return runtimeCreateSurface(app: app, request: request, lease: lease)
+    }
+
+    func runtimeCreateSurfaceTree(
+        app: ghostty_app_t?,
+        request: ghostty_runtime_create_surface_tree_s
+    ) -> Bool {
+        guard let lease = runtimeCallbackLeaseStore.currentLease() else { return false }
+        return runtimeCreateSurfaceTree(app: app, request: request, lease: lease)
+    }
+
+    func runtimeCloseSurface(id: UUID, processAlive: Bool) {
+        closeRuntimeSurface(id: id, processAlive: processAlive)
+    }
+
+    func runtimeAction(
+        app: ghostty_app_t?,
+        target: ghostty_target_s,
+        action: ghostty_action_s
+    ) -> Bool {
+        applyRuntimeAction(app: app, target: target, action: action)
+    }
+
+    func runtimeSelectSurface(
+        app: ghostty_app_t?,
+        surface: ghostty_surface_t?
+    ) {
+        applyRuntimeSelectSurface(app: app, surface: surface)
+    }
+
+    func runtimeTmuxProtocolError(
+        app: ghostty_app_t?,
+        error: ghostty_tmux_protocol_error_s
+    ) {
+        guard let lease = runtimeCallbackLeaseStore.currentLease() else { return }
+        runtimeTmuxProtocolError(app: app, error: error, lease: lease)
+    }
+
     func registerManagedSurfaceForTesting(_ managed: GhosttyManagedSurface) {
         let previousPresentation = currentPhonePresentationTarget()
         register([managed])
@@ -1584,12 +1761,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     private func createManagedSurface(
         app: ghostty_app_t?,
-        baseConfig: ghostty_surface_config_s
+        baseConfig: ghostty_surface_config_s,
+        lease: GhosttyRuntimeCallbackLease
     ) -> GhosttyManagedSurface? {
         let surfaceID = UUID()
         let lifecycle = GhosttyRuntimeSurfaceLifecycle(
             registry: self,
-            surfaceID: surfaceID
+            surfaceID: surfaceID,
+            callbackLease: lease
         )
 
         let managed = GhosttyRuntimeManagedSurfaceFactory(terminalSettings: terminalSettings)
@@ -2243,6 +2422,7 @@ final class GhosttyInteractiveReadinessTracker {
 final class GhosttyRuntimeSurfaceLifecycle: @unchecked Sendable {
     weak var registry: GhosttyRuntimeSurfaceRegistry?
     let surfaceID: UUID
+    let callbackLease: GhosttyRuntimeCallbackLease
     var surfaceHandle: ghostty_surface_t? {
         lock.withLock { boundSurfaceHandle }
     }
@@ -2252,10 +2432,16 @@ final class GhosttyRuntimeSurfaceLifecycle: @unchecked Sendable {
 
     init(
         registry: GhosttyRuntimeSurfaceRegistry,
-        surfaceID: UUID
+        surfaceID: UUID,
+        callbackLease: GhosttyRuntimeCallbackLease
     ) {
         self.registry = registry
         self.surfaceID = surfaceID
+        self.callbackLease = callbackLease
+    }
+
+    func acceptsRuntimeCallback() -> Bool {
+        registry?.acceptsRuntimeCallback(callbackLease) ?? false
     }
 
     func bind(surfaceHandle: ghostty_surface_t) {

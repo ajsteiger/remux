@@ -3791,10 +3791,13 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.isMouseCaptured(for: captured.id))
     }
 
-    func testRuntimeSurfaceLifecycleBindsSurfaceHandleForCallbacks() {
+    func testRuntimeSurfaceLifecycleBindsSurfaceHandleForCallbacks() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let lease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
         let lifecycle = GhosttyRuntimeSurfaceLifecycle(
-            registry: GhosttyRuntimeSurfaceRegistry(),
-            surfaceID: UUID()
+            registry: registry,
+            surfaceID: UUID(),
+            callbackLease: lease
         )
         let surfaceHandle = UnsafeMutableRawPointer(bitPattern: 0x1234)!
 
@@ -3803,6 +3806,69 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         lifecycle.bind(surfaceHandle: surfaceHandle)
 
         XCTAssertEqual(lifecycle.surfaceHandle, surfaceHandle)
+    }
+
+    func testStaleRuntimeSurfaceLifecycleCloseCannotRemoveCurrentSurface() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let staleLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let currentLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let managed = Self.managedSurface()
+        registry.registerManagedSurfaceForTesting(managed)
+
+        registry.runtimeCloseSurface(
+            id: managed.id,
+            processAlive: false,
+            lease: staleLease
+        )
+
+        XCTAssertNotNil(registry.managedSurface(for: managed.id))
+
+        registry.runtimeCloseSurface(
+            id: managed.id,
+            processAlive: false,
+            lease: currentLease
+        )
+
+        XCTAssertNil(registry.managedSurface(for: managed.id))
+    }
+
+    func testStaleRuntimeActionReturnsHandledWithoutMutatingSurface() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let staleLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let currentLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let managed = Self.managedSurface()
+        registry.registerManagedSurfaceForTesting(managed)
+
+        var target = ghostty_target_s()
+        target.tag = GHOSTTY_TARGET_SURFACE
+        target.target.surface = managed.controlSurface.handle
+
+        var scrollbar = ghostty_surface_scrollbar_s()
+        scrollbar.total = 42
+        scrollbar.offset = 4
+        scrollbar.len = 12
+
+        var action = ghostty_action_s()
+        action.tag = GHOSTTY_ACTION_SCROLLBAR
+        action.action.scrollbar = scrollbar
+
+        XCTAssertTrue(registry.runtimeAction(
+            app: nil,
+            target: target,
+            action: action,
+            lease: staleLease
+        ))
+        XCTAssertEqual(managed.scrollState, .empty)
+
+        XCTAssertTrue(registry.runtimeAction(
+            app: nil,
+            target: target,
+            action: action,
+            lease: currentLease
+        ))
+        XCTAssertEqual(managed.scrollState.total, 42)
+        XCTAssertEqual(managed.scrollState.offset, 4)
+        XCTAssertEqual(managed.scrollState.len, 12)
     }
 
     private func waitUntil(

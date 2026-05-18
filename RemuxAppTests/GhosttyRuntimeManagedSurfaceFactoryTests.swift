@@ -5,12 +5,14 @@ import XCTest
 
 @MainActor
 final class GhosttyRuntimeManagedSurfaceFactoryTests: XCTestCase {
-    func testNilAppReturnsNilWithoutBindingLifecycle() {
+    func testNilAppReturnsNilWithoutBindingLifecycle() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
+        let lease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
         let surfaceID = UUID()
         let lifecycle = GhosttyRuntimeSurfaceLifecycle(
             registry: registry,
-            surfaceID: surfaceID
+            surfaceID: surfaceID,
+            callbackLease: lease
         )
         let factory = GhosttyRuntimeManagedSurfaceFactory()
         let surface = factory.makeSurface(
@@ -28,6 +30,7 @@ final class GhosttyRuntimeManagedSurfaceFactoryTests: XCTestCase {
     func testSuccessfulCreationBindsLifecycleAndPreservesSurfaceInputs() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        let lease = try XCTUnwrap(registry.activeRuntimeCallbackLeaseForTesting)
         let marker = NSObject()
         let manualUserdata = Unmanaged.passUnretained(marker).toOpaque()
         var config = Self.runtimeSurfaceConfig(manualUserdata: manualUserdata)
@@ -36,7 +39,8 @@ final class GhosttyRuntimeManagedSurfaceFactoryTests: XCTestCase {
         let surfaceID = UUID()
         let lifecycle = GhosttyRuntimeSurfaceLifecycle(
             registry: registry,
-            surfaceID: surfaceID
+            surfaceID: surfaceID,
+            callbackLease: lease
         )
         let factory = GhosttyRuntimeManagedSurfaceFactory()
         var displayUpdate: (surfaceID: UUID, size: CGSize, scale: CGFloat)?

@@ -326,6 +326,86 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         XCTAssertEqual(delivered, expected)
     }
 
+    func testResetDoesNotInvalidateRuntimeCallbackLeaseButTeardownDoes() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        let lease = try XCTUnwrap(registry.activeRuntimeCallbackLeaseForTesting)
+
+        registry.reset()
+
+        XCTAssertTrue(registry.acceptsRuntimeCallback(lease))
+
+        registry.prepareForRuntimeTeardown()
+
+        XCTAssertFalse(registry.acceptsRuntimeCallback(lease))
+        _ = runtime
+    }
+
+    func testRuntimeDeinitInvalidatesOnlyItsOwnCallbackLease() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var firstRuntime: GhosttyKitRuntime? = try GhosttyKitRuntime(surfaceDelegate: registry)
+        let firstLease = try XCTUnwrap(registry.activeRuntimeCallbackLeaseForTesting)
+        let secondRuntime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        let secondLease = try XCTUnwrap(registry.activeRuntimeCallbackLeaseForTesting)
+
+        XCTAssertNotNil(firstRuntime)
+        firstRuntime = nil
+
+        XCTAssertFalse(registry.acceptsRuntimeCallback(firstLease))
+        XCTAssertTrue(registry.acceptsRuntimeCallback(secondLease))
+        _ = secondRuntime
+    }
+
+    func testStaleRuntimeProtocolErrorCallbackCannotMutateRegistry() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        var delivered: TmuxControlProtocolError?
+        registry.onTmuxProtocolError = { error in
+            delivered = error
+        }
+
+        registry.prepareForRuntimeTeardown()
+        runtime.deliverTmuxProtocolErrorForTesting(Self.malformedOutputProtocolError())
+
+        XCTAssertNil(registry.lastTmuxProtocolError)
+        XCTAssertNil(delivered)
+    }
+
+    func testStaleRuntimeCreateSurfaceTreeCallbackIsRejectedBeforeMutation() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let staleRuntime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        let staleLease = try XCTUnwrap(registry.activeRuntimeCallbackLeaseForTesting)
+        let currentRuntime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        XCTAssertFalse(registry.acceptsRuntimeCallback(staleLease))
+
+        var firstConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_TAB
+        )
+        var secondConfig = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_SPLIT
+        )
+        var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 2)
+
+        let created = try withRuntimeTreeRequest(
+            firstConfig: &firstConfig,
+            secondConfig: &secondConfig,
+            leafSurfaces: &leafSurfaces,
+            focusedLeafIndex: 0
+        ) { request in
+            registry.runtimeCreateSurfaceTree(
+                app: currentRuntime.appHandleForTesting,
+                request: request,
+                lease: staleLease
+            )
+        }
+
+        XCTAssertFalse(created)
+        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertNil(leafSurfaces[0])
+        XCTAssertNil(leafSurfaces[1])
+        _ = staleRuntime
+    }
+
     func testRuntimeCreateSurfaceTreeRejectsInvalidFocusedLeafIndexBeforeInstall() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
@@ -436,6 +516,17 @@ final class GhosttyKitRuntimeTests: XCTestCase {
 
     private static let runtimeTreeManualWrite: ghostty_surface_manual_write_cb = { _, _, _, _ in
         true
+    }
+
+    private static func malformedOutputProtocolError() -> ghostty_tmux_protocol_error_s {
+        ghostty_tmux_protocol_error_s(
+            surface: nil,
+            reason: GHOSTTY_TMUX_PROTOCOL_ERROR_REASON_MALFORMED_NOTIFICATION,
+            byte_valid: false,
+            byte: 0,
+            command_valid: true,
+            command: GHOSTTY_TMUX_PROTOCOL_ERROR_COMMAND_OUTPUT
+        )
     }
 
     private static func manualRuntimeTreeConfig(
