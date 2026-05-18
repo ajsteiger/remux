@@ -140,6 +140,51 @@ def latest_after_topology(predicate: Callable[[str], bool]) -> Callable[[FlowIns
     return latest_after_event(topology_installed, predicate)
 
 
+def process_output_end(instance: FlowInstance) -> FlowEvent | None:
+    return first_event(instance, prefix("tmux.signal.host.pump.processOutput.end."))
+
+
+def runtime_callback_entry(instance: FlowInstance) -> FlowEvent | None:
+    return after_event(
+        process_output_end,
+        any_of(
+            "runtime.callback.createSurfaceTree.entry",
+            "runtime.callback.createSurface.entry",
+        ),
+    )(instance)
+
+
+def runtime_callback_main_actor_schedule(instance: FlowInstance) -> FlowEvent | None:
+    return after_event(
+        runtime_callback_entry,
+        any_of(
+            "runtime.callback.createSurfaceTree.mainActor.schedule",
+            "runtime.callback.createSurface.mainActor.schedule",
+        ),
+    )(instance)
+
+
+def runtime_callback_main_actor_begin(instance: FlowInstance) -> FlowEvent | None:
+    return after_event(
+        runtime_callback_entry,
+        any_of(
+            "runtime.callback.createSurfaceTree.mainActor.begin",
+            "runtime.callback.createSurface.mainActor.begin",
+        ),
+    )(instance)
+
+
+def registry_callback_begin(instance: FlowInstance) -> FlowEvent | None:
+    anchor = runtime_callback_entry(instance) or process_output_end(instance)
+    if anchor is None:
+        return None
+    return first_event_after(
+        instance,
+        anchor,
+        any_of("registry.createSurfaceTree.begin", "registry.createSurface.begin"),
+    )
+
+
 model_revision_published = after_topology(exact("model.surfaceRegistryRevision.published"))
 update_ui_view_begin = after_topology(exact("ui.updateUIView.begin"))
 tree_update_begin = after_topology(exact("ui.tree.update.begin"))
@@ -185,22 +230,46 @@ SEGMENTS = [
     Segment(
         "tmux_response->processOutput_end",
         lambda flow: first_event(flow, prefix("tmux.response.")),
-        lambda flow: first_event(flow, prefix("tmux.signal.host.pump.processOutput.end.")),
+        process_output_end,
+    ),
+    Segment(
+        "processOutput_end->runtime_callback_entry",
+        process_output_end,
+        runtime_callback_entry,
+    ),
+    Segment(
+        "runtime_callback_entry->mainActor_schedule",
+        runtime_callback_entry,
+        runtime_callback_main_actor_schedule,
+    ),
+    Segment(
+        "mainActor_schedule->mainActor_begin",
+        runtime_callback_main_actor_schedule,
+        runtime_callback_main_actor_begin,
+    ),
+    Segment(
+        "runtime_callback_entry->mainActor_begin",
+        runtime_callback_entry,
+        runtime_callback_main_actor_begin,
+    ),
+    Segment(
+        "mainActor_begin->registry_callback_begin",
+        runtime_callback_main_actor_begin,
+        registry_callback_begin,
+    ),
+    Segment(
+        "runtime_callback_entry->registry_callback_begin",
+        runtime_callback_entry,
+        registry_callback_begin,
     ),
     Segment(
         "processOutput_end->registry_callback_begin",
-        lambda flow: first_event(flow, prefix("tmux.signal.host.pump.processOutput.end.")),
-        lambda flow: first_event(
-            flow,
-            any_of("registry.createSurfaceTree.begin", "registry.createSurface.begin"),
-        ),
+        process_output_end,
+        registry_callback_begin,
     ),
     Segment(
         "registry_callback_begin->topology_installed",
-        lambda flow: first_event(
-            flow,
-            any_of("registry.createSurfaceTree.begin", "registry.createSurface.begin"),
-        ),
+        registry_callback_begin,
         lambda flow: first_event(flow, exact("registry.topology.installed")),
     ),
     Segment(
@@ -445,7 +514,13 @@ Remux flow t=4000000 flow=tmux.newWindow event=tmux.signal.host.pump.receive.win
 Remux flow t=5000000 flow=tmux.newWindow event=tmux.signal.sequencer.enqueue.window-add since_ms=4.000
 Remux flow t=7000000 flow=tmux.newWindow event=tmux.signal.sequencer.drain.window-add since_ms=6.000
 Remux flow t=8000000 flow=tmux.newWindow event=tmux.response.window-add since_ms=7.000
+Remux flow t=8300000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.entry since_ms=7.300
+Remux flow t=8400000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.begin since_ms=7.400
+Remux flow t=8450000 flow=tmux.newWindow event=registry.createSurfaceTree.begin since_ms=7.450
 Remux flow t=8500000 flow=tmux.newWindow event=tmux.signal.host.pump.processOutput.end.window-add since_ms=7.500
+Remux flow t=8600000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.entry since_ms=7.600
+Remux flow t=8700000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.schedule since_ms=7.700
+Remux flow t=8900000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.begin since_ms=7.900
 Remux flow t=9000000 flow=tmux.newWindow event=registry.createSurfaceTree.begin since_ms=8.000
 Remux flow t=12000000 flow=tmux.newWindow event=registry.topology.installed since_ms=11.000
 Remux flow t=12100000 flow=tmux.newWindow event=model.surfaceRegistryRevision.published since_ms=11.100
@@ -469,6 +544,8 @@ Remux flow t=24000000 flow=tmux.splitPane event=tmux.signal.sequencer.enqueue.la
 Remux flow t=25000000 flow=tmux.splitPane event=tmux.signal.sequencer.drain.layout-change since_ms=5.000
 Remux flow t=26000000 flow=tmux.splitPane event=tmux.response.layout-change since_ms=6.000
 Remux flow t=26500000 flow=tmux.splitPane event=tmux.signal.host.pump.processOutput.end.layout-change since_ms=6.500
+Remux flow t=26600000 flow=tmux.splitPane event=runtime.callback.createSurface.entry since_ms=6.600
+Remux flow t=26700000 flow=tmux.splitPane event=runtime.callback.createSurface.mainActor.begin since_ms=6.700
 Remux flow t=27000000 flow=tmux.splitPane event=registry.createSurface.begin since_ms=7.000
 Remux flow t=28000000 flow=tmux.splitPane event=registry.topology.installed since_ms=8.000
 Remux flow t=29000000 flow=tmux.splitPane event=registry.runtimePresentation.ready since_ms=9.000
@@ -495,6 +572,11 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     output = report(instances)
     assert "distinct_action_flows=2" in output
     assert "send_end->ssh_channel_read: n=1 p50_ms=1.000" in output
+    assert "processOutput_end->runtime_callback_entry: n=1 p50_ms=0.100" in output
+    assert "mainActor_schedule->mainActor_begin: n=1 p50_ms=0.200" in output
+    assert "runtime_callback_entry->registry_callback_begin: n=1 p50_ms=0.400" in output
+    assert "mainActor_begin->registry_callback_begin: n=1 p50_ms=0.100" in output
+    assert "processOutput_end->registry_callback_begin: n=1 p50_ms=0.500" in output
     assert "topology_installed->model_revision_published: n=1 p50_ms=0.100" in output
     assert "managed_update_display_applied->display_rendered: n=1 p50_ms=0.300" in output
     assert "record_presentation_begin->view_presented: n=1 p50_ms=0.800" in output

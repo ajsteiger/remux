@@ -394,6 +394,42 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         surfaceDelegate?.runtimeCallbackLeaseDidEnd(callbackLease)
     }
 
+    private static func traceTopologyCallback(
+        _ event: String,
+        fields: @autoclosure () -> [String: String] = [:]
+    ) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(event: event, fields: fields())
+    }
+
+    private static func callbackThreadField() -> String {
+        Thread.isMainThread ? "main" : "background"
+    }
+
+    private static func createSurfaceTraceFields(
+        request: ghostty_runtime_create_surface_s,
+        route: String
+    ) -> [String: String] {
+        [
+            "context": request.config.map { String(describing: $0.pointee.context) } ?? "nil",
+            "route": route,
+            "thread": callbackThreadField(),
+        ]
+    }
+
+    private static func createSurfaceTreeTraceFields(
+        request: ghostty_runtime_create_surface_tree_s,
+        route: String
+    ) -> [String: String] {
+        [
+            "focusedIndex": "\(request.focused_leaf_index)",
+            "focusedValid": "\(request.focused_leaf_index_valid)",
+            "leaves": "\(request.leaf_surfaces_len)",
+            "nodes": "\(request.nodes_len)",
+            "route": route,
+            "thread": callbackThreadField(),
+        ]
+    }
+
     static var wakeupCallback: ghostty_runtime_wakeup_cb {
         { userdata in
             GhosttyKitRuntimeCallbacks.wakeup(userdata)
@@ -662,6 +698,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.createSurface route=main")
+            traceTopologyCallback(
+                "runtime.callback.createSurface.entry",
+                fields: createSurfaceTraceFields(request: requestBox.value, route: "direct")
+            )
+            traceTopologyCallback(
+                "runtime.callback.createSurface.mainActor.begin",
+                fields: createSurfaceTraceFields(request: requestBox.value, route: "direct")
+            )
             return MainActor.assumeIsolated {
                 UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
                     app: appBox.value,
@@ -670,9 +714,21 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                 ))
             }.value
         } else {
+            traceTopologyCallback(
+                "runtime.callback.createSurface.entry",
+                fields: createSurfaceTraceFields(request: requestBox.value, route: "sync")
+            )
+            traceTopologyCallback(
+                "runtime.callback.createSurface.mainActor.schedule",
+                fields: createSurfaceTraceFields(request: requestBox.value, route: "sync")
+            )
             return GhosttyRuntimeTrace.perfMeasure("runtime.createSurface route=sync") {
-                DispatchQueue.main.sync {
-                    MainActor.assumeIsolated {
+                let result: UnsafeSendable<ghostty_surface_t?> = DispatchQueue.main.sync {
+                    traceTopologyCallback(
+                        "runtime.callback.createSurface.mainActor.begin",
+                        fields: createSurfaceTraceFields(request: requestBox.value, route: "sync")
+                    )
+                    return MainActor.assumeIsolated {
                         UnsafeSendable(callbacks.surfaceDelegate?.runtimeCreateSurface(
                             app: appBox.value,
                             request: requestBox.value,
@@ -680,6 +736,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                         ))
                     }
                 }
+                return result
             }.value
         }
     }
@@ -699,6 +756,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.createSurfaceTree route=main")
+            traceTopologyCallback(
+                "runtime.callback.createSurfaceTree.entry",
+                fields: createSurfaceTreeTraceFields(request: requestBox.value, route: "direct")
+            )
+            traceTopologyCallback(
+                "runtime.callback.createSurfaceTree.mainActor.begin",
+                fields: createSurfaceTreeTraceFields(request: requestBox.value, route: "direct")
+            )
             return MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
                     app: appBox.value,
@@ -707,9 +772,21 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                 ) ?? false
             }
         } else {
+            traceTopologyCallback(
+                "runtime.callback.createSurfaceTree.entry",
+                fields: createSurfaceTreeTraceFields(request: requestBox.value, route: "sync")
+            )
+            traceTopologyCallback(
+                "runtime.callback.createSurfaceTree.mainActor.schedule",
+                fields: createSurfaceTreeTraceFields(request: requestBox.value, route: "sync")
+            )
             return GhosttyRuntimeTrace.perfMeasure("runtime.createSurfaceTree route=sync") {
-                DispatchQueue.main.sync {
-                    MainActor.assumeIsolated {
+                let result: Bool = DispatchQueue.main.sync {
+                    traceTopologyCallback(
+                        "runtime.callback.createSurfaceTree.mainActor.begin",
+                        fields: createSurfaceTreeTraceFields(request: requestBox.value, route: "sync")
+                    )
+                    return MainActor.assumeIsolated {
                         callbacks.surfaceDelegate?.runtimeCreateSurfaceTree(
                             app: appBox.value,
                             request: requestBox.value,
@@ -717,6 +794,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                         ) ?? false
                     }
                 }
+                return result
             }
         }
     }
