@@ -43,9 +43,12 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.effectiveSize(liveSize: partial), keyboard)
 
         XCTAssertFalse(coordinator.observeLiveSize(full))
-        coordinator.completeTopologyRefocus(
-            liveSize: full,
-            releasePolicy: .preserveCurrentEffective
+        XCTAssertEqual(
+            coordinator.completeTopologyRefocus(
+                liveSize: full,
+                releasePolicy: .preserveCurrentEffective
+            ),
+            .release(previousEffectiveSize: keyboard)
         )
 
         XCTAssertFalse(coordinator.isFrozen)
@@ -140,6 +143,75 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
             coordinator.setSheetPresented(true, liveSize: full),
             .hold(effectiveSize: keyboard)
         )
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
+    }
+
+    func testTopologyRefocusRequestReportsEffectiveHold() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let keyboard = CGSize(width: 402, height: 452)
+        let full = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+
+        XCTAssertEqual(
+            coordinator.requestTopologyRefocus(liveSize: full),
+            .hold(effectiveSize: keyboard)
+        )
+        XCTAssertTrue(coordinator.isTopologyRefocusActive)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
+    }
+
+    func testTopologyRefocusCancelReportsReleaseAndAdoptsLatestLiveViewport() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let keyboard = CGSize(width: 402, height: 452)
+        let full = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(
+            coordinator.requestTopologyRefocus(liveSize: keyboard),
+            .hold(effectiveSize: keyboard)
+        )
+        XCTAssertFalse(coordinator.observeLiveSize(full))
+
+        XCTAssertEqual(
+            coordinator.cancelTopologyRefocus(liveSize: full),
+            .release(previousEffectiveSize: keyboard)
+        )
+        XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
+    }
+
+    func testInactiveTopologyRefocusCancelReportsNoEffect() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let full = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(coordinator.observeLiveSize(full))
+
+        XCTAssertEqual(coordinator.cancelTopologyRefocus(liveSize: full), .inactive)
+        XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
+    }
+
+    func testTopologyRefocusCompleteReportsReleaseAndPreservesCurrentEffectiveViewport() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let keyboard = CGSize(width: 402, height: 452)
+        let full = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(
+            coordinator.requestTopologyRefocus(liveSize: keyboard),
+            .hold(effectiveSize: keyboard)
+        )
+        XCTAssertFalse(coordinator.observeLiveSize(full))
+
+        XCTAssertEqual(
+            coordinator.completeTopologyRefocus(
+                liveSize: full,
+                releasePolicy: .preserveCurrentEffective
+            ),
+            .release(previousEffectiveSize: keyboard)
+        )
+        XCTAssertFalse(coordinator.isFrozen)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
     }
 }

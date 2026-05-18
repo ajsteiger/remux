@@ -459,7 +459,7 @@ struct GhosttySurfaceScreen: View {
     ) {
         switch effect {
         case .requestRefocus:
-            terminalViewportCoordinator.requestTopologyRefocus(
+            _ = terminalViewportCoordinator.requestTopologyRefocus(
                 liveSize: terminalViewportCoordinator.latestLiveSize
             )
             let didStartKeyboardTransition = beginKeyboardViewportTransition(
@@ -510,14 +510,10 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func cancelTopologyInputRefocus(ownsKeyboardTransition: Bool) {
-        guard terminalViewportCoordinator.isTopologyRefocusActive else { return }
-
-        let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(
+        let effect = terminalViewportCoordinator.cancelTopologyRefocus(
             liveSize: terminalViewportCoordinator.latestLiveSize
         )
-        terminalViewportCoordinator.cancelTopologyRefocus(
-            liveSize: terminalViewportCoordinator.latestLiveSize
-        )
+        guard case .release(let previousEffectiveSize) = effect else { return }
         if ownsKeyboardTransition, terminalViewportCoordinator.isKeyboardTransitionActive {
             completeKeyboardViewportTransition()
         } else {
@@ -557,13 +553,11 @@ struct GhosttySurfaceScreen: View {
             fields: terminalInputTraceFields()
         )
         inputCoordinator.handleSelectionChange(isInputAvailable: isTerminalInputAvailable)
-        let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(
-            liveSize: terminalViewportCoordinator.latestLiveSize
-        )
-        terminalViewportCoordinator.completeTopologyRefocus(
+        let effect = terminalViewportCoordinator.completeTopologyRefocus(
             liveSize: terminalViewportCoordinator.latestLiveSize,
             releasePolicy: .preserveCurrentEffective
         )
+        guard case .release(let previousEffectiveSize) = effect else { return }
         traceViewportFreezeRelease(
             previousEffectiveSize: previousEffectiveSize,
             releaseKind: "topologyRefocus"

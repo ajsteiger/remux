@@ -26,6 +26,12 @@ enum GhosttyTerminalViewportSheetHoldEffect: Equatable {
     case release(previousEffectiveSize: CGSize)
 }
 
+enum GhosttyTerminalViewportTopologyRefocusEffect: Equatable {
+    case hold(effectiveSize: CGSize)
+    case release(previousEffectiveSize: CGSize)
+    case inactive
+}
+
 struct GhosttyTerminalViewportCoordinator: Equatable {
     enum ReleasePolicy: Equatable {
         case adoptLatestLive
@@ -139,20 +145,29 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
         removeHold(.keyboardTransition, liveSize: liveSize, releasePolicy: .adoptLatestLive)
     }
 
-    mutating func requestTopologyRefocus(liveSize: CGSize) {
+    @discardableResult
+    mutating func requestTopologyRefocus(liveSize: CGSize) -> GhosttyTerminalViewportTopologyRefocusEffect {
         holdReasons.insert(.topologyRefocus)
         freeze(using: liveSize)
+        return .hold(effectiveSize: effectiveSize(liveSize: liveSize))
     }
 
+    @discardableResult
     mutating func completeTopologyRefocus(
         liveSize: CGSize,
         releasePolicy: ReleasePolicy
-    ) {
+    ) -> GhosttyTerminalViewportTopologyRefocusEffect {
+        let previousEffectiveSize = effectiveSize(liveSize: liveSize)
         removeHold(.topologyRefocus, liveSize: liveSize, releasePolicy: releasePolicy)
+        return .release(previousEffectiveSize: previousEffectiveSize)
     }
 
-    mutating func cancelTopologyRefocus(liveSize: CGSize) {
+    @discardableResult
+    mutating func cancelTopologyRefocus(liveSize: CGSize) -> GhosttyTerminalViewportTopologyRefocusEffect {
+        guard isTopologyRefocusActive else { return .inactive }
+        let previousEffectiveSize = effectiveSize(liveSize: liveSize)
         removeHold(.topologyRefocus, liveSize: liveSize, releasePolicy: .adoptLatestLive)
+        return .release(previousEffectiveSize: previousEffectiveSize)
     }
 
     static func normalized(_ size: CGSize) -> CGSize {
