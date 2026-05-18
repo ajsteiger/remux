@@ -205,15 +205,56 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     }
 
     private func updatePresentationOverlay(pendingSurfaceID: UUID?) {
+        let shouldTrace = pendingSurfaceID != nil ||
+            presentationOverlayView != nil ||
+            presentationOverlayPendingSurfaceID != nil
+        if shouldTrace {
+            tracePresentationOverlay(
+                "ui.presentationOverlay.update.begin",
+                pendingSurfaceID: pendingSurfaceID
+            )
+        }
+        defer {
+            if shouldTrace {
+                tracePresentationOverlay(
+                    "ui.presentationOverlay.update.end",
+                    pendingSurfaceID: pendingSurfaceID
+                )
+            }
+        }
         guard let pendingSurfaceID else {
-            clearPresentationOverlay()
+            clearPresentationOverlay(reason: "noPending")
             return
         }
-        guard presentationOverlayPendingSurfaceID != pendingSurfaceID else { return }
+        guard presentationOverlayPendingSurfaceID != pendingSurfaceID else {
+            tracePresentationOverlay(
+                "ui.presentationOverlay.skip.samePending",
+                pendingSurfaceID: pendingSurfaceID
+            )
+            return
+        }
 
-        clearPresentationOverlay()
-        guard bounds.width > 1, bounds.height > 1 else { return }
-        guard let snapshot = snapshotView(afterScreenUpdates: false) else { return }
+        clearPresentationOverlay(reason: "replace")
+        guard bounds.width > 1, bounds.height > 1 else {
+            tracePresentationOverlay(
+                "ui.presentationOverlay.skip.emptyBounds",
+                pendingSurfaceID: pendingSurfaceID
+            )
+            return
+        }
+        tracePresentationOverlay(
+            "ui.presentationOverlay.snapshot.begin",
+            pendingSurfaceID: pendingSurfaceID
+        )
+        let snapshot = snapshotView(afterScreenUpdates: false)
+        tracePresentationOverlay(
+            "ui.presentationOverlay.snapshot.end",
+            pendingSurfaceID: pendingSurfaceID,
+            fields: [
+                "result": snapshot == nil ? "nil" : "view",
+            ]
+        )
+        guard let snapshot else { return }
 
         snapshot.frame = bounds
         snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -221,12 +262,36 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         addSubview(snapshot)
         presentationOverlayView = snapshot
         presentationOverlayPendingSurfaceID = pendingSurfaceID
+        tracePresentationOverlay(
+            "ui.presentationOverlay.addSnapshot.end",
+            pendingSurfaceID: pendingSurfaceID
+        )
     }
 
-    private func clearPresentationOverlay() {
+    private func clearPresentationOverlay(reason: String) {
+        let shouldTrace = presentationOverlayView != nil ||
+            presentationOverlayPendingSurfaceID != nil
+        if shouldTrace {
+            tracePresentationOverlay(
+                "ui.presentationOverlay.clear.begin",
+                pendingSurfaceID: presentationOverlayPendingSurfaceID,
+                fields: [
+                    "reason": reason,
+                ]
+            )
+        }
         presentationOverlayView?.removeFromSuperview()
         presentationOverlayView = nil
         presentationOverlayPendingSurfaceID = nil
+        if shouldTrace {
+            tracePresentationOverlay(
+                "ui.presentationOverlay.clear.end",
+                pendingSurfaceID: nil,
+                fields: [
+                    "reason": reason,
+                ]
+            )
+        }
     }
 
     private func layoutPresentationOverlay() {
@@ -759,6 +824,28 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             "topLevel": ghosttyDiagnosticShortID(projection.topLevel?.id),
             "visibleLeaves": "\(projection.topLevel?.phonePresentedLeafIDs.count ?? 0)",
         ]
+    }
+
+    private func tracePresentationOverlay(
+        _ event: String,
+        pendingSurfaceID: UUID?,
+        fields: @autoclosure () -> [String: String] = [:]
+    ) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: event,
+            fields: {
+                var eventFields = [
+                    "bounds": diagnosticRect(bounds),
+                    "hasOverlay": "\(presentationOverlayView != nil)",
+                    "incomingPending": ghosttyDiagnosticShortID(pendingSurfaceID),
+                    "overlayPending": ghosttyDiagnosticShortID(presentationOverlayPendingSurfaceID),
+                ]
+                for (key, value) in fields() {
+                    eventFields[key] = value
+                }
+                return eventFields
+            }()
+        )
     }
 
     func editMenuInteraction(

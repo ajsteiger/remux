@@ -292,6 +292,97 @@ view_presented = after_topology(exact("ui.viewPresentation.ready"))
 runtime_presentation_ready = after_topology(exact("registry.runtimePresentation.ready"))
 
 
+def overlay_update_begin(instance: FlowInstance) -> FlowEvent | None:
+    start = tree_update_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.update.begin"),
+    )
+
+
+def overlay_update_end(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_update_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.update.end"),
+    )
+
+
+def overlay_clear_begin(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_update_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.clear.begin"),
+    )
+
+
+def overlay_clear_end(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_clear_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.clear.end"),
+    )
+
+
+def overlay_snapshot_begin(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_update_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.snapshot.begin"),
+    )
+
+
+def overlay_snapshot_end(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_snapshot_begin(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.snapshot.end"),
+    )
+
+
+def overlay_add_snapshot_end(instance: FlowInstance) -> FlowEvent | None:
+    start = overlay_snapshot_end(instance)
+    end = tree_sync_begin(instance)
+    if start is None or end is None:
+        return None
+    return first_event_between(
+        instance,
+        start,
+        end,
+        exact("ui.presentationOverlay.addSnapshot.end"),
+    )
+
+
 SEGMENTS = [
     Segment(
         "send_end->ssh_channel_read",
@@ -427,6 +518,46 @@ SEGMENTS = [
         "tree_update_begin->tree_sync_begin",
         tree_update_begin,
         after_event(tree_update_begin, exact("ui.tree.sync.begin")),
+    ),
+    Segment(
+        "tree_update_begin->overlay_update_begin",
+        tree_update_begin,
+        overlay_update_begin,
+    ),
+    Segment(
+        "overlay_update_begin->snapshot_begin",
+        overlay_update_begin,
+        overlay_snapshot_begin,
+    ),
+    Segment(
+        "snapshot_begin->snapshot_end",
+        overlay_snapshot_begin,
+        overlay_snapshot_end,
+    ),
+    Segment(
+        "snapshot_end->addSnapshot_end",
+        overlay_snapshot_end,
+        overlay_add_snapshot_end,
+    ),
+    Segment(
+        "addSnapshot_end->tree_sync_begin",
+        overlay_add_snapshot_end,
+        tree_sync_begin,
+    ),
+    Segment(
+        "overlay_update_begin->overlay_update_end",
+        overlay_update_begin,
+        overlay_update_end,
+    ),
+    Segment(
+        "overlay_update_end->tree_sync_begin",
+        overlay_update_end,
+        tree_sync_begin,
+    ),
+    Segment(
+        "overlay_clear_begin->overlay_clear_end",
+        overlay_clear_begin,
+        overlay_clear_end,
     ),
     Segment(
         "tree_sync_begin->tree_sync_end",
@@ -662,7 +793,13 @@ Remux flow t=12000000 flow=tmux.newWindow event=registry.topology.installed sinc
 Remux flow t=12100000 flow=tmux.newWindow event=model.surfaceRegistryRevision.published since_ms=11.100
 Remux flow t=12200000 flow=tmux.newWindow event=ui.updateUIView.begin since_ms=11.200
 Remux flow t=12300000 flow=tmux.newWindow event=ui.tree.update.begin since_ms=11.300
-Remux flow t=12400000 flow=tmux.newWindow event=ui.tree.sync.end since_ms=11.400
+Remux flow t=12310000 flow=tmux.newWindow event=ui.presentationOverlay.update.begin since_ms=11.310
+Remux flow t=12320000 flow=tmux.newWindow event=ui.presentationOverlay.snapshot.begin since_ms=11.320
+Remux flow t=12370000 flow=tmux.newWindow event=ui.presentationOverlay.snapshot.end since_ms=11.370
+Remux flow t=12380000 flow=tmux.newWindow event=ui.presentationOverlay.addSnapshot.end since_ms=11.380
+Remux flow t=12390000 flow=tmux.newWindow event=ui.presentationOverlay.update.end since_ms=11.390
+Remux flow t=12400000 flow=tmux.newWindow event=ui.tree.sync.begin since_ms=11.400
+Remux flow t=12410000 flow=tmux.newWindow event=ui.tree.sync.end since_ms=11.410
 Remux flow t=12500000 flow=tmux.newWindow event=ui.tree.layoutVisible.begin since_ms=11.500
 Remux flow t=12600000 flow=tmux.newWindow event=managed.updateDisplay.begin since_ms=11.600
 Remux flow t=12700000 flow=tmux.newWindow event=managed.updateDisplay.applied since_ms=11.700
@@ -738,6 +875,13 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     assert "mainActor_begin->registry_callback_begin: n=1 p50_ms=0.100" in output
     assert "processOutput_end->registry_callback_begin: n=1 p50_ms=0.800" in output
     assert "topology_installed->model_revision_published: n=1 p50_ms=0.100" in output
+    assert "tree_update_begin->overlay_update_begin: n=1 p50_ms=0.010" in output
+    assert "overlay_update_begin->snapshot_begin: n=1 p50_ms=0.010" in output
+    assert "snapshot_begin->snapshot_end: n=1 p50_ms=0.050" in output
+    assert "snapshot_end->addSnapshot_end: n=1 p50_ms=0.010" in output
+    assert "addSnapshot_end->tree_sync_begin: n=1 p50_ms=0.020" in output
+    assert "overlay_update_begin->overlay_update_end: n=1 p50_ms=0.080" in output
+    assert "overlay_update_end->tree_sync_begin: n=1 p50_ms=0.010" in output
     assert "managed_update_display_applied->display_rendered: n=1 p50_ms=0.300" in output
     assert "record_presentation_begin->view_presented: n=1 p50_ms=0.800" in output
     assert "topology_installed->interactive_ready: n=1 p50_ms=5.000" in output
