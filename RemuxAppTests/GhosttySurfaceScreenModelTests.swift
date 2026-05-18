@@ -697,6 +697,33 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.lastTmuxProtocolError)
     }
 
+    func testRegistryResetPreservesTmuxErrorCallbacks() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let failure = TmuxControlCommandFailure(
+            kind: .copyMode,
+            reason: .tmuxError("copy-mode failed"),
+            message: "copy-mode failed"
+        )
+        let error = TmuxControlProtocolError(reason: .idleNonPercent, byte: 88)
+        var deliveredFailure: TmuxControlCommandFailure?
+        var deliveredError: TmuxControlProtocolError?
+
+        registry.onTmuxCommandFailure = { failure in
+            deliveredFailure = failure
+        }
+        registry.onTmuxProtocolError = { error in
+            deliveredError = error
+        }
+
+        registry.reset()
+        registry.deliverTmuxCommandFailure(failure)
+        registry.deliverTmuxProtocolError(error)
+
+        XCTAssertEqual(deliveredFailure, failure)
+        XCTAssertEqual(deliveredError, error)
+        XCTAssertEqual(registry.lastTmuxProtocolError, error)
+    }
+
     func testRuntimeSelectSurfaceFocusesManagedSurfaceForHandle() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x1001)!)

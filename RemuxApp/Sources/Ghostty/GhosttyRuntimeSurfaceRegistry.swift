@@ -129,14 +129,23 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
     @Published private(set) var selectedTopLevelID: UUID?
     @Published private(set) var debugSummary = "runtime callbacks: none"
-    private(set) var lastTmuxProtocolError: TmuxControlProtocolError?
+    var lastTmuxProtocolError: TmuxControlProtocolError? {
+        tmuxErrorChannel.lastProtocolError
+    }
 
     var onChange: (() -> Void)?
-    var onTmuxCommandFailure: ((TmuxControlCommandFailure) -> Void)?
-    var onTmuxProtocolError: ((TmuxControlProtocolError) -> Void)?
+    var onTmuxCommandFailure: ((TmuxControlCommandFailure) -> Void)? {
+        get { tmuxErrorChannel.onCommandFailure }
+        set { tmuxErrorChannel.onCommandFailure = newValue }
+    }
+    var onTmuxProtocolError: ((TmuxControlProtocolError) -> Void)? {
+        get { tmuxErrorChannel.onProtocolError }
+        set { tmuxErrorChannel.onProtocolError = newValue }
+    }
     var terminalSettings: TerminalSettings = .default
 
     private var managedSurfaceStore = GhosttyRuntimeManagedSurfaceStore()
+    private let tmuxErrorChannel = GhosttyRuntimeTmuxErrorChannel()
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
     private var interactiveReadinessTracker = GhosttyInteractiveReadinessTracker()
@@ -208,7 +217,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         selectedTopLevelID = nil
         debugSummary = "runtime callbacks: none"
         managedSurfaceStore.clearAfterExternalRelease()
-        lastTmuxProtocolError = nil
+        tmuxErrorChannel.reset()
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
         interactiveReadinessTracker.reset()
@@ -232,15 +241,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.diagnostics(
             "registry.tmuxCommandFailure kind=\(failure.kind) reason=\(String(describing: failure.reason)) message=\(failure.message)"
         )
-        onTmuxCommandFailure?(failure)
+        tmuxErrorChannel.deliverCommandFailure(failure)
     }
 
     func deliverTmuxProtocolError(_ error: TmuxControlProtocolError) {
         GhosttyRuntimeTrace.diagnostics(
             "registry.tmuxProtocolError reason=\(error.reason) byte=\(String(describing: error.byte)) command=\(String(describing: error.command))"
         )
-        lastTmuxProtocolError = error
-        onTmuxProtocolError?(error)
+        tmuxErrorChannel.deliverProtocolError(error)
     }
 
     func prepareForRuntimeTeardown() {
