@@ -2329,6 +2329,31 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
+    func testTerminalReadinessSnapshotReportsIdleTopologyFacts() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let managed = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(
+            model.terminalReadinessSnapshot,
+            TerminalReadinessProjector.snapshot(
+                phase: .idle,
+                transportWritable: false,
+                topLevelCount: 1,
+                selectedActiveLeafID: managed.id
+            )
+        )
+        XCTAssertEqual(
+            TerminalReadinessProjector.isInputAvailable(model.terminalReadinessSnapshot),
+            model.terminalInteractionProjection.isInputAvailable
+        )
+        XCTAssertFalse(TerminalReadinessProjector.canSubmitInput(model.terminalReadinessSnapshot))
+    }
+
     func testTerminalInteractionProjectionReportsSelectedWindowAndPaneIndexes() {
         let model = Self.screenModel(
             target: Self.target(),
@@ -2515,6 +2540,52 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 paneCount: 0,
                 isWaitingForPanes: true
             )
+        )
+    }
+
+    func testTerminalReadinessSnapshotTracksRunningInputAndTransportGates() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        XCTAssertEqual(model.terminalReadinessSnapshot.phase, .running)
+        XCTAssertTrue(model.terminalReadinessSnapshot.transportWritable)
+        XCTAssertEqual(model.terminalReadinessSnapshot.topLevelCount, 0)
+        XCTAssertNil(model.terminalReadinessSnapshot.selectedActiveLeafID)
+        XCTAssertEqual(
+            TerminalReadinessProjector.isWaitingForPanes(model.terminalReadinessSnapshot),
+            model.terminalInteractionProjection.isWaitingForPanes
+        )
+        XCTAssertFalse(TerminalReadinessProjector.canSubmitInput(model.terminalReadinessSnapshot))
+
+        let managed = Self.managedSurface()
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        let didSelectSurface = await waitUntil(timeout: 2) {
+            model.terminalReadinessSnapshot.selectedActiveLeafID == managed.id
+        }
+        XCTAssertTrue(didSelectSurface)
+        XCTAssertEqual(model.terminalReadinessSnapshot.topLevelCount, 1)
+        XCTAssertEqual(
+            TerminalReadinessProjector.isInputAvailable(model.terminalReadinessSnapshot),
+            model.terminalInteractionProjection.isInputAvailable
+        )
+        XCTAssertTrue(TerminalReadinessProjector.canSubmitInput(model.terminalReadinessSnapshot))
+        XCTAssertTrue(
+            TerminalReadinessProjector.shouldTraceTerminalReady(model.terminalReadinessSnapshot)
         )
     }
 

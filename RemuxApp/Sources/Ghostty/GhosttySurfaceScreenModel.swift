@@ -62,6 +62,15 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
     }
 
+    var terminalReadinessSnapshot: TerminalReadinessSnapshot {
+        TerminalReadinessProjector.snapshot(
+            phase: terminalRuntimePhase,
+            transportWritable: hostSessionSlot.isWriteAvailable,
+            topLevelCount: surfaceRegistry.topLevels.count,
+            selectedActiveLeafID: surfaceRegistry.selectedActiveLeafID
+        )
+    }
+
     typealias TransportFactory = GhosttyTerminalHostSessionFactory.TransportFactory
     typealias RuntimeFactory = GhosttyTerminalRuntimePrecreationController.RuntimeFactory
 
@@ -934,21 +943,22 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
     }
 
-    private var runtimeStateSnapshot: GhosttyTerminalRuntimeStateSnapshot {
-        let phase: GhosttyTerminalRuntimePhase
+    private var terminalRuntimePhase: GhosttyTerminalRuntimePhase {
         switch state {
         case .idle:
-            phase = .idle
+            .idle
         case .starting:
-            phase = .starting
+            .starting
         case .running:
-            phase = .running
+            .running
         case .failed(let message):
-            phase = .failed(message: message, reason: failureReason)
+            .failed(message: message, reason: failureReason)
         }
+    }
 
+    private var runtimeStateSnapshot: GhosttyTerminalRuntimeStateSnapshot {
         return GhosttyTerminalRuntimeStateSnapshot(
-            phase: phase,
+            phase: terminalRuntimePhase,
             hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
         )
     }

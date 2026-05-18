@@ -1,5 +1,122 @@
 import Foundation
 
+struct TerminalReadinessSnapshot: Equatable, Sendable {
+    let phase: GhosttyTerminalRuntimePhase
+    let transportWritable: Bool
+    let topLevelCount: Int
+    let selectedActiveLeafID: UUID?
+
+    init(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool,
+        topLevelCount: Int,
+        selectedActiveLeafID: UUID?
+    ) {
+        precondition(topLevelCount >= 0, "topLevelCount must be non-negative")
+        self.phase = phase
+        self.transportWritable = transportWritable
+        self.topLevelCount = topLevelCount
+        self.selectedActiveLeafID = selectedActiveLeafID
+    }
+
+    var hasFocusedSurface: Bool {
+        selectedActiveLeafID != nil
+    }
+}
+
+enum TerminalReadinessProjector {
+    static func snapshot(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool,
+        topLevelCount: Int,
+        selectedActiveLeafID: UUID?
+    ) -> TerminalReadinessSnapshot {
+        TerminalReadinessSnapshot(
+            phase: phase,
+            transportWritable: transportWritable,
+            topLevelCount: topLevelCount,
+            selectedActiveLeafID: selectedActiveLeafID
+        )
+    }
+
+    static func runtimeState(_ snapshot: TerminalReadinessSnapshot) -> TerminalRuntimeState {
+        runtimeState(
+            phase: snapshot.phase,
+            hasFocusedSurface: snapshot.hasFocusedSurface
+        )
+    }
+
+    static func runtimeState(
+        phase: GhosttyTerminalRuntimePhase,
+        hasFocusedSurface: Bool
+    ) -> TerminalRuntimeState {
+        if phase == .running, hasFocusedSurface {
+            return .connected
+        }
+
+        switch phase {
+        case .idle, .starting, .running:
+            return .connecting
+        case .failed(let message, let reason):
+            return .disconnected(
+                reason ?? TerminalDisconnectReason(
+                    kind: .unknown,
+                    message: message
+                )
+            )
+        }
+    }
+
+    static func isInputAvailable(_ snapshot: TerminalReadinessSnapshot) -> Bool {
+        isInputAvailable(
+            phase: snapshot.phase,
+            hasFocusedSurface: snapshot.hasFocusedSurface
+        )
+    }
+
+    static func isInputAvailable(
+        phase: GhosttyTerminalRuntimePhase,
+        hasFocusedSurface: Bool
+    ) -> Bool {
+        phase == .running && hasFocusedSurface
+    }
+
+    static func isTransportAvailableForInput(_ snapshot: TerminalReadinessSnapshot) -> Bool {
+        isTransportAvailableForInput(
+            phase: snapshot.phase,
+            transportWritable: snapshot.transportWritable
+        )
+    }
+
+    static func isTransportAvailableForInput(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool
+    ) -> Bool {
+        phase == .running && transportWritable
+    }
+
+    static func canSubmitInput(_ snapshot: TerminalReadinessSnapshot) -> Bool {
+        isInputAvailable(snapshot) && isTransportAvailableForInput(snapshot)
+    }
+
+    static func isWaitingForPanes(_ snapshot: TerminalReadinessSnapshot) -> Bool {
+        snapshot.phase == .running && snapshot.topLevelCount == 0
+    }
+
+    static func isTerminalStatusReady(
+        _ snapshot: TerminalReadinessSnapshot,
+        commandFailureMessage: String?
+    ) -> Bool {
+        snapshot.phase == .running
+            && snapshot.topLevelCount > 0
+            && commandFailureMessage == nil
+    }
+
+    static func shouldTraceTerminalReady(_ snapshot: TerminalReadinessSnapshot) -> Bool {
+        snapshot.phase == .running && snapshot.topLevelCount > 0
+    }
+}
+
 struct GhosttyTerminalInteractionProjection: Equatable, Sendable {
     let isInputAvailable: Bool
     let hasFocusedSurface: Bool

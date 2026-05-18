@@ -4,6 +4,150 @@ import XCTest
 
 @MainActor
 final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
+    func testReadinessProjectionMatchesRuntimeStateReporterSemantics() {
+        let reason = TerminalDisconnectReason(
+            kind: .transportIO,
+            message: "tmux transport ended: closed"
+        )
+        let cases: [(TerminalReadinessSnapshot, GhosttyTerminalRuntimeStateSnapshot)] = [
+            (
+                Self.readinessSnapshot(phase: .idle, focused: false),
+                GhosttyTerminalRuntimeStateSnapshot(phase: .idle, hasFocusedSurface: false)
+            ),
+            (
+                Self.readinessSnapshot(phase: .starting, focused: true),
+                GhosttyTerminalRuntimeStateSnapshot(phase: .starting, hasFocusedSurface: true)
+            ),
+            (
+                Self.readinessSnapshot(phase: .running, focused: false),
+                GhosttyTerminalRuntimeStateSnapshot(phase: .running, hasFocusedSurface: false)
+            ),
+            (
+                Self.readinessSnapshot(phase: .running, focused: true),
+                GhosttyTerminalRuntimeStateSnapshot(phase: .running, hasFocusedSurface: true)
+            ),
+            (
+                Self.readinessSnapshot(phase: .failed(message: "fallback", reason: reason), focused: false),
+                GhosttyTerminalRuntimeStateSnapshot(
+                    phase: .failed(message: "fallback", reason: reason),
+                    hasFocusedSurface: false
+                )
+            ),
+            (
+                Self.readinessSnapshot(phase: .failed(message: "runtime failed", reason: nil), focused: true),
+                GhosttyTerminalRuntimeStateSnapshot(
+                    phase: .failed(message: "runtime failed", reason: nil),
+                    hasFocusedSurface: true
+                )
+            ),
+        ]
+
+        for (readiness, runtimeSnapshot) in cases {
+            XCTAssertEqual(
+                TerminalReadinessProjector.runtimeState(readiness),
+                GhosttyTerminalRuntimeStateReporter.runtimeState(from: runtimeSnapshot)
+            )
+        }
+    }
+
+    func testReadinessProjectionSeparatesInteractionAndTransportInputGates() {
+        XCTAssertFalse(
+            TerminalReadinessProjector.isInputAvailable(
+                Self.readinessSnapshot(phase: .idle, transportWritable: true, focused: true)
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.isInputAvailable(
+                Self.readinessSnapshot(phase: .running, transportWritable: true, focused: false)
+            )
+        )
+        XCTAssertTrue(
+            TerminalReadinessProjector.isInputAvailable(
+                Self.readinessSnapshot(phase: .running, transportWritable: false, focused: true)
+            )
+        )
+
+        XCTAssertFalse(
+            TerminalReadinessProjector.isTransportAvailableForInput(
+                Self.readinessSnapshot(phase: .starting, transportWritable: true, focused: true)
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.isTransportAvailableForInput(
+                Self.readinessSnapshot(phase: .running, transportWritable: false, focused: true)
+            )
+        )
+        XCTAssertTrue(
+            TerminalReadinessProjector.isTransportAvailableForInput(
+                Self.readinessSnapshot(phase: .running, transportWritable: true, focused: false)
+            )
+        )
+
+        XCTAssertFalse(
+            TerminalReadinessProjector.canSubmitInput(
+                Self.readinessSnapshot(phase: .running, transportWritable: true, focused: false)
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.canSubmitInput(
+                Self.readinessSnapshot(phase: .running, transportWritable: false, focused: true)
+            )
+        )
+        XCTAssertTrue(
+            TerminalReadinessProjector.canSubmitInput(
+                Self.readinessSnapshot(phase: .running, transportWritable: true, focused: true)
+            )
+        )
+    }
+
+    func testReadinessProjectionPreservesStatusAndTraceConditions() {
+        XCTAssertTrue(
+            TerminalReadinessProjector.isWaitingForPanes(
+                Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: false)
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.isWaitingForPanes(
+                Self.readinessSnapshot(phase: .starting, topLevelCount: 0, focused: false)
+            )
+        )
+
+        XCTAssertFalse(
+            TerminalReadinessProjector.isTerminalStatusReady(
+                Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: false),
+                commandFailureMessage: nil
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.isTerminalStatusReady(
+                Self.readinessSnapshot(phase: .running, topLevelCount: 1, focused: true),
+                commandFailureMessage: "tmux command failed"
+            )
+        )
+        XCTAssertTrue(
+            TerminalReadinessProjector.isTerminalStatusReady(
+                Self.readinessSnapshot(phase: .running, topLevelCount: 1, focused: false),
+                commandFailureMessage: nil
+            )
+        )
+
+        XCTAssertFalse(
+            TerminalReadinessProjector.shouldTraceTerminalReady(
+                Self.readinessSnapshot(phase: .starting, topLevelCount: 1, focused: true)
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.shouldTraceTerminalReady(
+                Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: true)
+            )
+        )
+        XCTAssertTrue(
+            TerminalReadinessProjector.shouldTraceTerminalReady(
+                Self.readinessSnapshot(phase: .running, topLevelCount: 1, focused: false)
+            )
+        )
+    }
+
     func testInteractionProjectionReportsEmptyIdleTopology() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
@@ -373,6 +517,20 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
                 surface: handle,
                 ownership: .borrowed
             )
+        )
+    }
+
+    private static func readinessSnapshot(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool = false,
+        topLevelCount: Int = 1,
+        focused: Bool
+    ) -> TerminalReadinessSnapshot {
+        TerminalReadinessProjector.snapshot(
+            phase: phase,
+            transportWritable: transportWritable,
+            topLevelCount: topLevelCount,
+            selectedActiveLeafID: focused ? UUID() : nil
         )
     }
 }
