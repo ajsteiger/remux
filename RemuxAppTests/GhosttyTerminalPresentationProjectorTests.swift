@@ -4,6 +4,46 @@ import XCTest
 
 @MainActor
 final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
+    func testSelectionSheetPresentationChangeCancelsAndResetsWhenDismissingPresentedSheet() {
+        let change = GhosttySelectionSheetPresentationChange(
+            currentKind: .windows,
+            nextKind: nil
+        )
+
+        XCTAssertTrue(change.shouldCancelCurrentPreviewSession)
+        XCTAssertTrue(change.shouldResetBottomReplacementHeight)
+    }
+
+    func testSelectionSheetPresentationChangeResetsAbsentDismissalWithoutCancellation() {
+        let change = GhosttySelectionSheetPresentationChange(
+            currentKind: nil,
+            nextKind: nil
+        )
+
+        XCTAssertFalse(change.shouldCancelCurrentPreviewSession)
+        XCTAssertTrue(change.shouldResetBottomReplacementHeight)
+    }
+
+    func testSelectionSheetPresentationChangeDoesNotCancelOrResetWhenPresenting() {
+        let change = GhosttySelectionSheetPresentationChange(
+            currentKind: nil,
+            nextKind: .panes
+        )
+
+        XCTAssertFalse(change.shouldCancelCurrentPreviewSession)
+        XCTAssertFalse(change.shouldResetBottomReplacementHeight)
+    }
+
+    func testSelectionSheetPresentationChangePreservesPresentedReplacementBehavior() {
+        let change = GhosttySelectionSheetPresentationChange(
+            currentKind: .windows,
+            nextKind: .panes
+        )
+
+        XCTAssertFalse(change.shouldCancelCurrentPreviewSession)
+        XCTAssertFalse(change.shouldResetBottomReplacementHeight)
+    }
+
     func testReadinessProjectionReportsRuntimeStateSemantics() {
         let reason = TerminalDisconnectReason(
             kind: .transportIO,

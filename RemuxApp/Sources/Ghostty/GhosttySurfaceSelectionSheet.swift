@@ -12,6 +12,37 @@ enum GhosttySurfaceSelectionSheet: Identifiable {
             "panes-\(topLevelID.uuidString)-\(previews.id.uuidString)"
         }
     }
+
+    var presentationKind: GhosttySelectionSheetPresentationKind {
+        switch self {
+        case .windows(_):
+            return .windows
+        case .panes(_, _):
+            return .panes
+        }
+    }
+}
+
+enum GhosttySelectionSheetPresentationKind: Equatable, Sendable {
+    case windows
+    case panes
+}
+
+struct GhosttySelectionSheetPresentationChange: Equatable, Sendable {
+    let currentKind: GhosttySelectionSheetPresentationKind?
+    let nextKind: GhosttySelectionSheetPresentationKind?
+    let shouldCancelCurrentPreviewSession: Bool
+    let shouldResetBottomReplacementHeight: Bool
+
+    init(
+        currentKind: GhosttySelectionSheetPresentationKind?,
+        nextKind: GhosttySelectionSheetPresentationKind?
+    ) {
+        self.currentKind = currentKind
+        self.nextKind = nextKind
+        self.shouldCancelCurrentPreviewSession = currentKind != nil && nextKind == nil
+        self.shouldResetBottomReplacementHeight = nextKind == nil
+    }
 }
 
 private enum GhosttySheetPalette {

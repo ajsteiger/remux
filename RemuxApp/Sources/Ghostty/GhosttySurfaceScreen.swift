@@ -346,18 +346,7 @@ struct GhosttySurfaceScreen: View {
     private var selectionSheetBinding: Binding<GhosttySurfaceSelectionSheet?> {
         Binding(
             get: { selectionSheet },
-            set: { newValue in
-                if newValue == nil, case .windows(let session) = selectionSheet {
-                    session.cancelAll()
-                }
-                if newValue == nil, case .panes(_, let session) = selectionSheet {
-                    session.cancelAll()
-                }
-                selectionSheet = newValue
-                if newValue == nil {
-                    selectionSheetBottomReplacementHeight = 0
-                }
-            }
+            set: { applySelectionSheetPresentation($0) }
         )
     }
 
@@ -660,8 +649,10 @@ struct GhosttySurfaceScreen: View {
         guard let projection = model.windowSheetPresentationProjection() else { return }
         GhosttyRuntimeTrace.flowEventIfActive("tmux.newWindow", event: "ui.showWindows")
         captureSelectionSheetBottomReplacementHeight()
-        selectionSheet = .windows(
-            makeWindowPreviewSession(leafIDs: projection.previewLeafIDs)
+        applySelectionSheetPresentation(
+            .windows(
+                makeWindowPreviewSession(leafIDs: projection.previewLeafIDs)
+            )
         )
     }
 
@@ -674,14 +665,31 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func dismissSelectionSheet() {
-        switch selectionSheet {
+        applySelectionSheetPresentation(nil)
+    }
+
+    private func applySelectionSheetPresentation(_ newValue: GhosttySurfaceSelectionSheet?) {
+        let change = GhosttySelectionSheetPresentationChange(
+            currentKind: selectionSheet?.presentationKind,
+            nextKind: newValue?.presentationKind
+        )
+        if change.shouldCancelCurrentPreviewSession {
+            cancelSelectionSheetPreviewSession(selectionSheet)
+        }
+
+        selectionSheet = newValue
+        if change.shouldResetBottomReplacementHeight {
+            selectionSheetBottomReplacementHeight = 0
+        }
+    }
+
+    private func cancelSelectionSheetPreviewSession(_ sheet: GhosttySurfaceSelectionSheet?) {
+        switch sheet {
         case .windows(let session), .panes(_, let session):
             session.cancelAll()
         case .none:
             break
         }
-        selectionSheet = nil
-        selectionSheetBottomReplacementHeight = 0
     }
 
     private func selectionSheetDetents(
@@ -730,12 +738,14 @@ struct GhosttySurfaceScreen: View {
         // sheet never renders against a separate optional state that may lag
         // the presentation transaction.
         captureSelectionSheetBottomReplacementHeight()
-        selectionSheet = .panes(
-            topLevelID: projection.topLevelID,
-            previews: GhosttyPanePreviewSession(
-                leafIDs: projection.previewLeafIDs,
-                registry: registry,
-                previewSizing: .paneGridForCurrentScreen
+        applySelectionSheetPresentation(
+            .panes(
+                topLevelID: projection.topLevelID,
+                previews: GhosttyPanePreviewSession(
+                    leafIDs: projection.previewLeafIDs,
+                    registry: registry,
+                    previewSizing: .paneGridForCurrentScreen
+                )
             )
         )
     }
