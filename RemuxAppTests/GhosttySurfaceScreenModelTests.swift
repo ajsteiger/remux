@@ -2351,7 +2351,43 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             TerminalReadinessProjector.isInputAvailable(model.terminalReadinessSnapshot),
             model.terminalInteractionProjection.isInputAvailable
         )
+        XCTAssertEqual(
+            TerminalReadinessProjector.isWaitingForPanes(model.terminalReadinessSnapshot),
+            model.terminalInteractionProjection.isWaitingForPanes
+        )
         XCTAssertFalse(TerminalReadinessProjector.canSubmitInput(model.terminalReadinessSnapshot))
+    }
+
+    func testTerminalInteractionProjectionMatchesReadinessWhenRuntimeFailed() {
+        enum RuntimeFailure: Error {
+            case expected
+        }
+
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+            runtimeFactory: { _ in throw RuntimeFailure.expected },
+            debugLatencyProbe: nil
+        )
+        let managed = Self.managedSurface()
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        XCTAssertEqual(model.state, .failed(String(describing: RuntimeFailure.expected)))
+        XCTAssertEqual(
+            TerminalReadinessProjector.isInputAvailable(model.terminalReadinessSnapshot),
+            model.terminalInteractionProjection.isInputAvailable
+        )
+        XCTAssertEqual(
+            TerminalReadinessProjector.isWaitingForPanes(model.terminalReadinessSnapshot),
+            model.terminalInteractionProjection.isWaitingForPanes
+        )
+        XCTAssertFalse(model.terminalInteractionProjection.isInputAvailable)
+        XCTAssertFalse(model.terminalInteractionProjection.isWaitingForPanes)
     }
 
     func testTerminalInteractionProjectionReportsSelectedWindowAndPaneIndexes() {

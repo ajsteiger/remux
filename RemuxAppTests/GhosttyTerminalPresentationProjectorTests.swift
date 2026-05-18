@@ -127,9 +127,21 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
                 Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: false)
             )
         )
+        XCTAssertTrue(
+            TerminalReadinessProjector.isWaitingForPanes(
+                phase: .running,
+                topLevelCount: 0
+            )
+        )
         XCTAssertFalse(
             TerminalReadinessProjector.isWaitingForPanes(
                 Self.readinessSnapshot(phase: .starting, topLevelCount: 0, focused: false)
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.isWaitingForPanes(
+                phase: .failed(message: "runtime failed", reason: nil),
+                topLevelCount: 0
             )
         )
 
@@ -201,7 +213,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalInteractionProjection(
-                isRunning: false,
+                phase: .idle,
                 snapshot: registry.topologySnapshot
             ),
             GhosttyTerminalInteractionProjection(
@@ -222,7 +234,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalInteractionProjection(
-                isRunning: true,
+                phase: .running,
                 snapshot: registry.topologySnapshot
             ),
             GhosttyTerminalInteractionProjection(
@@ -263,7 +275,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
 
         let projection = GhosttyTerminalPresentationProjector.terminalInteractionProjection(
-            isRunning: true,
+            phase: .running,
             snapshot: registry.topologySnapshot
         )
 
@@ -273,6 +285,44 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertEqual(projection.selectedPaneIndex, 1)
         XCTAssertEqual(projection.paneCount, 3)
         XCTAssertTrue(projection.isInputAvailable)
+    }
+
+    func testInteractionProjectionRoutesReadinessBooleansThroughReadinessProjector() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface()
+        registry.registerManagedSurfaceForTesting(managed)
+        let focusedSnapshot = registry.topologySnapshot
+        let emptySnapshot = GhosttyRuntimeSurfaceRegistry().topologySnapshot
+        let cases: [(GhosttyTerminalRuntimePhase, GhosttyRuntimeSurfaceTopologySnapshot)] = [
+            (.running, focusedSnapshot),
+            (.starting, focusedSnapshot),
+            (.failed(message: "runtime failed", reason: nil), focusedSnapshot),
+            (.running, emptySnapshot),
+            (.starting, emptySnapshot),
+            (.failed(message: "runtime failed", reason: nil), emptySnapshot),
+        ]
+
+        for (phase, topologySnapshot) in cases {
+            let readiness = TerminalReadinessProjector.snapshot(
+                phase: phase,
+                transportWritable: false,
+                topLevelCount: topologySnapshot.topLevels.count,
+                selectedActiveLeafID: topologySnapshot.selectedActiveLeafID
+            )
+            let projection = GhosttyTerminalPresentationProjector.terminalInteractionProjection(
+                phase: phase,
+                snapshot: topologySnapshot
+            )
+
+            XCTAssertEqual(
+                projection.isInputAvailable,
+                TerminalReadinessProjector.isInputAvailable(readiness)
+            )
+            XCTAssertEqual(
+                projection.isWaitingForPanes,
+                TerminalReadinessProjector.isWaitingForPanes(readiness)
+            )
+        }
     }
 
     func testTreeProjectionTracksPendingPhonePresentation() {

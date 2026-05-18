@@ -51,7 +51,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     var terminalInteractionProjection: GhosttyTerminalInteractionProjection {
         GhosttyTerminalPresentationProjector.terminalInteractionProjection(
-            isRunning: state == .running,
+            phase: terminalRuntimePhase,
             snapshot: surfaceRegistry.topologySnapshot
         )
     }

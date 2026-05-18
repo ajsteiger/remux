@@ -113,7 +113,15 @@ enum TerminalReadinessProjector {
     }
 
     static func isWaitingForPanes(_ snapshot: TerminalReadinessSnapshot) -> Bool {
-        snapshot.phase == .running && snapshot.topLevelCount == 0
+        isWaitingForPanes(phase: snapshot.phase, topLevelCount: snapshot.topLevelCount)
+    }
+
+    static func isWaitingForPanes(
+        phase: GhosttyTerminalRuntimePhase,
+        topLevelCount: Int
+    ) -> Bool {
+        precondition(topLevelCount >= 0, "topLevelCount must be non-negative")
+        return phase == .running && topLevelCount == 0
     }
 
     static func isTerminalStatusReady(
@@ -261,7 +269,7 @@ struct GhosttyPaneSelectionSheetRenderProjection: Equatable, Sendable {
 @MainActor
 enum GhosttyTerminalPresentationProjector {
     static func terminalInteractionProjection(
-        isRunning: Bool,
+        phase: GhosttyTerminalRuntimePhase,
         snapshot: GhosttyRuntimeSurfaceTopologySnapshot
     ) -> GhosttyTerminalInteractionProjection {
         let selectedTopLevel = snapshot.selectedTopLevel
@@ -273,14 +281,20 @@ enum GhosttyTerminalPresentationProjector {
         let hasFocusedSurface = selectedActiveLeafID != nil
 
         return GhosttyTerminalInteractionProjection(
-            isInputAvailable: isRunning && hasFocusedSurface,
+            isInputAvailable: TerminalReadinessProjector.isInputAvailable(
+                phase: phase,
+                hasFocusedSurface: hasFocusedSurface
+            ),
             hasFocusedSurface: hasFocusedSurface,
             selectedActiveLeafID: selectedActiveLeafID,
             selectedWindowIndex: snapshot.selectedTopLevelIndex,
             windowCount: snapshot.topLevels.count,
             selectedPaneIndex: selectedPaneIndex,
             paneCount: selectedTopLevel?.leafIDs.count ?? 0,
-            isWaitingForPanes: isRunning && snapshot.topLevels.isEmpty
+            isWaitingForPanes: TerminalReadinessProjector.isWaitingForPanes(
+                phase: phase,
+                topLevelCount: snapshot.topLevels.count
+            )
         )
     }
 
