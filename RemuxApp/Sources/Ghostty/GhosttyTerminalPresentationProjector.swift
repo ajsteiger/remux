@@ -178,6 +178,14 @@ struct GhosttyTerminalInteractionProjection: Equatable, Sendable {
     let isWaitingForPanes: Bool
 }
 
+enum GhosttyTerminalStatusOverlayProjection: Equatable, Sendable {
+    case starting
+    case commandFailure(String)
+    case waitingForPanes(debugStatus: String, registryDebugSummary: String)
+    case ready
+    case failed(String)
+}
+
 struct GhosttyTerminalTreeTopLevelPresentation: Equatable {
     let id: UUID
     let phonePresentedLeafIDs: [UUID]
@@ -268,6 +276,39 @@ struct GhosttyPaneSelectionSheetRenderProjection: Equatable, Sendable {
 
 @MainActor
 enum GhosttyTerminalPresentationProjector {
+    static func terminalStatusOverlayProjection(
+        state: GhosttySurfaceScreenModel.State,
+        readiness: TerminalReadinessSnapshot,
+        commandFailureMessage: String?,
+        debugStatus: String,
+        registryDebugSummary: String
+    ) -> GhosttyTerminalStatusOverlayProjection {
+        switch state {
+        case .idle, .starting:
+            return .starting
+        case .failed(let message):
+            return .failed(message)
+        case .running:
+            if let commandFailureMessage {
+                return .commandFailure(commandFailureMessage)
+            }
+            let waitingProjection = GhosttyTerminalStatusOverlayProjection.waitingForPanes(
+                debugStatus: debugStatus,
+                registryDebugSummary: registryDebugSummary
+            )
+            if TerminalReadinessProjector.isWaitingForPanes(readiness) {
+                return waitingProjection
+            }
+            if TerminalReadinessProjector.isTerminalStatusReady(
+                readiness,
+                commandFailureMessage: nil
+            ) {
+                return .ready
+            }
+            return waitingProjection
+        }
+    }
+
     static func terminalInteractionProjection(
         phase: GhosttyTerminalRuntimePhase,
         snapshot: GhosttyRuntimeSurfaceTopologySnapshot

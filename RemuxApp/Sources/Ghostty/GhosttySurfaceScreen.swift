@@ -1601,8 +1601,16 @@ private struct GhosttySurfaceStatusOverlay: View {
     let onReconnect: () -> Void
 
     var body: some View {
-        switch model.state {
-        case .idle, .starting:
+        let projection = GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+            state: model.state,
+            readiness: model.terminalReadinessSnapshot,
+            commandFailureMessage: model.commandFailureMessage,
+            debugStatus: model.debugStatus,
+            registryDebugSummary: registry.debugSummary
+        )
+
+        switch projection {
+        case .starting:
             Text("starting Ghostty")
                 .font(.system(size: 12, weight: .medium, design: .rounded))
                 .foregroundStyle(Color.white.opacity(0.72))
@@ -1613,38 +1621,38 @@ private struct GhosttySurfaceStatusOverlay: View {
                 .padding(10)
                 .accessibilityIdentifier("terminal.status.starting")
 
-        case .running:
-            if let commandFailureMessage = model.commandFailureMessage {
-                Text(commandFailureMessage)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.88))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.62))
-                    .clipShape(Capsule())
-                    .padding(10)
-                    .accessibilityIdentifier("terminal.command.failure")
-            } else if model.terminalInteractionProjection.isWaitingForPanes {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("waiting for tmux panes")
-                    Text(model.debugStatus)
-                    Text(registry.debugSummary)
-                }
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.72))
+        case .commandFailure(let commandFailureMessage):
+            Text(commandFailureMessage)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.88))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(Color.black.opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.black.opacity(0.62))
+                .clipShape(Capsule())
                 .padding(10)
-                .accessibilityIdentifier("terminal.status.waiting")
-            } else {
-                Text("terminal ready")
-                    .font(.caption2)
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
-                    .accessibilityIdentifier("terminal.status.ready")
+                .accessibilityIdentifier("terminal.command.failure")
+
+        case .waitingForPanes(let debugStatus, let registryDebugSummary):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("waiting for tmux panes")
+                Text(debugStatus)
+                Text(registryDebugSummary)
             }
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(Color.white.opacity(0.72))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.black.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(10)
+            .accessibilityIdentifier("terminal.status.waiting")
+
+        case .ready:
+            Text("terminal ready")
+                .font(.caption2)
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .accessibilityIdentifier("terminal.status.ready")
 
         case .failed(let message):
             VStack(alignment: .leading, spacing: 8) {

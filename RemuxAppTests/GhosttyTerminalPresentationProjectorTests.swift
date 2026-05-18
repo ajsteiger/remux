@@ -182,6 +182,79 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
     }
 
+    func testStatusOverlayProjectionPreservesStatePrecedence() {
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                state: .idle,
+                readiness: Self.readinessSnapshot(phase: .idle, topLevelCount: 0, focused: false),
+                commandFailureMessage: "ignored",
+                debugStatus: "idle debug",
+                registryDebugSummary: "idle registry"
+            ),
+            .starting
+        )
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                state: .starting,
+                readiness: Self.readinessSnapshot(phase: .starting, topLevelCount: 0, focused: false),
+                commandFailureMessage: nil,
+                debugStatus: "starting debug",
+                registryDebugSummary: "starting registry"
+            ),
+            .starting
+        )
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                state: .failed("transport lost"),
+                readiness: Self.readinessSnapshot(
+                    phase: .failed(message: "transport lost", reason: nil),
+                    topLevelCount: 1,
+                    focused: true
+                ),
+                commandFailureMessage: "ignored",
+                debugStatus: "failed debug",
+                registryDebugSummary: "failed registry"
+            ),
+            .failed("transport lost")
+        )
+    }
+
+    func testStatusOverlayProjectionPreservesRunningPrecedence() {
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                state: .running,
+                readiness: Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: false),
+                commandFailureMessage: "No space for another pane.",
+                debugStatus: "running debug",
+                registryDebugSummary: "running registry"
+            ),
+            .commandFailure("No space for another pane.")
+        )
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                state: .running,
+                readiness: Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: false),
+                commandFailureMessage: nil,
+                debugStatus: "transport started",
+                registryDebugSummary: "top=0"
+            ),
+            .waitingForPanes(
+                debugStatus: "transport started",
+                registryDebugSummary: "top=0"
+            )
+        )
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                state: .running,
+                readiness: Self.readinessSnapshot(phase: .running, topLevelCount: 1, focused: false),
+                commandFailureMessage: nil,
+                debugStatus: "transport started",
+                registryDebugSummary: "top=1"
+            ),
+            .ready
+        )
+    }
+
     func testTerminalReadyTraceFieldsPreserveExistingKeysAndAddRawReadinessFacts() throws {
         let workspaceID = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
         let selectedLeafID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
