@@ -1181,18 +1181,18 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     private func traceTerminalReadyIfNeeded() {
         guard !didTraceTerminalReady else { return }
-        guard state == .running else { return }
-        guard !surfaceRegistry.topLevels.isEmpty else { return }
+        let readiness = terminalReadinessSnapshot
+        guard TerminalReadinessProjector.shouldTraceTerminalReady(readiness) else { return }
 
         didTraceTerminalReady = true
         GhosttyRuntimeTrace.flowEnd(
             sessionOpenFlowID,
             event: "terminal.ready",
-            fields: [
-                "topLevels": "\(surfaceRegistry.topLevels.count)",
-                "managedSurfaces": "\(surfaceRegistry.allManagedSurfaces().count)",
-                "workspaceID": target.workspace.id.uuidString,
-            ]
+            fields: TerminalReadinessProjector.terminalReadyTraceFields(
+                readiness,
+                managedSurfaceCount: surfaceRegistry.allManagedSurfaces().count,
+                workspaceID: target.workspace.id
+            )
         )
     }
 

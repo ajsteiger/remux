@@ -115,6 +115,35 @@ enum TerminalReadinessProjector {
     static func shouldTraceTerminalReady(_ snapshot: TerminalReadinessSnapshot) -> Bool {
         snapshot.phase == .running && snapshot.topLevelCount > 0
     }
+
+    static func terminalReadyTraceFields(
+        _ snapshot: TerminalReadinessSnapshot,
+        managedSurfaceCount: Int,
+        workspaceID: UUID
+    ) -> [String: String] {
+        precondition(managedSurfaceCount >= 0, "managedSurfaceCount must be non-negative")
+        return [
+            "topLevels": "\(snapshot.topLevelCount)",
+            "managedSurfaces": "\(managedSurfaceCount)",
+            "workspaceID": workspaceID.uuidString,
+            "phase": traceValue(for: snapshot.phase),
+            "transportWritable": "\(snapshot.transportWritable)",
+            "selectedActiveLeafID": ghosttyDiagnosticShortID(snapshot.selectedActiveLeafID),
+        ]
+    }
+
+    private static func traceValue(for phase: GhosttyTerminalRuntimePhase) -> String {
+        switch phase {
+        case .idle:
+            "idle"
+        case .starting:
+            "starting"
+        case .running:
+            "running"
+        case .failed:
+            "failed"
+        }
+    }
 }
 
 struct GhosttyTerminalInteractionProjection: Equatable, Sendable {

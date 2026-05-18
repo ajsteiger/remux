@@ -148,6 +148,33 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
     }
 
+    func testTerminalReadyTraceFieldsPreserveExistingKeysAndAddRawReadinessFacts() throws {
+        let workspaceID = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
+        let selectedLeafID = try XCTUnwrap(UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
+        let snapshot = TerminalReadinessProjector.snapshot(
+            phase: .running,
+            transportWritable: true,
+            topLevelCount: 2,
+            selectedActiveLeafID: selectedLeafID
+        )
+
+        XCTAssertEqual(
+            TerminalReadinessProjector.terminalReadyTraceFields(
+                snapshot,
+                managedSurfaceCount: 3,
+                workspaceID: workspaceID
+            ),
+            [
+                "topLevels": "2",
+                "managedSurfaces": "3",
+                "workspaceID": workspaceID.uuidString,
+                "phase": "running",
+                "transportWritable": "true",
+                "selectedActiveLeafID": "AAAAAAAA",
+            ]
+        )
+    }
+
     func testInteractionProjectionReportsEmptyIdleTopology() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
