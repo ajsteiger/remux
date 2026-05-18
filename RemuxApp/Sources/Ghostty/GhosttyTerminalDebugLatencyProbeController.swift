@@ -29,11 +29,11 @@ final class GhosttyTerminalDebugLatencyProbeController {
 
     @discardableResult
     func scheduleIfNeeded(
-        isRunning: Bool,
+        readiness: TerminalReadinessSnapshot,
         onDelaySatisfied: @escaping @MainActor () -> Void
     ) -> Bool {
         guard let probe else { return false }
-        guard isRunning else { return false }
+        guard readiness.phase == .running else { return false }
         guard !delaySatisfied else { return false }
         guard delayTask == nil else { return false }
 
@@ -52,8 +52,7 @@ final class GhosttyTerminalDebugLatencyProbeController {
     }
 
     func submitIfReady(
-        isRunning: Bool,
-        hasFocusedSurface: Bool,
+        readiness: TerminalReadinessSnapshot,
         sendInput: @MainActor (String) -> FocusedTerminalInputSubmissionResult,
         split: @MainActor (ghostty_action_split_direction_e) -> GhosttyTmuxModelActionOutcome,
         newWindow: @MainActor () -> GhosttyTmuxModelActionOutcome
@@ -61,8 +60,7 @@ final class GhosttyTerminalDebugLatencyProbeController {
         guard var probe else { return nil }
         guard delaySatisfied else { return nil }
         guard let submission = probe.nextSubmission(
-            isRunning: isRunning,
-            hasFocusedSurface: hasFocusedSurface
+            isInputAvailable: TerminalReadinessProjector.isInputAvailable(readiness)
         ) else {
             self.probe = probe
             return nil
@@ -242,10 +240,9 @@ struct DebugLatencyProbeCommand: Equatable {
     }
 
     mutating func nextSubmission(
-        isRunning: Bool,
-        hasFocusedSurface: Bool
+        isInputAvailable: Bool
     ) -> Submission? {
-        guard !didSubmit, isRunning, hasFocusedSurface else { return nil }
+        guard !didSubmit, isInputAvailable else { return nil }
 
         didSubmit = true
         switch action {

@@ -6,23 +6,23 @@ import XCTest
 final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
     func testDebugLatencyProbeBuildsInputMarkerWithoutEchoingFullMarker() {
         var probe = DebugLatencyProbeCommand(action: .input, probeID: "abc-123")
-        let submission = probe.nextSubmission(isRunning: true, hasFocusedSurface: true)
+        let submission = probe.nextSubmission(isInputAvailable: true)
 
         XCTAssertEqual(submission?.action, .input)
         XCTAssertEqual(submission?.marker, "__REMUX_LATENCY_abc123__")
         XCTAssertEqual(submission?.text, "printf __REMUX_%s__ LATENCY_abc123\r")
         XCTAssertFalse(submission?.text?.contains("__REMUX_LATENCY_abc123__") ?? true)
-        XCTAssertNil(probe.nextSubmission(isRunning: true, hasFocusedSurface: true))
+        XCTAssertNil(probe.nextSubmission(isInputAvailable: true))
     }
 
     func testDebugLatencyProbeBuildsKeyEchoMarker() {
         var probe = DebugLatencyProbeCommand(action: .keyEcho, probeID: "abc-123")
-        let submission = probe.nextSubmission(isRunning: true, hasFocusedSurface: true)
+        let submission = probe.nextSubmission(isInputAvailable: true)
 
         XCTAssertEqual(submission?.action, .keyEcho)
         XCTAssertEqual(submission?.marker, String(UnicodeScalar(0x00A7)!))
         XCTAssertEqual(submission?.text, String(UnicodeScalar(0x00A7)!))
-        XCTAssertNil(probe.nextSubmission(isRunning: true, hasFocusedSurface: true))
+        XCTAssertNil(probe.nextSubmission(isInputAvailable: true))
     }
 
     func testDebugLatencyProbeParsesActionAliases() {
@@ -32,11 +32,11 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         var splitDown = DebugLatencyProbeCommand("down", probeID: "a")
         var newWindow = DebugLatencyProbeCommand("window", probeID: "a")
 
-        XCTAssertEqual(input?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .input)
-        XCTAssertEqual(keyEcho?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .keyEcho)
-        XCTAssertEqual(splitRight?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .splitRight)
-        XCTAssertEqual(splitDown?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .splitDown)
-        XCTAssertEqual(newWindow?.nextSubmission(isRunning: true, hasFocusedSurface: true)?.action, .newWindow)
+        XCTAssertEqual(input?.nextSubmission(isInputAvailable: true)?.action, .input)
+        XCTAssertEqual(keyEcho?.nextSubmission(isInputAvailable: true)?.action, .keyEcho)
+        XCTAssertEqual(splitRight?.nextSubmission(isInputAvailable: true)?.action, .splitRight)
+        XCTAssertEqual(splitDown?.nextSubmission(isInputAvailable: true)?.action, .splitDown)
+        XCTAssertEqual(newWindow?.nextSubmission(isInputAvailable: true)?.action, .newWindow)
         XCTAssertNil(DebugLatencyProbeCommand("unknown", probeID: "a"))
     }
 
@@ -58,7 +58,12 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         var inputs: [String] = []
 
         XCTAssertNil(submit(controller, inputs: &inputs))
-        XCTAssertTrue(controller.scheduleIfNeeded(isRunning: true, onDelaySatisfied: {}))
+        XCTAssertTrue(
+            controller.scheduleIfNeeded(
+                readiness: Self.readinessSnapshot(phase: .running),
+                onDelaySatisfied: {}
+            )
+        )
         XCTAssertNil(submit(controller, inputs: &inputs))
 
         harness.fireNext()
@@ -74,9 +79,64 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
             delayScheduler: harness.scheduler
         )
 
-        XCTAssertTrue(controller.scheduleIfNeeded(isRunning: true, onDelaySatisfied: {}))
-        XCTAssertFalse(controller.scheduleIfNeeded(isRunning: true, onDelaySatisfied: {}))
+        XCTAssertTrue(
+            controller.scheduleIfNeeded(
+                readiness: Self.readinessSnapshot(phase: .running),
+                onDelaySatisfied: {}
+            )
+        )
+        XCTAssertFalse(
+            controller.scheduleIfNeeded(
+                readiness: Self.readinessSnapshot(phase: .running),
+                onDelaySatisfied: {}
+            )
+        )
         XCTAssertEqual(harness.scheduledDelayMilliseconds, [100])
+    }
+
+    func testControllerSchedulesProbeWhenRuntimeIsRunningRegardlessOfFocusTransportOrPanes() {
+        let harness = DelayHarness()
+        let controller = GhosttyTerminalDebugLatencyProbeController(
+            probe: DebugLatencyProbeCommand(action: .input, delayMilliseconds: 100),
+            delayScheduler: harness.scheduler
+        )
+
+        XCTAssertTrue(
+            controller.scheduleIfNeeded(
+                readiness: Self.readinessSnapshot(
+                    phase: .running,
+                    transportWritable: false,
+                    topLevelCount: 0,
+                    focused: false
+                ),
+                onDelaySatisfied: {}
+            )
+        )
+        XCTAssertEqual(harness.scheduledDelayMilliseconds, [100])
+    }
+
+    func testControllerDoesNotScheduleProbeBeforeRuntimeIsRunningOrAfterFailure() {
+        let phases: [GhosttyTerminalRuntimePhase] = [
+            .idle,
+            .starting,
+            .failed(message: "failed", reason: nil),
+        ]
+
+        for phase in phases {
+            let harness = DelayHarness()
+            let controller = GhosttyTerminalDebugLatencyProbeController(
+                probe: DebugLatencyProbeCommand(action: .input, delayMilliseconds: 100),
+                delayScheduler: harness.scheduler
+            )
+
+            XCTAssertFalse(
+                controller.scheduleIfNeeded(
+                    readiness: Self.readinessSnapshot(phase: phase),
+                    onDelaySatisfied: {}
+                )
+            )
+            XCTAssertTrue(harness.scheduledDelayMilliseconds.isEmpty)
+        }
     }
 
     func testControllerCancelInvalidatesPendingDelayCompletion() {
@@ -88,9 +148,11 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         var delaySatisfiedCount = 0
         var inputs: [String] = []
 
-        XCTAssertTrue(controller.scheduleIfNeeded(isRunning: true) {
-            delaySatisfiedCount += 1
-        })
+        XCTAssertTrue(
+            controller.scheduleIfNeeded(readiness: Self.readinessSnapshot(phase: .running)) {
+                delaySatisfiedCount += 1
+            }
+        )
         controller.cancel()
         harness.fireNext()
 
@@ -107,7 +169,12 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         )
         var inputs: [String] = []
 
-        XCTAssertTrue(controller.scheduleIfNeeded(isRunning: true, onDelaySatisfied: {}))
+        XCTAssertTrue(
+            controller.scheduleIfNeeded(
+                readiness: Self.readinessSnapshot(phase: .running),
+                onDelaySatisfied: {}
+            )
+        )
         XCTAssertTrue(harness.scheduledDelayMilliseconds.isEmpty)
         XCTAssertEqual(submit(controller, inputs: &inputs)?.statusMessage, "debug latency input probe sent")
         XCTAssertEqual(inputs, ["printf __REMUX_%s__ LATENCY_abc\r"])
@@ -153,8 +220,7 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         var splitCount = 0
 
         _ = splitController.submitIfReady(
-            isRunning: true,
-            hasFocusedSurface: true,
+            readiness: Self.readinessSnapshot(phase: .running, focused: true),
             sendInput: { _ in .accepted },
             split: { _ in
                 splitCount += 1
@@ -163,8 +229,7 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
             newWindow: { .queued }
         )
         _ = splitController.submitIfReady(
-            isRunning: true,
-            hasFocusedSurface: true,
+            readiness: Self.readinessSnapshot(phase: .running, focused: true),
             sendInput: { _ in .accepted },
             split: { _ in
                 splitCount += 1
@@ -179,8 +244,7 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         var newWindowCount = 0
 
         _ = newWindowController.submitIfReady(
-            isRunning: true,
-            hasFocusedSurface: true,
+            readiness: Self.readinessSnapshot(phase: .running, focused: true),
             sendInput: { _ in .accepted },
             split: { _ in .queued },
             newWindow: {
@@ -189,8 +253,7 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
             }
         )
         _ = newWindowController.submitIfReady(
-            isRunning: true,
-            hasFocusedSurface: true,
+            readiness: Self.readinessSnapshot(phase: .running, focused: true),
             sendInput: { _ in .accepted },
             split: { _ in .queued },
             newWindow: {
@@ -206,9 +269,41 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         let controller = readyController(action: .input)
         var inputs: [String] = []
 
-        XCTAssertNil(submit(controller, isRunning: false, hasFocusedSurface: true, inputs: &inputs))
-        XCTAssertNil(submit(controller, isRunning: true, hasFocusedSurface: false, inputs: &inputs))
+        XCTAssertNil(
+            submit(
+                controller,
+                readiness: Self.readinessSnapshot(phase: .starting, focused: true),
+                inputs: &inputs
+            )
+        )
+        XCTAssertNil(
+            submit(
+                controller,
+                readiness: Self.readinessSnapshot(phase: .running, focused: false),
+                inputs: &inputs
+            )
+        )
         XCTAssertTrue(inputs.isEmpty)
+    }
+
+    func testSubmissionUsesInputAvailabilityWithoutTransportOrPaneCount() {
+        let controller = readyController(action: .input, probeID: "abc")
+        var inputs: [String] = []
+
+        XCTAssertEqual(
+            submit(
+                controller,
+                readiness: Self.readinessSnapshot(
+                    phase: .running,
+                    transportWritable: false,
+                    topLevelCount: 0,
+                    focused: true
+                ),
+                inputs: &inputs
+            )?.statusMessage,
+            "debug latency input probe sent"
+        )
+        XCTAssertEqual(inputs, ["printf __REMUX_%s__ LATENCY_abc\r"])
     }
 
     private func readyController(
@@ -218,26 +313,41 @@ final class GhosttyTerminalDebugLatencyProbeControllerTests: XCTestCase {
         let controller = GhosttyTerminalDebugLatencyProbeController(
             probe: DebugLatencyProbeCommand(action: action, probeID: probeID)
         )
-        _ = controller.scheduleIfNeeded(isRunning: true, onDelaySatisfied: {})
+        _ = controller.scheduleIfNeeded(
+            readiness: Self.readinessSnapshot(phase: .running),
+            onDelaySatisfied: {}
+        )
         return controller
     }
 
     private func submit(
         _ controller: GhosttyTerminalDebugLatencyProbeController,
-        isRunning: Bool = true,
-        hasFocusedSurface: Bool = true,
+        readiness: TerminalReadinessSnapshot? = nil,
         inputs: inout [String],
         inputResult: FocusedTerminalInputSubmissionResult = .accepted
     ) -> GhosttyTerminalDebugLatencyProbeController.SubmissionResult? {
         controller.submitIfReady(
-            isRunning: isRunning,
-            hasFocusedSurface: hasFocusedSurface,
+            readiness: readiness ?? Self.readinessSnapshot(phase: .running, focused: true),
             sendInput: { text in
                 inputs.append(text)
                 return inputResult
             },
             split: { _ in .queued },
             newWindow: { .queued }
+        )
+    }
+
+    private static func readinessSnapshot(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool = true,
+        topLevelCount: Int = 1,
+        focused: Bool = true
+    ) -> TerminalReadinessSnapshot {
+        TerminalReadinessProjector.snapshot(
+            phase: phase,
+            transportWritable: transportWritable,
+            topLevelCount: topLevelCount,
+            selectedActiveLeafID: focused ? UUID() : nil
         )
     }
 }

@@ -1206,8 +1206,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     private func submitDebugLatencyProbeIfReady() {
         let result = debugLatencyProbeController.submitIfReady(
-            isRunning: state == .running,
-            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil,
+            readiness: terminalReadinessSnapshot,
             sendInput: { [weak self] text in
                 self?.sendInputToFocusedSurface(text) ?? .transportUnavailable
             },
@@ -1224,7 +1223,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private func scheduleDebugLatencyProbeIfNeeded() {
-        debugLatencyProbeController.scheduleIfNeeded(isRunning: state == .running) { [weak self] in
+        debugLatencyProbeController.scheduleIfNeeded(readiness: terminalReadinessSnapshot) { [weak self] in
             self?.submitDebugLatencyProbeIfReady()
         }
     }
