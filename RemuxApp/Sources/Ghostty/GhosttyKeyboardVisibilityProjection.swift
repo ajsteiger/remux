@@ -55,6 +55,70 @@ struct GhosttyKeyboardVisibilityProjection: Equatable {
     }
 }
 
+struct GhosttyKeyboardToggleProjection: Equatable {
+    let previousMode: GhosttyKeyboardChromeMode
+    let expectedMode: GhosttyKeyboardChromeMode
+    let isInputAvailable: Bool
+    let startsSystemKeyboardTransition: Bool
+    let transitionTarget: GhosttyKeyboardViewportTransitionTarget?
+    let fallbackDelay: TimeInterval?
+    let shouldAwaitSystemKeyboardPresentation: Bool
+
+    init(
+        keyboardMode: GhosttyKeyboardChromeMode,
+        isInputAvailable: Bool
+    ) {
+        let expectedMode = keyboardMode.toggledKeyboard()
+        let startsSystemKeyboardTransition = Self.isSystemKeyboardTransition(
+            from: keyboardMode,
+            to: expectedMode
+        ) && isInputAvailable
+
+        self.previousMode = keyboardMode
+        self.expectedMode = expectedMode
+        self.isInputAvailable = isInputAvailable
+        self.startsSystemKeyboardTransition = startsSystemKeyboardTransition
+        self.transitionTarget = startsSystemKeyboardTransition
+            ? Self.transitionTarget(for: expectedMode)
+            : nil
+        self.fallbackDelay = startsSystemKeyboardTransition
+            ? Self.fallbackDelay(for: expectedMode)
+            : nil
+        self.shouldAwaitSystemKeyboardPresentation =
+            startsSystemKeyboardTransition && expectedMode == .system
+    }
+
+    private static func isSystemKeyboardTransition(
+        from previousMode: GhosttyKeyboardChromeMode,
+        to nextMode: GhosttyKeyboardChromeMode
+    ) -> Bool {
+        (previousMode == .hidden && nextMode == .system)
+            || (previousMode == .system && nextMode == .hidden)
+    }
+
+    private static func transitionTarget(
+        for keyboardMode: GhosttyKeyboardChromeMode
+    ) -> GhosttyKeyboardViewportTransitionTarget {
+        switch keyboardMode {
+        case .system:
+            return .shown
+        case .hidden:
+            return .hidden
+        }
+    }
+
+    private static func fallbackDelay(
+        for keyboardMode: GhosttyKeyboardChromeMode
+    ) -> TimeInterval {
+        switch keyboardMode {
+        case .system:
+            return GhosttyKeyboardViewportTransitionTiming.systemPresentationFallbackDelay
+        case .hidden:
+            return GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
+        }
+    }
+}
+
 enum GhosttyKeyboardViewportTransitionTiming {
     static let defaultAnimationDuration: TimeInterval = 0.35
     static let fallbackGraceInterval: TimeInterval = 0.02

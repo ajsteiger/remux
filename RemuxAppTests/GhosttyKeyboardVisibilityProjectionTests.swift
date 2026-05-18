@@ -117,4 +117,64 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
             accuracy: 0.0001
         )
     }
+
+    func testToggleProjectionShowsSystemKeyboardWhenInputIsAvailable() throws {
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .hidden,
+            isInputAvailable: true
+        )
+
+        XCTAssertEqual(projection.previousMode, .hidden)
+        XCTAssertEqual(projection.expectedMode, .system)
+        XCTAssertTrue(projection.isInputAvailable)
+        XCTAssertTrue(projection.startsSystemKeyboardTransition)
+        XCTAssertEqual(projection.transitionTarget, .shown)
+        XCTAssertEqual(try XCTUnwrap(projection.fallbackDelay), 2.0, accuracy: 0.0001)
+        XCTAssertTrue(projection.shouldAwaitSystemKeyboardPresentation)
+    }
+
+    func testToggleProjectionDoesNotStartShownTransitionWithoutInput() {
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .hidden,
+            isInputAvailable: false
+        )
+
+        XCTAssertEqual(projection.previousMode, .hidden)
+        XCTAssertEqual(projection.expectedMode, .system)
+        XCTAssertFalse(projection.isInputAvailable)
+        XCTAssertFalse(projection.startsSystemKeyboardTransition)
+        XCTAssertNil(projection.transitionTarget)
+        XCTAssertNil(projection.fallbackDelay)
+        XCTAssertFalse(projection.shouldAwaitSystemKeyboardPresentation)
+    }
+
+    func testToggleProjectionHidesSystemKeyboardWhenInputIsAvailable() throws {
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .system,
+            isInputAvailable: true
+        )
+
+        XCTAssertEqual(projection.previousMode, .system)
+        XCTAssertEqual(projection.expectedMode, .hidden)
+        XCTAssertTrue(projection.isInputAvailable)
+        XCTAssertTrue(projection.startsSystemKeyboardTransition)
+        XCTAssertEqual(projection.transitionTarget, .hidden)
+        XCTAssertEqual(try XCTUnwrap(projection.fallbackDelay), 1.0, accuracy: 0.0001)
+        XCTAssertFalse(projection.shouldAwaitSystemKeyboardPresentation)
+    }
+
+    func testToggleProjectionDoesNotStartHiddenTransitionWithoutInput() {
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .system,
+            isInputAvailable: false
+        )
+
+        XCTAssertEqual(projection.previousMode, .system)
+        XCTAssertEqual(projection.expectedMode, .hidden)
+        XCTAssertFalse(projection.isInputAvailable)
+        XCTAssertFalse(projection.startsSystemKeyboardTransition)
+        XCTAssertNil(projection.transitionTarget)
+        XCTAssertNil(projection.fallbackDelay)
+        XCTAssertFalse(projection.shouldAwaitSystemKeyboardPresentation)
+    }
 }

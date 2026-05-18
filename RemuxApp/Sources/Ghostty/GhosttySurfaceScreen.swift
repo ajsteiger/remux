@@ -426,28 +426,28 @@ struct GhosttySurfaceScreen: View {
                 "workspaceID": target.workspace.id.uuidString,
             ]
         )
-        let previousMode = inputCoordinator.keyboardMode
-        let expectedMode = previousMode.toggledKeyboard()
-        let startsSystemKeyboardTransition = isSystemKeyboardTransition(
-            from: previousMode,
-            to: expectedMode
-        ) && isTerminalInputAvailable
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: inputCoordinator.keyboardMode,
+            isInputAvailable: isTerminalInputAvailable
+        )
         GhosttyRuntimeTrace.perf(
-            "kbd.toggleKeyboard from=\(previousMode.traceLabel) to=\(expectedMode.traceLabel) inputAvailable=\(isTerminalInputAvailable) startsSystemTransition=\(startsSystemKeyboardTransition)"
+            "kbd.toggleKeyboard from=\(projection.previousMode.traceLabel) to=\(projection.expectedMode.traceLabel) inputAvailable=\(projection.isInputAvailable) startsSystemTransition=\(projection.startsSystemKeyboardTransition)"
         )
 
         performKeyboardChromeStateChange {
-            if startsSystemKeyboardTransition {
-                isAwaitingSystemKeyboardPresentation = expectedMode == .system
+            if projection.startsSystemKeyboardTransition,
+               let fallbackDelay = projection.fallbackDelay {
+                isAwaitingSystemKeyboardPresentation = projection.shouldAwaitSystemKeyboardPresentation
                 beginKeyboardViewportTransition(
-                    target: expectedMode == .system ? .shown : .hidden,
+                    target: projection.transitionTarget,
                     allowsTargetOverride: true,
-                    fallbackDelay: keyboardViewportFallbackDelayForUserToggle(to: expectedMode)
+                    fallbackDelay: fallbackDelay
                 )
             }
 
             inputCoordinator.toggleKeyboard(isInputAvailable: isTerminalInputAvailable)
-            if startsSystemKeyboardTransition, inputCoordinator.keyboardMode != expectedMode {
+            if projection.startsSystemKeyboardTransition,
+               inputCoordinator.keyboardMode != projection.expectedMode {
                 completeKeyboardViewportTransition()
             }
         }
@@ -988,14 +988,6 @@ struct GhosttySurfaceScreen: View {
         )
     }
 
-    private func isSystemKeyboardTransition(
-        from previousMode: GhosttyKeyboardChromeMode,
-        to nextMode: GhosttyKeyboardChromeMode
-    ) -> Bool {
-        (previousMode == .hidden && nextMode == .system)
-            || (previousMode == .system && nextMode == .hidden)
-    }
-
     @discardableResult
     private func beginKeyboardViewportTransition(
         target: GhosttyKeyboardViewportTransitionTarget?,
@@ -1125,17 +1117,6 @@ struct GhosttySurfaceScreen: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: nanoseconds)
             completeKeyboardViewportTransitionFromFallback(token: token)
-        }
-    }
-
-    private func keyboardViewportFallbackDelayForUserToggle(
-        to keyboardMode: GhosttyKeyboardChromeMode
-    ) -> TimeInterval {
-        switch keyboardMode {
-        case .system:
-            return GhosttyKeyboardViewportTransitionTiming.systemPresentationFallbackDelay
-        case .hidden:
-            return GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
         }
     }
 
