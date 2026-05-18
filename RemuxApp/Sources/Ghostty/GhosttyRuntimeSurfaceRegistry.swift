@@ -136,8 +136,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     var onTmuxProtocolError: ((TmuxControlProtocolError) -> Void)?
     var terminalSettings: TerminalSettings = .default
 
-    private var managedSurfaces: [UUID: GhosttyManagedSurface] = [:]
-    private var surfaceIDsByHandle: [ghostty_surface_t: UUID] = [:]
+    private var managedSurfaceStore = GhosttyRuntimeManagedSurfaceStore()
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
     private var interactiveReadinessTracker = GhosttyInteractiveReadinessTracker()
@@ -217,8 +216,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         topLevels = []
         selectedTopLevelID = nil
         debugSummary = "runtime callbacks: none"
-        managedSurfaces = [:]
-        surfaceIDsByHandle = [:]
+        managedSurfaceStore.clearAfterExternalRelease()
         lastTmuxProtocolError = nil
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
@@ -266,7 +264,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         // Release all surfaces still tracked by Remux before the Ghostty app is
         // freed. Surfaces removed earlier are released at the removal boundary.
-        for surface in Array(managedSurfaces.values) {
+        for surface in managedSurfaceStore.allSurfaces() {
             surface.releaseBeforePermanentRemoval()
         }
     }
@@ -378,11 +376,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func managedSurface(for id: UUID) -> GhosttyManagedSurface? {
-        managedSurfaces[id]
+        managedSurfaceStore.managedSurface(for: id)
     }
 
     func allManagedSurfaces() -> [GhosttyManagedSurface] {
-        Array(managedSurfaces.values)
+        managedSurfaceStore.allSurfaces()
     }
 
     var selectedActiveLeafID: UUID? {
@@ -749,7 +747,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         let topLevelSummary = topLevels.enumerated().map { index, topLevel in
             let selectedMarker = topLevel.id == selectedTopLevelID ? "*" : ""
             let leafSummary = topLevel.leafIDs.map { leafID in
-                if let surface = managedSurfaces[leafID] {
+                if let surface = managedSurfaceStore.managedSurface(for: leafID) {
                     return surface.diagnosticSummary()
                 }
                 return "surface=\(ghosttyDiagnosticShortID(leafID)) missing"
@@ -849,7 +847,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     func readSelection(from surfaceID: UUID) -> GhosttyTerminalSelectionReadOutcome {
-        guard let surface = managedSurfaces[surfaceID] else {
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             updateDebugSummary("copy dropped: missing surface")
             return .missingSurface(surfaceID)
         }
@@ -875,7 +873,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     func selectionAvailability(for surfaceID: UUID) -> GhosttyTerminalSelectionAvailabilityOutcome {
-        guard let surface = managedSurfaces[surfaceID] else {
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             updateDebugSummary("selection check dropped: missing surface")
             return .missingSurface(surfaceID)
         }
@@ -975,7 +973,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseButtonEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaces[surfaceID] else {
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             updateDebugSummary("mouse button dropped: target surface missing")
             return .missingTarget(surfaceID)
         }
@@ -995,7 +993,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaces[surfaceID] else {
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             updateDebugSummary("mouse position dropped: target surface missing")
             return .missingTarget(surfaceID)
         }
@@ -1010,7 +1008,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseScrollEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaces[surfaceID] else {
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             updateDebugSummary("mouse scroll dropped: target surface missing")
             return .missingTarget(surfaceID)
         }
@@ -1025,7 +1023,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         to surfaceID: UUID,
         _ event: GhosttySurfaceMousePressureEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaces[surfaceID] else {
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             updateDebugSummary("mouse pressure dropped: target surface missing")
             return .missingTarget(surfaceID)
         }
@@ -1045,7 +1043,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     func isMouseCaptured(for surfaceID: UUID) -> Bool {
-        guard let surface = managedSurfaces[surfaceID] else {
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             return false
         }
 
@@ -1217,7 +1215,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
         let focusedLeafID = decodedRequest.focusedLeafIndex.map { leafSurfaces[$0].id }
 
-        let replacingParentSurfaceID = decodedRequest.parent.flatMap { surfaceIDsByHandle[$0] }
+        let replacingParentSurfaceID = decodedRequest.parent.flatMap {
+            managedSurfaceStore.id(forHandle: $0)
+        }
         installSurfaceTree(
             leafSurfaces: leafSurfaces,
             tree: tree,
@@ -1230,7 +1230,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         if GhosttyRuntimeTrace.isEnabled {
             NSLog(
                 "Remux create_surface_tree registered managed=%d top=%d selected=%@",
-                managedSurfaces.count,
+                managedSurfaceStore.count,
                 topLevels.count,
                 String(describing: selectedTopLevelID)
             )
@@ -1288,7 +1288,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             "Remux close_surface id=%@ processAlive=%@ managed=%d top=%d",
             id.uuidString,
             String(describing: processAlive),
-            managedSurfaces.count,
+            managedSurfaceStore.count,
             topLevels.count
         )
 #endif
@@ -1318,7 +1318,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surface: ghostty_surface_t?
     ) {
         _ = app
-        guard let surface, let id = surfaceIDsByHandle[surface] else {
+        guard let surface, let id = managedSurfaceStore.id(forHandle: surface) else {
             updateDebugSummary("select_surface missing handle")
             return
         }
@@ -1357,8 +1357,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     ) -> Bool {
         _ = app
         guard target.tag == GHOSTTY_TARGET_SURFACE else { return true }
-        guard let id = surfaceIDsByHandle[target.target.surface],
-              let surface = managedSurfaces[id] else { return true }
+        guard let id = managedSurfaceStore.id(forHandle: target.target.surface),
+              let surface = managedSurfaceStore.managedSurface(for: id) else { return true }
 
         switch action.tag {
         case GHOSTTY_ACTION_RENDER:
@@ -1510,7 +1510,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func managedSurfaceIDForTesting(handle: ghostty_surface_t?) -> UUID? {
         guard let handle else { return nil }
-        return surfaceIDsByHandle[handle]
+        return managedSurfaceStore.id(forHandle: handle)
     }
 #endif
 
@@ -1554,7 +1554,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         topLevels.flatMap(\.leafIDs).map { leafID in
             GhosttyRuntimeSurfaceTreeInstallPlanner.LeafIdentity(
                 id: leafID,
-                manualUserdata: managedSurfaces[leafID]?.manualUserdata
+                manualUserdata: managedSurfaceStore.managedSurface(for: leafID)?.manualUserdata
             )
         }
     }
@@ -1591,7 +1591,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         // Split insertion consumes Ghostty's typed projection request for a
         // missing native pane surface. It must not infer tmux layout from app
         // state or transport bytes.
-        guard let parentHandle, let parentID = surfaceIDsByHandle[parentHandle] else {
+        guard let parentHandle, let parentID = managedSurfaceStore.id(forHandle: parentHandle) else {
             return false
         }
         guard let insertDirection = GhosttySurfaceTree.InsertDirection(native: direction) else {
@@ -1626,11 +1626,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func register(_ surfaces: [GhosttyManagedSurface]) {
-        for surface in surfaces {
-            managedSurfaces[surface.id] = surface
-            surfaceIDsByHandle[surface.controlSurface.handle] = surface.id
-        }
-        updateDebugSummary("managed surfaces=\(managedSurfaces.count)")
+        managedSurfaceStore.register(surfaces)
+        updateDebugSummary("managed surfaces=\(managedSurfaceStore.count)")
     }
 
     private func createManagedSurface(
@@ -1667,7 +1664,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     private var selectedActiveSurface: GhosttyManagedSurface? {
         guard let surfaceID = selectedActiveLeafID else { return nil }
-        return managedSurfaces[surfaceID]
+        return managedSurfaceStore.managedSurface(for: surfaceID)
     }
 
     private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
@@ -1676,7 +1673,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             reason: "display.update"
         )
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
-        guard let surface = managedSurfaces[surfaceID] else { return }
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else { return }
         let completions = interactiveReadinessTracker.recordRender(
             surfaceID: surfaceID,
             size: size,
@@ -1704,7 +1701,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
         GhosttyRuntimeTrace.flowEventIfActive(flow, event: event, fields: eventFields)
 
-        guard let surfaceID, let surface = managedSurfaces[surfaceID] else {
+        guard let surfaceID, let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             var missingFields = eventFields
             missingFields["reason"] = "missing_ready_surface"
             GhosttyRuntimeTrace.flowEventIfActive(flow, event: "interactive.waiting", fields: missingFields)
@@ -1721,7 +1718,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surface: GhosttyManagedSurface? = nil
     ) {
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
-        guard let surface = surface ?? managedSurfaces[surfaceID] else { return }
+        guard let surface = surface ?? managedSurfaceStore.managedSurface(for: surfaceID) else { return }
         let completions = interactiveReadinessTracker.updatePresentation(
             surfaceID: surfaceID,
             state: interactiveReadinessState(for: surface)
@@ -1775,7 +1772,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func traceInteractiveWaiting(surfaceID: UUID, reason: String, scale: CGFloat?) {
-        guard let surface = managedSurfaces[surfaceID] else { return }
+        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else { return }
         let state = interactiveReadinessState(for: surface)
         let renderStatus = interactiveReadinessTracker.renderStatus(for: surfaceID)
         var fields = [
@@ -1800,7 +1797,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func removeManagedSurface(_ id: UUID) {
-        guard let removed = managedSurfaces.removeValue(forKey: id) else { return }
+        guard let removed = managedSurfaceStore.remove(id: id) else { return }
         runtimePresentationReadySurfaceIDs.remove(id)
         viewPresentedSurfaceIDs.remove(id)
         if pendingPhonePresentationSurfaceID == id {
@@ -1810,11 +1807,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         NSLog(
             "Remux removing managed surface id=%@ managed=%d top=%d",
             id.uuidString,
-            managedSurfaces.count,
+            managedSurfaceStore.count,
             topLevels.count
         )
 #endif
-        surfaceIDsByHandle.removeValue(forKey: removed.controlSurface.handle)
         removed.releaseBeforePermanentRemoval()
 
         let plan = GhosttyRuntimeSurfaceTreeRemovalPlanner().plan(
@@ -1827,11 +1823,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         topLevels = plan.topLevels
         selectedTopLevelID = plan.selectedTopLevelID
         _ = removed
-        updateDebugSummary("managed surfaces=\(managedSurfaces.count)")
+        updateDebugSummary("managed surfaces=\(managedSurfaceStore.count)")
     }
 
     private func updateDebugSummary(_ event: String) {
-        debugSummary = "\(event); create=\(createSurfaceCount), tree=\(createSurfaceTreeCount), managed=\(managedSurfaces.count), top=\(topLevels.count)"
+        debugSummary = "\(event); create=\(createSurfaceCount), tree=\(createSurfaceTreeCount), managed=\(managedSurfaceStore.count), top=\(topLevels.count)"
         notifyChanged()
     }
 
