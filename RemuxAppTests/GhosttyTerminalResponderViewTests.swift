@@ -279,6 +279,75 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
     }
 
+    func testHardwarePressResolutionPrefersMappedHIDUsageOverPrintableText() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardReturnOrEnter,
+                modifiers: [],
+                characters: "x",
+                charactersIgnoringModifiers: "x"
+            ),
+            .keyEvent(.init(keyCode: .enter))
+        )
+    }
+
+    func testHardwarePressResolutionUsesControlTextFromCharactersIgnoringModifiers() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardC,
+                modifiers: .control,
+                characters: "c",
+                charactersIgnoringModifiers: "c"
+            ),
+            .text("\u{03}")
+        )
+    }
+
+    func testHardwarePressResolutionUsesPrintableCharactersAfterUnmappedHID() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardA,
+                modifiers: [],
+                characters: "a",
+                charactersIgnoringModifiers: "a"
+            ),
+            .text("a")
+        )
+    }
+
+    func testHardwarePressResolutionRejectsCommandPrintableText() {
+        XCTAssertNil(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardA,
+                modifiers: .command,
+                characters: "a",
+                charactersIgnoringModifiers: "a"
+            )
+        )
+    }
+
+    func testHardwarePressResolutionRejectsControlPrintableTextWithoutControlTranslationInput() {
+        XCTAssertNil(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardA,
+                modifiers: .control,
+                characters: "a",
+                charactersIgnoringModifiers: nil
+            )
+        )
+    }
+
+    func testHardwarePressResolutionReturnsNilForUnmappedEmptyPress() {
+        XCTAssertNil(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardA,
+                modifiers: [],
+                characters: "",
+                charactersIgnoringModifiers: nil
+            )
+        )
+    }
+
     func testHardwareCommandMappingRejectsUnmappedHIDUsageWithoutControlModifiers() {
         XCTAssertNil(
             GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(

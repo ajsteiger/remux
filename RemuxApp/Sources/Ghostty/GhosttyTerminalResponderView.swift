@@ -338,31 +338,30 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         )
         var unhandledPresses = Set<UIPress>()
         for press in presses.sorted(by: Self.sortPressesByTimestamp) {
-            guard
-                let key = press.key,
-                let action = GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
-                    keyCode: key.keyCode,
-                    modifiers: key.modifierFlags,
-                    charactersIgnoringModifiers: key.charactersIgnoringModifiers
-                )
-            else {
-                if let key = press.key,
-                   let text = GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
-                    characters: key.characters,
-                    modifiers: key.modifierFlags
-                   ) {
-                    GhosttyRuntimeTrace.diagnostics(
-                        "responder.pressesBegan text keyCode=\(key.keyCode.rawValue) modifiers=\(key.modifierFlags.rawValue) bytes=\(text.lengthOfBytes(using: .utf8))"
-                    )
-                    _ = sendTextHandler?(text)
-                    continue
-                }
-
+            guard let key = press.key else {
                 unhandledPresses.insert(press)
                 continue
             }
 
-            if let key = press.key {
+            guard let action = GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: key.keyCode,
+                modifiers: key.modifierFlags,
+                characters: key.characters,
+                charactersIgnoringModifiers: key.charactersIgnoringModifiers
+            ) else {
+                unhandledPresses.insert(press)
+                continue
+            }
+
+            if case .text(let text) = action,
+               GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
+                   characters: key.characters,
+                   modifiers: key.modifierFlags
+               ) == text {
+                GhosttyRuntimeTrace.diagnostics(
+                    "responder.pressesBegan text keyCode=\(key.keyCode.rawValue) modifiers=\(key.modifierFlags.rawValue) bytes=\(text.lengthOfBytes(using: .utf8))"
+                )
+            } else {
                 GhosttyRuntimeTrace.diagnostics(
                     "responder.pressesBegan action keyCode=\(key.keyCode.rawValue) modifiers=\(key.modifierFlags.rawValue)"
                 )
@@ -589,6 +588,26 @@ enum GhosttyTerminalHardwareCommandMapping {
         }
 
         return .text(translated)
+    }
+
+    static func resolveHardwarePress(
+        keyCode: UIKeyboardHIDUsage,
+        modifiers: UIKeyModifierFlags,
+        characters: String,
+        charactersIgnoringModifiers: String?
+    ) -> GhosttyTerminalHardwareCommandAction? {
+        if let action = resolveHardwareKey(
+            keyCode: keyCode,
+            modifiers: modifiers,
+            charactersIgnoringModifiers: charactersIgnoringModifiers
+        ) {
+            return action
+        }
+
+        guard let text = resolveHardwareText(characters: characters, modifiers: modifiers) else {
+            return nil
+        }
+        return .text(text)
     }
 
     static func resolveHardwareText(
