@@ -883,23 +883,11 @@ struct GhosttySurfaceScreen: View {
                 height: 0
             )
 
-        let isVisible = GhosttySoftwareKeyboardVisibility.isVisible(
+        let projection = GhosttyKeyboardVisibilityProjection(
             frameEnd: frameEnd,
-            screenBounds: UIScreen.main.bounds
-        )
-        let nextOverlapHeight = GhosttySelectionSheetSizing.normalizedHeight(
-            GhosttySoftwareKeyboardVisibility.visibleOverlapHeight(
-                frameEnd: frameEnd,
-                screenBounds: UIScreen.main.bounds
-            )
-        )
-        let fallbackDelay = keyboardTransitionFallbackDelay(for: notification)
-        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
-            .doubleValue
-            ?? GhosttyKeyboardViewportTransitionTiming.defaultAnimationDuration
-        let notificationTarget: GhosttyKeyboardViewportTransitionTarget = isVisible ? .shown : .hidden
-        let shouldBeginViewportTransition = GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
-            notificationTarget: notificationTarget,
+            screenBounds: UIScreen.main.bounds,
+            animationDuration: (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
+                .doubleValue,
             keyboardMode: inputCoordinator.keyboardMode,
             isDismissSystemKeyboardRequested: inputCoordinator.isDismissSystemKeyboardRequested
         )
@@ -908,39 +896,39 @@ struct GhosttySurfaceScreen: View {
             event: "ui.keyboard.notification",
             fields: [
                 "name": notification.name.rawValue,
-                "visible": "\(isVisible)",
+                "visible": "\(projection.isVisible)",
                 "height": "\(Int(frameEnd.height))",
-                "beginTransition": "\(shouldBeginViewportTransition)",
+                "beginTransition": "\(projection.shouldBeginViewportTransition)",
             ]
         )
         GhosttyRuntimeTrace.perf(
-            "kbd.visibility visible=\(isVisible) overlap=\(nextOverlapHeight) duration_ms=\(String(format: "%.3f", duration * 1000)) fallback_ms=\(String(format: "%.3f", fallbackDelay * 1000)) beginTransition=\(shouldBeginViewportTransition) awaitingSystem=\(isAwaitingSystemKeyboardPresentation) frame=\(Int(frameEnd.origin.x)),\(Int(frameEnd.origin.y)),\(Int(frameEnd.width)),\(Int(frameEnd.height))"
+            "kbd.visibility visible=\(projection.isVisible) overlap=\(projection.overlapHeight) duration_ms=\(String(format: "%.3f", projection.animationDuration * 1000)) fallback_ms=\(String(format: "%.3f", projection.fallbackDelay * 1000)) beginTransition=\(projection.shouldBeginViewportTransition) awaitingSystem=\(isAwaitingSystemKeyboardPresentation) frame=\(Int(frameEnd.origin.x)),\(Int(frameEnd.origin.y)),\(Int(frameEnd.width)),\(Int(frameEnd.height))"
         )
 
         performKeyboardChromeStateChange {
-            if shouldBeginViewportTransition {
+            if projection.shouldBeginViewportTransition {
                 beginKeyboardViewportTransition(
-                    target: notificationTarget,
-                    fallbackDelay: fallbackDelay
+                    target: projection.transitionTarget,
+                    fallbackDelay: projection.fallbackDelay
                 )
             } else {
                 GhosttyRuntimeTrace.perf(
-                    "kbd.visibility skipTransition target=\(notificationTarget.traceLabel) mode=\(inputCoordinator.keyboardMode.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
+                    "kbd.visibility skipTransition target=\(projection.transitionTarget.traceLabel) mode=\(inputCoordinator.keyboardMode.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
                 )
             }
 
-            if softwareKeyboardOverlapHeight != nextOverlapHeight {
-                softwareKeyboardOverlapHeight = nextOverlapHeight
+            if softwareKeyboardOverlapHeight != projection.overlapHeight {
+                softwareKeyboardOverlapHeight = projection.overlapHeight
             }
-            if nextOverlapHeight > 0, lastSoftwareKeyboardOverlapHeight != nextOverlapHeight {
-                lastSoftwareKeyboardOverlapHeight = nextOverlapHeight
+            if projection.overlapHeight > 0, lastSoftwareKeyboardOverlapHeight != projection.overlapHeight {
+                lastSoftwareKeyboardOverlapHeight = projection.overlapHeight
             }
-            if isVisible {
+            if projection.isVisible {
                 isAwaitingSystemKeyboardPresentation = false
             }
 
             var updatedCoordinator = inputCoordinator
-            updatedCoordinator.updateSoftwareKeyboardVisibility(isVisible)
+            updatedCoordinator.updateSoftwareKeyboardVisibility(projection.isVisible)
             if updatedCoordinator != inputCoordinator {
                 inputCoordinator = updatedCoordinator
             }
@@ -1138,19 +1126,6 @@ struct GhosttySurfaceScreen: View {
             try? await Task.sleep(nanoseconds: nanoseconds)
             completeKeyboardViewportTransitionFromFallback(token: token)
         }
-    }
-
-    private func keyboardTransitionFallbackDelay(for notification: Notification) -> TimeInterval {
-        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?
-            .doubleValue
-            ?? GhosttyKeyboardViewportTransitionTiming.defaultAnimationDuration
-        return min(
-            max(
-                duration + GhosttyKeyboardViewportTransitionTiming.fallbackGraceInterval,
-                GhosttyKeyboardViewportTransitionTiming.minimumFallbackDelay
-            ),
-            GhosttyKeyboardViewportTransitionTiming.maximumFallbackDelay
-        )
     }
 
     private func keyboardViewportFallbackDelayForUserToggle(
@@ -1426,15 +1401,6 @@ enum GhosttyKeyboardViewportTransitionPolicy {
             && !isAwaitingSystemKeyboardPresentation
             && isSceneActive
     }
-}
-
-private enum GhosttyKeyboardViewportTransitionTiming {
-    static let defaultAnimationDuration: TimeInterval = 0.35
-    static let fallbackGraceInterval: TimeInterval = 0.02
-    static let minimumFallbackDelay: TimeInterval = 0.25
-    static let maximumFallbackDelay: TimeInterval = 1.0
-    static let defaultFallbackDelay: TimeInterval = 1.0
-    static let systemPresentationFallbackDelay: TimeInterval = 2.0
 }
 
 private extension Optional where Wrapped == GhosttyKeyboardViewportTransitionTarget {
