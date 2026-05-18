@@ -53,7 +53,14 @@ class Sample:
     action: str
     elapsed_ms: float
     signal: str
+    topology_line: str
     command: str
+
+
+@dataclass(frozen=True)
+class MatchedSignal:
+    signal: str
+    line: str
 
 
 class BenchmarkError(RuntimeError):
@@ -147,8 +154,16 @@ def validate_session_name(session_name: str) -> str:
     return session_name
 
 
-def parse_context_line(line: str, token: str) -> TmuxContext | None:
+def control_payload(line: str) -> str:
     stripped = line.strip()
+    dcs_prefix = "\x1bP1000p"
+    if stripped.startswith(dcs_prefix):
+        return stripped[len(dcs_prefix):]
+    return stripped
+
+
+def parse_context_line(line: str, token: str) -> TmuxContext | None:
+    stripped = control_payload(line)
     if not stripped.startswith(f"{CONTEXT_PREFIX}{token} "):
         return None
 
@@ -158,12 +173,19 @@ def parse_context_line(line: str, token: str) -> TmuxContext | None:
     return TmuxContext(session_id=parts[1], pane_id=parts[2])
 
 
-def matching_signal(line: str, signals: Iterable[str]) -> str | None:
-    stripped = line.strip()
+def matching_signal(line: str, signals: Iterable[str]) -> MatchedSignal | None:
+    stripped = control_payload(line)
     for signal in signals:
         if stripped == signal or stripped.startswith(f"{signal} "):
-            return signal
+            return MatchedSignal(signal=signal, line=stripped)
     return None
+
+
+def window_id_from_topology_line(line: str) -> str | None:
+    match = re.search(r"@[0-9]+", line)
+    if match is None:
+        return None
+    return match.group(0)
 
 
 class AskPass:
@@ -349,12 +371,60 @@ class ControlModeSession:
             f"{spec.name} topology signal",
         )
         elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
+        if not isinstance(signal, MatchedSignal):
+            raise BenchmarkError(f"unexpected topology signal result: {signal!r}")
         return Sample(
             action=spec.report_name,
             elapsed_ms=elapsed_ms,
-            signal=str(signal),
+            signal=signal.signal,
+            topology_line=signal.line,
             command=command,
         )
+
+    def close_window(self, window_id: str, timeout_seconds: float) -> None:
+        if not re.fullmatch(r"@[0-9]+", window_id):
+            raise BenchmarkError(f"refusing invalid tmux window id: {window_id}")
+
+        self.send_command(f"kill-window -t {window_id}")
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            line = self.read_line(0.05)
+            if line is None:
+                break
+            if control_payload(line).startswith(f"%window-close {window_id}"):
+                return
+
+        remaining_window_ids = self.list_window_ids(timeout_seconds)
+        if window_id in remaining_window_ids:
+            raise BenchmarkError(f"tmux window remained after close: {window_id}")
+
+    def list_window_ids(self, timeout_seconds: float) -> set[str]:
+        token = uuid.uuid4().hex[:8]
+        prefix = f"__REMUX_EXACT_WINDOW__{token}"
+        done = f"__REMUX_EXACT_DONE__{token}"
+        self.send_command(
+            f"list-windows -F {shlex.quote(prefix + ' #{window_id}')}"
+        )
+        self.send_command(f"display-message -p {shlex.quote(done)}")
+
+        window_ids: set[str] = set()
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise BenchmarkError("timed out waiting for tmux window list")
+
+            line = self.read_line(remaining)
+            if line is None:
+                raise BenchmarkError("timed out waiting for tmux window list")
+
+            payload = control_payload(line)
+            if payload == done:
+                return window_ids
+            if payload.startswith(f"{prefix} "):
+                parts = payload.split()
+                if len(parts) >= 2:
+                    window_ids.add(parts[1])
 
 
 def run_remote_shell(
@@ -428,15 +498,26 @@ def summarize(samples: list[Sample], report_name: str) -> str:
     )
 
 
+def sample_created_window_id(sample: Sample) -> str:
+    window_id = window_id_from_topology_line(sample.topology_line)
+    if window_id is None:
+        raise BenchmarkError(
+            f"could not determine created window from {sample.action} signal: "
+            f"{sample.topology_line!r}"
+        )
+    return window_id
+
+
 def prepare_split_window(
     session: ControlModeSession,
     context: TmuxContext,
     new_window_template: str,
     timeout_seconds: float,
-) -> TmuxContext:
+) -> tuple[TmuxContext, str]:
     command = render_command(new_window_template, context)
-    session.measure_action(ACTION_SPECS[0], command, timeout_seconds)
-    return session.request_context(timeout_seconds)
+    sample = session.measure_action(ACTION_SPECS[0], command, timeout_seconds)
+    window_id = sample_created_window_id(sample)
+    return session.request_context(timeout_seconds), window_id
 
 
 def run_benchmark(args: argparse.Namespace) -> int:
@@ -467,6 +548,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
                 command = render_command(args.new_window_command, context)
                 sample = control.measure_action(new_window_spec, command, args.timeout)
                 samples.append(sample)
+                control.close_window(sample_created_window_id(sample), args.timeout)
                 context = control.request_context(args.timeout)
                 control.drain_until_idle(idle_seconds=0.05, max_seconds=1.0)
                 if args.verbose:
@@ -478,7 +560,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
                     )
 
             for index in range(args.samples):
-                context = prepare_split_window(
+                context, split_window_id = prepare_split_window(
                     control,
                     context,
                     args.new_window_command,
@@ -488,6 +570,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
                 command = render_command(args.split_pane_command, context)
                 sample = control.measure_action(split_pane_spec, command, args.timeout)
                 samples.append(sample)
+                control.close_window(split_window_id, args.timeout)
                 context = control.request_context(args.timeout)
                 control.drain_until_idle(idle_seconds=0.05, max_seconds=1.0)
                 if args.verbose:
@@ -537,9 +620,21 @@ def self_test() -> int:
     )
     assert context == TmuxContext(session_id="$54", pane_id="%10")
     assert parse_context_line("unrelated", "abc123") is None
-    assert matching_signal("%window-add @2", ("%window-add",)) == "%window-add"
-    assert matching_signal("%layout-change @2 abc", ("%layout-change",)) == "%layout-change"
+    assert matching_signal("%window-add @2", ("%window-add",)) == MatchedSignal(
+        signal="%window-add",
+        line="%window-add @2",
+    )
+    assert matching_signal("\x1bP1000p%window-add @2", ("%window-add",)) == MatchedSignal(
+        signal="%window-add",
+        line="%window-add @2",
+    )
+    assert matching_signal("%layout-change @2 abc", ("%layout-change",)) == MatchedSignal(
+        signal="%layout-change",
+        line="%layout-change @2 abc",
+    )
     assert matching_signal("%output %1 abc", ("%layout-change",)) is None
+    assert window_id_from_topology_line("%session-window-changed $1 @2") == "@2"
+    assert window_id_from_topology_line("%window-add @3") == "@3"
     assert render_command("new-window -t {session_id}", context) == "new-window -t $54"
     assert render_command("split-window -h -t {pane_id}", context) == "split-window -h -t %10"
     assert validate_session_name("remux-exact-ssh-bench-abc123") == (
@@ -553,11 +648,41 @@ def self_test() -> int:
         raise AssertionError("expected arbitrary session name to be rejected")
 
     samples = [
-        Sample("new_window", 10.0, "%window-add", "new-window -t $54"),
-        Sample("new_window", 30.0, "%session-window-changed", "new-window -t $54"),
-        Sample("new_window", 20.0, "%window-add", "new-window -t $54"),
-        Sample("split_pane", 5.0, "%layout-change", "split-window -h -t %10"),
-        Sample("split_pane", 15.0, "%window-pane-changed", "split-window -h -t %10"),
+        Sample(
+            "new_window",
+            10.0,
+            "%window-add",
+            "%window-add @2",
+            "new-window -t $54",
+        ),
+        Sample(
+            "new_window",
+            30.0,
+            "%session-window-changed",
+            "%session-window-changed $54 @3",
+            "new-window -t $54",
+        ),
+        Sample(
+            "new_window",
+            20.0,
+            "%window-add",
+            "%window-add @4",
+            "new-window -t $54",
+        ),
+        Sample(
+            "split_pane",
+            5.0,
+            "%layout-change",
+            "%layout-change @5",
+            "split-window -h -t %10",
+        ),
+        Sample(
+            "split_pane",
+            15.0,
+            "%window-pane-changed",
+            "%window-pane-changed @5 %11",
+            "split-window -h -t %10",
+        ),
     ]
     new_summary = summarize(samples, "new_window")
     split_summary = summarize(samples, "split_pane")
