@@ -734,6 +734,40 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertTrue(terminalModel === modelFactory.createdModels[key])
     }
 
+    func testActiveTerminalScreenEntriesPairSessionsWithExactAttemptModels() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let base = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let logs = SavedWorkspace(serverID: server.id, sessionName: "logs")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [base, logs],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: base.id)
+        await harness.model.connect(to: logs.id)
+
+        let entries = harness.model.activeTerminalScreenEntries
+        XCTAssertEqual(entries.map(\.id), harness.model.activeSessions.map(\.id))
+        XCTAssertEqual(entries.map(\.instanceID), harness.model.activeSessions.map(\.instanceID))
+
+        for entry in entries {
+            let key = TerminalRuntimeAttemptKey(session: entry.session)
+            let recordedModel = try XCTUnwrap(modelFactory.createdModels[key])
+
+            XCTAssertTrue(entry.model === recordedModel)
+            XCTAssertEqual(entry.target.workspace.id, entry.session.target.workspace.id)
+            XCTAssertEqual(entry.target.server.id, entry.session.target.server.id)
+        }
+    }
+
     func testShowLibraryKeepsOwnedTerminalModelsAlive() async throws {
         let server = SavedServer(
             displayName: "Build Host",

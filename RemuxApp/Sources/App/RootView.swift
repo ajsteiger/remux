@@ -74,21 +74,20 @@ private struct RemuxWorkspaceShell: View {
 
     private var activeTerminalLayer: some View {
         ZStack {
-            ForEach(model.activeSessions) { session in
-                let isSelected = selectedTerminalID == session.id
+            ForEach(model.activeTerminalScreenEntries) { entry in
+                let isSelected = selectedTerminalID == entry.id
                 ActiveTerminalSessionView(
-                    session: session,
-                    model: model.terminalScreenModel(for: session),
+                    entry: entry,
                     shortcutStore: shortcutStore,
                     onReconnect: {
-                        model.reconnectActiveSession(session.id, source: .manualButton)
+                        model.reconnectActiveSession(entry.id, source: .manualButton)
                     },
                     onShowLibrary: {
                         dismissKeyboard()
                         Task { await model.showLibrary() }
                     }
                 )
-                .id(session.instanceID)
+                .id(entry.instanceID)
                 .opacity(isSelected ? 1 : 0)
                 .allowsHitTesting(isSelected)
                 .accessibilityHidden(!isSelected)
@@ -206,16 +205,15 @@ private struct RemuxWorkspaceShell: View {
 }
 
 private struct ActiveTerminalSessionView: View {
-    let session: ActiveTerminalSession
-    @ObservedObject var model: GhosttySurfaceScreenModel
+    let entry: ActiveTerminalScreenEntry
     let shortcutStore: ShortcutStore
     let onReconnect: () -> Void
     let onShowLibrary: () -> Void
 
     var body: some View {
         GhosttySurfaceScreen(
-            target: session.target,
-            model: model,
+            target: entry.target,
+            model: entry.model,
             shortcutStore: shortcutStore,
             onReconnect: onReconnect,
             onEditConnection: onShowLibrary

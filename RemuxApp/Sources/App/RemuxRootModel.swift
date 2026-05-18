@@ -55,6 +55,23 @@ struct TerminalRuntimeAttemptKey: Hashable, Sendable {
     }
 }
 
+struct ActiveTerminalScreenEntry: Identifiable {
+    let session: ActiveTerminalSession
+    let model: GhosttySurfaceScreenModel
+
+    var id: SavedWorkspace.ID {
+        session.id
+    }
+
+    var instanceID: UUID {
+        session.instanceID
+    }
+
+    var target: TmuxConnectionTarget {
+        session.target
+    }
+}
+
 @MainActor
 final class RemuxRootModel: ObservableObject {
     private static let libraryPrewarmServerLimit = 3
@@ -102,6 +119,15 @@ final class RemuxRootModel: ObservableObject {
     @Published private(set) var library: ConnectionLibrarySnapshot = .empty
     @Published private(set) var terminalSettings: TerminalSettings = .default
     @Published private(set) var activeSessions: [ActiveTerminalSession] = []
+
+    var activeTerminalScreenEntries: [ActiveTerminalScreenEntry] {
+        activeSessions.map { session in
+            ActiveTerminalScreenEntry(
+                session: session,
+                model: terminalScreenModel(for: session)
+            )
+        }
+    }
 
     private let dependencies: RemuxAppDependencies
     private let preparedTransportCoordinator: RemuxPreparedTransportCoordinator
