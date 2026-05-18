@@ -48,6 +48,8 @@
 		A4B5C6D7E8F90123456789AC /* GhosttyInteractiveReadinessTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B5C6D7E8F90123456789AB /* GhosttyInteractiveReadinessTracker.swift */; };
 		A4B5C6D7E8F90123456789AE /* GhosttyRuntimeTmuxErrorChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B5C6D7E8F90123456789AD /* GhosttyRuntimeTmuxErrorChannel.swift */; };
 		A4B5C6D7E8F90123456789B0 /* GhosttyRuntimeTmuxErrorChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B5C6D7E8F90123456789AF /* GhosttyRuntimeTmuxErrorChannelTests.swift */; };
+		B6C7D8E9F001122334455662 /* GhosttyRuntimeSurfaceChangeNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C7D8E9F001122334455661 /* GhosttyRuntimeSurfaceChangeNotifier.swift */; };
+		B6C7D8E9F001122334455664 /* GhosttyRuntimeSurfaceChangeNotifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C7D8E9F001122334455663 /* GhosttyRuntimeSurfaceChangeNotifierTests.swift */; };
 		281494ACA6BC4E311A642A37 /* GhosttyModifierState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94F9DD0E0F418199C5E8C0F1 /* GhosttyModifierState.swift */; };
 		28614CC00BB6185ADDD3F626 /* GhosttySurfaceScreenModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CA71E3CE8B5255A1647724 /* GhosttySurfaceScreenModel.swift */; };
 		1234567890ABCDEF12345678 /* GhosttyRuntimeSurfacePresentationReadiness.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCDEF1234567890ABCDEF12 /* GhosttyRuntimeSurfacePresentationReadiness.swift */; };
@@ -254,6 +256,8 @@
 		A4B5C6D7E8F90123456789AB /* GhosttyInteractiveReadinessTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyInteractiveReadinessTracker.swift; sourceTree = "<group>"; };
 		A4B5C6D7E8F90123456789AD /* GhosttyRuntimeTmuxErrorChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeTmuxErrorChannel.swift; sourceTree = "<group>"; };
 		A4B5C6D7E8F90123456789AF /* GhosttyRuntimeTmuxErrorChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeTmuxErrorChannelTests.swift; sourceTree = "<group>"; };
+		B6C7D8E9F001122334455661 /* GhosttyRuntimeSurfaceChangeNotifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceChangeNotifier.swift; sourceTree = "<group>"; };
+		B6C7D8E9F001122334455663 /* GhosttyRuntimeSurfaceChangeNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceChangeNotifierTests.swift; sourceTree = "<group>"; };
 		66D856D8B9DEB50622FCB367 /* GhosttyTerminalDebugLatencyProbeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalDebugLatencyProbeController.swift; sourceTree = "<group>"; };
 		693A617C3861CAF780D14828 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6A0E7E159455EE43F98A88CC /* GhosttyRuntimeSurfaceTreeInstallPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceTreeInstallPlanner.swift; sourceTree = "<group>"; };
@@ -435,6 +439,7 @@
 				9A88D2F77D33C12B09B8F6A2 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift */,
 				20D4B077940E7C6C08A14061 /* GhosttyRuntimeSurfaceTreeRequestDecoderTests.swift */,
 				A4B5C6D7E8F90123456789AF /* GhosttyRuntimeTmuxErrorChannelTests.swift */,
+				B6C7D8E9F001122334455663 /* GhosttyRuntimeSurfaceChangeNotifierTests.swift */,
 				4E84F774C17B5C4DB6B715A9 /* GhosttySurfaceKeyEventTests.swift */,
 				A88FBFD7D50B9817DC09FED6 /* GhosttySurfaceMouseEventTests.swift */,
 				119884123163BF2FA3ABDDE3 /* GhosttySurfaceScreenModelTests.swift */,
@@ -569,6 +574,7 @@
 				A25303329936A058AF3B8D83 /* GhosttyRuntimeManagedSurfaceFactory.swift */,
 				7F4E3D2C1B0A998877665544 /* GhosttyRuntimeManagedSurfaceStore.swift */,
 				1404F0C2A10A471C850B71C3 /* GhosttyRuntimeSurfaceMaterializationContext.swift */,
+				B6C7D8E9F001122334455661 /* GhosttyRuntimeSurfaceChangeNotifier.swift */,
 				ABCDEF1234567890ABCDEF12 /* GhosttyRuntimeSurfacePresentationReadiness.swift */,
 				4F1CDC62D73599BE511A9BD8 /* GhosttyRuntimeSurfaceRegistry.swift */,
 				D3940FB5631BF2E0FD0B5737 /* GhosttyRuntimeSurfaceSelectionPlanner.swift */,
@@ -769,6 +775,7 @@
 				8CA7E55C808A292E823AB1AA /* GhosttyRuntimeManagedSurfaceFactory.swift in Sources */,
 				2A4D6F8091B2C3D4E5F60718 /* GhosttyRuntimeManagedSurfaceStore.swift in Sources */,
 				127FA151CB23420F989F969E /* GhosttyRuntimeSurfaceMaterializationContext.swift in Sources */,
+				B6C7D8E9F001122334455662 /* GhosttyRuntimeSurfaceChangeNotifier.swift in Sources */,
 				1234567890ABCDEF12345678 /* GhosttyRuntimeSurfacePresentationReadiness.swift in Sources */,
 				E3BD44E80ED40A31E36F2059 /* GhosttyRuntimeSurfaceRegistry.swift in Sources */,
 				A4B5C6D7E8F90123456789AE /* GhosttyRuntimeTmuxErrorChannel.swift in Sources */,
@@ -871,6 +878,7 @@
 				50AE7AC63E5504EF8BDA0123 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift in Sources */,
 				800B09E69509E3137D443D91 /* GhosttyRuntimeSurfaceTreeRequestDecoderTests.swift in Sources */,
 				A4B5C6D7E8F90123456789B0 /* GhosttyRuntimeTmuxErrorChannelTests.swift in Sources */,
+				B6C7D8E9F001122334455664 /* GhosttyRuntimeSurfaceChangeNotifierTests.swift in Sources */,
 				14890862E5A8BFE9BE759DB0 /* GhosttySurfaceKeyEventTests.swift in Sources */,
 				93E74D57BD69427AFBA8674D /* GhosttySurfaceMouseEventTests.swift in Sources */,
 				372FD3C9F82E80AFB8CD69BC /* GhosttySurfaceScreenModelTests.swift in Sources */,
