@@ -119,6 +119,23 @@ struct GhosttyKeyboardToggleProjection: Equatable {
     }
 }
 
+struct GhosttyKeyboardViewportFallbackTokenGate: Equatable {
+    private var currentToken: UInt64 = 0
+
+    mutating func issueToken() -> UInt64 {
+        currentToken += 1
+        return currentToken
+    }
+
+    mutating func invalidate() {
+        currentToken += 1
+    }
+
+    func accepts(_ token: UInt64) -> Bool {
+        currentToken == token
+    }
+}
+
 enum GhosttyKeyboardViewportTransitionTiming {
     static let defaultAnimationDuration: TimeInterval = 0.35
     static let fallbackGraceInterval: TimeInterval = 0.02

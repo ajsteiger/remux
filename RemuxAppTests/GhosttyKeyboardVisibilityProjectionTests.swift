@@ -177,4 +177,41 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         XCTAssertNil(projection.fallbackDelay)
         XCTAssertFalse(projection.shouldAwaitSystemKeyboardPresentation)
     }
+
+    func testFallbackTokenGateIssuesIncreasingTokens() {
+        var gate = GhosttyKeyboardViewportFallbackTokenGate()
+
+        let first = gate.issueToken()
+        let second = gate.issueToken()
+
+        XCTAssertEqual(first, 1)
+        XCTAssertEqual(second, 2)
+    }
+
+    func testFallbackTokenGateAcceptsCurrentToken() {
+        var gate = GhosttyKeyboardViewportFallbackTokenGate()
+
+        let token = gate.issueToken()
+
+        XCTAssertTrue(gate.accepts(token))
+    }
+
+    func testFallbackTokenGateRescheduleRejectsOlderToken() {
+        var gate = GhosttyKeyboardViewportFallbackTokenGate()
+
+        let first = gate.issueToken()
+        let second = gate.issueToken()
+
+        XCTAssertFalse(gate.accepts(first))
+        XCTAssertTrue(gate.accepts(second))
+    }
+
+    func testFallbackTokenGateInvalidationRejectsCurrentToken() {
+        var gate = GhosttyKeyboardViewportFallbackTokenGate()
+
+        let token = gate.issueToken()
+        gate.invalidate()
+
+        XCTAssertFalse(gate.accepts(token))
+    }
 }

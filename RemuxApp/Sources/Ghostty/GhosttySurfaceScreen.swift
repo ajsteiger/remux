@@ -14,7 +14,7 @@ struct GhosttySurfaceScreen: View {
     @State private var lastSoftwareKeyboardOverlapHeight: CGFloat = 0
     @State private var selectionSheetBottomReplacementHeight: CGFloat = 0
     @State private var terminalViewportCoordinator = GhosttyTerminalViewportCoordinator()
-    @State private var keyboardViewportTransitionFallbackToken: UInt64 = 0
+    @State private var keyboardViewportTransitionFallbackGate = GhosttyKeyboardViewportFallbackTokenGate()
     @State private var isAwaitingSystemKeyboardPresentation = false
     @State private var topologyActionInputRefocusCoordinator = GhosttyTopologyActionInputRefocusCoordinator()
     @State private var trackpadHUDState = GhosttyKeyboardCursorTrackpad.HUDState.hidden
@@ -1061,7 +1061,7 @@ struct GhosttySurfaceScreen: View {
             return
         }
 
-        keyboardViewportTransitionFallbackToken += 1
+        keyboardViewportTransitionFallbackGate.invalidate()
         let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(
             liveSize: terminalViewportCoordinator.latestLiveSize
         )
@@ -1097,7 +1097,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func completeKeyboardViewportTransitionFromFallback(token: UInt64) {
-        guard keyboardViewportTransitionFallbackToken == token else { return }
+        guard keyboardViewportTransitionFallbackGate.accepts(token) else { return }
         guard terminalViewportCoordinator.isKeyboardTransitionActive else { return }
 
         GhosttyRuntimeTrace.perf(
@@ -1107,8 +1107,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func scheduleKeyboardViewportTransitionFallback(after delay: TimeInterval) {
-        keyboardViewportTransitionFallbackToken += 1
-        let token = keyboardViewportTransitionFallbackToken
+        let token = keyboardViewportTransitionFallbackGate.issueToken()
         let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
         GhosttyRuntimeTrace.perf(
             "kbd.transition scheduleFallback token=\(token) delay_ms=\(String(format: "%.3f", max(0, delay) * 1000))"
