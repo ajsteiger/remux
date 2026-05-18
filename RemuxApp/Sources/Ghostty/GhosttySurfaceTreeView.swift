@@ -60,6 +60,15 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: GhosttySurfaceTreeContainerUIView, context: Context) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.updateUIView.begin",
+            fields: [
+                "pending": ghosttyDiagnosticShortID(projection.pendingPresentationSurfaceID),
+                "selected": ghosttyDiagnosticShortID(projection.selectedActiveLeafID),
+                "topLevel": ghosttyDiagnosticShortID(projection.topLevel?.id),
+                "visibleLeaves": "\(projection.topLevel?.phonePresentedLeafIDs.count ?? 0)",
+            ]
+        )
         uiView.update(
             projection: projection,
             materializationContext: materializationContext,
@@ -73,6 +82,15 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
             submitMousePosition: submitMousePosition,
             submitMouseScroll: submitMouseScroll,
             submitMousePressure: submitMousePressure
+        )
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.updateUIView.end",
+            fields: [
+                "pending": ghosttyDiagnosticShortID(projection.pendingPresentationSurfaceID),
+                "selected": ghosttyDiagnosticShortID(projection.selectedActiveLeafID),
+                "topLevel": ghosttyDiagnosticShortID(projection.topLevel?.id),
+                "visibleLeaves": "\(projection.topLevel?.phonePresentedLeafIDs.count ?? 0)",
+            ]
         )
     }
 }
@@ -144,6 +162,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?,
         submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
     ) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.tree.update.begin",
+            fields: treeUpdateTraceFields(projection: projection)
+        )
         let previousProjection = self.projection
         let previousSourceIdentity = self.materializationContext.sourceIdentity
         updatePresentationOverlay(
@@ -169,6 +191,10 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         if previousProjection != projection || previousSourceIdentity != materializationContext.sourceIdentity {
             setNeedsLayout()
         }
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.tree.update.end",
+            fields: treeUpdateTraceFields(projection: self.projection)
+        )
     }
 
     override func layoutSubviews() {
@@ -212,10 +238,18 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func syncAttachedViews() {
         guard materializationContext.isAvailable else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.tree.sync.begin",
+            fields: treeUpdateTraceFields(projection: projection)
+        )
         let managedSurfaces = materializationContext.allManagedSurfaces()
 
         let visibleIDs = Set(projection.topLevel?.phonePresentedLeafIDs ?? [])
         defer {
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "ui.tree.sync.end",
+                fields: treeUpdateTraceFields(projection: projection)
+            )
             if let perfStartedAt {
                 GhosttyRuntimeTrace.perf(
                     "tree.sync managed=\(managedSurfaces.count) visible=\(visibleIDs.count) containers=\(scrollContainersBySurfaceID.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
@@ -288,10 +322,18 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         guard materializationContext.isAvailable, let topLevel = projection.topLevel else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
         let viewportTraceStartedAt = GhosttyRuntimeTrace.tmuxViewportEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "ui.tree.layoutVisible.begin",
+            fields: treeUpdateTraceFields(projection: projection)
+        )
         GhosttyRuntimeTrace.tmuxViewport(
             "tree.layoutVisible begin leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) selected=\(ghosttyDiagnosticShortID(projection.selectedActiveLeafID))"
         )
         defer {
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "ui.tree.layoutVisible.end",
+                fields: treeUpdateTraceFields(projection: projection)
+            )
             if let viewportTraceStartedAt {
                 GhosttyRuntimeTrace.tmuxViewport(
                     "tree.layoutVisible end leaves=\(topLevel.phonePresentedLeafIDs.count) bounds=\(diagnosticRect(bounds)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: viewportTraceStartedAt))"
@@ -344,7 +386,21 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             )
             surface.setVisible(true)
             surface.setFocused(surfaceID == focusedSurfaceID)
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "ui.recordSurfacePresentation.begin",
+                fields: [
+                    "focused": "\(surfaceID == focusedSurfaceID)",
+                    "surface": ghosttyDiagnosticShortID(surfaceID),
+                ]
+            )
             materializationContext.recordSurfacePresentation(surfaceID, reason: "tree.layout")
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "ui.recordSurfacePresentation.end",
+                fields: [
+                    "focused": "\(surfaceID == focusedSurfaceID)",
+                    "surface": ghosttyDiagnosticShortID(surfaceID),
+                ]
+            )
             GhosttyRuntimeTrace.tmuxViewport(
                 "tree.layout applied leaf=\(ghosttyDiagnosticShortID(surfaceID)) visible=true focused=\(surfaceID == focusedSurfaceID) after=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"
             )
@@ -690,6 +746,19 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
 
     private var effectiveScale: CGFloat {
         max(window?.screen.scale ?? UIScreen.main.scale, 1)
+    }
+
+    private func treeUpdateTraceFields(
+        projection: GhosttyTerminalTreePresentationProjection
+    ) -> [String: String] {
+        [
+            "bounds": diagnosticRect(bounds),
+            "containers": "\(scrollContainersBySurfaceID.count)",
+            "pending": ghosttyDiagnosticShortID(projection.pendingPresentationSurfaceID),
+            "selected": ghosttyDiagnosticShortID(projection.selectedActiveLeafID),
+            "topLevel": ghosttyDiagnosticShortID(projection.topLevel?.id),
+            "visibleLeaves": "\(projection.topLevel?.phonePresentedLeafIDs.count ?? 0)",
+        ]
     }
 
     func editMenuInteraction(

@@ -2021,12 +2021,28 @@ final class GhosttyManagedSurface {
     @MainActor
     @discardableResult
     func updateDisplay(size: CGSize, scale: CGFloat) -> Bool {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "managed.updateDisplay.begin",
+            fields: [
+                "scale": String(format: "%.1f", Double(scale)),
+                "size": "\(Int(size.width))x\(Int(size.height))",
+                "surface": ghosttyDiagnosticShortID(id),
+            ]
+        )
         guard let metrics = displayUpdateTracker.nextMetrics(size: size, scale: scale) else {
             GhosttyRuntimeTrace.tmuxViewport(
                 "managed.updateDisplay skip surface=\(ghosttyDiagnosticShortID(id)) visible=\(isVisible) focused=\(isFocused) points=\(Int(size.width))x\(Int(size.height)) scale=\(scale) current=\(ghosttyDiagnosticSurfaceSize(controlSurface.currentSize()))"
             )
             GhosttyRuntimeTrace.perf(
                 "managed.updateDisplay outcome=skip size=\(Int(size.width))x\(Int(size.height)) scale=\(scale)"
+            )
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "managed.updateDisplay.skip",
+                fields: [
+                    "scale": String(format: "%.1f", Double(scale)),
+                    "size": "\(Int(size.width))x\(Int(size.height))",
+                    "surface": ghosttyDiagnosticShortID(id),
+                ]
             )
             return false
         }
@@ -2043,10 +2059,28 @@ final class GhosttyManagedSurface {
                 controlSurface.updateDisplay(metrics: metrics)
             }
         }
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "managed.updateDisplay.applied",
+            fields: [
+                "pixelSize": "\(metrics.pixelWidth)x\(metrics.pixelHeight)",
+                "scale": String(format: "%.1f", Double(scale)),
+                "size": "\(Int(size.width))x\(Int(size.height))",
+                "surface": ghosttyDiagnosticShortID(id),
+            ]
+        )
         GhosttyRuntimeTrace.tmuxViewport(
             "managed.updateDisplay applied surface=\(ghosttyDiagnosticShortID(id)) visible=\(isVisible) focused=\(isFocused) after=\(ghosttyDiagnosticSurfaceSize(controlSurface.currentSize()))"
         )
         onDisplayUpdate?(self, size, scale)
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "managed.updateDisplay.end",
+            fields: [
+                "pixelSize": "\(metrics.pixelWidth)x\(metrics.pixelHeight)",
+                "scale": String(format: "%.1f", Double(scale)),
+                "size": "\(Int(size.width))x\(Int(size.height))",
+                "surface": ghosttyDiagnosticShortID(id),
+            ]
+        )
         return true
     }
 

@@ -76,6 +76,86 @@ def latest_event(
     return max(matched, key=lambda event: event.timestamp)
 
 
+def first_event_after(
+    instance: FlowInstance,
+    anchor: FlowEvent,
+    predicate: Callable[[str], bool],
+) -> FlowEvent | None:
+    for event in instance.events:
+        if event.timestamp >= anchor.timestamp and predicate(event.event):
+            return event
+    return None
+
+
+def latest_event_after(
+    instance: FlowInstance,
+    anchor: FlowEvent,
+    predicate: Callable[[str], bool],
+) -> FlowEvent | None:
+    matched = [
+        event
+        for event in instance.events
+        if event.timestamp >= anchor.timestamp and predicate(event.event)
+    ]
+    if not matched:
+        return None
+    return max(matched, key=lambda event: event.timestamp)
+
+
+def after_event(
+    anchor: Callable[[FlowInstance], FlowEvent | None],
+    predicate: Callable[[str], bool],
+) -> Callable[[FlowInstance], FlowEvent | None]:
+    def find(instance: FlowInstance) -> FlowEvent | None:
+        anchor_event = anchor(instance)
+        if anchor_event is None:
+            return None
+        return first_event_after(instance, anchor_event, predicate)
+
+    return find
+
+
+def latest_after_event(
+    anchor: Callable[[FlowInstance], FlowEvent | None],
+    predicate: Callable[[str], bool],
+) -> Callable[[FlowInstance], FlowEvent | None]:
+    def find(instance: FlowInstance) -> FlowEvent | None:
+        anchor_event = anchor(instance)
+        if anchor_event is None:
+            return None
+        return latest_event_after(instance, anchor_event, predicate)
+
+    return find
+
+
+def topology_installed(instance: FlowInstance) -> FlowEvent | None:
+    return first_event(instance, exact("registry.topology.installed"))
+
+
+def after_topology(predicate: Callable[[str], bool]) -> Callable[[FlowInstance], FlowEvent | None]:
+    return after_event(topology_installed, predicate)
+
+
+def latest_after_topology(predicate: Callable[[str], bool]) -> Callable[[FlowInstance], FlowEvent | None]:
+    return latest_after_event(topology_installed, predicate)
+
+
+model_revision_published = after_topology(exact("model.surfaceRegistryRevision.published"))
+update_ui_view_begin = after_topology(exact("ui.updateUIView.begin"))
+tree_update_begin = after_topology(exact("ui.tree.update.begin"))
+tree_sync_begin = after_topology(exact("ui.tree.sync.begin"))
+tree_sync_end = after_topology(exact("ui.tree.sync.end"))
+tree_update_end = after_topology(exact("ui.tree.update.end"))
+layout_visible_begin = after_topology(exact("ui.tree.layoutVisible.begin"))
+managed_update_display_begin = after_topology(exact("managed.updateDisplay.begin"))
+managed_update_display_applied = after_topology(exact("managed.updateDisplay.applied"))
+managed_update_display_end = after_topology(exact("managed.updateDisplay.end"))
+display_rendered = after_topology(exact("ui.displayUpdate.rendered"))
+record_presentation_begin = after_topology(exact("ui.recordSurfacePresentation.begin"))
+view_presented = after_topology(exact("ui.viewPresentation.ready"))
+runtime_presentation_ready = after_topology(exact("registry.runtimePresentation.ready"))
+
+
 SEGMENTS = [
     Segment(
         "send_end->ssh_channel_read",
@@ -124,41 +204,118 @@ SEGMENTS = [
         lambda flow: first_event(flow, exact("registry.topology.installed")),
     ),
     Segment(
+        "topology_installed->model_revision_published",
+        topology_installed,
+        model_revision_published,
+    ),
+    Segment(
+        "model_revision_published->updateUIView_begin",
+        model_revision_published,
+        after_event(model_revision_published, exact("ui.updateUIView.begin")),
+    ),
+    Segment(
+        "topology_installed->updateUIView_begin",
+        topology_installed,
+        update_ui_view_begin,
+    ),
+    Segment(
+        "updateUIView_begin->tree_update_begin",
+        update_ui_view_begin,
+        after_event(update_ui_view_begin, exact("ui.tree.update.begin")),
+    ),
+    Segment(
+        "tree_update_begin->tree_sync_begin",
+        tree_update_begin,
+        after_event(tree_update_begin, exact("ui.tree.sync.begin")),
+    ),
+    Segment(
+        "tree_sync_begin->tree_sync_end",
+        tree_sync_begin,
+        after_event(tree_sync_begin, exact("ui.tree.sync.end")),
+    ),
+    Segment(
+        "tree_update_begin->tree_sync_end",
+        tree_update_begin,
+        tree_sync_end,
+    ),
+    Segment(
+        "tree_sync_end->tree_update_end",
+        tree_sync_end,
+        after_event(tree_sync_end, exact("ui.tree.update.end")),
+    ),
+    Segment(
+        "tree_sync_end->layout_visible_begin",
+        tree_sync_end,
+        after_event(tree_sync_end, exact("ui.tree.layoutVisible.begin")),
+    ),
+    Segment(
+        "tree_update_end->layout_visible_begin",
+        tree_update_end,
+        after_event(tree_update_end, exact("ui.tree.layoutVisible.begin")),
+    ),
+    Segment(
+        "layout_visible_begin->managed_update_display_begin",
+        layout_visible_begin,
+        after_event(layout_visible_begin, exact("managed.updateDisplay.begin")),
+    ),
+    Segment(
+        "managed_update_display_begin->managed_update_display_applied",
+        managed_update_display_begin,
+        after_event(managed_update_display_begin, exact("managed.updateDisplay.applied")),
+    ),
+    Segment(
+        "managed_update_display_applied->display_rendered",
+        managed_update_display_applied,
+        after_event(managed_update_display_applied, exact("ui.displayUpdate.rendered")),
+    ),
+    Segment(
+        "display_rendered->managed_update_display_end",
+        display_rendered,
+        after_event(display_rendered, exact("managed.updateDisplay.end")),
+    ),
+    Segment(
+        "managed_update_display_end->record_presentation_begin",
+        managed_update_display_end,
+        after_event(managed_update_display_end, exact("ui.recordSurfacePresentation.begin")),
+    ),
+    Segment(
+        "record_presentation_begin->view_presented",
+        record_presentation_begin,
+        after_event(record_presentation_begin, exact("ui.viewPresentation.ready")),
+    ),
+    Segment(
         "topology_installed->display_rendered",
-        lambda flow: first_event(flow, exact("registry.topology.installed")),
-        lambda flow: first_event(flow, exact("ui.displayUpdate.rendered")),
+        topology_installed,
+        display_rendered,
     ),
     Segment(
         "display_rendered->view_presented",
-        lambda flow: first_event(flow, exact("ui.displayUpdate.rendered")),
-        lambda flow: first_event(flow, exact("ui.viewPresentation.ready")),
+        display_rendered,
+        view_presented,
     ),
     Segment(
         "view_presented->runtime_presentation_ready",
-        lambda flow: first_event(flow, exact("ui.viewPresentation.ready")),
-        lambda flow: first_event(flow, exact("registry.runtimePresentation.ready")),
+        view_presented,
+        runtime_presentation_ready,
     ),
     Segment(
         "topology_installed->view_presented",
-        lambda flow: first_event(flow, exact("registry.topology.installed")),
-        lambda flow: first_event(flow, exact("ui.viewPresentation.ready")),
+        topology_installed,
+        view_presented,
     ),
     Segment(
         "topology_installed->runtime_presentation_ready",
-        lambda flow: first_event(flow, exact("registry.topology.installed")),
-        lambda flow: first_event(flow, exact("registry.runtimePresentation.ready")),
+        topology_installed,
+        runtime_presentation_ready,
     ),
     Segment(
         "last_presentation_fact->interactive_ready",
-        lambda flow: latest_event(
-            flow,
-            any_of("ui.viewPresentation.ready", "registry.runtimePresentation.ready"),
-        ),
+        latest_after_topology(any_of("ui.viewPresentation.ready", "registry.runtimePresentation.ready")),
         lambda flow: first_event(flow, exact("interactive.ready")),
     ),
     Segment(
         "runtime_presentation_ready->interactive_ready",
-        lambda flow: first_event(flow, exact("registry.runtimePresentation.ready")),
+        runtime_presentation_ready,
         lambda flow: first_event(flow, exact("interactive.ready")),
     ),
     Segment(
@@ -291,7 +448,16 @@ Remux flow t=8000000 flow=tmux.newWindow event=tmux.response.window-add since_ms
 Remux flow t=8500000 flow=tmux.newWindow event=tmux.signal.host.pump.processOutput.end.window-add since_ms=7.500
 Remux flow t=9000000 flow=tmux.newWindow event=registry.createSurfaceTree.begin since_ms=8.000
 Remux flow t=12000000 flow=tmux.newWindow event=registry.topology.installed since_ms=11.000
+Remux flow t=12100000 flow=tmux.newWindow event=model.surfaceRegistryRevision.published since_ms=11.100
+Remux flow t=12200000 flow=tmux.newWindow event=ui.updateUIView.begin since_ms=11.200
+Remux flow t=12300000 flow=tmux.newWindow event=ui.tree.update.begin since_ms=11.300
+Remux flow t=12400000 flow=tmux.newWindow event=ui.tree.sync.end since_ms=11.400
+Remux flow t=12500000 flow=tmux.newWindow event=ui.tree.layoutVisible.begin since_ms=11.500
+Remux flow t=12600000 flow=tmux.newWindow event=managed.updateDisplay.begin since_ms=11.600
+Remux flow t=12700000 flow=tmux.newWindow event=managed.updateDisplay.applied since_ms=11.700
 Remux flow t=13000000 flow=tmux.newWindow event=ui.displayUpdate.rendered since_ms=12.000
+Remux flow t=13100000 flow=tmux.newWindow event=managed.updateDisplay.end since_ms=12.100
+Remux flow t=13200000 flow=tmux.newWindow event=ui.recordSurfacePresentation.begin since_ms=12.200
 Remux flow t=14000000 flow=tmux.newWindow event=ui.viewPresentation.ready since_ms=13.000
 Remux flow t=16000000 flow=tmux.newWindow event=registry.runtimePresentation.ready since_ms=15.000
 Remux flow t=17000000 flow=tmux.newWindow event=interactive.ready since_ms=16.000
@@ -329,6 +495,9 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     output = report(instances)
     assert "distinct_action_flows=2" in output
     assert "send_end->ssh_channel_read: n=1 p50_ms=1.000" in output
+    assert "topology_installed->model_revision_published: n=1 p50_ms=0.100" in output
+    assert "managed_update_display_applied->display_rendered: n=1 p50_ms=0.300" in output
+    assert "record_presentation_begin->view_presented: n=1 p50_ms=0.800" in output
     assert "topology_installed->interactive_ready: n=1 p50_ms=5.000" in output
     assert (
         "view_presented->runtime_presentation_ready: "

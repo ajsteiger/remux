@@ -136,9 +136,24 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
         surfaceRegistry.terminalSettings = target.terminalSettings
         surfaceRegistry.onChange = { [weak self] in
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "model.registryChange.received"
+            )
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                    event: "model.registryChange.task.begin",
+                    fields: [
+                        "revision": "\(surfaceRegistryRevision + 1)",
+                    ]
+                )
                 surfaceRegistryRevision += 1
+                GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                    event: "model.surfaceRegistryRevision.published",
+                    fields: [
+                        "revision": "\(surfaceRegistryRevision)",
+                    ]
+                )
                 if GhosttyRuntimeTrace.isEnabled {
                     NSLog("Remux surface registry revision=%d", surfaceRegistryRevision)
                 }
