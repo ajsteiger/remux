@@ -690,6 +690,34 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(registry.debugSummary.contains("selected surface="))
     }
 
+    func testStaleRuntimeSelectSurfaceDoesNotChangeSelection() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let staleLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let currentLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let first = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x1001)!)
+        let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x1002)!)
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(first.id)
+
+        registry.runtimeSelectSurface(
+            app: nil,
+            surface: second.controlSurface.handle,
+            lease: staleLease
+        )
+
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+
+        registry.runtimeSelectSurface(
+            app: nil,
+            surface: second.controlSurface.handle,
+            lease: currentLease
+        )
+
+        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+    }
+
     func testInputRoutesToFocusedManagedSurface() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         var firstInput: [String] = []

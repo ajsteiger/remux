@@ -406,6 +406,34 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         _ = staleRuntime
     }
 
+    func testStaleRuntimeCreateSurfaceCallbackReturnsNilBeforeMutation() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let staleRuntime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        let staleLease = try XCTUnwrap(registry.activeRuntimeCallbackLeaseForTesting)
+        let currentRuntime = try GhosttyKitRuntime(surfaceDelegate: registry)
+        XCTAssertFalse(registry.acceptsRuntimeCallback(staleLease))
+        var config = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_WINDOW
+        )
+
+        let surface = withUnsafePointer(to: &config) { configPtr in
+            registry.runtimeCreateSurface(
+                app: currentRuntime.appHandleForTesting,
+                request: ghostty_runtime_create_surface_s(
+                    parent: nil,
+                    split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
+                    config: configPtr
+                ),
+                lease: staleLease
+            )
+        }
+
+        XCTAssertNil(surface)
+        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.allManagedSurfaces().isEmpty)
+        _ = staleRuntime
+    }
+
     func testRuntimeCreateSurfaceTreeRejectsInvalidFocusedLeafIndexBeforeInstall() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let runtime = try GhosttyKitRuntime(surfaceDelegate: registry)
