@@ -187,44 +187,6 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
     }
 }
 
-enum SSHTmuxControlChannelRequestKind: Equatable, Sendable, CustomStringConvertible {
-    case pseudoTerminal
-    case exec
-    case unknown
-
-    var description: String {
-        switch self {
-        case .pseudoTerminal:
-            return "pseudo-terminal"
-        case .exec:
-            return "exec"
-        case .unknown:
-            return "channel"
-        }
-    }
-}
-
-struct SSHTmuxControlChannelRequestReplyTracker {
-    private var pendingRequests: [SSHTmuxControlChannelRequestKind] = []
-
-    var pendingCount: Int {
-        pendingRequests.count
-    }
-
-    mutating func expectReply(for request: SSHTmuxControlChannelRequestKind) {
-        pendingRequests.append(request)
-    }
-
-    mutating func acknowledgeSuccess() -> SSHTmuxControlChannelRequestKind? {
-        guard !pendingRequests.isEmpty else { return nil }
-        return pendingRequests.removeFirst()
-    }
-
-    mutating func acknowledgeFailure() -> SSHTmuxControlChannelRequestKind {
-        acknowledgeSuccess() ?? .unknown
-    }
-}
-
 actor SSHTmuxControlTransport: TmuxControlTransport {
     nonisolated let receivedBytes: AsyncThrowingStream<Data, Error>
 
