@@ -1,3 +1,5 @@
+import GhosttyKit
+import UIKit
 import XCTest
 @testable import Remux
 
@@ -705,6 +707,272 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(harness.model.state, .terminal(base.id))
     }
 
+    func testConnectInstallsTerminalModelForActiveAttempt() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let key = TerminalRuntimeAttemptKey(session: session)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+
+        XCTAssertTrue(harness.model.hasTerminalScreenModel(for: session))
+        XCTAssertEqual(modelFactory.createdKeys, [key])
+        XCTAssertTrue(terminalModel === modelFactory.createdModels[key])
+    }
+
+    func testShowLibraryKeepsOwnedTerminalModelsAlive() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+
+        await harness.model.showLibrary()
+
+        XCTAssertEqual(harness.model.state, .library)
+        XCTAssertTrue(harness.model.terminalScreenModel(for: session) === terminalModel)
+    }
+
+    func testCloseActiveSessionStopsAndRemovesTerminalModelWithoutViewDisappearance() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let transportFactory = RecordingRootTransportFactory()
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+        await attachAndWaitForRunning(terminalModel)
+
+        harness.model.closeActiveSession(workspace.id)
+
+        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
+        XCTAssertEqual(terminalModel.state, .idle)
+        let didClose = await waitUntil {
+            transportFactory.events.contains { event in
+                if case .closed = event { return true }
+                return false
+            }
+        }
+        XCTAssertTrue(didClose)
+    }
+
+    func testReconnectStopsOldAttemptModelAndInstallsNewAttemptModel() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let oldModel = harness.model.terminalScreenModel(for: oldSession)
+        oldModel.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
+
+        let newSession = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertNotEqual(newSession.instanceID, oldSession.instanceID)
+        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
+        XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
+        XCTAssertEqual(oldModel.state, .idle)
+        XCTAssertEqual(
+            modelFactory.createdKeys,
+            [TerminalRuntimeAttemptKey(session: oldSession), TerminalRuntimeAttemptKey(session: newSession)]
+        )
+    }
+
+    func testRepeatedConnectToSameWorkspaceStopsOldAttemptModel() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let oldModel = harness.model.terminalScreenModel(for: oldSession)
+        oldModel.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        await harness.model.connect(to: workspace.id)
+
+        let newSession = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertNotEqual(newSession.instanceID, oldSession.instanceID)
+        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
+        XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
+        XCTAssertEqual(oldModel.state, .idle)
+    }
+
+    func testDeleteWorkspaceStopsOwnedTerminalModel() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+        terminalModel.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        await harness.model.deleteWorkspace(workspace.id)
+
+        XCTAssertEqual(harness.model.state, .library)
+        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
+        XCTAssertEqual(terminalModel.state, .idle)
+    }
+
+    func testDeleteServerStopsAssociatedTerminalModels() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let base = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let logs = SavedWorkspace(serverID: server.id, sessionName: "logs")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [base, logs],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: base.id)
+        await harness.model.connect(to: logs.id)
+        let sessions = harness.model.activeSessions
+
+        await harness.model.deleteServer(server.id)
+
+        XCTAssertEqual(harness.model.state, .library)
+        XCTAssertTrue(harness.model.activeSessions.isEmpty)
+        XCTAssertTrue(sessions.allSatisfy { !harness.model.hasTerminalScreenModel(for: $0) })
+    }
+
+    func testFailedStateStopsOwnedTerminalModels() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let transportFactory = RecordingRootTransportFactory()
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            settingsRepository: FailingSaveTerminalSettingsRepository(),
+            transportFactory: { target, trustedHostStore, sshConnectionPool in
+                _ = sshConnectionPool
+                return transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+        await attachAndWaitForRunning(terminalModel)
+
+        await harness.model.updateTerminalSettings { settings in
+            settings.fontSize = 19
+        }
+
+        guard case .failed = harness.model.state else {
+            XCTFail("expected failed state")
+            return
+        }
+        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
+        XCTAssertEqual(terminalModel.state, .idle)
+    }
+
     func testRuntimeDisconnectMarksActiveSessionDisconnected() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -1117,6 +1385,7 @@ final class RemuxRootModelTests: XCTestCase {
         servers: [SavedServer] = [],
         workspaces: [SavedWorkspace] = [],
         settings: TerminalSettings = .default,
+        settingsRepository: (any TerminalSettingsRepository)? = nil,
         transportFactory: (@Sendable (
             TmuxConnectionTarget,
             TrustedHostStore,
@@ -1126,13 +1395,14 @@ final class RemuxRootModelTests: XCTestCase {
             TmuxConnectionTarget,
             TrustedHostStore,
             SSHTmuxAuthenticatedConnectionPool
-        ) async -> Void)? = nil
+        ) async -> Void)? = nil,
+        terminalScreenModelFactory: RemuxRootModel.TerminalScreenModelFactory? = nil
     ) -> RemuxRootModelHarness {
         let profileRepository = TestConnectionProfileRepository(
             servers: servers,
             workspaces: workspaces
         )
-        let settingsRepository = TestTerminalSettingsRepository(settings: settings)
+        let settingsRepository = settingsRepository ?? TestTerminalSettingsRepository(settings: settings)
         let shortcutRepository = FileBackedShortcutRepository(rootURL: temporaryRoot())
         let passwordStore = TestPasswordStore()
         let trustedHostStore = TrustedHostStore(rootURL: temporaryRoot())
@@ -1140,6 +1410,7 @@ final class RemuxRootModelTests: XCTestCase {
             DeterministicTmuxControlTransport(chunks: [])
         }
         let resolvedSSHConnectionPrewarmer = sshConnectionPrewarmer ?? { _, _, _ in }
+        let resolvedTerminalScreenModelFactory = terminalScreenModelFactory ?? makeTestTerminalScreenModel
         let dependencies = RemuxAppDependencies(
             profileRepository: profileRepository,
             settingsRepository: settingsRepository,
@@ -1152,11 +1423,29 @@ final class RemuxRootModelTests: XCTestCase {
         )
 
         return RemuxRootModelHarness(
-            model: RemuxRootModel(dependencies: dependencies),
+            model: RemuxRootModel(
+                dependencies: dependencies,
+                terminalScreenModelFactory: resolvedTerminalScreenModelFactory
+            ),
             profileRepository: profileRepository,
             settingsRepository: settingsRepository,
             passwordStore: passwordStore
         )
+    }
+
+    private func attachAndWaitForRunning(
+        _ model: GhosttySurfaceScreenModel,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun, file: file, line: line)
     }
 
     private func temporaryRoot() -> URL {
@@ -1180,8 +1469,65 @@ final class RemuxRootModelTests: XCTestCase {
 private struct RemuxRootModelHarness {
     let model: RemuxRootModel
     let profileRepository: TestConnectionProfileRepository
-    let settingsRepository: TestTerminalSettingsRepository
+    let settingsRepository: any TerminalSettingsRepository
     let passwordStore: TestPasswordStore
+}
+
+@MainActor
+private func makeTestTerminalScreenModel(
+    target: TmuxConnectionTarget,
+    sessionInstanceID: UUID,
+    transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
+    onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
+) -> GhosttySurfaceScreenModel {
+    GhosttySurfaceScreenModel(
+        target: target,
+        sessionInstanceID: sessionInstanceID,
+        transportFactory: transportFactory,
+        onRuntimeStateChange: onRuntimeStateChange,
+        precreateRuntime: false,
+        debugLatencyProbe: nil
+    )
+}
+
+@MainActor
+private final class RecordingTerminalScreenModelFactory: @unchecked Sendable {
+    private(set) var createdKeys: [TerminalRuntimeAttemptKey] = []
+    private(set) var createdModels: [TerminalRuntimeAttemptKey: GhosttySurfaceScreenModel] = [:]
+
+    var factory: RemuxRootModel.TerminalScreenModelFactory {
+        { target, sessionInstanceID, transportFactory, onRuntimeStateChange in
+            self.makeModel(
+                target: target,
+                sessionInstanceID: sessionInstanceID,
+                transportFactory: transportFactory,
+                onRuntimeStateChange: onRuntimeStateChange
+            )
+        }
+    }
+
+    func makeModel(
+        target: TmuxConnectionTarget,
+        sessionInstanceID: UUID,
+        transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
+    ) -> GhosttySurfaceScreenModel {
+        let key = TerminalRuntimeAttemptKey(
+            workspaceID: target.workspace.id,
+            instanceID: sessionInstanceID
+        )
+        let model = GhosttySurfaceScreenModel(
+            target: target,
+            sessionInstanceID: sessionInstanceID,
+            transportFactory: transportFactory,
+            onRuntimeStateChange: onRuntimeStateChange,
+            precreateRuntime: false,
+            debugLatencyProbe: nil
+        )
+        createdKeys.append(key)
+        createdModels[key] = model
+        return model
+    }
 }
 
 private enum RecordingRootTransportEvent: Equatable {
@@ -1417,6 +1763,23 @@ private actor TestTerminalSettingsRepository: TerminalSettingsRepository {
 
     func saveSettings(_ settings: TerminalSettings) async throws {
         self.settings = settings
+    }
+}
+
+private actor FailingSaveTerminalSettingsRepository: TerminalSettingsRepository {
+    enum Failure: Error {
+        case saveFailed
+    }
+
+    private var settings = TerminalSettings.default
+
+    func loadSettings() async throws -> TerminalSettings {
+        settings
+    }
+
+    func saveSettings(_ settings: TerminalSettings) async throws {
+        _ = settings
+        throw Failure.saveFailed
     }
 }
 

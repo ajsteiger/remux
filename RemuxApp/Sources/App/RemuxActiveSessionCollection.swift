@@ -33,7 +33,17 @@ enum RemuxActiveSessionCollection {
         target: TmuxConnectionTarget,
         in activeSessions: inout [ActiveTerminalSession]
     ) -> ActiveTerminalSession {
-        let activeSession = ActiveTerminalSession(target: target)
+        upsertActivatedSession(
+            ActiveTerminalSession(target: target),
+            in: &activeSessions
+        )
+    }
+
+    @discardableResult
+    static func upsertActivatedSession(
+        _ activeSession: ActiveTerminalSession,
+        in activeSessions: inout [ActiveTerminalSession]
+    ) -> ActiveTerminalSession {
         if let index = activeSessions.firstIndex(where: { $0.id == activeSession.id }) {
             activeSessions[index] = activeSession
         } else {
@@ -48,12 +58,40 @@ enum RemuxActiveSessionCollection {
         source: TerminalReconnectSource,
         in activeSessions: inout [ActiveTerminalSession]
     ) -> ActiveTerminalSession? {
-        guard let index = activeSessions.firstIndex(where: { $0.id == workspaceID }) else {
+        guard let replacement = runtimeReplacementSession(
+            workspaceID: workspaceID,
+            source: source,
+            in: activeSessions
+        ) else {
             return nil
         }
 
-        activeSessions[index].replaceRuntime(source: source)
-        return activeSessions[index]
+        replaceRuntime(with: replacement, in: &activeSessions)
+        return replacement
+    }
+
+    static func runtimeReplacementSession(
+        workspaceID: SavedWorkspace.ID,
+        source: TerminalReconnectSource,
+        in activeSessions: [ActiveTerminalSession]
+    ) -> ActiveTerminalSession? {
+        guard var session = activeSessions.first(where: { $0.id == workspaceID }) else {
+            return nil
+        }
+
+        session.replaceRuntime(source: source)
+        return session
+    }
+
+    static func replaceRuntime(
+        with replacement: ActiveTerminalSession,
+        in activeSessions: inout [ActiveTerminalSession]
+    ) {
+        guard let index = activeSessions.firstIndex(where: { $0.id == replacement.id }) else {
+            return
+        }
+
+        activeSessions[index] = replacement
     }
 
     static func applyRuntimeStateUpdate(

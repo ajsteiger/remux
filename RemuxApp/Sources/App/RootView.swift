@@ -78,11 +78,8 @@ private struct RemuxWorkspaceShell: View {
                 let isSelected = selectedTerminalID == session.id
                 ActiveTerminalSessionView(
                     session: session,
+                    model: model.terminalScreenModel(for: session),
                     shortcutStore: shortcutStore,
-                    transportFactory: { model.makeTransport(for: $0) },
-                    onRuntimeStateChange: { update in
-                        _ = model.handleTerminalRuntimeStateUpdate(update)
-                    },
                     onReconnect: {
                         model.reconnectActiveSession(session.id, source: .manualButton)
                     },
@@ -210,19 +207,16 @@ private struct RemuxWorkspaceShell: View {
 
 private struct ActiveTerminalSessionView: View {
     let session: ActiveTerminalSession
+    @ObservedObject var model: GhosttySurfaceScreenModel
     let shortcutStore: ShortcutStore
-    let transportFactory: GhosttySurfaceScreenModel.TransportFactory
-    let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
     let onReconnect: () -> Void
     let onShowLibrary: () -> Void
 
     var body: some View {
         GhosttySurfaceScreen(
             target: session.target,
-            sessionInstanceID: session.instanceID,
+            model: model,
             shortcutStore: shortcutStore,
-            transportFactory: transportFactory,
-            onRuntimeStateChange: onRuntimeStateChange,
             onReconnect: onReconnect,
             onEditConnection: onShowLibrary
         )

@@ -41,9 +41,29 @@ struct ActiveTerminalSession: Identifiable, Equatable, Sendable {
     }
 }
 
+struct TerminalRuntimeAttemptKey: Hashable, Sendable {
+    let workspaceID: SavedWorkspace.ID
+    let instanceID: UUID
+
+    init(workspaceID: SavedWorkspace.ID, instanceID: UUID) {
+        self.workspaceID = workspaceID
+        self.instanceID = instanceID
+    }
+
+    init(session: ActiveTerminalSession) {
+        self.init(workspaceID: session.id, instanceID: session.instanceID)
+    }
+}
+
 @MainActor
 final class RemuxRootModel: ObservableObject {
     private static let libraryPrewarmServerLimit = 3
+    typealias TerminalScreenModelFactory = @MainActor @Sendable (
+        TmuxConnectionTarget,
+        UUID,
+        @escaping GhosttySurfaceScreenModel.TransportFactory,
+        @escaping (TerminalRuntimeStateUpdate) -> Void
+    ) -> GhosttySurfaceScreenModel
 
     enum SetupMode: Equatable {
         case newServer
@@ -86,8 +106,13 @@ final class RemuxRootModel: ObservableObject {
     private let dependencies: RemuxAppDependencies
     private let preparedTransportCoordinator: RemuxPreparedTransportCoordinator
     private let librarySSHPrewarmCoordinator: RemuxLibrarySSHPrewarmCoordinator
+    private let terminalScreenModelFactory: TerminalScreenModelFactory
+    private var terminalScreenModels: [TerminalRuntimeAttemptKey: GhosttySurfaceScreenModel] = [:]
 
-    init(dependencies: RemuxAppDependencies) {
+    init(
+        dependencies: RemuxAppDependencies,
+        terminalScreenModelFactory: TerminalScreenModelFactory? = nil
+    ) {
         self.dependencies = dependencies
         self.preparedTransportCoordinator = RemuxPreparedTransportCoordinator { target in
             dependencies.makeTransport(for: target)
@@ -101,6 +126,13 @@ final class RemuxRootModel: ObservableObject {
                 await dependencies.prewarmSSHConnection(for: target)
             }
         )
+        self.terminalScreenModelFactory = terminalScreenModelFactory ?? Self.makeDefaultTerminalScreenModel
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            stopAllTerminalScreenModels()
+        }
     }
 
     func load() async {
@@ -114,7 +146,7 @@ final class RemuxRootModel: ObservableObject {
             state = .library
             scheduleLibrarySSHPrewarm(snapshot: library)
         } catch {
-            state = .failed(String(describing: error))
+            transitionToFailed(error)
         }
     }
 
@@ -125,7 +157,7 @@ final class RemuxRootModel: ObservableObject {
             state = .library
             scheduleLibrarySSHPrewarm(snapshot: library)
         } catch {
-            state = .failed(String(describing: error))
+            transitionToFailed(error)
         }
     }
 
@@ -232,7 +264,7 @@ final class RemuxRootModel: ObservableObject {
                     password: submission.password
                 )
             } catch {
-                state = .failed(String(describing: error))
+                transitionToFailed(error)
             }
         }
     }
@@ -282,7 +314,7 @@ final class RemuxRootModel: ObservableObject {
                     password: submission.password
                 )
             } catch {
-                state = .failed(String(describing: error))
+                transitionToFailed(error)
             }
         }
     }
@@ -329,7 +361,7 @@ final class RemuxRootModel: ObservableObject {
                     password: password
                 )
             } catch {
-                state = .failed(String(describing: error))
+                transitionToFailed(error)
             }
         }
     }
@@ -366,7 +398,7 @@ final class RemuxRootModel: ObservableObject {
                 state = .library
                 scheduleLibrarySSHPrewarm(snapshot: library)
             } catch {
-                state = .failed(String(describing: error))
+                transitionToFailed(error)
             }
         }
     }
@@ -429,7 +461,7 @@ final class RemuxRootModel: ObservableObject {
                 event: "model.connect.failed",
                 fields: ["error": String(describing: error)]
             )
-            state = .failed(String(describing: error))
+            transitionToFailed(error)
         }
     }
 
@@ -490,15 +522,17 @@ final class RemuxRootModel: ObservableObject {
             forServerID: currentSession.target.server.id,
             excludingWorkspaceID: id
         )
-        guard let session = RemuxActiveSessionCollection.replaceRuntime(
+        guard let session = RemuxActiveSessionCollection.runtimeReplacementSession(
             workspaceID: id,
             source: source,
-            in: &activeSessions
+            in: activeSessions
         ) else {
             state = .library
             return
         }
         prepareTransport(for: session.target, reason: .reconnect)
+        replaceTerminalScreenModel(for: session)
+        RemuxActiveSessionCollection.replaceRuntime(with: session, in: &activeSessions)
         state = .terminal(id)
         GhosttyRuntimeTrace.flowEvent(
             sessionReconnectFlowID(id),
@@ -529,6 +563,7 @@ final class RemuxRootModel: ObservableObject {
 
     func closeActiveSession(_ id: SavedWorkspace.ID) {
         closePreparedTransport(for: id)
+        stopTerminalScreenModels(workspaceID: id)
         RemuxActiveSessionCollection.removeWorkspace(id, from: &activeSessions)
 
         guard case .terminal(let selectedID) = state, selectedID == id else {
@@ -546,12 +581,13 @@ final class RemuxRootModel: ObservableObject {
             try dependencies.trustedHostStore.deleteIdentity(for: id)
             closePreparedTransports(forServerID: id)
             dependencies.closeIdleSSHConnections(forServerID: id)
+            stopTerminalScreenModels(serverID: id)
             RemuxActiveSessionCollection.removeServer(id, from: &activeSessions)
             library = try await dependencies.profileRepository.loadSnapshot()
             state = .library
             scheduleLibrarySSHPrewarm(snapshot: library)
         } catch {
-            state = .failed(String(describing: error))
+            transitionToFailed(error)
         }
     }
 
@@ -559,12 +595,13 @@ final class RemuxRootModel: ObservableObject {
         do {
             try await dependencies.profileRepository.deleteWorkspace(id: id)
             closePreparedTransport(for: id)
+            stopTerminalScreenModels(workspaceID: id)
             RemuxActiveSessionCollection.removeWorkspace(id, from: &activeSessions)
             library = try await dependencies.profileRepository.loadSnapshot()
             state = .library
             scheduleLibrarySSHPrewarm(snapshot: library)
         } catch {
-            state = .failed(String(describing: error))
+            transitionToFailed(error)
         }
     }
 
@@ -575,12 +612,24 @@ final class RemuxRootModel: ObservableObject {
             terminalSettings = updated
             try await dependencies.settingsRepository.saveSettings(updated)
         } catch {
-            state = .failed(String(describing: error))
+            transitionToFailed(error)
         }
     }
 
     func makeTransport(for target: TmuxConnectionTarget) -> any TmuxControlTransport {
         preparedTransportCoordinator.claimOrCreateTransport(for: target)
+    }
+
+    func terminalScreenModel(for session: ActiveTerminalSession) -> GhosttySurfaceScreenModel {
+        let key = TerminalRuntimeAttemptKey(session: session)
+        guard let model = terminalScreenModels[key] else {
+            preconditionFailure("Missing terminal screen model for active runtime attempt")
+        }
+        return model
+    }
+
+    func hasTerminalScreenModel(for session: ActiveTerminalSession) -> Bool {
+        terminalScreenModels[TerminalRuntimeAttemptKey(session: session)] != nil
     }
 
     private func closePreparedTransport(for workspaceID: SavedWorkspace.ID) {
@@ -619,9 +668,11 @@ final class RemuxRootModel: ObservableObject {
         cancelLibrarySSHPrewarm()
         closePreparedTransports(forServerID: server.id, excludingWorkspaceID: workspace.id)
         let target = target(server: server, workspace: workspace, password: password)
+        let activeSession = ActiveTerminalSession(target: target)
         prepareTransport(for: target, reason: .activation)
+        replaceTerminalScreenModel(for: activeSession)
         RemuxActiveSessionCollection.upsertActivatedSession(
-            target: target,
+            activeSession,
             in: &activeSessions
         )
 
@@ -647,6 +698,73 @@ final class RemuxRootModel: ObservableObject {
             password: password,
             terminalSettings: terminalSettings
         )
+    }
+
+    private static func makeDefaultTerminalScreenModel(
+        target: TmuxConnectionTarget,
+        sessionInstanceID: UUID,
+        transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
+    ) -> GhosttySurfaceScreenModel {
+        GhosttySurfaceScreenModel(
+            target: target,
+            sessionInstanceID: sessionInstanceID,
+            transportFactory: transportFactory,
+            onRuntimeStateChange: onRuntimeStateChange,
+            precreateRuntime: true
+        )
+    }
+
+    private func replaceTerminalScreenModel(for session: ActiveTerminalSession) {
+        stopTerminalScreenModels(workspaceID: session.id)
+        let key = TerminalRuntimeAttemptKey(session: session)
+        let transportFactory: GhosttySurfaceScreenModel.TransportFactory = { [preparedTransportCoordinator] target in
+            preparedTransportCoordinator.claimOrCreateTransport(for: target)
+        }
+        terminalScreenModels[key] = terminalScreenModelFactory(
+            session.target,
+            session.instanceID,
+            transportFactory,
+            { [weak self] update in
+                guard let self else { return }
+                _ = self.handleTerminalRuntimeStateUpdate(update)
+            }
+        )
+    }
+
+    private func stopTerminalScreenModels(workspaceID: SavedWorkspace.ID) {
+        stopTerminalScreenModels { key, _ in
+            key.workspaceID == workspaceID
+        }
+    }
+
+    private func stopTerminalScreenModels(serverID: SavedServer.ID) {
+        stopTerminalScreenModels { key, _ in
+            return activeSessions.contains {
+                $0.id == key.workspaceID && $0.target.server.id == serverID
+            }
+        }
+    }
+
+    private func stopAllTerminalScreenModels() {
+        stopTerminalScreenModels { _, _ in true }
+    }
+
+    private func stopTerminalScreenModels(
+        where shouldStop: (TerminalRuntimeAttemptKey, GhosttySurfaceScreenModel) -> Bool
+    ) {
+        let removed = terminalScreenModels.filter(shouldStop)
+        for key in removed.keys {
+            terminalScreenModels[key] = nil
+        }
+        for model in removed.values {
+            model.stop()
+        }
+    }
+
+    private func transitionToFailed(_ error: any Error) {
+        stopAllTerminalScreenModels()
+        state = .failed(String(describing: error))
     }
 
     private func automaticReconnectSource(

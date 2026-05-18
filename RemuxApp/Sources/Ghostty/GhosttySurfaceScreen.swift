@@ -4,7 +4,7 @@ import GhosttyKit
 
 struct GhosttySurfaceScreen: View {
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var model: GhosttySurfaceScreenModel
+    @ObservedObject private var model: GhosttySurfaceScreenModel
     private let shortcutStore: ShortcutStore
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var modifierState = GhosttyModifierState()
@@ -32,26 +32,16 @@ struct GhosttySurfaceScreen: View {
 
     init(
         target: TmuxConnectionTarget,
-        sessionInstanceID: UUID,
+        model: GhosttySurfaceScreenModel,
         shortcutStore: ShortcutStore,
-        transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
-        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void
     ) {
         self.target = target
+        self.model = model
         self.shortcutStore = shortcutStore
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
-        _model = StateObject(
-            wrappedValue: GhosttySurfaceScreenModel(
-                target: target,
-                sessionInstanceID: sessionInstanceID,
-                transportFactory: transportFactory,
-                onRuntimeStateChange: onRuntimeStateChange,
-                precreateRuntime: true
-            )
-        )
     }
 
     var body: some View {
@@ -344,9 +334,6 @@ struct GhosttySurfaceScreen: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
-        }
-        .onDisappear {
-            model.stop()
         }
     }
 
