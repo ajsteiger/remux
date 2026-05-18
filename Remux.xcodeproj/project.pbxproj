@@ -20,6 +20,7 @@
 		C3D4E5F60718293A4B8C2D1E /* TmuxControlWriteSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F60718293A4B8C2D1D /* TmuxControlWriteSequencer.swift */; };
 		D4E5F60718293A4B8C3D1E2F /* SSHTmuxControlCommandBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F60718293A4B8C3D1E2D /* SSHTmuxControlCommandBuilder.swift */; };
 		F1E2D3C4B5A69788796A5B4D /* SSHTmuxControlChannelDataRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A69788796A5B4C /* SSHTmuxControlChannelDataRouter.swift */; };
+		F2E3D4C5B6A798889A7B6C5E /* SSHTmuxControlInboundStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E3D4C5B6A798889A7B6C5D /* SSHTmuxControlInboundStream.swift */; };
 		F0E1D2C3B4A5968778695A4C /* SSHTmuxControlStartupTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E1D2C3B4A5968778695A4B /* SSHTmuxControlStartupTrace.swift */; };
 		E5F60718293A4B8C4D1E2F31 /* TmuxControlViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F60718293A4B8C4D1E2F30 /* TmuxControlViewport.swift */; };
 		0DE2E31CDF09F5D2822BF689 /* GhosttyControlHostSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 405D368BDB8B3419F3F2BFCD /* GhosttyControlHostSurface.swift */; };
@@ -220,6 +221,7 @@
 		A1B2C3D4E5F60718293A4B6 /* GhosttyRuntimeTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeTrace.swift; sourceTree = "<group>"; };
 		F1E2D3C4B5A69788796A5B4C /* SSHTmuxControlChannelDataRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlChannelDataRouter.swift; sourceTree = "<group>"; };
 		D4E5F60718293A4B8C3D1E2D /* SSHTmuxControlCommandBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlCommandBuilder.swift; sourceTree = "<group>"; };
+		F2E3D4C5B6A798889A7B6C5D /* SSHTmuxControlInboundStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlInboundStream.swift; sourceTree = "<group>"; };
 		F0E1D2C3B4A5968778695A4B /* SSHTmuxControlStartupTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlStartupTrace.swift; sourceTree = "<group>"; };
 		C3D4E5F60718293A4B8C2D1D /* TmuxControlWriteSequencer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxControlWriteSequencer.swift; sourceTree = "<group>"; };
 		E5F60718293A4B8C4D1E2F30 /* TmuxControlViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxControlViewport.swift; sourceTree = "<group>"; };
@@ -370,6 +372,7 @@
 				F1E2D3C4B5A69788796A5B4C /* SSHTmuxControlChannelDataRouter.swift */,
 				F1E957489B11B107A9340622 /* SSHTmuxControlTransport.swift */,
 				D4E5F60718293A4B8C3D1E2D /* SSHTmuxControlCommandBuilder.swift */,
+				F2E3D4C5B6A798889A7B6C5D /* SSHTmuxControlInboundStream.swift */,
 				F0E1D2C3B4A5968778695A4B /* SSHTmuxControlStartupTrace.swift */,
 				E5F60718293A4B8C4D1E2F30 /* TmuxControlViewport.swift */,
 				C3D4E5F60718293A4B8C2D1D /* TmuxControlWriteSequencer.swift */,
@@ -729,6 +732,7 @@
 				C3D4E5F60718293A4B8C2D1E /* TmuxControlWriteSequencer.swift in Sources */,
 				D4E5F60718293A4B8C3D1E2F /* SSHTmuxControlCommandBuilder.swift in Sources */,
 				F1E2D3C4B5A69788796A5B4D /* SSHTmuxControlChannelDataRouter.swift in Sources */,
+				F2E3D4C5B6A798889A7B6C5E /* SSHTmuxControlInboundStream.swift in Sources */,
 				F0E1D2C3B4A5968778695A4C /* SSHTmuxControlStartupTrace.swift in Sources */,
 				E5F60718293A4B8C4D1E2F31 /* TmuxControlViewport.swift in Sources */,
 				39A58132CBB849E2CDF37BC2 /* DebugConnectionProfileSeeder.swift in Sources */,
