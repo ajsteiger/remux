@@ -1,5 +1,6 @@
 import Foundation
 import GhosttyKit
+import SwiftUI
 import XCTest
 @testable import Remux
 
@@ -475,6 +476,30 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 ),
             ]
         )
+    }
+
+    func testScreenLifecycleProjectionMapsActiveSceneToModelPhaseAndRefocus() {
+        let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .active)
+
+        XCTAssertEqual(projection.scenePhase, .active)
+        XCTAssertEqual(projection.appLifecyclePhase, .active)
+        XCTAssertTrue(projection.shouldRefocusSystemKeyboard)
+    }
+
+    func testScreenLifecycleProjectionMapsInactiveSceneWithoutRefocus() {
+        let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .inactive)
+
+        XCTAssertEqual(projection.scenePhase, .inactive)
+        XCTAssertEqual(projection.appLifecyclePhase, .inactive)
+        XCTAssertFalse(projection.shouldRefocusSystemKeyboard)
+    }
+
+    func testScreenLifecycleProjectionMapsBackgroundSceneWithoutRefocus() {
+        let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .background)
+
+        XCTAssertEqual(projection.scenePhase, .background)
+        XCTAssertEqual(projection.appLifecyclePhase, .background)
+        XCTAssertFalse(projection.shouldRefocusSystemKeyboard)
     }
 
     func testPrecreatedRuntimeFailureIsReusedAtAttach() {
