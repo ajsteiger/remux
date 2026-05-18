@@ -159,9 +159,21 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var runtimePresentationReadySurfaceIDs: Set<UUID> = []
     private var viewPresentedSurfaceIDs: Set<UUID> = []
 
+    private var topologySelection: GhosttyRuntimeSurfaceTopologySelection {
+        get {
+            GhosttyRuntimeSurfaceTopologySelection(
+                topLevels: topLevels,
+                selectedTopLevelID: selectedTopLevelID
+            )
+        }
+        set {
+            topLevels = newValue.topLevels
+            selectedTopLevelID = newValue.selectedTopLevelID
+        }
+    }
+
     var selectedTopLevel: GhosttyTopLevelSurface? {
-        guard let selectedTopLevelID else { return nil }
-        return topLevels.first(where: { $0.id == selectedTopLevelID })
+        topologySelection.selectedTopLevel
     }
 
     var pendingPhonePresentationSurfaceIDForView: UUID? {
@@ -198,8 +210,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     var selectedTopLevelIndex: Int? {
-        guard let selectedTopLevelID else { return nil }
-        return topLevels.firstIndex(where: { $0.id == selectedTopLevelID })
+        topologySelection.selectedTopLevelIndex
     }
 
     func reset() {
@@ -265,23 +276,17 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             "selectTopLevel begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
         )
         let previousPresentation = currentPhonePresentationTarget()
-        let plan = GhosttyRuntimeSurfaceSelectionPlanner().plan(
-            .init(
-                topLevels: topLevels,
-                selectedTopLevelID: selectedTopLevelID,
-                request: .selectTopLevel(id)
-            )
-        )
-        guard plan.outcome == .applied else {
+        var selection = topologySelection
+        let result = selection.selectTopLevel(id)
+        guard result.isApplied else {
             GhosttyRuntimeTrace.diagnostics(
                 "selectTopLevel missing reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
             )
             return
         }
 
-        topLevels = plan.topLevels
-        selectedTopLevelID = plan.selectedTopLevelID
-        if let targetLeafID = plan.presentationTargetSurfaceID {
+        topologySelection = selection
+        if let targetLeafID = result.presentationTargetSurfaceID {
             stagePhonePresentationIfNeeded(
                 targetSurfaceID: targetLeafID,
                 previousPresentation: previousPresentation
@@ -303,18 +308,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
         let currentIndex = selectedTopLevelIndex
         let previousPresentation = currentPhonePresentationTarget()
-        let plan = GhosttyRuntimeSurfaceSelectionPlanner().plan(
-            .init(
-                topLevels: topLevels,
-                selectedTopLevelID: selectedTopLevelID,
-                request: .selectAdjacentTopLevel(direction)
-            )
-        )
-        guard plan.outcome == .applied else { return false }
+        var selection = topologySelection
+        let result = selection.selectAdjacentTopLevel(direction)
+        guard result.isApplied else { return false }
 
-        topLevels = plan.topLevels
-        selectedTopLevelID = plan.selectedTopLevelID
-        if let targetLeafID = plan.presentationTargetSurfaceID {
+        topologySelection = selection
+        if let targetLeafID = result.presentationTargetSurfaceID {
             stagePhonePresentationIfNeeded(
                 targetSurfaceID: targetLeafID,
                 previousPresentation: previousPresentation
@@ -335,23 +334,17 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             "selectSurface begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
         )
         let previousPresentation = currentPhonePresentationTarget()
-        let plan = GhosttyRuntimeSurfaceSelectionPlanner().plan(
-            .init(
-                topLevels: topLevels,
-                selectedTopLevelID: selectedTopLevelID,
-                request: .selectLeaf(id)
-            )
-        )
-        guard plan.outcome == .applied else {
+        var selection = topologySelection
+        let result = selection.selectSurface(id)
+        guard result.isApplied else {
             GhosttyRuntimeTrace.diagnostics(
                 "selectSurface missing reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
             )
             return
         }
 
-        topLevels = plan.topLevels
-        selectedTopLevelID = plan.selectedTopLevelID
-        if let targetLeafID = plan.presentationTargetSurfaceID {
+        topologySelection = selection
+        if let targetLeafID = result.presentationTargetSurfaceID {
             let topIndexDescription = selectedTopLevelIndex.map(String.init) ?? "nil"
             trackWindowSwipeReadinessIfNeeded(surfaceID: id, reason: reason)
             stagePhonePresentationIfNeeded(
@@ -369,18 +362,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @discardableResult
     func selectAdjacentPane(_ direction: GhosttyRuntimeSelectionDirection) -> Bool {
         let previousPresentation = currentPhonePresentationTarget()
-        let plan = GhosttyRuntimeSurfaceSelectionPlanner().plan(
-            .init(
-                topLevels: topLevels,
-                selectedTopLevelID: selectedTopLevelID,
-                request: .selectAdjacentLeaf(direction)
-            )
-        )
-        guard plan.outcome == .applied else { return false }
+        var selection = topologySelection
+        let result = selection.selectAdjacentPane(direction)
+        guard result.isApplied else { return false }
 
-        topLevels = plan.topLevels
-        selectedTopLevelID = plan.selectedTopLevelID
-        if let targetLeafID = plan.presentationTargetSurfaceID {
+        topologySelection = selection
+        if let targetLeafID = result.presentationTargetSurfaceID {
             stagePhonePresentationIfNeeded(
                 targetSurfaceID: targetLeafID,
                 previousPresentation: previousPresentation
@@ -399,7 +386,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     var selectedActiveLeafID: UUID? {
-        selectedTopLevel?.resolvedFocusedLeafID
+        topologySelection.selectedActiveLeafID
     }
 
     private struct PhonePresentationTarget {
