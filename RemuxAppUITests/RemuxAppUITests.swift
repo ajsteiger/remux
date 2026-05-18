@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import UIKit
 import XCTest
@@ -10,6 +11,10 @@ final class RemuxAppUITests: XCTestCase {
         let username: String
         let password: String
         var sessionName: String?
+    }
+
+    private struct LiveSSHCleanupHarnessError: Error, CustomStringConvertible {
+        let description: String
     }
 
     private var app: XCUIApplication!
@@ -83,7 +88,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHSeededServerOpensReadyTerminalWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("render")
+        let sessionName = try generatedLiveLatencySessionName("render")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -99,7 +104,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHKeyboardResizeTraceWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("keyboard")
+        let sessionName = try generatedLiveLatencySessionName("keyboard")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -129,7 +134,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveLatencyProfileRealRuntimeWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("profile")
+        let sessionName = try generatedLiveLatencySessionName("profile")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -165,7 +170,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveHighOutputRuntimeWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("flow")
+        let sessionName = try generatedLiveLatencySessionName("flow")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -207,7 +212,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHPreviewSheetsRenderTerminalImagesWhenConfigured() throws {
-        let sessionName = "remux-latency-preview-\(UUID().uuidString.prefix(8))"
+        let sessionName = try generatedLiveLatencySessionName("preview")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -251,7 +256,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveTerminalScrollbackGestureWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("scroll")
+        let sessionName = try generatedLiveLatencySessionName("scroll")
         let doneMarker = "REMUX_SCROLLBACK_DONE_\(UUID().uuidString.prefix(8).uppercased())"
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
@@ -293,7 +298,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHTmuxActionCycleWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("action")
+        let sessionName = try generatedLiveLatencySessionName("action")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -372,7 +377,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHStackPaneCreatesExactlyOneRemotePaneWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("stack")
+        let sessionName = try generatedLiveLatencySessionName("stack")
         let marker = "REMUX_STACK_PANE2_\(UUID().uuidString.prefix(8).uppercased())"
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
@@ -411,7 +416,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveDenseWindowPickerReachabilityWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("dense-windows")
+        let sessionName = try generatedLiveLatencySessionName("dense-windows")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -454,7 +459,7 @@ final class RemuxAppUITests: XCTestCase {
     func testLiveDenseMixedTopologySelectsDeepPaneWhenConfigured() throws {
         try requireLivePreparedFixture("dense-mixed")
 
-        let sessionName = generatedLiveLatencySessionName("dense-mixed")
+        let sessionName = try generatedLiveLatencySessionName("dense-mixed")
         let marker = "RDX10P4OK"
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
@@ -501,7 +506,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveSSHBackgroundForegroundRetainsTerminalWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("foreground")
+        let sessionName = try generatedLiveLatencySessionName("foreground")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -553,7 +558,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveTerminalSelectionCopyWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("copy")
+        let sessionName = try generatedLiveLatencySessionName("copy")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -584,7 +589,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveTmuxPrefixEntersCopyModeWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("copy-mode")
+        let sessionName = try generatedLiveLatencySessionName("copy-mode")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -612,7 +617,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveWarmSSHRootReuseWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("warm")
+        let sessionName = try generatedLiveLatencySessionName("warm")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -629,7 +634,7 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     func testLiveLibraryPrewarmedSSHRootWhenConfigured() throws {
-        let sessionName = generatedLiveLatencySessionName("prewarm")
+        let sessionName = try generatedLiveLatencySessionName("prewarm")
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -653,7 +658,10 @@ final class RemuxAppUITests: XCTestCase {
         closeActiveSessionFromLibraryIfPossible()
     }
 
-    private func generatedLiveLatencySessionName(_ purpose: String) -> String {
+    private func generatedLiveLatencySessionName(_ purpose: String) throws -> String {
+        try requireLiveSSHConfigurationExists()
+        let manifestPath = try liveGeneratedSessionManifestPath()
+
         if let override = liveSessionNameOverride() {
             XCTAssertTrue(
                 override.range(
@@ -662,7 +670,7 @@ final class RemuxAppUITests: XCTestCase {
                 ) != nil,
                 "Refusing to use non-allowlisted live tmux session override \(override)."
             )
-            recordGeneratedLiveLatencySession(override)
+            recordGeneratedLiveLatencySession(override, manifestPath: manifestPath)
             return override
         }
 
@@ -672,8 +680,73 @@ final class RemuxAppUITests: XCTestCase {
             options: .regularExpression
         )
         let sessionName = "remux-latency-\(safePurpose)-\(UUID().uuidString.prefix(8))"
-        recordGeneratedLiveLatencySession(sessionName)
+        recordGeneratedLiveLatencySession(sessionName, manifestPath: manifestPath)
         return sessionName
+    }
+
+    private func liveGeneratedSessionManifestPath() throws -> String {
+        guard liveCleanupHarnessEnabled() else {
+            throw LiveSSHCleanupHarnessError(
+                description: "Live SSH UI tests that create remux-latency-* tmux sessions must run through scripts/remux_live_ui_test_with_cleanup.sh; refusing to create a remote tmux session without remote kill-session cleanup."
+            )
+        }
+
+        if let manifestPath = ProcessInfo.processInfo.environment["REMUX_LIVE_GENERATED_SESSION_MANIFEST"],
+           !manifestPath.isEmpty {
+            return manifestPath
+        }
+
+        return "/tmp/remux-live-generated-sessions.txt"
+    }
+
+    private func liveCleanupHarnessEnabled() -> Bool {
+        let url = URL(fileURLWithPath: "/tmp/remux-live-cleanup-harness.txt")
+        guard
+            let data = try? Data(contentsOf: url),
+            let value = String(data: data, encoding: .utf8)
+        else {
+            return false
+        }
+
+        let fields = value
+            .split(whereSeparator: \.isNewline)
+            .reduce(into: [String: String]()) { result, line in
+                let parts = line.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { return }
+                result[String(parts[0])] = String(parts[1])
+            }
+
+        guard
+            let pidString = fields["pid"],
+            let pid = Int32(pidString),
+            let startedAtString = fields["startedAt"],
+            let startedAt = TimeInterval(startedAtString)
+        else {
+            return false
+        }
+
+        let markerAge = Date().timeIntervalSince1970 - startedAt
+        guard markerAge >= 0, markerAge <= 30 * 60 else { return false }
+
+        return liveCleanupHarnessProcessExists(pid)
+    }
+
+    private func liveCleanupHarnessProcessExists(_ pid: Int32) -> Bool {
+        guard pid > 1 else { return false }
+
+        let result = Darwin.kill(pid_t(pid), 0)
+        if result == 0 {
+            return true
+        }
+
+        return errno == EPERM
+    }
+
+    private func requireLiveSSHConfigurationExists() throws {
+        let configurationPath = "/tmp/remux-live-ssh.json"
+        guard FileManager.default.fileExists(atPath: configurationPath) else {
+            throw XCTSkip("Create \(configurationPath) inside the simulator to run live SSH UI testing.")
+        }
     }
 
     private func requireLivePreparedFixture(_ fixtureName: String) throws {
@@ -715,11 +788,7 @@ final class RemuxAppUITests: XCTestCase {
         return value.isEmpty ? nil : value
     }
 
-    private func recordGeneratedLiveLatencySession(_ sessionName: String) {
-        let manifestPath = ProcessInfo.processInfo.environment["REMUX_LIVE_GENERATED_SESSION_MANIFEST"]
-            .flatMap { $0.isEmpty ? nil : $0 }
-            ?? "/tmp/remux-live-generated-sessions.txt"
-
+    private func recordGeneratedLiveLatencySession(_ sessionName: String, manifestPath: String) {
         XCTAssertTrue(
             sessionName.range(
                 of: #"^remux-latency-[A-Za-z0-9._-]+$"#,

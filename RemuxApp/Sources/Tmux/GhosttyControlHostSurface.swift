@@ -125,73 +125,73 @@ enum GhosttyRuntimeTrace {
     static func flowBegin(
         _ flow: String,
         event: String,
-        fields: [String: String] = [:],
+        fields: @autoclosure () -> [String: String] = [:],
         startedAt: UInt64? = nil
     ) {
         guard flowTraceEnabled else { return }
         let timestamp = startedAt ?? nowNanos()
         flowTraceStore.begin(flow: flow, at: timestamp)
-        logFlow(flow, event: event, startedAt: timestamp, at: timestamp, fields: fields)
+        logFlow(flow, event: event, startedAt: timestamp, at: timestamp, fields: fields())
     }
 
     static func flowEvent(
         _ flow: String,
         event: String,
-        fields: [String: String] = [:],
+        fields: @autoclosure () -> [String: String] = [:],
         at timestamp: UInt64? = nil
     ) {
         guard flowTraceEnabled else { return }
         let eventTimestamp = timestamp ?? nowNanos()
         let start = flowTraceStore.start(for: flow) ?? eventTimestamp
-        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields())
     }
 
     static func flowEventIfActive(
         _ flow: String,
         event: String,
-        fields: [String: String] = [:],
+        fields: @autoclosure () -> [String: String] = [:],
         at timestamp: UInt64? = nil
     ) {
         guard flowTraceEnabled else { return }
         guard let start = flowTraceStore.start(for: flow) else { return }
         let eventTimestamp = timestamp ?? nowNanos()
-        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields())
     }
 
     static func flowEventSince(
         _ flow: String,
         event: String,
         startedAt: UInt64,
-        fields: [String: String] = [:],
+        fields: @autoclosure () -> [String: String] = [:],
         at timestamp: UInt64? = nil
     ) {
         guard flowTraceEnabled else { return }
         let eventTimestamp = timestamp ?? nowNanos()
-        logFlow(flow, event: event, startedAt: startedAt, at: eventTimestamp, fields: fields)
+        logFlow(flow, event: event, startedAt: startedAt, at: eventTimestamp, fields: fields())
     }
 
     static func flowEnd(
         _ flow: String,
         event: String,
-        fields: [String: String] = [:],
+        fields: @autoclosure () -> [String: String] = [:],
         at timestamp: UInt64? = nil
     ) {
         guard flowTraceEnabled else { return }
         let eventTimestamp = timestamp ?? nowNanos()
         let start = flowTraceStore.end(flow: flow) ?? eventTimestamp
-        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields())
     }
 
     static func flowEndIfActive(
         _ flow: String,
         event: String,
-        fields: [String: String] = [:],
+        fields: @autoclosure () -> [String: String] = [:],
         at timestamp: UInt64? = nil
     ) {
         guard flowTraceEnabled else { return }
         guard let start = flowTraceStore.end(flow: flow) else { return }
         let eventTimestamp = timestamp ?? nowNanos()
-        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields)
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields())
     }
 
     static func isFlowActive(_ flow: String) -> Bool {

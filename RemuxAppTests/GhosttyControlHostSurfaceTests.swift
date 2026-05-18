@@ -621,6 +621,55 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertEqual(hits.first?.submittedAt, 200)
     }
 
+    func testDisabledFlowTraceDoesNotEvaluateFieldBuilder() throws {
+        guard !GhosttyRuntimeTrace.flowTraceEnabled else {
+            throw XCTSkip("Flow tracing is enabled for this test process.")
+        }
+
+        var evaluatedFieldBuildCount = 0
+        func expensiveFields(_ event: String) -> [String: String] {
+            evaluatedFieldBuildCount += 1
+            return [
+                "event": event,
+                "preview": GhosttyRuntimeTrace.preview(Data(repeating: 0x61, count: 1024), limit: 160),
+            ]
+        }
+
+        GhosttyRuntimeTrace.flowBegin(
+            "test.disabledFlow",
+            event: "begin",
+            fields: expensiveFields("begin")
+        )
+        GhosttyRuntimeTrace.flowEvent(
+            "test.disabledFlow",
+            event: "event",
+            fields: expensiveFields("event")
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "test.disabledFlow",
+            event: "shouldNotEvaluate",
+            fields: expensiveFields("active")
+        )
+        GhosttyRuntimeTrace.flowEventSince(
+            "test.disabledFlow",
+            event: "since",
+            startedAt: 0,
+            fields: expensiveFields("since")
+        )
+        GhosttyRuntimeTrace.flowEnd(
+            "test.disabledFlow",
+            event: "end",
+            fields: expensiveFields("end")
+        )
+        GhosttyRuntimeTrace.flowEndIfActive(
+            "test.disabledFlow",
+            event: "endActive",
+            fields: expensiveFields("endActive")
+        )
+
+        XCTAssertEqual(evaluatedFieldBuildCount, 0)
+    }
+
     func testTransportResizeContractCanRecordGhosttyViewportChanges() async throws {
         let transport = RecordingTmuxControlTransport()
 

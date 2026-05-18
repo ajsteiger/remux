@@ -135,6 +135,7 @@ port="${port:-22}"
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/remux-live-ui-cleanup.XXXXXX")"
 manifest="/tmp/remux-live-generated-sessions.txt"
 expectations="/tmp/remux-live-tmux-expectations.txt"
+harness_file="/tmp/remux-live-cleanup-harness.txt"
 fixture_name_file="/tmp/remux-live-prepared-fixture.txt"
 fixture_session_file="/tmp/remux-live-session-name-override.txt"
 askpass="$work_dir/askpass.sh"
@@ -145,6 +146,21 @@ log="$log_dir/live-ui-cleanup-${stamp}.log"
 result_bundle="$log_dir/live-ui-cleanup-${stamp}.xcresult"
 cleanup_done=0
 
+cleanup_local_files() {
+  rm -rf "$work_dir"
+  rm -f "$manifest"
+  rm -f "$expectations"
+  rm -f "$harness_file"
+  rm -f "$fixture_name_file"
+  rm -f "$fixture_session_file"
+}
+
+finish_before_remote_cleanup() {
+  local status=$?
+  cleanup_local_files
+  exit "$status"
+}
+
 cat >"$askpass" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$REMUX_LIVE_SSH_PASSWORD"
@@ -152,8 +168,11 @@ EOF
 chmod 700 "$askpass"
 rm -f "$manifest"
 rm -f "$expectations"
+rm -f "$harness_file"
 rm -f "$fixture_name_file"
 rm -f "$fixture_session_file"
+printf 'pid=%s\nstartedAt=%s\n' "$$" "$(date +%s)" >"$harness_file"
+trap finish_before_remote_cleanup EXIT
 
 fixture_name=""
 fixture_session=""
@@ -618,11 +637,7 @@ finish() {
   if [[ "$cleanup_done" -eq 0 ]]; then
     cleanup_generated_sessions || status=$?
   fi
-  rm -rf "$work_dir"
-  rm -f "$manifest"
-  rm -f "$expectations"
-  rm -f "$fixture_name_file"
-  rm -f "$fixture_session_file"
+  cleanup_local_files
   exit "$status"
 }
 trap finish EXIT
@@ -665,11 +680,7 @@ cleanup_generated_sessions
 cleanup_status=$?
 cleanup_done=1
 trap - EXIT
-rm -rf "$work_dir"
-rm -f "$manifest"
-rm -f "$expectations"
-rm -f "$fixture_name_file"
-rm -f "$fixture_session_file"
+cleanup_local_files
 
 printf 'live UI test log: %s\n' "$log"
 printf 'live UI test result bundle: %s\n' "$result_bundle"
