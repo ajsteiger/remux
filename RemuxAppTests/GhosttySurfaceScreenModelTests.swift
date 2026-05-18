@@ -1003,6 +1003,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(second)
 
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
+        XCTAssertTrue(registry.pendingPhonePresentationRefreshTaskActiveForTesting)
+        XCTAssertEqual(registry.pendingPhonePresentationRefreshAttemptForTesting, 0)
 
         registry.recordSurfaceDisplayUpdateForTesting(
             surfaceID: second.id,
@@ -1012,6 +1014,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.completePendingPhonePresentationAfterTimeoutForTesting(surfaceID: second.id)
 
         XCTAssertNil(registry.pendingPhonePresentationSurfaceIDForView)
+        XCTAssertFalse(registry.pendingPhonePresentationRefreshTaskActiveForTesting)
+        XCTAssertEqual(registry.pendingPhonePresentationRefreshAttemptForTesting, 0)
     }
 
     func testRenderForPreviousSurfaceDoesNotClearPendingPresentation() throws {
