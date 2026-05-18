@@ -123,7 +123,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
     @Published private(set) var selectedTopLevelID: UUID?
-    @Published private(set) var debugSummary = "runtime callbacks: none"
+    @Published private(set) var debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
     var lastTmuxProtocolError: TmuxControlProtocolError? {
         tmuxErrorChannel.lastProtocolError
     }
@@ -217,7 +217,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     func reset() {
         topLevels = []
         selectedTopLevelID = nil
-        debugSummary = "runtime callbacks: none"
+        debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
         managedSurfaceStore.clearAfterExternalRelease()
         tmuxErrorChannel.reset()
         createSurfaceCount = 0
@@ -1855,7 +1855,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func updateDebugSummary(_ event: String) {
-        debugSummary = "\(event); create=\(createSurfaceCount), tree=\(createSurfaceTreeCount), managed=\(managedSurfaceStore.count), top=\(topLevels.count)"
+        debugSummary = GhosttyRuntimeSurfaceDebugSummary.format(
+            event: event,
+            createSurfaceCount: createSurfaceCount,
+            createSurfaceTreeCount: createSurfaceTreeCount,
+            managedSurfaceCount: managedSurfaceStore.count,
+            topLevelCount: topLevels.count
+        )
         notifyChanged()
     }
 
