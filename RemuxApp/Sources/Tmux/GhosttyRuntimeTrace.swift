@@ -294,7 +294,11 @@ enum GhosttyTmuxActionTrace {
         }
 
         var event: String {
-            "tmux.response.\(rawValue)"
+            eventName(prefix: "tmux.response")
+        }
+
+        func eventName(prefix: String) -> String {
+            "\(prefix).\(rawValue)"
         }
     }
 
@@ -344,6 +348,7 @@ enum GhosttyTmuxActionTrace {
         in data: Data,
         source: String,
         chunkCount: Int,
+        eventPrefix: String = "tmux.response",
         at timestamp: UInt64? = nil
     ) {
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
@@ -354,7 +359,7 @@ enum GhosttyTmuxActionTrace {
 
             GhosttyRuntimeTrace.flowEventIfActive(
                 action.flow,
-                event: signal.event,
+                event: signal.eventName(prefix: eventPrefix),
                 fields: [
                     "bytes": "\(data.count)",
                     "chunks": "\(chunkCount)",

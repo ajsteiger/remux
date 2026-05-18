@@ -1697,6 +1697,12 @@ private final class SSHTmuxControlChannelHandler: ChannelInboundHandler, @unchec
         GhosttyRuntimeTrace.latency(
             "ssh.channelRead bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )
+        GhosttyTmuxActionTrace.traceInboundSignals(
+            in: data,
+            source: "ssh.channelRead",
+            chunkCount: 1,
+            eventPrefix: "tmux.signal.ssh.channelRead"
+        )
         if reportFirstOutput {
             onFirstOutput(data)
         }

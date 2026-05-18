@@ -710,6 +710,10 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
 
         XCTAssertEqual(newWindowSignals, [.windowAdd, .sessionWindowChanged])
         XCTAssertEqual(splitSignals, [.windowPaneChanged, .layoutChange])
+        XCTAssertEqual(
+            GhosttyTmuxActionTrace.InboundSignal.windowAdd.eventName(prefix: "tmux.signal.ssh.channelRead"),
+            "tmux.signal.ssh.channelRead.window-add"
+        )
     }
 
     func testTransportResizeContractCanRecordGhosttyViewportChanges() async throws {

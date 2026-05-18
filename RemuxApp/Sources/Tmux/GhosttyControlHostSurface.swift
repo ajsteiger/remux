@@ -135,6 +135,12 @@ private actor TmuxControlInboundOutputSequencer {
     func enqueue(_ data: Data) {
         guard !data.isEmpty, !isClosed else { return }
 
+        GhosttyTmuxActionTrace.traceInboundSignals(
+            in: data,
+            source: "sequencer.enqueue",
+            chunkCount: 1,
+            eventPrefix: "tmux.signal.sequencer.enqueue"
+        )
         pendingChunks.append(data)
         scheduleDrainIfNeeded()
     }
@@ -179,6 +185,12 @@ private actor TmuxControlInboundOutputSequencer {
         while accepted {
             guard let batch = takeNextBatch() else { break }
 
+            GhosttyTmuxActionTrace.traceInboundSignals(
+                in: batch.data,
+                source: "sequencer.drain",
+                chunkCount: batch.chunkCount,
+                eventPrefix: "tmux.signal.sequencer.drain"
+            )
             accepted = await outputHandler(batch.data, batch.chunkCount)
             if accepted, !pendingChunks.isEmpty {
                 try? await Task.sleep(for: interBatchDelay)
@@ -373,6 +385,12 @@ final class GhosttyControlHostSurface {
             do {
                 for try await bytes in transport.receivedBytes {
                     try Task.checkCancellation()
+                    GhosttyTmuxActionTrace.traceInboundSignals(
+                        in: bytes,
+                        source: "host.pump.receive",
+                        chunkCount: 1,
+                        eventPrefix: "tmux.signal.host.pump.receive"
+                    )
                     await sequencer.enqueue(bytes)
                 }
 
