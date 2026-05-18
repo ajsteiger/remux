@@ -105,3 +105,65 @@ struct GhosttyPendingTopologyInputRefocus: Equatable {
         ownsKeyboardTransition = false
     }
 }
+
+struct GhosttyTopologyActionInputRefocusCoordinator: Equatable {
+    enum Effect: Equatable {
+        case requestRefocus
+        case dismissSelectionSheet
+        case cancelRefocus(ownsKeyboardTransition: Bool)
+        case completeRefocus
+    }
+
+    private var pendingRefocus = GhosttyPendingTopologyInputRefocus()
+
+    var isActive: Bool {
+        pendingRefocus.isActive
+    }
+
+    mutating func prepare(
+        actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
+        activeLeafID: UUID?,
+        keyboardMode: GhosttyKeyboardChromeMode
+    ) -> Effect? {
+        guard actionEffect.requestsInputRefocus else { return nil }
+        guard pendingRefocus.request(from: activeLeafID, keyboardMode: keyboardMode) else {
+            return nil
+        }
+        return .requestRefocus
+    }
+
+    mutating func markKeyboardTransitionOwned() {
+        pendingRefocus.markKeyboardTransitionOwned()
+    }
+
+    mutating func complete(
+        actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
+        outcome: GhosttyTmuxModelActionOutcome
+    ) -> Effect? {
+        guard outcome.isQueued else {
+            guard actionEffect.requestsInputRefocus else { return nil }
+
+            let ownsKeyboardTransition = pendingRefocus.ownsKeyboardTransition
+            pendingRefocus.cancel()
+            return .cancelRefocus(ownsKeyboardTransition: ownsKeyboardTransition)
+        }
+
+        guard actionEffect.dismissesSelectionSheetOnQueued else { return nil }
+        return .dismissSelectionSheet
+    }
+
+    mutating func consumeActiveLeafChange(to activeLeafID: UUID?) -> Effect? {
+        guard pendingRefocus.consumeIfActiveLeafChanged(to: activeLeafID) else {
+            return nil
+        }
+        return .completeRefocus
+    }
+
+    mutating func cancelForCommandFailure() -> Effect? {
+        guard pendingRefocus.isActive else { return nil }
+
+        let ownsKeyboardTransition = pendingRefocus.ownsKeyboardTransition
+        pendingRefocus.cancel()
+        return .cancelRefocus(ownsKeyboardTransition: ownsKeyboardTransition)
+    }
+}

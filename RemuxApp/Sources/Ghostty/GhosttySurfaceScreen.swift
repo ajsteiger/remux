@@ -16,7 +16,7 @@ struct GhosttySurfaceScreen: View {
     @State private var terminalViewportCoordinator = GhosttyTerminalViewportCoordinator()
     @State private var keyboardViewportTransitionFallbackToken: UInt64 = 0
     @State private var isAwaitingSystemKeyboardPresentation = false
-    @State private var pendingTopologyInputRefocus = GhosttyPendingTopologyInputRefocus()
+    @State private var topologyActionInputRefocusCoordinator = GhosttyTopologyActionInputRefocusCoordinator()
     @State private var trackpadHUDState = GhosttyKeyboardCursorTrackpad.HUDState.hidden
     @State private var isShortcutPalettePresented = false
     @State private var isShortcutsSettingsPresented = false
@@ -464,51 +464,62 @@ struct GhosttySurfaceScreen: View {
         refocusSystemKeyboardIfActive()
     }
 
-    private func requestSystemKeyboardRefocusAfterTopologyChange() {
-        let didRequest = pendingTopologyInputRefocus.request(
-            from: model.terminalInteractionProjection.selectedActiveLeafID,
-            keyboardMode: inputCoordinator.keyboardMode
-        )
-        guard didRequest else { return }
+    private func applyTopologyInputRefocusEffect(
+        _ effect: GhosttyTopologyActionInputRefocusCoordinator.Effect
+    ) {
+        switch effect {
+        case .requestRefocus:
+            terminalViewportCoordinator.requestTopologyRefocus(
+                liveSize: terminalViewportCoordinator.latestLiveSize
+            )
+            let didStartKeyboardTransition = beginKeyboardViewportTransition(
+                target: .shown,
+                allowsTargetOverride: true
+            )
+            if didStartKeyboardTransition {
+                topologyActionInputRefocusCoordinator.markKeyboardTransitionOwned()
+            }
 
-        terminalViewportCoordinator.requestTopologyRefocus(
-            liveSize: terminalViewportCoordinator.latestLiveSize
-        )
-        let didStartKeyboardTransition = beginKeyboardViewportTransition(
-            target: .shown,
-            allowsTargetOverride: true
-        )
-        if didStartKeyboardTransition {
-            pendingTopologyInputRefocus.markKeyboardTransitionOwned()
+        case .dismissSelectionSheet:
+            dismissSelectionSheet()
+
+        case .cancelRefocus(let ownsKeyboardTransition):
+            cancelTopologyInputRefocus(ownsKeyboardTransition: ownsKeyboardTransition)
+
+        case .completeRefocus:
+            completeTopologyInputRefocus()
         }
     }
 
-    private func prepareTopologyActionInteraction(
-        _ effect: GhosttyTmuxTopologyActionInteractionEffect
+    private func requestTopologyInputRefocus(
+        actionEffect: GhosttyTmuxTopologyActionInteractionEffect
     ) {
-        guard effect.requestsInputRefocus else { return }
-        requestSystemKeyboardRefocusAfterTopologyChange()
-    }
-
-    private func completeTopologyActionInteraction(
-        _ effect: GhosttyTmuxTopologyActionInteractionEffect,
-        outcome: GhosttyTmuxModelActionOutcome
-    ) {
-        guard outcome.isQueued else {
-            if effect.requestsInputRefocus {
-                cancelPendingTopologyInputRefocus()
-            }
+        guard let effect = topologyActionInputRefocusCoordinator.prepare(
+            actionEffect: actionEffect,
+            activeLeafID: model.terminalInteractionProjection.selectedActiveLeafID,
+            keyboardMode: inputCoordinator.keyboardMode
+        ) else {
             return
         }
 
-        if effect.dismissesSelectionSheetOnQueued {
-            dismissSelectionSheet()
-        }
+        applyTopologyInputRefocusEffect(effect)
     }
 
-    private func cancelPendingTopologyInputRefocus() {
-        let ownsKeyboardTransition = pendingTopologyInputRefocus.ownsKeyboardTransition
-        pendingTopologyInputRefocus.cancel()
+    private func completeTopologyInputRefocusInteraction(
+        actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
+        outcome: GhosttyTmuxModelActionOutcome
+    ) {
+        guard let effect = topologyActionInputRefocusCoordinator.complete(
+            actionEffect: actionEffect,
+            outcome: outcome
+        ) else {
+            return
+        }
+
+        applyTopologyInputRefocusEffect(effect)
+    }
+
+    private func cancelTopologyInputRefocus(ownsKeyboardTransition: Bool) {
         guard terminalViewportCoordinator.isTopologyRefocusActive else { return }
 
         let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(
@@ -527,11 +538,29 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
+    private func prepareTopologyActionInteraction(
+        _ effect: GhosttyTmuxTopologyActionInteractionEffect
+    ) {
+        guard effect.requestsInputRefocus else { return }
+        requestTopologyInputRefocus(actionEffect: effect)
+    }
+
+    private func completeTopologyActionInteraction(
+        _ effect: GhosttyTmuxTopologyActionInteractionEffect,
+        outcome: GhosttyTmuxModelActionOutcome
+    ) {
+        completeTopologyInputRefocusInteraction(actionEffect: effect, outcome: outcome)
+    }
+
     private func handleActiveLeafChange(_ activeLeafID: UUID?) {
-        guard pendingTopologyInputRefocus.consumeIfActiveLeafChanged(to: activeLeafID) else {
+        guard let effect = topologyActionInputRefocusCoordinator.consumeActiveLeafChange(to: activeLeafID) else {
             return
         }
 
+        applyTopologyInputRefocusEffect(effect)
+    }
+
+    private func completeTopologyInputRefocus() {
         GhosttyRuntimeTrace.flowEvent(
             "terminal.input",
             event: "ui.topologySelectionRefocus",
@@ -553,12 +582,12 @@ struct GhosttySurfaceScreen: View {
 
     private func handleTmuxCommandFailureEvent(_ event: GhosttyTmuxCommandFailureEvent?) {
         guard let event else { return }
-        guard pendingTopologyInputRefocus.isActive else { return }
+        guard let effect = topologyActionInputRefocusCoordinator.cancelForCommandFailure() else { return }
 
         GhosttyRuntimeTrace.perf(
             "topology.refocus cancel reason=tmuxCommandFailure token=\(event.token) failureReason=\(event.reason.traceLabel)"
         )
-        cancelPendingTopologyInputRefocus()
+        applyTopologyInputRefocusEffect(effect)
     }
 
     @ViewBuilder

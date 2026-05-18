@@ -243,4 +243,142 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertTrue(refocus.consumeIfActiveLeafChanged(to: nextLeafID))
         XCTAssertFalse(refocus.ownsKeyboardTransition)
     }
+
+    func testTopologyRefocusCoordinatorIgnoresActionsWithoutRefocusPolicy() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+
+        let effect = coordinator.prepare(
+            actionEffect: .none,
+            activeLeafID: UUID(),
+            keyboardMode: .system
+        )
+
+        XCTAssertNil(effect)
+        XCTAssertFalse(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorIgnoresHiddenKeyboardMode() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+
+        let effect = coordinator.prepare(
+            actionEffect: .refocusOnly,
+            activeLeafID: UUID(),
+            keyboardMode: .hidden
+        )
+
+        XCTAssertNil(effect)
+        XCTAssertFalse(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorRequestsRefocusForSystemKeyboard() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+
+        let effect = coordinator.prepare(
+            actionEffect: .refocusOnly,
+            activeLeafID: UUID(),
+            keyboardMode: .system
+        )
+
+        XCTAssertEqual(effect, .requestRefocus)
+        XCTAssertTrue(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorQueuedDismissEffectKeepsPendingRefocus() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+        XCTAssertEqual(
+            coordinator.prepare(
+                actionEffect: .refocusAndDismissOnQueued,
+                activeLeafID: UUID(),
+                keyboardMode: .system
+            ),
+            .requestRefocus
+        )
+
+        let effect = coordinator.complete(
+            actionEffect: .refocusAndDismissOnQueued,
+            outcome: .queued
+        )
+
+        XCTAssertEqual(effect, .dismissSelectionSheet)
+        XCTAssertTrue(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorRejectedActionCancelsOwnedKeyboardTransition() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+        XCTAssertEqual(
+            coordinator.prepare(
+                actionEffect: .refocusOnly,
+                activeLeafID: UUID(),
+                keyboardMode: .system
+            ),
+            .requestRefocus
+        )
+        coordinator.markKeyboardTransitionOwned()
+
+        let effect = coordinator.complete(
+            actionEffect: .refocusOnly,
+            outcome: .rejected(.queueFailed)
+        )
+
+        XCTAssertEqual(effect, .cancelRefocus(ownsKeyboardTransition: true))
+        XCTAssertFalse(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorRejectedActionCancelsEvenWhenPrepareWasIgnored() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+
+        XCTAssertNil(
+            coordinator.prepare(
+                actionEffect: .refocusOnly,
+                activeLeafID: UUID(),
+                keyboardMode: .hidden
+            )
+        )
+
+        let effect = coordinator.complete(
+            actionEffect: .refocusOnly,
+            outcome: .missingTarget(.focusedPane)
+        )
+
+        XCTAssertEqual(effect, .cancelRefocus(ownsKeyboardTransition: false))
+        XCTAssertFalse(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorActiveLeafChangeCompletesOnlyWhenSelectionChanges() {
+        let sourceLeafID = UUID()
+        let nextLeafID = UUID()
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+        XCTAssertEqual(
+            coordinator.prepare(
+                actionEffect: .refocusOnly,
+                activeLeafID: sourceLeafID,
+                keyboardMode: .system
+            ),
+            .requestRefocus
+        )
+
+        XCTAssertNil(coordinator.consumeActiveLeafChange(to: sourceLeafID))
+        XCTAssertTrue(coordinator.isActive)
+        XCTAssertEqual(coordinator.consumeActiveLeafChange(to: nextLeafID), .completeRefocus)
+        XCTAssertFalse(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorCommandFailureCancelsPendingRequest() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+        XCTAssertEqual(
+            coordinator.prepare(
+                actionEffect: .refocusOnly,
+                activeLeafID: UUID(),
+                keyboardMode: .system
+            ),
+            .requestRefocus
+        )
+        coordinator.markKeyboardTransitionOwned()
+
+        let effect = coordinator.cancelForCommandFailure()
+
+        XCTAssertEqual(effect, .cancelRefocus(ownsKeyboardTransition: true))
+        XCTAssertFalse(coordinator.isActive)
+        XCTAssertNil(coordinator.cancelForCommandFailure())
+    }
 }
