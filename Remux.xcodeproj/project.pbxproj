@@ -56,6 +56,7 @@
 		48124543E4A60E49F2B1051B /* GhosttyTerminalResponderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB7372853BCE26F35945D24A /* GhosttyTerminalResponderView.swift */; };
 		4C607CCE048705D4D93A7EBB /* GhosttyHostSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C78D9218B4DA76BC2D9106 /* GhosttyHostSession.swift */; };
 		4DE961CA3002BC6645DDEEF8 /* GhosttyTerminalInputSubmissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A607699A067C7A8280DD639F /* GhosttyTerminalInputSubmissionCoordinator.swift */; };
+		D0D1D2D3D4D5D6D7D8D9DA02 /* GhosttyTmuxPrefixInputBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1D2D3D4D5D6D7D8D9DA01 /* GhosttyTmuxPrefixInputBuffer.swift */; };
 		4DF6D2D4E5668EE584E1E1CB /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE99FC51EBF3F94B73928414 /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift */; };
 		50AE7AC63E5504EF8BDA0123 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A88D2F77D33C12B09B8F6A2 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift */; };
 		665199D1B839416FAE02DFD7 /* GhosttyRuntimeSurfaceTopologySnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D086AEB0E4440BE91219172 /* GhosttyRuntimeSurfaceTopologySnapshot.swift */; };
@@ -107,6 +108,7 @@
 		A0C7372F57EB2BA980CC0888 /* RemuxLibrarySSHPrewarmPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5AA752EADDB9E6FBA8140A4 /* RemuxLibrarySSHPrewarmPlanner.swift */; };
 		A0D6CF5A40A4953636A1928F /* TerminalSettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA39774D73AE5B6A77D824C /* TerminalSettingsRepository.swift */; };
 		A1C5C492A34134CD000A0CC2 /* GhosttyTmuxActionTargetResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3BEF4FFB626C7B483914F04 /* GhosttyTmuxActionTargetResolverTests.swift */; };
+		D0D1D2D3D4D5D6D7D8D9DA04 /* GhosttyTmuxPrefixInputBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1D2D3D4D5D6D7D8D9DA03 /* GhosttyTmuxPrefixInputBufferTests.swift */; };
 		A8ABF8A3A082320C5C11BA70 /* RemuxActiveSessionRuntimeReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03F3C1F4357FDC042F5B6E5C /* RemuxActiveSessionRuntimeReducerTests.swift */; };
 		AA0449DB0EEBE5F640BF6B79 /* GhosttyTerminalInputCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29658D4FE019C12073CC58BE /* GhosttyTerminalInputCoordinator.swift */; };
 		B02E37F04D99AAD051508ED2 /* GhosttySurfaceTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A2F0BE3A6E14902F1890EF5 /* GhosttySurfaceTreeView.swift */; };
@@ -267,6 +269,7 @@
 		AC8CD3E9DC874EAFBCBAFC01 /* GhosttyRuntimeSurfaceMaterializationContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceMaterializationContextTests.swift; sourceTree = "<group>"; };
 		FEDCBA0987654321FEDCBA09 /* GhosttyRuntimeSurfacePresentationReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfacePresentationReadinessTests.swift; sourceTree = "<group>"; };
 		A607699A067C7A8280DD639F /* GhosttyTerminalInputSubmissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalInputSubmissionCoordinator.swift; sourceTree = "<group>"; };
+		D0D1D2D3D4D5D6D7D8D9DA01 /* GhosttyTmuxPrefixInputBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTmuxPrefixInputBuffer.swift; sourceTree = "<group>"; };
 		A88FBFD7D50B9817DC09FED6 /* GhosttySurfaceMouseEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceMouseEventTests.swift; sourceTree = "<group>"; };
 		A9BEEA4655420D5DCEDE5C23 /* GhosttyPhoneChromeLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPhoneChromeLayoutTests.swift; sourceTree = "<group>"; };
 		AE5B67646A0F14933B3FD8D8 /* ApplicationStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationStorage.swift; sourceTree = "<group>"; };
@@ -294,6 +297,7 @@
 		DAE4DA1C9532D675CB9E87C4 /* GhosttyPaneScrollContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPaneScrollContainerView.swift; sourceTree = "<group>"; };
 		DB62707ACD4905DCE40ECBFA /* RemuxPreparedTransportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemuxPreparedTransportCoordinator.swift; sourceTree = "<group>"; };
 		DB66F5CC780B56C978A4FC88 /* GhosttyTmuxCommandFailurePresenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTmuxCommandFailurePresenterTests.swift; sourceTree = "<group>"; };
+		D0D1D2D3D4D5D6D7D8D9DA03 /* GhosttyTmuxPrefixInputBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTmuxPrefixInputBufferTests.swift; sourceTree = "<group>"; };
 		DCA18AC0E644AEE20C057EDB /* GhosttyTerminalRuntimePrecreationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalRuntimePrecreationController.swift; sourceTree = "<group>"; };
 		DFD9AF0371D15A892B000530 /* DebugConnectionProfileSeederTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugConnectionProfileSeederTests.swift; sourceTree = "<group>"; };
 		E05107088F3540B7C04D2007 /* GhosttyTerminalResponderViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalResponderViewTests.swift; sourceTree = "<group>"; };
@@ -403,6 +407,7 @@
 				F8D591CA34E164D6BDA24009 /* GhosttyTerminalHostSessionSlotTests.swift */,
 				C327CBDDC4667920A473118A /* GhosttyTerminalInitialAttachTransactionTests.swift */,
 				0DA264E3527C3F2FC33AF435 /* GhosttyTerminalInputCoordinatorTests.swift */,
+				D0D1D2D3D4D5D6D7D8D9DA03 /* GhosttyTmuxPrefixInputBufferTests.swift */,
 				4671F22C07201C31912267E9 /* GhosttyTerminalPresentationProjectorTests.swift */,
 				E05107088F3540B7C04D2007 /* GhosttyTerminalResponderViewTests.swift */,
 				A3B86B6CB8FFF1A0C85BE050 /* GhosttyTerminalRuntimePrecreationControllerTests.swift */,
@@ -546,6 +551,7 @@
 				D9833C08D41E6F199BE856F5 /* GhosttyTerminalInitialAttachTransaction.swift */,
 				29658D4FE019C12073CC58BE /* GhosttyTerminalInputCoordinator.swift */,
 				A607699A067C7A8280DD639F /* GhosttyTerminalInputSubmissionCoordinator.swift */,
+				D0D1D2D3D4D5D6D7D8D9DA01 /* GhosttyTmuxPrefixInputBuffer.swift */,
 				4D407500AB027C206B65EE7C /* GhosttyTerminalPresentationProjector.swift */,
 				25DBECAA1C7625528DD0831B /* GhosttyTerminalResponderTextInputShim.swift */,
 				EB7372853BCE26F35945D24A /* GhosttyTerminalResponderView.swift */,
@@ -733,6 +739,7 @@
 				B8416C606C0A7209E5F9B04F /* GhosttyTerminalInitialAttachTransaction.swift in Sources */,
 				AA0449DB0EEBE5F640BF6B79 /* GhosttyTerminalInputCoordinator.swift in Sources */,
 				4DE961CA3002BC6645DDEEF8 /* GhosttyTerminalInputSubmissionCoordinator.swift in Sources */,
+				D0D1D2D3D4D5D6D7D8D9DA02 /* GhosttyTmuxPrefixInputBuffer.swift in Sources */,
 				DEC0360F7ED54DE71B345B60 /* GhosttyTerminalPresentationProjector.swift in Sources */,
 				842E6402F6F631B4DB19B8DE /* GhosttyTerminalResponderTextInputShim.swift in Sources */,
 				48124543E4A60E49F2B1051B /* GhosttyTerminalResponderView.swift in Sources */,
@@ -819,6 +826,7 @@
 				6821F9DA32330E063136979B /* GhosttyTerminalHostSessionSlotTests.swift in Sources */,
 				7892825713FFBD611A2AF30F /* GhosttyTerminalInitialAttachTransactionTests.swift in Sources */,
 				03DF1618812075C8E5C9B353 /* GhosttyTerminalInputCoordinatorTests.swift in Sources */,
+				D0D1D2D3D4D5D6D7D8D9DA04 /* GhosttyTmuxPrefixInputBufferTests.swift in Sources */,
 				71CC1415715E9ECCD4C80EA2 /* GhosttyTerminalPresentationProjectorTests.swift in Sources */,
 				B64AE1F77F8F69A612E230AD /* GhosttyTerminalResponderViewTests.swift in Sources */,
 				B71D932853E3CE8D59E74B3F /* GhosttyTerminalRuntimePrecreationControllerTests.swift in Sources */,
