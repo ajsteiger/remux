@@ -136,6 +136,102 @@ struct GhosttyKeyboardViewportFallbackTokenGate: Equatable {
     }
 }
 
+enum GhosttyKeyboardViewportCompletionAction: Equatable {
+    case complete
+    case ignoreTargetMismatch
+    case ignorePolicy
+    case recoverUnexpectedHide
+}
+
+struct GhosttyKeyboardViewportCompletionProjection: Equatable {
+    let eventTarget: GhosttyKeyboardViewportTransitionTarget
+    let activeTransitionTarget: GhosttyKeyboardViewportTransitionTarget?
+    let action: GhosttyKeyboardViewportCompletionAction
+
+    init(
+        eventTarget: GhosttyKeyboardViewportTransitionTarget,
+        activeTransitionTarget: GhosttyKeyboardViewportTransitionTarget?,
+        keyboardMode: GhosttyKeyboardChromeMode,
+        isDismissSystemKeyboardRequested: Bool,
+        isInputAvailable: Bool,
+        isSelectionSheetPresented: Bool,
+        isAwaitingSystemKeyboardPresentation: Bool,
+        isSceneActive: Bool
+    ) {
+        self.eventTarget = eventTarget
+        self.activeTransitionTarget = activeTransitionTarget
+
+        if eventTarget == .hidden,
+           !GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
+               notificationTarget: .hidden,
+               keyboardMode: keyboardMode,
+               isDismissSystemKeyboardRequested: isDismissSystemKeyboardRequested
+           ) {
+            self.action = GhosttyKeyboardViewportTransitionPolicy
+                .shouldRecoverSystemKeyboardAfterIgnoredHide(
+                    keyboardMode: keyboardMode,
+                    isDismissSystemKeyboardRequested: isDismissSystemKeyboardRequested,
+                    isInputAvailable: isInputAvailable,
+                    isSelectionSheetPresented: isSelectionSheetPresented,
+                    isAwaitingSystemKeyboardPresentation: isAwaitingSystemKeyboardPresentation,
+                    isSceneActive: isSceneActive
+                )
+                ? .recoverUnexpectedHide
+                : .ignorePolicy
+            return
+        }
+
+        self.action = Self.matches(
+            activeTransitionTarget,
+            eventTarget: eventTarget
+        )
+            ? .complete
+            : .ignoreTargetMismatch
+    }
+
+    private static func matches(
+        _ activeTransitionTarget: GhosttyKeyboardViewportTransitionTarget?,
+        eventTarget: GhosttyKeyboardViewportTransitionTarget
+    ) -> Bool {
+        activeTransitionTarget == nil || activeTransitionTarget == eventTarget
+    }
+}
+
+enum GhosttyKeyboardViewportTransitionPolicy {
+    static func shouldBeginVisibilityTransition(
+        notificationTarget: GhosttyKeyboardViewportTransitionTarget,
+        keyboardMode: GhosttyKeyboardChromeMode,
+        isDismissSystemKeyboardRequested: Bool
+    ) -> Bool {
+        switch notificationTarget {
+        case .shown:
+            return keyboardMode == .system
+
+        case .hidden:
+            guard !(keyboardMode == .system && !isDismissSystemKeyboardRequested) else {
+                return false
+            }
+            return true
+        }
+    }
+
+    static func shouldRecoverSystemKeyboardAfterIgnoredHide(
+        keyboardMode: GhosttyKeyboardChromeMode,
+        isDismissSystemKeyboardRequested: Bool,
+        isInputAvailable: Bool,
+        isSelectionSheetPresented: Bool,
+        isAwaitingSystemKeyboardPresentation: Bool,
+        isSceneActive: Bool
+    ) -> Bool {
+        keyboardMode == .system
+            && !isDismissSystemKeyboardRequested
+            && isInputAvailable
+            && !isSelectionSheetPresented
+            && !isAwaitingSystemKeyboardPresentation
+            && isSceneActive
+    }
+}
+
 enum GhosttyKeyboardViewportTransitionTiming {
     static let defaultAnimationDuration: TimeInterval = 0.35
     static let fallbackGraceInterval: TimeInterval = 0.02

@@ -1019,39 +1019,51 @@ struct GhosttySurfaceScreen: View {
     private func completeKeyboardDidShow() {
         GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.keyboard.didShow")
         performKeyboardChromeStateChange {
-            guard shouldCompleteKeyboardViewportTransition(for: .shown) else {
+            let projection = keyboardViewportCompletionProjection(for: .shown)
+            switch projection.action {
+            case .complete:
+                isAwaitingSystemKeyboardPresentation = false
+                completeKeyboardViewportTransition()
+
+            case .ignoreTargetMismatch:
                 GhosttyRuntimeTrace.perf(
                     "kbd.transition ignoreDidShow target=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel)"
                 )
-                return
+
+            case .ignorePolicy, .recoverUnexpectedHide:
+                assertionFailure("didShow completion projection returned hidden-keyboard action")
+                GhosttyRuntimeTrace.perf(
+                    "kbd.transition ignoreDidShow target=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel)"
+                )
             }
-            isAwaitingSystemKeyboardPresentation = false
-            completeKeyboardViewportTransition()
         }
     }
 
     private func completeKeyboardDidHide() {
         GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.keyboard.didHide")
         performKeyboardChromeStateChange {
-            guard GhosttyKeyboardViewportTransitionPolicy.shouldBeginVisibilityTransition(
-                notificationTarget: .hidden,
-                keyboardMode: inputCoordinator.keyboardMode,
-                isDismissSystemKeyboardRequested: inputCoordinator.isDismissSystemKeyboardRequested
-            ) else {
-                GhosttyRuntimeTrace.perf(
-                    "kbd.transition ignoreDidHideByPolicy mode=\(inputCoordinator.keyboardMode.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
-                )
-                recoverSystemKeyboardAfterUnexpectedHideIfNeeded()
-                return
-            }
-            guard shouldCompleteKeyboardViewportTransition(for: .hidden) else {
+            let projection = keyboardViewportCompletionProjection(for: .hidden)
+            switch projection.action {
+            case .complete:
+                isAwaitingSystemKeyboardPresentation = false
+                completeKeyboardViewportTransition()
+
+            case .ignoreTargetMismatch:
                 GhosttyRuntimeTrace.perf(
                     "kbd.transition ignoreDidHide target=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel)"
                 )
-                return
+
+            case .ignorePolicy:
+                GhosttyRuntimeTrace.perf(
+                    "kbd.transition ignoreDidHideByPolicy mode=\(inputCoordinator.keyboardMode.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
+                )
+
+            case .recoverUnexpectedHide:
+                GhosttyRuntimeTrace.perf(
+                    "kbd.transition ignoreDidHideByPolicy mode=\(inputCoordinator.keyboardMode.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
+                )
+                recoverSystemKeyboardAfterUnexpectedHide()
             }
-            isAwaitingSystemKeyboardPresentation = false
-            completeKeyboardViewportTransition()
         }
     }
 
@@ -1119,18 +1131,22 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
-    private func recoverSystemKeyboardAfterUnexpectedHideIfNeeded() {
-        guard GhosttyKeyboardViewportTransitionPolicy.shouldRecoverSystemKeyboardAfterIgnoredHide(
+    private func keyboardViewportCompletionProjection(
+        for eventTarget: GhosttyKeyboardViewportTransitionTarget
+    ) -> GhosttyKeyboardViewportCompletionProjection {
+        GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: eventTarget,
+            activeTransitionTarget: terminalViewportCoordinator.keyboardTransitionTarget,
             keyboardMode: inputCoordinator.keyboardMode,
             isDismissSystemKeyboardRequested: inputCoordinator.isDismissSystemKeyboardRequested,
             isInputAvailable: isTerminalInputAvailable,
             isSelectionSheetPresented: selectionSheet != nil,
             isAwaitingSystemKeyboardPresentation: isAwaitingSystemKeyboardPresentation,
             isSceneActive: scenePhase == .active
-        ) else {
-            return
-        }
+        )
+    }
 
+    private func recoverSystemKeyboardAfterUnexpectedHide() {
         isAwaitingSystemKeyboardPresentation = true
         beginKeyboardViewportTransition(
             target: .shown,
@@ -1141,13 +1157,6 @@ struct GhosttySurfaceScreen: View {
         GhosttyRuntimeTrace.perf(
             "kbd.transition recoverUnexpectedHide mode=\(inputCoordinator.keyboardMode.traceLabel) token=\(inputCoordinator.terminalActivationToken)"
         )
-    }
-
-    private func shouldCompleteKeyboardViewportTransition(
-        for event: GhosttyKeyboardViewportTransitionTarget
-    ) -> Bool {
-        terminalViewportCoordinator.keyboardTransitionTarget == nil
-            || terminalViewportCoordinator.keyboardTransitionTarget == event
     }
 
     private func traceViewportFreezeHoldIfNeeded() {
@@ -1345,41 +1354,6 @@ enum GhosttyKeyboardViewportTransitionTarget: Equatable {
         case .hidden:
             return "hidden"
         }
-    }
-}
-
-enum GhosttyKeyboardViewportTransitionPolicy {
-    static func shouldBeginVisibilityTransition(
-        notificationTarget: GhosttyKeyboardViewportTransitionTarget,
-        keyboardMode: GhosttyKeyboardChromeMode,
-        isDismissSystemKeyboardRequested: Bool
-    ) -> Bool {
-        switch notificationTarget {
-        case .shown:
-            return keyboardMode == .system
-
-        case .hidden:
-            guard !(keyboardMode == .system && !isDismissSystemKeyboardRequested) else {
-                return false
-            }
-            return true
-        }
-    }
-
-    static func shouldRecoverSystemKeyboardAfterIgnoredHide(
-        keyboardMode: GhosttyKeyboardChromeMode,
-        isDismissSystemKeyboardRequested: Bool,
-        isInputAvailable: Bool,
-        isSelectionSheetPresented: Bool,
-        isAwaitingSystemKeyboardPresentation: Bool,
-        isSceneActive: Bool
-    ) -> Bool {
-        keyboardMode == .system
-            && !isDismissSystemKeyboardRequested
-            && isInputAvailable
-            && !isSelectionSheetPresented
-            && !isAwaitingSystemKeyboardPresentation
-            && isSceneActive
     }
 }
 

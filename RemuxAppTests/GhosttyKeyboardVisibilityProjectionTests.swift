@@ -214,4 +214,94 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
 
         XCTAssertFalse(gate.accepts(token))
     }
+
+    func testCompletionProjectionCompletesDidShowForMatchingTarget() {
+        let projection = GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: .shown,
+            activeTransitionTarget: .shown,
+            keyboardMode: .hidden,
+            isDismissSystemKeyboardRequested: true,
+            isInputAvailable: false,
+            isSelectionSheetPresented: true,
+            isAwaitingSystemKeyboardPresentation: true,
+            isSceneActive: false
+        )
+
+        XCTAssertEqual(projection.action, .complete)
+    }
+
+    func testCompletionProjectionIgnoresDidShowTargetMismatchWithoutRecoveryPolicy() {
+        let projection = GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: .shown,
+            activeTransitionTarget: .hidden,
+            keyboardMode: .system,
+            isDismissSystemKeyboardRequested: false,
+            isInputAvailable: true,
+            isSelectionSheetPresented: false,
+            isAwaitingSystemKeyboardPresentation: false,
+            isSceneActive: true
+        )
+
+        XCTAssertEqual(projection.action, .ignoreTargetMismatch)
+    }
+
+    func testCompletionProjectionCompletesDidHideWhenPolicyAllowsMatchingTarget() {
+        let projection = GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: .hidden,
+            activeTransitionTarget: nil,
+            keyboardMode: .hidden,
+            isDismissSystemKeyboardRequested: true,
+            isInputAvailable: true,
+            isSelectionSheetPresented: false,
+            isAwaitingSystemKeyboardPresentation: false,
+            isSceneActive: true
+        )
+
+        XCTAssertEqual(projection.action, .complete)
+    }
+
+    func testCompletionProjectionIgnoresDidHideTargetMismatchWhenPolicyAllows() {
+        let projection = GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: .hidden,
+            activeTransitionTarget: .shown,
+            keyboardMode: .hidden,
+            isDismissSystemKeyboardRequested: true,
+            isInputAvailable: true,
+            isSelectionSheetPresented: false,
+            isAwaitingSystemKeyboardPresentation: false,
+            isSceneActive: true
+        )
+
+        XCTAssertEqual(projection.action, .ignoreTargetMismatch)
+    }
+
+    func testCompletionProjectionIgnoresDidHideByPolicyWhenRecoveryIsIneligible() {
+        let projection = GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: .hidden,
+            activeTransitionTarget: .hidden,
+            keyboardMode: .system,
+            isDismissSystemKeyboardRequested: false,
+            isInputAvailable: false,
+            isSelectionSheetPresented: false,
+            isAwaitingSystemKeyboardPresentation: false,
+            isSceneActive: true
+        )
+
+        XCTAssertEqual(projection.action, .ignorePolicy)
+    }
+
+    func testCompletionProjectionRecoversUnexpectedHideWhenPolicyRejectsAndRecoveryIsEligible() {
+        let projection = GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: .hidden,
+            activeTransitionTarget: .shown,
+            keyboardMode: .system,
+            isDismissSystemKeyboardRequested: false,
+            isInputAvailable: true,
+            isSelectionSheetPresented: false,
+            isAwaitingSystemKeyboardPresentation: false,
+            isSceneActive: true
+        )
+
+        XCTAssertEqual(projection.action, .recoverUnexpectedHide)
+    }
 }
