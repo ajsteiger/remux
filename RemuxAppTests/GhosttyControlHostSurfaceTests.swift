@@ -671,6 +671,10 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
             event: "action",
             fields: expensiveFields("action")
         )
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "topology",
+            fields: expensiveFields("topology")
+        )
 
         XCTAssertEqual(evaluatedFieldBuildCount, 0)
     }

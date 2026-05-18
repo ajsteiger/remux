@@ -371,6 +371,27 @@ enum GhosttyTmuxActionTrace {
         }
     }
 
+    static func traceActiveTopologyFlows(
+        event: String,
+        fields: @autoclosure () -> [String: String] = [:],
+        at timestamp: UInt64? = nil
+    ) {
+        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
+
+        var resolvedFields: [String: String]?
+        for action in [Action.newWindow, .splitPane] where GhosttyRuntimeTrace.isFlowActive(action.flow) {
+            if resolvedFields == nil {
+                resolvedFields = fields()
+            }
+            GhosttyRuntimeTrace.flowEventIfActive(
+                action.flow,
+                event: event,
+                fields: resolvedFields ?? [:],
+                at: timestamp
+            )
+        }
+    }
+
     private static let newWindowCommand = Array("new-window".utf8)
     private static let splitWindowCommand = Array("split-window".utf8)
     private static let inboundSignalPatterns: [(signal: InboundSignal, pattern: Data)] = [

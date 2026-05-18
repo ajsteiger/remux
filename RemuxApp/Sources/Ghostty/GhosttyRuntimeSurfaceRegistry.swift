@@ -519,6 +519,31 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
     }
 
+    private func traceTopologyPresentationEvent(
+        event: String,
+        surfaceID: UUID,
+        reason: String,
+        extraFields: @autoclosure () -> [String: String] = [:]
+    ) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: event,
+            fields: {
+                var fields = [
+                    "pendingPresentation": "\(pendingPhonePresentationSurfaceID == surfaceID)",
+                    "reason": reason,
+                    "runtimePresentationReady": "\(surfaceHasRuntimePresentationReadiness(surfaceID))",
+                    "selected": "\(selectedActiveLeafID == surfaceID)",
+                    "surface": ghosttyDiagnosticShortID(surfaceID),
+                    "viewPresentationReady": "\(surfaceHasViewPresentation(surfaceID))",
+                ]
+                for (key, value) in extraFields() {
+                    fields[key] = value
+                }
+                return fields
+            }()
+        )
+    }
+
     private func surfaceHasRuntimePresentationReadiness(_ surfaceID: UUID) -> Bool {
         presentationReadiness.hasRuntimeReadiness(surfaceID)
     }
@@ -537,6 +562,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         surface: GhosttyManagedSurface
     ) {
         presentationReadiness.markRuntimeReady(surfaceID)
+        traceTopologyPresentationEvent(
+            event: "registry.runtimePresentation.ready",
+            surfaceID: surfaceID,
+            reason: reason
+        )
         if pendingPhonePresentationSurfaceID == surfaceID {
             _ = promotePendingPhonePresentationIfReady(
                 surfaceID: surfaceID,
@@ -569,6 +599,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
         guard surfaceIsReadyForPhonePresentation(surfaceID) else { return false }
 
+        traceTopologyPresentationEvent(
+            event: "ui.presentation.promote.ready",
+            surfaceID: surfaceID,
+            reason: reason
+        )
         tracePendingPhonePresentation(
             event: "ready",
             surfaceID: surfaceID,
@@ -1322,6 +1357,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func recordSurfacePresentation(_ surfaceID: UUID, reason: String) {
         presentationReadiness.markViewPresented(surfaceID)
+        traceTopologyPresentationEvent(
+            event: "ui.viewPresentation.ready",
+            surfaceID: surfaceID,
+            reason: reason
+        )
         if pendingPhonePresentationSurfaceID == surfaceID {
             _ = promotePendingPhonePresentationIfReady(
                 surfaceID: surfaceID,
@@ -1680,6 +1720,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             size: size,
             state: interactiveReadinessState(for: surface)
         )
+        traceTopologyPresentationEvent(
+            event: "ui.displayUpdate.rendered",
+            surfaceID: surfaceID,
+            reason: "display.update",
+            extraFields: [
+                "scale": String(format: "%.1f", Double(scale)),
+                "size": "\(Int(size.width))x\(Int(size.height))",
+            ]
+        )
         if completions.isEmpty {
             traceInteractiveWaiting(surfaceID: surfaceID, reason: "display.update", scale: scale)
         }
@@ -1701,6 +1750,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             eventFields["readySurface"] = ghosttyDiagnosticShortID(surfaceID)
         }
         GhosttyRuntimeTrace.flowEventIfActive(flow, event: event, fields: eventFields)
+        GhosttyRuntimeTrace.flowEventIfActive(
+            flow,
+            event: "registry.topology.installed",
+            fields: eventFields
+        )
 
         guard let surfaceID, let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
             var missingFields = eventFields

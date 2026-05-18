@@ -505,6 +505,12 @@ final class GhosttyControlHostSurface {
         GhosttyRuntimeTrace.latency(
             "host.pump.processOutput end accepted=\(accepted) bytes=\(data.count) chunks=\(chunkCount) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: processStart))"
         )
+        GhosttyTmuxActionTrace.traceInboundSignals(
+            in: data,
+            source: "host.pump.processOutput",
+            chunkCount: chunkCount,
+            eventPrefix: "tmux.signal.host.pump.processOutput.end"
+        )
         guard accepted else {
             onDebugEvent?("Ghostty rejected tmux output after \(receivedByteCount) bytes")
             return .rejected
