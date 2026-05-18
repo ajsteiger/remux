@@ -21,6 +21,11 @@ enum GhosttyTerminalViewportHoldReason: Hashable {
     }
 }
 
+enum GhosttyTerminalViewportSheetHoldEffect: Equatable {
+    case hold(effectiveSize: CGSize)
+    case release(previousEffectiveSize: CGSize)
+}
+
 struct GhosttyTerminalViewportCoordinator: Equatable {
     enum ReleasePolicy: Equatable {
         case adoptLatestLive
@@ -92,12 +97,19 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
         return true
     }
 
-    mutating func setSheetPresented(_ isPresented: Bool, liveSize: CGSize) {
+    @discardableResult
+    mutating func setSheetPresented(
+        _ isPresented: Bool,
+        liveSize: CGSize
+    ) -> GhosttyTerminalViewportSheetHoldEffect {
+        let previousEffectiveSize = effectiveSize(liveSize: liveSize)
         if isPresented {
             holdReasons.insert(.sheet)
             freeze(using: liveSize)
+            return .hold(effectiveSize: effectiveSize(liveSize: liveSize))
         } else {
             removeHold(.sheet, liveSize: liveSize, releasePolicy: .adoptLatestLive)
+            return .release(previousEffectiveSize: previousEffectiveSize)
         }
     }
 

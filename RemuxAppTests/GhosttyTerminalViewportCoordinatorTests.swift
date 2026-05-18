@@ -100,7 +100,10 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let full = CGSize(width: 402, height: 726)
 
         XCTAssertTrue(coordinator.observeLiveSize(keyboard))
-        coordinator.setSheetPresented(true, liveSize: keyboard)
+        XCTAssertEqual(
+            coordinator.setSheetPresented(true, liveSize: keyboard),
+            .hold(effectiveSize: keyboard)
+        )
         XCTAssertFalse(coordinator.observeLiveSize(full))
         coordinator.beginKeyboardTransition(
             target: .hidden,
@@ -109,12 +112,34 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
             liveSize: full
         )
 
-        coordinator.setSheetPresented(false, liveSize: full)
+        XCTAssertEqual(
+            coordinator.setSheetPresented(false, liveSize: full),
+            .release(previousEffectiveSize: keyboard)
+        )
         XCTAssertTrue(coordinator.isFrozen)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
 
         coordinator.completeKeyboardTransition(liveSize: full)
         XCTAssertFalse(coordinator.isFrozen)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
+    }
+
+    func testSheetPresentationReportsCurrentEffectiveHoldForReplacement() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let keyboard = CGSize(width: 402, height: 452)
+        let full = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(
+            coordinator.setSheetPresented(true, liveSize: keyboard),
+            .hold(effectiveSize: keyboard)
+        )
+
+        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertEqual(
+            coordinator.setSheetPresented(true, liveSize: full),
+            .hold(effectiveSize: keyboard)
+        )
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
     }
 }

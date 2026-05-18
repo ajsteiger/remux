@@ -755,13 +755,13 @@ struct GhosttySurfaceScreen: View {
         isPresented: Bool,
         liveSize: CGSize
     ) {
-        let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(liveSize: liveSize)
-        terminalViewportCoordinator.setSheetPresented(isPresented, liveSize: liveSize)
-        if isPresented {
+        let effect = terminalViewportCoordinator.setSheetPresented(isPresented, liveSize: liveSize)
+        switch effect {
+        case .hold(let effectiveSize):
             GhosttyRuntimeTrace.perf(
-                "viewport.freeze begin reason=sheet effective=\(terminalViewportCoordinator.effectiveSize(liveSize: liveSize).traceLabel) live=\(liveSize.traceLabel) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel)"
+                "viewport.freeze begin reason=sheet effective=\(effectiveSize.traceLabel) live=\(liveSize.traceLabel) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel)"
             )
-        } else {
+        case .release(let previousEffectiveSize):
             traceViewportFreezeRelease(
                 previousEffectiveSize: previousEffectiveSize,
                 releaseKind: "sheet"
