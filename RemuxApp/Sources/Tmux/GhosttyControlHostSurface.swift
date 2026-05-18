@@ -454,6 +454,11 @@ final class GhosttyControlHostSurface {
             "host.pump.receive bytes=\(data.count) chunks=\(chunkCount) total=\(receivedByteCount) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )
         GhosttyRuntimeTrace.observeInboundData(data, source: "host.pump")
+        GhosttyTmuxActionTrace.traceInboundSignals(
+            in: data,
+            source: "host.pump",
+            chunkCount: chunkCount
+        )
         if GhosttyRuntimeTrace.isEnabled {
             NSLog(
                 "Remux tmux rx total %d bytes; batch %d bytes from %d chunks: %@",

@@ -106,6 +106,10 @@ final class GhosttyHostTransportBridge: @unchecked Sendable {
         GhosttyRuntimeTrace.latency(
             "hostSurface.onWrite bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )
+        GhosttyTmuxActionTrace.traceOutboundCommand(
+            data,
+            event: "host.write.detected"
+        )
         if GhosttyRuntimeTrace.isEnabled {
             NSLog(
                 "Remux ghostty tx %d bytes: %@",
@@ -117,7 +121,15 @@ final class GhosttyHostTransportBridge: @unchecked Sendable {
             }
         }
 
-        return writeSequencer.enqueue(data)
+        let accepted = writeSequencer.enqueue(data)
+        GhosttyTmuxActionTrace.traceOutboundCommand(
+            data,
+            event: "host.write.enqueued",
+            fields: [
+                "accepted": "\(accepted)",
+            ]
+        )
+        return accepted
     }
 
     private func resize(columns: UInt16, rows: UInt16, width: UInt32, height: UInt32) -> Bool {

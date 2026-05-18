@@ -225,10 +225,8 @@ enum GhosttyRuntimeTrace {
             message.hasPrefix("debugLatencyProbe")
     }
 
-    static var flowTraceEnabled: Bool {
-        perfEnabled || latencyEnabled ||
-            ProcessInfo.processInfo.environment["REMUX_TRACE_FLOWS"] == "1"
-    }
+    static let flowTraceEnabled = perfEnabled || latencyEnabled ||
+        ProcessInfo.processInfo.environment["REMUX_TRACE_FLOWS"] == "1"
 
     private static func logFlow(
         _ flow: String,
@@ -254,6 +252,178 @@ enum GhosttyRuntimeTrace {
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\r", with: "\\r")
     }
+}
+
+enum GhosttyTmuxActionTrace {
+    enum Action: Equatable, Sendable {
+        case newWindow
+        case splitPane
+
+        var flow: String {
+            switch self {
+            case .newWindow:
+                "tmux.newWindow"
+            case .splitPane:
+                "tmux.splitPane"
+            }
+        }
+
+        var command: String {
+            switch self {
+            case .newWindow:
+                "new-window"
+            case .splitPane:
+                "split-window"
+            }
+        }
+    }
+
+    enum InboundSignal: String, Equatable, Sendable {
+        case windowAdd = "window-add"
+        case sessionWindowChanged = "session-window-changed"
+        case windowPaneChanged = "window-pane-changed"
+        case layoutChange = "layout-change"
+
+        var action: Action {
+            switch self {
+            case .windowAdd, .sessionWindowChanged:
+                .newWindow
+            case .windowPaneChanged, .layoutChange:
+                .splitPane
+            }
+        }
+
+        var event: String {
+            "tmux.response.\(rawValue)"
+        }
+    }
+
+    static func outboundAction(for data: Data) -> Action? {
+        if containsCommand(Self.newWindowCommand, in: data) {
+            return .newWindow
+        }
+        if containsCommand(Self.splitWindowCommand, in: data) {
+            return .splitPane
+        }
+        return nil
+    }
+
+    static func inboundSignals(in data: Data) -> [InboundSignal] {
+        var signals: [InboundSignal] = []
+        for candidate in Self.inboundSignalPatterns where contains(candidate.pattern, in: data) {
+            signals.append(candidate.signal)
+        }
+        return signals
+    }
+
+    static func traceOutboundCommand(
+        _ data: Data,
+        event: String,
+        fields: @autoclosure () -> [String: String] = [:],
+        at timestamp: UInt64? = nil
+    ) {
+        guard GhosttyRuntimeTrace.flowTraceEnabled,
+              let action = outboundAction(for: data),
+              GhosttyRuntimeTrace.isFlowActive(action.flow)
+        else {
+            return
+        }
+
+        var eventFields = fields()
+        eventFields["bytes"] = "\(data.count)"
+        eventFields["command"] = action.command
+        GhosttyRuntimeTrace.flowEventIfActive(
+            action.flow,
+            event: event,
+            fields: eventFields,
+            at: timestamp
+        )
+    }
+
+    static func traceInboundSignals(
+        in data: Data,
+        source: String,
+        chunkCount: Int,
+        at timestamp: UInt64? = nil
+    ) {
+        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
+
+        for signal in inboundSignals(in: data) {
+            let action = signal.action
+            guard GhosttyRuntimeTrace.isFlowActive(action.flow) else { continue }
+
+            GhosttyRuntimeTrace.flowEventIfActive(
+                action.flow,
+                event: signal.event,
+                fields: [
+                    "bytes": "\(data.count)",
+                    "chunks": "\(chunkCount)",
+                    "signal": signal.rawValue,
+                    "source": source,
+                ],
+                at: timestamp
+            )
+        }
+    }
+
+    private static let newWindowCommand = Array("new-window".utf8)
+    private static let splitWindowCommand = Array("split-window".utf8)
+    private static let inboundSignalPatterns: [(signal: InboundSignal, pattern: Data)] = [
+        (.windowAdd, Data("%window-add".utf8)),
+        (.sessionWindowChanged, Data("%session-window-changed".utf8)),
+        (.windowPaneChanged, Data("%window-pane-changed".utf8)),
+        (.layoutChange, Data("%layout-change".utf8)),
+    ]
+
+    private static func containsCommand(_ command: [UInt8], in data: Data) -> Bool {
+        let bytes = Array(data)
+        var lineStart = 0
+
+        while lineStart < bytes.count {
+            var index = lineStart
+            while index < bytes.count, bytes[index] == Self.space || bytes[index] == Self.tab {
+                index += 1
+            }
+
+            if matchesCommand(command, in: bytes, at: index) {
+                return true
+            }
+
+            while lineStart < bytes.count,
+                  bytes[lineStart] != Self.lineFeed,
+                  bytes[lineStart] != Self.carriageReturn {
+                lineStart += 1
+            }
+            while lineStart < bytes.count,
+                  bytes[lineStart] == Self.lineFeed || bytes[lineStart] == Self.carriageReturn {
+                lineStart += 1
+            }
+        }
+
+        return false
+    }
+
+    private static func matchesCommand(_ command: [UInt8], in bytes: [UInt8], at index: Int) -> Bool {
+        guard index + command.count <= bytes.count else { return false }
+        guard bytes[index..<index + command.count].elementsEqual(command) else { return false }
+
+        let boundaryIndex = index + command.count
+        guard boundaryIndex < bytes.count else { return true }
+        return isCommandTokenBoundary(bytes[boundaryIndex])
+    }
+
+    private static func isCommandTokenBoundary(_ byte: UInt8) -> Bool {
+        byte == Self.space || byte == Self.tab || byte == Self.lineFeed || byte == Self.carriageReturn
+    }
+
+    private static func contains(_ needle: Data, in haystack: Data) -> Bool {
+        haystack.range(of: needle) != nil
+    }
+
+    private static let space: UInt8 = 0x20
+    private static let tab: UInt8 = 0x09
+    private static let lineFeed: UInt8 = 0x0A
+    private static let carriageReturn: UInt8 = 0x0D
 }
 
 final class GhosttyFlowTraceStore: @unchecked Sendable {

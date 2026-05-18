@@ -48,6 +48,15 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
         GhosttyRuntimeTrace.latency(
             "writeSequencer.enqueue bytes=\(data.count) accepted=\(enqueueResult.accepted) startDrain=\(enqueueResult.shouldStartDrain) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: enqueueStart)) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
         )
+        GhosttyTmuxActionTrace.traceOutboundCommand(
+            data,
+            event: "host.write.queue.updated",
+            fields: [
+                "accepted": "\(enqueueResult.accepted)",
+                "elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: enqueueStart),
+                "startDrain": "\(enqueueResult.shouldStartDrain)",
+            ]
+        )
 
         if enqueueResult.shouldStartDrain {
             Task { [weak self] in
@@ -72,14 +81,34 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
             GhosttyRuntimeTrace.latency(
                 "writeSequencer.send begin bytes=\(data.count) preview=\(GhosttyRuntimeTrace.preview(data, limit: 160))"
             )
+            GhosttyTmuxActionTrace.traceOutboundCommand(
+                data,
+                event: "host.write.send.begin",
+                at: sendStart
+            )
             do {
                 try await transport.send(data)
                 GhosttyRuntimeTrace.latency(
                     "writeSequencer.send end bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart))"
                 )
+                GhosttyTmuxActionTrace.traceOutboundCommand(
+                    data,
+                    event: "host.write.send.end",
+                    fields: [
+                        "elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart),
+                    ]
+                )
             } catch {
                 GhosttyRuntimeTrace.latency(
                     "writeSequencer.send failed bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart)) error=\(String(describing: error))"
+                )
+                GhosttyTmuxActionTrace.traceOutboundCommand(
+                    data,
+                    event: "host.write.send.failed",
+                    fields: [
+                        "elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart),
+                        "error": "\(type(of: error))",
+                    ]
                 )
                 close()
                 await failureHandler()?(error)

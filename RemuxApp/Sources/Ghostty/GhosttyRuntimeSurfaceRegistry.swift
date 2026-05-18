@@ -1020,15 +1020,31 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         updateDebugSummary("create_surface context=\(String(describing: request.config?.pointee.context))")
 
         guard let configPtr = request.config else { return nil }
+        let contextTraceName: String
+        let actionFlow: String?
         switch configPtr.pointee.context {
-        case GHOSTTY_SURFACE_CONTEXT_WINDOW,
-             GHOSTTY_SURFACE_CONTEXT_TAB,
-             GHOSTTY_SURFACE_CONTEXT_SPLIT:
-            break
+        case GHOSTTY_SURFACE_CONTEXT_WINDOW:
+            contextTraceName = "window"
+            actionFlow = "tmux.newWindow"
+        case GHOSTTY_SURFACE_CONTEXT_TAB:
+            contextTraceName = "tab"
+            actionFlow = "tmux.newWindow"
+        case GHOSTTY_SURFACE_CONTEXT_SPLIT:
+            contextTraceName = "split"
+            actionFlow = "tmux.splitPane"
 
         default:
             updateDebugSummary("create_surface unsupported context=\(String(describing: configPtr.pointee.context))")
             return nil
+        }
+        if let actionFlow {
+            GhosttyRuntimeTrace.flowEventIfActive(
+                actionFlow,
+                event: "registry.createSurface.begin",
+                fields: [
+                    "context": contextTraceName,
+                ]
+            )
         }
 
         guard let managed = createManagedSurface(app: app, baseConfig: configPtr.pointee, lease: lease) else {
@@ -1055,6 +1071,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 event: "registry.createSurface.window",
                 surfaceID: managed.id,
                 fields: [
+                    "callback_elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start),
                     "surface": ghosttyDiagnosticShortID(managed.id),
                     "topLevel": ghosttyDiagnosticShortID(topLevel.id),
                     "topLevels": "\(topLevels.count)",
@@ -1084,6 +1101,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 event: "registry.createSurface.split",
                 surfaceID: managed.id,
                 fields: [
+                    "callback_elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start),
                     "surface": ghosttyDiagnosticShortID(managed.id),
                     "topLevels": "\(topLevels.count)",
                 ]
@@ -1109,6 +1127,26 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
         GhosttyRuntimeTrace.latency(
             "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index)"
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.newWindow",
+            event: "registry.createSurfaceTree.begin",
+            fields: [
+                "focusedIndex": "\(request.focused_leaf_index)",
+                "focusedValid": "\(request.focused_leaf_index_valid)",
+                "leaves": "\(request.leaf_surfaces_len)",
+                "nodes": "\(request.nodes_len)",
+            ]
+        )
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "tmux.splitPane",
+            event: "registry.createSurfaceTree.begin",
+            fields: [
+                "focusedIndex": "\(request.focused_leaf_index)",
+                "focusedValid": "\(request.focused_leaf_index_valid)",
+                "leaves": "\(request.leaf_surfaces_len)",
+                "nodes": "\(request.nodes_len)",
+            ]
         )
         createSurfaceTreeCount += 1
         if GhosttyRuntimeTrace.isEnabled {
@@ -1208,6 +1246,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             event: "registry.createSurfaceTree",
             surfaceID: readinessSurfaceID,
             fields: [
+                "callback_elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start),
                 "focused": ghosttyDiagnosticShortID(focusedLeafID),
                 "leaves": "\(leafSurfaces.count)",
                 "topLevels": "\(topLevels.count)",
@@ -1218,6 +1257,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             event: "registry.createSurfaceTree",
             surfaceID: readinessSurfaceID,
             fields: [
+                "callback_elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start),
                 "focused": ghosttyDiagnosticShortID(focusedLeafID),
                 "leaves": "\(leafSurfaces.count)",
                 "topLevels": "\(topLevels.count)",
@@ -1652,11 +1692,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         _ flow: String,
         event: String,
         surfaceID: UUID?,
-        fields: [String: String]
+        fields: @autoclosure () -> [String: String]
     ) {
         guard GhosttyRuntimeTrace.isFlowActive(flow) else { return }
 
-        var eventFields = fields
+        var eventFields = fields()
         if let surfaceID {
             eventFields["readySurface"] = ghosttyDiagnosticShortID(surfaceID)
         }

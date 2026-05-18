@@ -666,8 +666,50 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
             event: "endActive",
             fields: expensiveFields("endActive")
         )
+        GhosttyTmuxActionTrace.traceOutboundCommand(
+            Data("new-window -t $1\n".utf8),
+            event: "action",
+            fields: expensiveFields("action")
+        )
 
         XCTAssertEqual(evaluatedFieldBuildCount, 0)
+    }
+
+    func testTmuxActionTraceClassifiesTopologyOutboundCommands() {
+        XCTAssertEqual(
+            GhosttyTmuxActionTrace.outboundAction(for: Data("new-window -t $1\n".utf8)),
+            .newWindow
+        )
+        XCTAssertEqual(
+            GhosttyTmuxActionTrace.outboundAction(for: Data("split-window -h -t %1\n".utf8)),
+            .splitPane
+        )
+    }
+
+    func testTmuxActionTraceIgnoresRegularInputCommands() {
+        XCTAssertNil(
+            GhosttyTmuxActionTrace.outboundAction(for: Data("send-keys -H -t %1 61\n".utf8))
+        )
+        XCTAssertNil(
+            GhosttyTmuxActionTrace.outboundAction(for: Data("refresh-client -C 120,80\n".utf8))
+        )
+        XCTAssertNil(
+            GhosttyTmuxActionTrace.outboundAction(
+                for: Data("send-keys -l -t %1 new-window split-window\n".utf8)
+            )
+        )
+    }
+
+    func testTmuxActionTraceClassifiesInboundTopologySignals() {
+        let newWindowSignals = GhosttyTmuxActionTrace.inboundSignals(
+            in: Data("%session-window-changed $1 @2\n%window-add @2\n".utf8)
+        )
+        let splitSignals = GhosttyTmuxActionTrace.inboundSignals(
+            in: Data("%window-pane-changed @1 %2\n%layout-change @1 layout\n".utf8)
+        )
+
+        XCTAssertEqual(newWindowSignals, [.windowAdd, .sessionWindowChanged])
+        XCTAssertEqual(splitSignals, [.windowPaneChanged, .layoutChange])
     }
 
     func testTransportResizeContractCanRecordGhosttyViewportChanges() async throws {
