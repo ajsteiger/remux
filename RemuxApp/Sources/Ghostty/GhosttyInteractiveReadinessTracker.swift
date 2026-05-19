@@ -44,6 +44,13 @@ final class GhosttyInteractiveReadinessTracker {
         pendingByFlow[flow] = Pending(flow: flow, surfaceID: surfaceID)
     }
 
+    func removeSurface(_ surfaceID: UUID) {
+        renderedSurfaces[surfaceID] = nil
+        pendingByFlow = pendingByFlow.filter { _, pending in
+            pending.surfaceID != surfaceID
+        }
+    }
+
     func pendingFlows(for surfaceID: UUID) -> [String] {
         pendingByFlow.values
             .filter { $0.surfaceID == surfaceID }

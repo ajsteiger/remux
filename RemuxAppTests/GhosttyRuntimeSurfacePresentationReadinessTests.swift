@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 @testable import Remux
 
@@ -104,6 +105,102 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
         XCTAssertFalse(readiness.hasViewPresentation(secondID))
     }
 
+    func testCoordinatorCompletesTrackedFlowOnlyAfterRenderAndPresentationFacts() {
+        let surfaceID = Self.id(1)
+        var coordinator = GhosttyRuntimeSurfaceReadinessCoordinator()
+        coordinator.beginInteractiveTracking(flow: "tmux.newWindow", surfaceID: surfaceID)
+
+        let renderedBeforeRuntimeReady = coordinator.recordRender(
+            surfaceID: surfaceID,
+            size: CGSize(width: 120, height: 80),
+            state: Self.interactiveState(runtimePresentationReady: false)
+        )
+        XCTAssertTrue(renderedBeforeRuntimeReady.isEmpty)
+        XCTAssertTrue(coordinator.renderStatus(for: surfaceID).rendered)
+        XCTAssertEqual(coordinator.pendingFlows(for: surfaceID), ["tmux.newWindow"])
+
+        coordinator.markRuntimePresentationReady(surfaceID)
+        coordinator.markViewPresented(surfaceID)
+        let completions = coordinator.updateInteractivePresentation(
+            surfaceID: surfaceID,
+            state: Self.interactiveState(
+                runtimePresentationReady: coordinator.hasRuntimePresentationReadiness(surfaceID),
+                presentationReady: coordinator.pendingPresentationSurfaceID != surfaceID
+            )
+        )
+
+        XCTAssertEqual(completions.count, 1)
+        XCTAssertEqual(completions.first?.flow, "tmux.newWindow")
+        XCTAssertEqual(completions.first?.surfaceID, surfaceID)
+        XCTAssertEqual(completions.first?.rendered, true)
+        XCTAssertEqual(completions.first?.size, CGSize(width: 120, height: 80))
+        XCTAssertTrue(coordinator.pendingFlows(for: surfaceID).isEmpty)
+    }
+
+    func testCoordinatorKeepsPendingPhonePresentationOutOfInteractiveReady() {
+        let surfaceID = Self.id(1)
+        var coordinator = GhosttyRuntimeSurfaceReadinessCoordinator()
+        coordinator.beginInteractiveTracking(flow: "tmux.splitPane", surfaceID: surfaceID)
+        coordinator.markRuntimePresentationReady(surfaceID)
+        coordinator.markViewPresented(surfaceID)
+        coordinator.beginPendingPresentation(surfaceID: surfaceID)
+
+        let blocked = coordinator.recordRender(
+            surfaceID: surfaceID,
+            size: CGSize(width: 120, height: 80),
+            state: Self.interactiveState(
+                runtimePresentationReady: coordinator.hasRuntimePresentationReadiness(surfaceID),
+                presentationReady: coordinator.pendingPresentationSurfaceID != surfaceID
+            )
+        )
+        XCTAssertTrue(blocked.isEmpty)
+        XCTAssertEqual(coordinator.pendingFlows(for: surfaceID), ["tmux.splitPane"])
+
+        coordinator.clearPendingPresentation()
+        let completions = coordinator.updateInteractivePresentation(
+            surfaceID: surfaceID,
+            state: Self.interactiveState(
+                runtimePresentationReady: coordinator.hasRuntimePresentationReadiness(surfaceID),
+                presentationReady: coordinator.pendingPresentationSurfaceID != surfaceID
+            )
+        )
+
+        XCTAssertEqual(completions.count, 1)
+        XCTAssertEqual(completions.first?.flow, "tmux.splitPane")
+        XCTAssertEqual(completions.first?.surfaceID, surfaceID)
+    }
+
+    func testCoordinatorRemoveSurfaceClearsPresentationAndInteractiveState() {
+        let surfaceID = Self.id(1)
+        var coordinator = GhosttyRuntimeSurfaceReadinessCoordinator()
+        coordinator.markRuntimePresentationReady(surfaceID)
+        coordinator.markViewPresented(surfaceID)
+        coordinator.beginPendingPresentation(surfaceID: surfaceID)
+        coordinator.beginInteractiveTracking(flow: "tmux.newWindow", surfaceID: surfaceID)
+
+        let blocked = coordinator.recordRender(
+            surfaceID: surfaceID,
+            size: CGSize(width: 120, height: 80),
+            state: Self.interactiveState(
+                runtimePresentationReady: true,
+                presentationReady: false
+            )
+        )
+        XCTAssertTrue(blocked.isEmpty)
+        XCTAssertTrue(coordinator.renderStatus(for: surfaceID).rendered)
+
+        let change = coordinator.removeSurface(surfaceID)
+
+        XCTAssertEqual(change.previous, surfaceID)
+        XCTAssertEqual(change.current, nil)
+        XCTAssertTrue(change.didClearPending)
+        XCTAssertNil(coordinator.pendingPresentationSurfaceID)
+        XCTAssertFalse(coordinator.hasRuntimePresentationReadiness(surfaceID))
+        XCTAssertFalse(coordinator.hasViewPresentation(surfaceID))
+        XCTAssertFalse(coordinator.renderStatus(for: surfaceID).rendered)
+        XCTAssertTrue(coordinator.pendingFlows(for: surfaceID).isEmpty)
+    }
+
     private static func id(_ value: UInt8) -> UUID {
         UUID(uuid: (
             value, 0, 0, 0,
@@ -112,5 +209,21 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
             0, 0,
             0, 0, 0, 0, 0, 0
         ))
+    }
+
+    private static func interactiveState(
+        selected: Bool = true,
+        visible: Bool = true,
+        focused: Bool = true,
+        runtimePresentationReady: Bool = true,
+        presentationReady: Bool = true
+    ) -> GhosttyInteractiveSurfaceReadinessState {
+        GhosttyInteractiveSurfaceReadinessState(
+            selected: selected,
+            visible: visible,
+            focused: focused,
+            runtimePresentationReady: runtimePresentationReady,
+            presentationReady: presentationReady
+        )
     }
 }

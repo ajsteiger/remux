@@ -75,8 +75,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private let tmuxErrorChannel = GhosttyRuntimeTmuxErrorChannel()
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
-    private var interactiveReadinessTracker = GhosttyInteractiveReadinessTracker()
-    private var presentationReadiness = GhosttyRuntimeSurfacePresentationReadiness()
+    private var readinessCoordinator = GhosttyRuntimeSurfaceReadinessCoordinator()
     private var pendingPhonePresentationRefreshTask: Task<Void, Never>?
     private var pendingPhonePresentationRefreshAttempt = 0
     private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
@@ -103,7 +102,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private var pendingPhonePresentationSurfaceID: UUID? {
-        presentationReadiness.pendingSurfaceID
+        readinessCoordinator.pendingPresentationSurfaceID
     }
 
     var pendingPhonePresentationSurfaceIDForView: UUID? {
@@ -151,7 +150,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         tmuxErrorChannel.reset()
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
-        interactiveReadinessTracker.reset()
         clearPresentationReadiness()
         notifyChanged()
     }
@@ -431,24 +429,24 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func clearPendingPhonePresentation() {
-        let change = presentationReadiness.clearPending()
+        let change = readinessCoordinator.clearPendingPresentation()
         applyPendingPhonePresentationChange(change)
         pendingPhonePresentationTrace = nil
     }
 
     private func beginPendingPhonePresentation(surfaceID: UUID) {
-        let change = presentationReadiness.beginPending(surfaceID)
+        let change = readinessCoordinator.beginPendingPresentation(surfaceID: surfaceID)
         applyPendingPhonePresentationChange(change)
     }
 
     private func clearPresentationReadiness() {
-        let change = presentationReadiness.clearAll()
+        let change = readinessCoordinator.reset()
         applyPendingPhonePresentationChange(change)
         pendingPhonePresentationTrace = nil
     }
 
     private func removePresentationReadiness(for surfaceID: UUID) {
-        let change = presentationReadiness.removeSurface(surfaceID)
+        let change = readinessCoordinator.removeSurface(surfaceID)
         applyPendingPhonePresentationChange(change)
         if change.didClearPending {
             pendingPhonePresentationTrace = nil
@@ -562,15 +560,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func surfaceHasRuntimePresentationReadiness(_ surfaceID: UUID) -> Bool {
-        presentationReadiness.hasRuntimeReadiness(surfaceID)
+        readinessCoordinator.hasRuntimePresentationReadiness(surfaceID)
     }
 
     private func surfaceHasViewPresentation(_ surfaceID: UUID) -> Bool {
-        presentationReadiness.hasViewPresentation(surfaceID)
+        readinessCoordinator.hasViewPresentation(surfaceID)
     }
 
     private func surfaceIsReadyForPhonePresentation(_ surfaceID: UUID) -> Bool {
-        presentationReadiness.isReadyForPresentation(surfaceID)
+        readinessCoordinator.isReadyForPhonePresentation(surfaceID)
     }
 
     private func markSurfaceRuntimePresentationReady(
@@ -578,7 +576,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         reason: String,
         surface: GhosttyManagedSurface
     ) {
-        presentationReadiness.markRuntimeReady(surfaceID)
+        readinessCoordinator.markRuntimePresentationReady(surfaceID)
         traceTopologyPresentationEvent(
             event: "registry.runtimePresentation.ready",
             surfaceID: surfaceID,
@@ -736,7 +734,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private func trackWindowSwipeReadinessIfNeeded(surfaceID: UUID, reason: String) {
         guard GhosttyRuntimeTrace.isFlowActive(Self.windowSwipeFlow) else { return }
 
-        interactiveReadinessTracker.begin(flow: Self.windowSwipeFlow, surfaceID: surfaceID)
+        readinessCoordinator.beginInteractiveTracking(flow: Self.windowSwipeFlow, surfaceID: surfaceID)
         GhosttyRuntimeTrace.flowEventIfActive(
             Self.windowSwipeFlow,
             event: "interactive.tracking",
@@ -1473,7 +1471,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func recordSurfacePresentation(_ surfaceID: UUID, reason: String) {
-        presentationReadiness.markViewPresented(surfaceID)
+        readinessCoordinator.markViewPresented(surfaceID)
         traceTopologyPresentationEvent(
             event: "ui.viewPresentation.ready",
             surfaceID: surfaceID,
@@ -1891,7 +1889,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
         guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else { return }
-        let completions = interactiveReadinessTracker.recordRender(
+        let completions = readinessCoordinator.recordRender(
             surfaceID: surfaceID,
             size: size,
             state: interactiveReadinessState(for: surface)
@@ -1939,7 +1937,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return
         }
 
-        interactiveReadinessTracker.begin(flow: flow, surfaceID: surfaceID)
+        readinessCoordinator.beginInteractiveTracking(flow: flow, surfaceID: surfaceID)
         completeInteractiveReadinessIfNeeded(surfaceID: surfaceID, reason: event, surface: surface)
     }
 
@@ -1950,7 +1948,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     ) {
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
         guard let surface = surface ?? managedSurfaceStore.managedSurface(for: surfaceID) else { return }
-        let completions = interactiveReadinessTracker.updatePresentation(
+        let completions = readinessCoordinator.updateInteractivePresentation(
             surfaceID: surfaceID,
             state: interactiveReadinessState(for: surface)
         )
@@ -2005,7 +2003,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private func traceInteractiveWaiting(surfaceID: UUID, reason: String, scale: CGFloat?) {
         guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else { return }
         let state = interactiveReadinessState(for: surface)
-        let renderStatus = interactiveReadinessTracker.renderStatus(for: surfaceID)
+        let renderStatus = readinessCoordinator.renderStatus(for: surfaceID)
         var fields = [
             "runtimePresentationReady": "\(state.runtimePresentationReady)",
             "focused": "\(state.focused)",
@@ -2022,7 +2020,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         if let scale {
             fields["scale"] = String(format: "%.1f", Double(scale))
         }
-        for flow in interactiveReadinessTracker.pendingFlows(for: surfaceID) {
+        for flow in readinessCoordinator.pendingFlows(for: surfaceID) {
             GhosttyRuntimeTrace.flowEventIfActive(flow, event: "interactive.waiting", fields: fields)
         }
     }
