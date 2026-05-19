@@ -79,6 +79,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var pendingPhonePresentationRefreshTask: Task<Void, Never>?
     private var pendingPhonePresentationRefreshAttempt = 0
     private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
+    private var notificationTransactionDepth = 0
+    private var pendingTransactionNotificationDelivery: GhosttyRuntimeSurfaceChangeNotificationDelivery?
     private lazy var changeNotifier = GhosttyRuntimeSurfaceChangeNotifier(
         sendObjectWillChange: { [weak self] in
             self?.objectWillChange.send()
@@ -166,6 +168,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         runtimeCallbackLeaseStore.invalidate(lease)
     }
 
+    func withRuntimeCallbackBatch(
+        lease: GhosttyRuntimeCallbackLease,
+        _ body: () -> Void
+    ) {
+        guard acceptsRuntimeCallback(lease) else { return }
+        withChangeNotificationTransaction(body)
+    }
+
     func deliverTmuxCommandFailure(_ failure: TmuxControlCommandFailure) {
         GhosttyRuntimeTrace.diagnostics(
             "registry.tmuxCommandFailure kind=\(failure.kind) reason=\(String(describing: failure.reason)) message=\(failure.message)"
@@ -249,10 +259,18 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         return true
     }
 
-    func selectSurface(_ id: UUID, reason: String = "selectSurface") {
+    @discardableResult
+    func selectSurface(_ id: UUID, reason: String = "selectSurface") -> Bool {
         GhosttyRuntimeTrace.diagnostics(
             "selectSurface begin reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
         )
+        if reason == "runtimeSelectSurface", selectedActiveLeafID == id {
+            GhosttyRuntimeTrace.diagnostics(
+                "selectSurface unchanged reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
+            )
+            return false
+        }
+
         let previousPresentation = currentPhonePresentationTarget()
         var selection = topologySelection
         let result = selection.selectSurface(id)
@@ -260,7 +278,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             GhosttyRuntimeTrace.diagnostics(
                 "selectSurface missing reason=\(reason) target=\(shortID(id)) \(diagnosticSelectionSummary())"
             )
-            return
+            return false
         }
 
         topologySelection = selection
@@ -277,6 +295,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             notifyChanged()
             completeInteractiveReadinessIfNeeded(surfaceID: id, reason: reason)
         }
+        return true
     }
 
     @discardableResult
@@ -1059,6 +1078,16 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         lease: GhosttyRuntimeCallbackLease
     ) -> ghostty_surface_t? {
         guard acceptsRuntimeCallback(lease) else { return nil }
+        return withChangeNotificationTransaction {
+            runtimeCreateSurfaceInTransaction(app: app, request: request, lease: lease)
+        }
+    }
+
+    private func runtimeCreateSurfaceInTransaction(
+        app: ghostty_app_t?,
+        request: ghostty_runtime_create_surface_s,
+        lease: GhosttyRuntimeCallbackLease
+    ) -> ghostty_surface_t? {
         // This callback materializes a surface that Ghostty already decided is
         // needed. Remux owns the UIKit/Ghostty view binding; Ghostty owns tmux
         // session, layout, and projection truth.
@@ -1117,15 +1146,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         switch configPtr.pointee.context {
         case GHOSTTY_SURFACE_CONTEXT_WINDOW, GHOSTTY_SURFACE_CONTEXT_TAB:
+            var selection = topologySelection
+            let appendResult = selection.appendTopLevel(leafID: managed.id)
             register([managed])
-            let topLevel = GhosttyTopLevelSurface(
-                tree: .init(root: .leaf(managed.id)),
-                focusedLeafID: managed.id
-            )
-            topLevels.append(topLevel)
-            selectedTopLevelID = topLevel.id
+            topologySelection = selection
             stagePhonePresentationIfNeeded(
-                targetSurfaceID: managed.id,
+                targetSurfaceID: appendResult.presentationTargetSurfaceID,
                 previousPresentation: previousPresentation
             )
             traceTopologyReady(
@@ -1135,12 +1161,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 fields: [
                     "callback_elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: start),
                     "surface": ghosttyDiagnosticShortID(managed.id),
-                    "topLevel": ghosttyDiagnosticShortID(topLevel.id),
+                    "topLevel": ghosttyDiagnosticShortID(appendResult.topLevel.id),
                     "topLevels": "\(topLevels.count)",
                 ]
             )
             GhosttyRuntimeTrace.latency(
-                "registry.runtimeCreateSurface end topLevel=\(ghosttyDiagnosticShortID(topLevel.id)) surface=\(ghosttyDiagnosticShortID(managed.id)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                "registry.runtimeCreateSurface end topLevel=\(ghosttyDiagnosticShortID(appendResult.topLevel.id)) surface=\(ghosttyDiagnosticShortID(managed.id)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
             )
             return managed.controlSurface.handle
 
@@ -1183,6 +1209,16 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         guard acceptsRuntimeCallback(lease) else { return false }
+        return withChangeNotificationTransaction {
+            runtimeCreateSurfaceTreeInTransaction(app: app, request: request, lease: lease)
+        }
+    }
+
+    private func runtimeCreateSurfaceTreeInTransaction(
+        app: ghostty_app_t?,
+        request: ghostty_runtime_create_surface_tree_s,
+        lease: GhosttyRuntimeCallbackLease
+    ) -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.tmuxViewport(
             "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index) parent=\(String(describing: request.parent))"
@@ -1350,7 +1386,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             focusedLeafID: focusedLeafID,
             replacingTopLevelContaining: replacingParentSurfaceID,
             replacingTopLevelID: nil,
-            allowManualIdentityReplacement: false
+            allowManualIdentityReplacement: false,
+            appendSelectionPolicy: .selectAppendedTopLevelWhenFocused
         )
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.createSurfaceTree.install.end",
@@ -1453,7 +1490,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         lease: GhosttyRuntimeCallbackLease
     ) {
         guard acceptsRuntimeCallback(lease) else { return }
-        applyRuntimeSelectSurface(app: app, surface: surface)
+        withChangeNotificationTransaction {
+            applyRuntimeSelectSurface(app: app, surface: surface)
+        }
     }
 
     private func applyRuntimeSelectSurface(
@@ -1466,7 +1505,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return
         }
 
-        selectSurface(id, reason: "runtimeSelectSurface")
+        guard selectSurface(id, reason: "runtimeSelectSurface") else { return }
         updateDebugSummary("selected surface=\(id.uuidString)")
     }
 
@@ -1585,7 +1624,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         app: ghostty_app_t?,
         surface: ghostty_surface_t?
     ) {
-        applyRuntimeSelectSurface(app: app, surface: surface)
+        withChangeNotificationTransaction {
+            applyRuntimeSelectSurface(app: app, surface: surface)
+        }
     }
 
     func runtimeTmuxProtocolError(
@@ -1598,15 +1639,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func registerManagedSurfaceForTesting(_ managed: GhosttyManagedSurface) {
         let previousPresentation = currentPhonePresentationTarget()
+        var selection = topologySelection
+        let appendResult = selection.appendTopLevel(leafID: managed.id)
         register([managed])
-        let topLevel = GhosttyTopLevelSurface(
-            tree: .init(root: .leaf(managed.id)),
-            focusedLeafID: managed.id
-        )
-        topLevels.append(topLevel)
-        selectedTopLevelID = topLevel.id
+        topologySelection = selection
         stagePhonePresentationIfNeeded(
-            targetSurfaceID: managed.id,
+            targetSurfaceID: appendResult.presentationTargetSurfaceID,
             previousPresentation: previousPresentation
         )
         updateDebugSummary("test surface registered")
@@ -1670,14 +1708,16 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 #endif
 
+    @discardableResult
     private func installSurfaceTree(
         leafSurfaces: [GhosttyManagedSurface],
         tree: GhosttySurfaceTree,
         focusedLeafID: UUID?,
         replacingTopLevelContaining parentSurfaceID: UUID?,
         replacingTopLevelID: UUID?,
-        allowManualIdentityReplacement: Bool
-    ) {
+        allowManualIdentityReplacement: Bool,
+        appendSelectionPolicy: GhosttyRuntimeSurfaceTreeInstallPlanner.AppendSelectionPolicy = .preserveExistingSelection
+    ) -> GhosttyRuntimeSurfaceTopologySelection.SurfaceTreeInstallResult {
         let previousPresentation = currentPhonePresentationTarget()
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.installSurfaceTree.plan.begin",
@@ -1686,34 +1726,31 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "topLevels": "\(topLevels.count)",
             ]
         )
-        let plan = GhosttyRuntimeSurfaceTreeInstallPlanner().plan(
-            .init(
-                topLevels: topLevels,
-                selectedTopLevelID: selectedTopLevelID,
-                parentSurfaceID: parentSurfaceID,
-                replacingTopLevelID: replacingTopLevelID,
-                allowManualIdentityReplacement: allowManualIdentityReplacement,
-                tree: tree,
-                focusedLeafID: focusedLeafID,
-                existingLeafIdentities: existingRuntimeSurfaceTreeLeafIdentities(),
-                incomingLeafIdentities: runtimeSurfaceTreeLeafIdentities(for: leafSurfaces)
-            )
+        var selection = topologySelection
+        let installation = selection.installSurfaceTree(
+            tree: tree,
+            focusedLeafID: focusedLeafID,
+            replacingTopLevelContaining: parentSurfaceID,
+            replacingTopLevelID: replacingTopLevelID,
+            allowManualIdentityReplacement: allowManualIdentityReplacement,
+            appendSelectionPolicy: appendSelectionPolicy,
+            existingLeafIdentities: existingRuntimeSurfaceTreeLeafIdentities(),
+            incomingLeafIdentities: runtimeSurfaceTreeLeafIdentities(for: leafSurfaces)
         )
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.installSurfaceTree.plan.end",
             fields: [
-                "plannedTopLevels": "\(plan.topLevels.count)",
-                "presentationTarget": ghosttyDiagnosticShortID(plan.presentationTargetSurfaceID),
+                "plannedTopLevels": "\(installation.plan.topLevels.count)",
+                "presentationTarget": ghosttyDiagnosticShortID(installation.presentationTargetSurfaceID),
             ]
         )
 
         register(leafSurfaces)
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.installSurfaceTree.assign.begin",
-            fields: ["topLevels": "\(plan.topLevels.count)"]
+            fields: ["topLevels": "\(installation.plan.topLevels.count)"]
         )
-        topLevels = plan.topLevels
-        selectedTopLevelID = plan.selectedTopLevelID
+        topologySelection = selection
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.installSurfaceTree.assign.end",
             fields: [
@@ -1722,13 +1759,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             ]
         )
 
-        if let targetSurfaceID = plan.presentationTargetSurfaceID {
+        if let targetSurfaceID = installation.presentationTargetSurfaceID {
             stagePhonePresentationIfNeeded(
                 targetSurfaceID: targetSurfaceID,
                 previousPresentation: previousPresentation
             )
         }
-        updateDebugSummary(plan.debugSummary.rawValue)
+        updateDebugSummary(installation.debugSummary.rawValue)
+        return installation
     }
 
     private func existingRuntimeSurfaceTreeLeafIdentities() -> [GhosttyRuntimeSurfaceTreeInstallPlanner.LeafIdentity] {
@@ -1749,19 +1787,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 manualUserdata: surface.manualUserdata
             )
         }
-    }
-
-    private func normalizedSelectionID(
-        preferredID: UUID?,
-        fallbackID: UUID?
-    ) -> UUID? {
-        if let preferredID, topLevels.contains(where: { $0.id == preferredID }) {
-            return preferredID
-        }
-        if let fallbackID, topLevels.contains(where: { $0.id == fallbackID }) {
-            return fallbackID
-        }
-        return topLevels.first?.id
     }
 
     private func insertSplitSurface(
@@ -1791,42 +1816,36 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             return false
         }
 
-        for index in topLevels.indices {
-            guard topLevels[index].tree.contains(parentID) else { continue }
-
-            var tree = topLevels[index].tree
-            guard tree.insertLeaf(managed.id, beside: parentID, direction: insertDirection) else {
-                return false
-            }
-
-            let previousPresentation = currentPhonePresentationTarget()
-            register([managed])
-            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                event: "registry.insertSplit.assign.begin",
-                fields: ["surface": ghosttyDiagnosticShortID(managed.id)]
-            )
-            topLevels[index].tree = tree
-            topLevels[index].focusedLeafID = managed.id
-            selectedTopLevelID = normalizedSelectionID(
-                preferredID: selectedTopLevelID,
-                fallbackID: topLevels[index].id
-            )
-            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                event: "registry.insertSplit.assign.end",
-                fields: [
-                    "selectedTopLevel": ghosttyDiagnosticShortID(selectedTopLevelID),
-                    "surface": ghosttyDiagnosticShortID(managed.id),
-                ]
-            )
-            stagePhonePresentationIfNeeded(
-                targetSurfaceID: managed.id,
-                previousPresentation: previousPresentation
-            )
-            notifyChanged()
-            return true
+        var selection = topologySelection
+        let result = selection.insertSplitLeaf(
+            managed.id,
+            beside: parentID,
+            direction: insertDirection
+        )
+        guard let targetSurfaceID = result.presentationTargetSurfaceID else {
+            return false
         }
 
-        return false
+        let previousPresentation = currentPhonePresentationTarget()
+        register([managed])
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.insertSplit.assign.begin",
+            fields: ["surface": ghosttyDiagnosticShortID(managed.id)]
+        )
+        topologySelection = selection
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.insertSplit.assign.end",
+            fields: [
+                "selectedTopLevel": ghosttyDiagnosticShortID(selectedTopLevelID),
+                "surface": ghosttyDiagnosticShortID(managed.id),
+            ]
+        )
+        stagePhonePresentationIfNeeded(
+            targetSurfaceID: targetSurfaceID,
+            previousPresentation: previousPresentation
+        )
+        notifyChanged()
+        return true
     }
 
     private func register(_ surfaces: [GhosttyManagedSurface]) {
@@ -2038,15 +2057,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 #endif
         removed.releaseBeforePermanentRemoval()
 
-        let plan = GhosttyRuntimeSurfaceTreeRemovalPlanner().plan(
-            .init(
-                topLevels: topLevels,
-                selectedTopLevelID: selectedTopLevelID,
-                removedLeafID: id
-            )
-        )
-        topLevels = plan.topLevels
-        selectedTopLevelID = plan.selectedTopLevelID
+        var selection = topologySelection
+        _ = selection.removeLeaf(id)
+        topologySelection = selection
         _ = removed
         updateDebugSummary("managed surfaces=\(managedSurfaceStore.count)")
     }
@@ -2070,7 +2083,40 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         notifyChanged()
     }
 
+    private func withChangeNotificationTransaction<T>(_ body: () -> T) -> T {
+        notificationTransactionDepth += 1
+        defer {
+            notificationTransactionDepth -= 1
+            flushPendingTransactionNotificationIfNeeded()
+        }
+
+        return body()
+    }
+
+    private func flushPendingTransactionNotificationIfNeeded() {
+        guard notificationTransactionDepth == 0,
+              let delivery = pendingTransactionNotificationDelivery
+        else {
+            return
+        }
+
+        pendingTransactionNotificationDelivery = nil
+        notifyChanged(delivery: delivery)
+    }
+
+    private func recordPendingTransactionNotification(
+        delivery: GhosttyRuntimeSurfaceChangeNotificationDelivery
+    ) {
+        pendingTransactionNotificationDelivery = pendingTransactionNotificationDelivery.map {
+            $0.merging(delivery)
+        } ?? delivery
+    }
+
     private func notifyChanged(delivery: GhosttyRuntimeSurfaceChangeNotificationDelivery = .immediate) {
+        guard notificationTransactionDepth == 0 else {
+            recordPendingTransactionNotification(delivery: delivery)
+            return
+        }
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.notifyChanged.begin",
             fields: ["delivery": "\(delivery)"]

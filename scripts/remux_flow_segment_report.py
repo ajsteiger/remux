@@ -63,6 +63,14 @@ class Segment:
     end: Callable[[FlowInstance], FlowEvent | None]
 
 
+@dataclass(frozen=True)
+class CountMetric:
+    name: str
+    start: Callable[[FlowInstance], FlowEvent | None]
+    end: Callable[[FlowInstance], FlowEvent | None]
+    predicate: Callable[[str], bool]
+
+
 def first_event(
     instance: FlowInstance,
     predicate: Callable[[str], bool],
@@ -1024,6 +1032,28 @@ SEGMENTS = [
 ]
 
 
+COUNT_METRICS = [
+    CountMetric(
+        "registry_callback_begin->topology_installed registry.notifyChanged.begin count",
+        registry_callback_begin,
+        topology_installed,
+        exact("registry.notifyChanged.begin"),
+    ),
+    CountMetric(
+        "topology_installed->interactive_ready registry.notifyChanged.begin count",
+        topology_installed,
+        lambda flow: first_event(flow, exact("interactive.ready")),
+        exact("registry.notifyChanged.begin"),
+    ),
+    CountMetric(
+        "topology_installed->interactive_ready model.surfaceRegistryRevision.published count",
+        topology_installed,
+        lambda flow: first_event(flow, exact("interactive.ready")),
+        exact("model.surfaceRegistryRevision.published"),
+    ),
+]
+
+
 def parse_events(paths: Iterable[Path]) -> list[FlowEvent]:
     events: dict[tuple[int, str, str], FlowEvent] = {}
     for path in paths:
@@ -1173,6 +1203,20 @@ def segment_duration_ms(start: FlowEvent, end: FlowEvent) -> float:
     return (end.timestamp - start.timestamp) / 1_000_000
 
 
+def count_events_between(
+    instance: FlowInstance,
+    start: FlowEvent,
+    end: FlowEvent,
+    predicate: Callable[[str], bool],
+) -> int:
+    return sum(
+        1
+        for event in instance.events
+        if start.timestamp <= event.timestamp <= end.timestamp
+        and predicate(event.event)
+    )
+
+
 NATIVE_SURFACE_PHASE_ORDER = [
     "native.surfaceNew.capi",
     "native.surfaceNew.wrapper",
@@ -1290,6 +1334,39 @@ def report(instances: list[FlowInstance]) -> str:
             else:
                 lines.append(
                     f"{segment.name}: n=0 missing={missing} out_of_order={out_of_order}"
+                )
+
+        for metric in COUNT_METRICS:
+            counts: list[int] = []
+            missing = 0
+            out_of_order = 0
+            for instance in flow_instances:
+                start = metric.start(instance)
+                end = metric.end(instance)
+                if start is None or end is None:
+                    missing += 1
+                    continue
+                if end.timestamp < start.timestamp:
+                    out_of_order += 1
+                    continue
+                counts.append(count_events_between(instance, start, end, metric.predicate))
+
+            if counts:
+                line = (
+                    f"{metric.name}: "
+                    f"n={len(counts)} "
+                    f"p50_count={statistics.median(counts):.1f} "
+                    f"p95_count={percentile([float(count) for count in counts], 0.95):.1f} "
+                    f"max_count={max(counts)}"
+                )
+                if missing:
+                    line += f" missing={missing}"
+                if out_of_order:
+                    line += f" out_of_order={out_of_order}"
+                lines.append(line)
+            else:
+                lines.append(
+                    f"{metric.name}: n=0 missing={missing} out_of_order={out_of_order}"
                 )
 
     return "\n".join(lines)
@@ -1511,6 +1588,18 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     assert "managed_update_display_applied->display_rendered: n=1 p50_ms=0.300" in output
     assert "record_presentation_begin->view_presented: n=1 p50_ms=0.800" in output
     assert "topology_installed->interactive_ready: n=1 p50_ms=5.000" in output
+    assert (
+        "registry_callback_begin->topology_installed registry.notifyChanged.begin count: "
+        "n=1 p50_count=1.0"
+    ) in output
+    assert (
+        "topology_installed->interactive_ready registry.notifyChanged.begin count: "
+        "n=1 p50_count=0.0"
+    ) in output
+    assert (
+        "topology_installed->interactive_ready model.surfaceRegistryRevision.published count: "
+        "n=1 p50_count=1.0"
+    ) in output
     assert (
         "view_presented->runtime_presentation_ready: "
         "n=0 missing=0 out_of_order=1"

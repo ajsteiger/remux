@@ -125,6 +125,151 @@ final class GhosttyRuntimeSurfaceTopologySelectionTests: XCTestCase {
         XCTAssertEqual(selection.selectedTopLevelID, topLevel.id)
     }
 
+    func testAppendTopLevelSelectsNewWindowAndReturnsPresentationTarget() {
+        let existingTopLevel = Self.topLevel(id: Self.id(10), tree: Self.leaf(Self.id(1)))
+        let appendedLeafID = Self.id(2)
+        var selection = GhosttyRuntimeSurfaceTopologySelection(
+            topLevels: [existingTopLevel],
+            selectedTopLevelID: existingTopLevel.id
+        )
+
+        let result = selection.appendTopLevel(leafID: appendedLeafID)
+
+        XCTAssertEqual(selection.topLevels.map(\.id), [existingTopLevel.id, result.topLevel.id])
+        XCTAssertEqual(selection.topLevels.last?.leafIDs, [appendedLeafID])
+        XCTAssertEqual(selection.selectedTopLevelID, result.topLevel.id)
+        XCTAssertEqual(result.presentationTargetSurfaceID, appendedLeafID)
+    }
+
+    func testInstallSurfaceTreeReplacesTopologyAndReturnsPresentationTarget() {
+        let oldLeafID = Self.id(1)
+        let replacementLeafID = Self.id(2)
+        let topLevelID = Self.id(10)
+        var selection = GhosttyRuntimeSurfaceTopologySelection(
+            topLevels: [
+                Self.topLevel(id: topLevelID, tree: Self.leaf(oldLeafID)),
+            ],
+            selectedTopLevelID: topLevelID
+        )
+
+        let result = selection.installSurfaceTree(
+            tree: Self.leaf(replacementLeafID),
+            focusedLeafID: replacementLeafID,
+            replacingTopLevelContaining: oldLeafID,
+            replacingTopLevelID: nil,
+            allowManualIdentityReplacement: false,
+            existingLeafIdentities: [
+                .init(id: oldLeafID, manualUserdata: nil),
+            ],
+            incomingLeafIdentities: [
+                .init(id: replacementLeafID, manualUserdata: nil),
+            ]
+        )
+
+        XCTAssertEqual(result.plan.kind, .replaceByParent(oldLeafID))
+        XCTAssertEqual(result.debugSummary, .replacedSurfaceTree)
+        XCTAssertEqual(result.presentationTargetSurfaceID, replacementLeafID)
+        XCTAssertEqual(selection.topLevels.map(\.id), [topLevelID])
+        XCTAssertEqual(selection.topLevels.first?.leafIDs, [replacementLeafID])
+        XCTAssertEqual(selection.selectedTopLevelID, topLevelID)
+    }
+
+    func testInstallSurfaceTreeWithFocusedAppendPolicySelectsAppendedTopLevel() {
+        let existingLeafID = Self.id(1)
+        let appendedLeafID = Self.id(2)
+        let existingTopLevelID = Self.id(10)
+        var selection = GhosttyRuntimeSurfaceTopologySelection(
+            topLevels: [
+                Self.topLevel(id: existingTopLevelID, tree: Self.leaf(existingLeafID)),
+            ],
+            selectedTopLevelID: existingTopLevelID
+        )
+
+        let result = selection.installSurfaceTree(
+            tree: Self.leaf(appendedLeafID),
+            focusedLeafID: appendedLeafID,
+            replacingTopLevelContaining: nil,
+            replacingTopLevelID: nil,
+            allowManualIdentityReplacement: false,
+            appendSelectionPolicy: .selectAppendedTopLevelWhenFocused,
+            existingLeafIdentities: [
+                .init(id: existingLeafID, manualUserdata: nil),
+            ],
+            incomingLeafIdentities: [
+                .init(id: appendedLeafID, manualUserdata: nil),
+            ]
+        )
+
+        XCTAssertEqual(result.plan.kind, .append)
+        XCTAssertEqual(result.presentationTargetSurfaceID, appendedLeafID)
+        XCTAssertEqual(selection.topLevels.map(\.leafIDs), [[existingLeafID], [appendedLeafID]])
+        XCTAssertEqual(selection.selectedActiveLeafID, appendedLeafID)
+    }
+
+    func testInsertSplitLeafUpdatesTreeFocusAndSelection() {
+        let parentLeafID = Self.id(1)
+        let newLeafID = Self.id(2)
+        let topLevelID = Self.id(10)
+        var selection = GhosttyRuntimeSurfaceTopologySelection(
+            topLevels: [
+                Self.topLevel(id: topLevelID, tree: Self.leaf(parentLeafID)),
+            ],
+            selectedTopLevelID: nil
+        )
+
+        let result = selection.insertSplitLeaf(
+            newLeafID,
+            beside: parentLeafID,
+            direction: .right
+        )
+
+        XCTAssertEqual(result, .applied(presentationTargetSurfaceID: newLeafID))
+        XCTAssertEqual(selection.selectedTopLevelID, topLevelID)
+        XCTAssertEqual(selection.selectedActiveLeafID, newLeafID)
+        XCTAssertEqual(selection.topLevels.first?.leafIDs, [parentLeafID, newLeafID])
+    }
+
+    func testInsertSplitLeafMissingParentLeavesTopologyUnchanged() {
+        let topLevel = Self.topLevel(id: Self.id(10), tree: Self.leaf(Self.id(1)))
+        var selection = GhosttyRuntimeSurfaceTopologySelection(
+            topLevels: [topLevel],
+            selectedTopLevelID: topLevel.id
+        )
+
+        let result = selection.insertSplitLeaf(
+            Self.id(2),
+            beside: Self.id(99),
+            direction: .right
+        )
+
+        XCTAssertEqual(result, .missingParent)
+        XCTAssertEqual(selection.topLevels, [topLevel])
+        XCTAssertEqual(selection.selectedTopLevelID, topLevel.id)
+    }
+
+    func testRemoveLeafUpdatesTopologyAndSelection() {
+        let firstLeafID = Self.id(1)
+        let removedLeafID = Self.id(2)
+        let topLevelID = Self.id(10)
+        var selection = GhosttyRuntimeSurfaceTopologySelection(
+            topLevels: [
+                Self.topLevel(
+                    id: topLevelID,
+                    tree: Self.split(firstLeafID, removedLeafID),
+                    focusedLeafID: removedLeafID
+                ),
+            ],
+            selectedTopLevelID: topLevelID
+        )
+
+        let result = selection.removeLeaf(removedLeafID)
+
+        XCTAssertEqual(result.plan.topLevels.first?.leafIDs, [firstLeafID])
+        XCTAssertEqual(selection.topLevels.first?.leafIDs, [firstLeafID])
+        XCTAssertEqual(selection.selectedTopLevelID, topLevelID)
+        XCTAssertEqual(selection.selectedActiveLeafID, firstLeafID)
+    }
+
     private static func topLevel(
         id: UUID,
         tree: GhosttySurfaceTree,

@@ -3,6 +3,15 @@ import Foundation
 enum GhosttyRuntimeSurfaceChangeNotificationDelivery: Equatable, Sendable {
     case immediate
     case deferred
+
+    func merging(_ next: GhosttyRuntimeSurfaceChangeNotificationDelivery) -> GhosttyRuntimeSurfaceChangeNotificationDelivery {
+        switch (self, next) {
+        case (.immediate, _), (_, .immediate):
+            .immediate
+        case (.deferred, .deferred):
+            .deferred
+        }
+    }
 }
 
 @MainActor

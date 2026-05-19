@@ -17,6 +17,21 @@ final class GhosttyRuntimeSurfaceChangeNotifierTests: XCTestCase {
         XCTAssertEqual(events, ["objectWillChange", "onChange"])
     }
 
+    func testNotificationDeliveryMergingPreservesImmediateDelivery() {
+        XCTAssertEqual(
+            GhosttyRuntimeSurfaceChangeNotificationDelivery.deferred.merging(.deferred),
+            .deferred
+        )
+        XCTAssertEqual(
+            GhosttyRuntimeSurfaceChangeNotificationDelivery.deferred.merging(.immediate),
+            .immediate
+        )
+        XCTAssertEqual(
+            GhosttyRuntimeSurfaceChangeNotificationDelivery.immediate.merging(.deferred),
+            .immediate
+        )
+    }
+
     func testDeferredNotificationsCoalesce() async {
         var events: [String] = []
         let notifier = GhosttyRuntimeSurfaceChangeNotifier {

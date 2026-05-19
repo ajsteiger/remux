@@ -540,7 +540,13 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                 "runtime.wakeup.appTick.begin",
                 fields: wakeupTraceFields(route: "async", entryThread: entryThread)
             )
-            ghostty_app_tick(app)
+            if let lease = callbacks.callbackLease {
+                callbacks.surfaceDelegate?.withRuntimeCallbackBatch(lease: lease) {
+                    ghostty_app_tick(app)
+                }
+            } else {
+                ghostty_app_tick(app)
+            }
             traceTopologyCallback(
                 "runtime.wakeup.appTick.end",
                 fields: wakeupTraceFields(route: "async", entryThread: entryThread)

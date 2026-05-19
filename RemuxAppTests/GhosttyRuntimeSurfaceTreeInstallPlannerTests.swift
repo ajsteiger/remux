@@ -163,6 +163,30 @@ final class GhosttyRuntimeSurfaceTreeInstallPlannerTests: XCTestCase {
         XCTAssertEqual(plan.debugSummary, .createdSurfaceTree)
     }
 
+    func testFocusedRuntimeAppendPolicySelectsAppendedTopLevel() {
+        let selectedLeafID = Self.id(1)
+        let selectedTopLevelID = Self.id(10)
+        let appendedLeafID = Self.id(2)
+        let appendedTopLevelID = Self.id(12)
+
+        let plan = makePlan(
+            topLevels: [
+                Self.topLevel(id: selectedTopLevelID, tree: Self.leaf(selectedLeafID)),
+            ],
+            selectedTopLevelID: selectedTopLevelID,
+            appendSelectionPolicy: .selectAppendedTopLevelWhenFocused,
+            tree: Self.leaf(appendedLeafID),
+            focusedLeafID: appendedLeafID,
+            newTopLevelID: appendedTopLevelID
+        )
+
+        XCTAssertEqual(plan.kind, .append)
+        XCTAssertEqual(plan.topLevels.map(\.id), [selectedTopLevelID, appendedTopLevelID])
+        XCTAssertEqual(plan.selectedTopLevelID, appendedTopLevelID)
+        XCTAssertEqual(plan.presentationTargetSurfaceID, appendedLeafID)
+        XCTAssertEqual(plan.debugSummary, .createdSurfaceTree)
+    }
+
     func testAppendFallsBackToNewTopLevelWhenSelectionIsStale() {
         let existingLeafID = Self.id(1)
         let existingTopLevelID = Self.id(10)
@@ -278,6 +302,7 @@ final class GhosttyRuntimeSurfaceTreeInstallPlannerTests: XCTestCase {
         parentSurfaceID: UUID? = nil,
         replacingTopLevelID: UUID? = nil,
         allowManualIdentityReplacement: Bool = false,
+        appendSelectionPolicy: Planner.AppendSelectionPolicy = .preserveExistingSelection,
         tree: GhosttySurfaceTree,
         focusedLeafID: UUID? = nil,
         existingIdentities: [Planner.LeafIdentity] = [],
@@ -291,6 +316,7 @@ final class GhosttyRuntimeSurfaceTreeInstallPlannerTests: XCTestCase {
                 parentSurfaceID: parentSurfaceID,
                 replacingTopLevelID: replacingTopLevelID,
                 allowManualIdentityReplacement: allowManualIdentityReplacement,
+                appendSelectionPolicy: appendSelectionPolicy,
                 tree: tree,
                 focusedLeafID: focusedLeafID,
                 existingLeafIdentities: existingIdentities,

@@ -18,12 +18,18 @@ struct GhosttyRuntimeSurfaceTreeInstallPlanner {
         case replacedSurfaceTree = "replaced surface tree"
     }
 
+    enum AppendSelectionPolicy: Equatable {
+        case preserveExistingSelection
+        case selectAppendedTopLevelWhenFocused
+    }
+
     struct Input {
         let topLevels: [GhosttyTopLevelSurface]
         let selectedTopLevelID: UUID?
         let parentSurfaceID: UUID?
         let replacingTopLevelID: UUID?
         let allowManualIdentityReplacement: Bool
+        let appendSelectionPolicy: AppendSelectionPolicy
         let tree: GhosttySurfaceTree
         let focusedLeafID: UUID?
         let existingLeafIdentities: [LeafIdentity]
@@ -36,6 +42,7 @@ struct GhosttyRuntimeSurfaceTreeInstallPlanner {
             parentSurfaceID: UUID?,
             replacingTopLevelID: UUID?,
             allowManualIdentityReplacement: Bool,
+            appendSelectionPolicy: AppendSelectionPolicy = .preserveExistingSelection,
             tree: GhosttySurfaceTree,
             focusedLeafID: UUID?,
             existingLeafIdentities: [LeafIdentity],
@@ -47,6 +54,7 @@ struct GhosttyRuntimeSurfaceTreeInstallPlanner {
             self.parentSurfaceID = parentSurfaceID
             self.replacingTopLevelID = replacingTopLevelID
             self.allowManualIdentityReplacement = allowManualIdentityReplacement
+            self.appendSelectionPolicy = appendSelectionPolicy
             self.tree = tree
             self.focusedLeafID = focusedLeafID
             self.existingLeafIdentities = existingLeafIdentities
@@ -134,9 +142,9 @@ struct GhosttyRuntimeSurfaceTreeInstallPlanner {
             focusedLeafID: input.focusedLeafID
         )
         let updatedTopLevels = input.topLevels + [topLevel]
-        let selectedTopLevelID = normalizedSelectionID(
-            preferredID: input.selectedTopLevelID,
-            fallbackID: topLevel.id,
+        let selectedTopLevelID = appendSelection(
+            input,
+            appendedTopLevelID: topLevel.id,
             topLevels: updatedTopLevels
         )
         return Plan(
@@ -148,6 +156,23 @@ struct GhosttyRuntimeSurfaceTreeInstallPlanner {
                 affectedTopLevel: topLevel
             ),
             debugSummary: .createdSurfaceTree
+        )
+    }
+
+    private func appendSelection(
+        _ input: Input,
+        appendedTopLevelID: UUID,
+        topLevels: [GhosttyTopLevelSurface]
+    ) -> UUID? {
+        if input.appendSelectionPolicy == .selectAppendedTopLevelWhenFocused,
+           input.focusedLeafID != nil {
+            return appendedTopLevelID
+        }
+
+        return normalizedSelectionID(
+            preferredID: input.selectedTopLevelID,
+            fallbackID: appendedTopLevelID,
+            topLevels: topLevels
         )
     }
 

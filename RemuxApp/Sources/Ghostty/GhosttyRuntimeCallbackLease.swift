@@ -58,6 +58,12 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     nonisolated func runtimeCallbackLeaseDidEnd(_ lease: GhosttyRuntimeCallbackLease)
 
     @MainActor
+    func withRuntimeCallbackBatch(
+        lease: GhosttyRuntimeCallbackLease,
+        _ body: () -> Void
+    )
+
+    @MainActor
     func runtimeCreateSurface(
         app: ghostty_app_t?,
         request: ghostty_runtime_create_surface_s,
@@ -112,4 +118,12 @@ extension GhosttyKitRuntimeSurfaceDelegate {
     }
 
     nonisolated func runtimeCallbackLeaseDidEnd(_ lease: GhosttyRuntimeCallbackLease) {}
+
+    @MainActor
+    func withRuntimeCallbackBatch(
+        lease: GhosttyRuntimeCallbackLease,
+        _ body: () -> Void
+    ) {
+        body()
+    }
 }
