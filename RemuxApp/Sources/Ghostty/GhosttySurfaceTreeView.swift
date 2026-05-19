@@ -451,8 +451,12 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         for (surfaceID, container) in scrollContainersBySurfaceID where !managedIDs.contains(surfaceID) {
             presentationOverlayHeldSurfaceIDs.remove(surfaceID)
             presentationOverlayHeldInteractionStates[surfaceID] = nil
+            if let retiringSurface = materializationContext.surfacePendingPermanentRemoval(for: surfaceID) {
+                container.detachSurfaceIfNeeded(retiringSurface)
+            }
             container.removeFromSuperview()
             scrollContainersBySurfaceID[surfaceID] = nil
+            materializationContext.completePermanentRemoval(of: surfaceID)
         }
 
         for surface in managedSurfaces {

@@ -1,6 +1,7 @@
 import Foundation
 import GhosttyKit
 import SwiftUI
+import UIKit
 import XCTest
 @testable import Remux
 
@@ -571,7 +572,12 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
     func testRuntimeCloseSurfaceRemovesWhenBackingIsNotAlive() {
         let registry = GhosttyRuntimeSurfaceRegistry()
-        let managed = Self.managedSurface()
+        var releaseCount = 0
+        let managed = Self.managedSurface(
+            releaseBeforePermanentRemoval: {
+                releaseCount += 1
+            }
+        )
 
         registry.registerManagedSurfaceForTesting(managed)
 
@@ -579,6 +585,131 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertTrue(registry.topLevels.isEmpty)
         XCTAssertNil(registry.managedSurface(for: managed.id))
+        XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
+        XCTAssertEqual(releaseCount, 1)
+    }
+
+    func testRuntimeCloseSurfaceRetiresViewBeforeNativeRelease() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let parent = UIView()
+        var events: [String] = []
+        var releaseSawViewDetached = false
+        var releaseSawFocusRetired = false
+        var releaseSawScrollCallbackCleared = false
+        var releaseSawDisplayCallbackCleared = false
+        weak var managedRef: GhosttyManagedSurface?
+
+        let managed = Self.managedSurface(
+            setFocused: { focused in
+                events.append("focus:\(focused)")
+            },
+            releaseBeforePermanentRemoval: {
+                events.append("release")
+                releaseSawViewDetached = managedRef?.view.superview == nil
+                releaseSawFocusRetired = managedRef?.isFocused == false
+                releaseSawScrollCallbackCleared = managedRef?.onScrollStateChange == nil
+                releaseSawDisplayCallbackCleared = managedRef?.onDisplayUpdate == nil
+            }
+        )
+        managedRef = managed
+        parent.addSubview(managed.view)
+        managed.onScrollStateChange = {}
+        managed.onDisplayUpdate = { _, _, _ in }
+
+        registry.registerManagedSurfaceForTesting(managed)
+        managed.setFocused(true)
+
+        registry.runtimeCloseSurface(id: managed.id, processAlive: false)
+
+        XCTAssertEqual(events, ["focus:true"])
+        XCTAssertNil(registry.managedSurface(for: managed.id))
+        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id) === managed)
+        XCTAssertNotNil(managed.view.superview)
+
+        registry.materializationContext.completePermanentRemoval(of: managed.id)
+
+        XCTAssertEqual(events, ["focus:true", "focus:false", "release"])
+        XCTAssertTrue(releaseSawViewDetached)
+        XCTAssertTrue(releaseSawFocusRetired)
+        XCTAssertTrue(releaseSawScrollCallbackCleared)
+        XCTAssertTrue(releaseSawDisplayCallbackCleared)
+        XCTAssertNil(registry.managedSurface(for: managed.id))
+        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
+    }
+
+    func testRuntimeTeardownReleasesSurfacePendingPermanentRemoval() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let parent = UIView()
+        var releaseCount = 0
+        var releaseSawViewDetached = false
+        var releaseSawScrollCallbackCleared = false
+        var releaseSawDisplayCallbackCleared = false
+        weak var managedRef: GhosttyManagedSurface?
+        let managed = Self.managedSurface(
+            releaseBeforePermanentRemoval: {
+                releaseCount += 1
+                releaseSawViewDetached = managedRef?.view.superview == nil
+                releaseSawScrollCallbackCleared = managedRef?.onScrollStateChange == nil
+                releaseSawDisplayCallbackCleared = managedRef?.onDisplayUpdate == nil
+            }
+        )
+        managedRef = managed
+        parent.addSubview(managed.view)
+        managed.onScrollStateChange = {}
+        managed.onDisplayUpdate = { _, _, _ in }
+
+        registry.registerManagedSurfaceForTesting(managed)
+        registry.runtimeCloseSurface(id: managed.id, processAlive: false)
+
+        XCTAssertEqual(releaseCount, 0)
+        XCTAssertTrue(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id) === managed)
+
+        registry.prepareForRuntimeTeardown()
+
+        XCTAssertEqual(releaseCount, 1)
+        XCTAssertTrue(releaseSawViewDetached)
+        XCTAssertTrue(releaseSawScrollCallbackCleared)
+        XCTAssertTrue(releaseSawDisplayCallbackCleared)
+        XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
+    }
+
+    func testRegistryResetReleasesSurfacePendingPermanentRemoval() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let parent = UIView()
+        var releaseCount = 0
+        var releaseSawViewDetached = false
+        var releaseSawScrollCallbackCleared = false
+        var releaseSawDisplayCallbackCleared = false
+        weak var managedRef: GhosttyManagedSurface?
+        let managed = Self.managedSurface(
+            releaseBeforePermanentRemoval: {
+                releaseCount += 1
+                releaseSawViewDetached = managedRef?.view.superview == nil
+                releaseSawScrollCallbackCleared = managedRef?.onScrollStateChange == nil
+                releaseSawDisplayCallbackCleared = managedRef?.onDisplayUpdate == nil
+            }
+        )
+        managedRef = managed
+        parent.addSubview(managed.view)
+        managed.onScrollStateChange = {}
+        managed.onDisplayUpdate = { _, _, _ in }
+
+        registry.registerManagedSurfaceForTesting(managed)
+        registry.runtimeCloseSurface(id: managed.id, processAlive: false)
+
+        XCTAssertEqual(releaseCount, 0)
+        XCTAssertTrue(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id) === managed)
+
+        registry.reset()
+
+        XCTAssertEqual(releaseCount, 1)
+        XCTAssertTrue(releaseSawViewDetached)
+        XCTAssertTrue(releaseSawScrollCallbackCleared)
+        XCTAssertTrue(releaseSawDisplayCallbackCleared)
+        XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
+        XCTAssertTrue(registry.topLevels.isEmpty)
     }
 
     func testRuntimeTmuxProtocolErrorRecordsDiagnosticWithoutTopologyMutation() {
@@ -3790,16 +3921,20 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
+        let parent = UIView()
         var closeCallCount = 0
         let managed = Self.managedSurface(tmuxClosePane: {
             closeCallCount += 1
             return .queued
         })
+        parent.addSubview(managed.view)
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertEqual(model.closeFocusedTmuxPane(), .queued)
         XCTAssertEqual(closeCallCount, 1)
+        XCTAssertNil(model.surfaceRegistry.managedSurface(for: managed.id))
+        XCTAssertTrue(model.surfaceRegistry.materializationContext.surfacePendingPermanentRemoval(for: managed.id) === managed)
         XCTAssertEqual(model.debugStatus, "tmux close-pane queued")
     }
 
@@ -3808,6 +3943,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
         )
+        let parent = UIView()
         var firstCloseCallCount = 0
         var secondCloseCallCount = 0
         let first = Self.managedSurface(tmuxClosePane: {
@@ -3818,6 +3954,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             secondCloseCallCount += 1
             return .queued
         })
+        parent.addSubview(second.view)
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
         model.surfaceRegistry.registerManagedSurfaceForTesting(second)
@@ -3826,6 +3963,42 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.closeTmuxPane(second.id), .queued)
         XCTAssertEqual(firstCloseCallCount, 0)
         XCTAssertEqual(secondCloseCallCount, 1)
+        XCTAssertNotNil(model.surfaceRegistry.managedSurface(for: first.id))
+        XCTAssertNil(model.surfaceRegistry.managedSurface(for: second.id))
+        XCTAssertTrue(model.surfaceRegistry.materializationContext.surfacePendingPermanentRemoval(for: second.id) === second)
+        XCTAssertEqual(model.debugStatus, "tmux close-pane queued")
+    }
+
+    func testModelCloseTmuxPaneRetiresSplitPaneFromActiveTopologyAfterQueuedSubmission() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let parent = UIView()
+        let first = Self.managedSurface()
+        let second = Self.managedSurface(tmuxClosePane: { .queued })
+        parent.addSubview(second.view)
+
+        model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
+            [first, second],
+            tree: GhosttySurfaceTree(
+                root: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    left: .leaf(first.id),
+                    right: .leaf(second.id)
+                )
+            ),
+            focusedLeafID: second.id
+        )
+
+        XCTAssertEqual(model.closeTmuxPane(second.id), .queued)
+        XCTAssertNotNil(model.surfaceRegistry.managedSurface(for: first.id))
+        XCTAssertNil(model.surfaceRegistry.managedSurface(for: second.id))
+        XCTAssertEqual(model.surfaceRegistry.topLevels.count, 1)
+        XCTAssertEqual(model.surfaceRegistry.topLevels.first?.leafIDs, [first.id])
+        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+        XCTAssertTrue(model.surfaceRegistry.materializationContext.surfacePendingPermanentRemoval(for: second.id) === second)
         XCTAssertEqual(model.debugStatus, "tmux close-pane queued")
     }
 
@@ -3839,6 +4012,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertEqual(model.closeTmuxPane(managed.id), .rejected(.queueFailed))
+        XCTAssertNotNil(model.surfaceRegistry.managedSurface(for: managed.id))
+        XCTAssertNil(model.surfaceRegistry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
         XCTAssertEqual(model.debugStatus, "tmux close-pane rejected: queue failed")
     }
 

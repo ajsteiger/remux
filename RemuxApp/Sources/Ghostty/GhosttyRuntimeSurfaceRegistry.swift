@@ -72,6 +72,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     var terminalSettings: TerminalSettings = .default
 
     private var managedSurfaceStore = GhosttyRuntimeManagedSurfaceStore()
+    private var surfacesPendingPermanentRemoval: [UUID: GhosttyManagedSurface] = [:]
     private let tmuxErrorChannel = GhosttyRuntimeTmuxErrorChannel()
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
@@ -131,6 +132,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             managedSurface: { [weak self] id in
                 self?.managedSurface(for: id)
             },
+            surfacePendingPermanentRemoval: { [weak self] id in
+                self?.surfacePendingPermanentRemoval(for: id)
+            },
+            completePermanentRemoval: { [weak self] id in
+                self?.completePermanentRemoval(of: id)
+            },
             diagnosticSelectionSummary: { [weak self] in
                 self?.diagnosticSelectionSummary() ?? "runtime surface registry released"
             },
@@ -149,6 +156,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         selectedTopLevelID = nil
         debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
         managedSurfaceStore.clearAfterExternalRelease()
+        releasePendingPermanentRemovals()
         tmuxErrorChannel.reset()
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
@@ -199,6 +207,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         for surface in managedSurfaceStore.allSurfaces() {
             surface.releaseBeforePermanentRemoval()
         }
+        releasePendingPermanentRemovals()
     }
 
     func selectTopLevel(_ id: UUID, reason: String = "selectTopLevel") {
@@ -322,6 +331,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     func allManagedSurfaces() -> [GhosttyManagedSurface] {
         managedSurfaceStore.allSurfaces()
+    }
+
+    func surfacePendingPermanentRemoval(for id: UUID) -> GhosttyManagedSurface? {
+        surfacesPendingPermanentRemoval[id]
+    }
+
+    func retireSurfaceAfterQueuedClose(_ id: UUID) {
+        removeManagedSurface(id)
     }
 
     var selectedActiveLeafID: UUID? {
@@ -2063,13 +2080,39 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             topLevels.count
         )
 #endif
-        removed.releaseBeforePermanentRemoval()
+        schedulePermanentRemoval(removed, id: id)
 
         var selection = topologySelection
         _ = selection.removeLeaf(id)
         topologySelection = selection
         _ = removed
         updateDebugSummary("managed surfaces=\(managedSurfaceStore.count)")
+    }
+
+    private func schedulePermanentRemoval(_ removed: GhosttyManagedSurface, id: UUID) {
+        guard removed.view.superview != nil else {
+            removed.prepareForPermanentRemoval()
+            removed.releaseBeforePermanentRemoval()
+            return
+        }
+
+        surfacesPendingPermanentRemoval[id] = removed
+    }
+
+    private func completePermanentRemoval(of id: UUID) {
+        guard let removed = surfacesPendingPermanentRemoval.removeValue(forKey: id) else { return }
+        removed.prepareForPermanentRemoval()
+        removed.releaseBeforePermanentRemoval()
+    }
+
+    private func releasePendingPermanentRemovals() {
+        let pendingSurfaces = surfacesPendingPermanentRemoval
+        surfacesPendingPermanentRemoval = [:]
+
+        for surface in pendingSurfaces.values {
+            surface.prepareForPermanentRemoval()
+            surface.releaseBeforePermanentRemoval()
+        }
     }
 
     private func updateDebugSummary(_ event: String) {
@@ -2260,6 +2303,18 @@ final class GhosttyManagedSurface {
             return
         }
         controlSurface.releaseRuntimeManagedSurface()
+    }
+
+    @MainActor
+    func prepareForPermanentRemoval() {
+        onDisplayUpdate = nil
+        onScrollStateChange = nil
+        setFocused(false)
+        setVisible(false)
+        view.isHidden = true
+        if view.superview != nil {
+            view.removeFromSuperview()
+        }
     }
 
     @MainActor

@@ -114,7 +114,12 @@ final class GhosttyTmuxActionCoordinator {
         }
 
         let submission = surface.tmuxClosePane()
-        return submission.isQueued ? .queued : .rejected(submission)
+        guard submission.isQueued else {
+            return .rejected(submission)
+        }
+
+        surfaceRegistry.retireSurfaceAfterQueuedClose(id)
+        return .queued
     }
 
     @discardableResult

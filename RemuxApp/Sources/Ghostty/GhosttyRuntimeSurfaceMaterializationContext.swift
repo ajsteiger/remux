@@ -11,6 +11,8 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
         isAvailable: { false },
         allManagedSurfaces: { [] },
         managedSurface: { _ in nil },
+        surfacePendingPermanentRemoval: { _ in nil },
+        completePermanentRemoval: { _ in },
         diagnosticSelectionSummary: { "runtime surface materialization unavailable" },
         recordSurfacePresentation: { _, _ in }
     )
@@ -20,6 +22,8 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
     private let isAvailableHandler: () -> Bool
     private let allManagedSurfacesHandler: () -> [GhosttyManagedSurface]
     private let managedSurfaceHandler: (UUID) -> GhosttyManagedSurface?
+    private let surfacePendingPermanentRemovalHandler: (UUID) -> GhosttyManagedSurface?
+    private let completePermanentRemovalHandler: (UUID) -> Void
     private let diagnosticSelectionSummaryHandler: () -> String
     private let recordSurfacePresentationHandler: (UUID, String) -> Void
 
@@ -28,6 +32,8 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
         isAvailable: @escaping () -> Bool,
         allManagedSurfaces: @escaping () -> [GhosttyManagedSurface],
         managedSurface: @escaping (UUID) -> GhosttyManagedSurface?,
+        surfacePendingPermanentRemoval: @escaping (UUID) -> GhosttyManagedSurface?,
+        completePermanentRemoval: @escaping (UUID) -> Void,
         diagnosticSelectionSummary: @escaping () -> String,
         recordSurfacePresentation: @escaping (UUID, String) -> Void
     ) {
@@ -35,6 +41,8 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
         self.isAvailableHandler = isAvailable
         self.allManagedSurfacesHandler = allManagedSurfaces
         self.managedSurfaceHandler = managedSurface
+        self.surfacePendingPermanentRemovalHandler = surfacePendingPermanentRemoval
+        self.completePermanentRemovalHandler = completePermanentRemoval
         self.diagnosticSelectionSummaryHandler = diagnosticSelectionSummary
         self.recordSurfacePresentationHandler = recordSurfacePresentation
     }
@@ -49,6 +57,14 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
 
     func managedSurface(for id: UUID) -> GhosttyManagedSurface? {
         managedSurfaceHandler(id)
+    }
+
+    func surfacePendingPermanentRemoval(for id: UUID) -> GhosttyManagedSurface? {
+        surfacePendingPermanentRemovalHandler(id)
+    }
+
+    func completePermanentRemoval(of id: UUID) {
+        completePermanentRemovalHandler(id)
     }
 
     func diagnosticSelectionSummary() -> String {
