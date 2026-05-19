@@ -1567,21 +1567,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         guard let id = managedSurfaceStore.id(forHandle: target.target.surface),
               let surface = managedSurfaceStore.managedSurface(for: id) else { return true }
 
-        switch action.tag {
-        case GHOSTTY_ACTION_RENDER:
-            markSurfaceRuntimePresentationReady(id, reason: "runtime.render", surface: surface)
-
-        case GHOSTTY_ACTION_SCROLLBAR:
-            let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
-            surface.updateScrollState(state)
-            markSurfaceRuntimePresentationReady(id, reason: "runtime.scrollbar", surface: surface)
-
-        case GHOSTTY_ACTION_SCROLL_ROUTE:
-            let route = GhosttySurfaceScrollRoute(cValue: action.action.scroll_route)
-            surface.updateScrollRoute(route)
-
-        default:
-            break
+        let result = GhosttyRuntimeSurfaceActionDispatcher.dispatch(action: action, to: surface)
+        if let reason = result.runtimePresentationReadyReason {
+            markSurfaceRuntimePresentationReady(id, reason: reason, surface: surface)
         }
 
         return true
