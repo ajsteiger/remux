@@ -485,8 +485,8 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
-    private func requestTopologyInputRefocus(
-        actionEffect: GhosttyTmuxTopologyActionInteractionEffect
+    private func prepareTopologyActionInteraction(
+        _ actionEffect: GhosttyTmuxTopologyActionInteractionEffect
     ) {
         guard let effect = topologyActionInputRefocusCoordinator.prepare(
             actionEffect: actionEffect,
@@ -499,8 +499,8 @@ struct GhosttySurfaceScreen: View {
         applyTopologyInputRefocusEffect(effect)
     }
 
-    private func completeTopologyInputRefocusInteraction(
-        actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
+    private func completeTopologyActionInteraction(
+        _ actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
         outcome: GhosttyTmuxModelActionOutcome
     ) {
         guard let effect = topologyActionInputRefocusCoordinator.complete(
@@ -528,18 +528,13 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
-    private func prepareTopologyActionInteraction(
-        _ effect: GhosttyTmuxTopologyActionInteractionEffect
+    private func performTopologyActionInteraction(
+        _ actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
+        action: () -> GhosttyTmuxModelActionOutcome
     ) {
-        guard effect.requestsInputRefocus else { return }
-        requestTopologyInputRefocus(actionEffect: effect)
-    }
-
-    private func completeTopologyActionInteraction(
-        _ effect: GhosttyTmuxTopologyActionInteractionEffect,
-        outcome: GhosttyTmuxModelActionOutcome
-    ) {
-        completeTopologyInputRefocusInteraction(actionEffect: effect, outcome: outcome)
+        prepareTopologyActionInteraction(actionEffect)
+        let outcome = action()
+        completeTopologyActionInteraction(actionEffect, outcome: outcome)
     }
 
     private func handleActiveLeafChange(_ activeLeafID: UUID?) {
@@ -1220,8 +1215,9 @@ struct GhosttySurfaceScreen: View {
             ]
         )
         let effect = model.createTmuxWindowInteractionEffect()
-        prepareTopologyActionInteraction(effect)
-        completeTopologyActionInteraction(effect, outcome: model.createTmuxWindow())
+        performTopologyActionInteraction(effect) {
+            model.createTmuxWindow()
+        }
     }
 
     private func selectTmuxWindowFromSelectionSheet(_ id: UUID) {
@@ -1232,8 +1228,9 @@ struct GhosttySurfaceScreen: View {
 
     private func closeTmuxWindowFromSelectionSheet(_ id: UUID) {
         let effect = model.closeTmuxWindowInteractionEffect(id)
-        prepareTopologyActionInteraction(effect)
-        completeTopologyActionInteraction(effect, outcome: model.closeTmuxWindow(id))
+        performTopologyActionInteraction(effect) {
+            model.closeTmuxWindow(id)
+        }
     }
 
     private func splitFocusedTmuxPaneFromSelectionSheet(
@@ -1250,11 +1247,9 @@ struct GhosttySurfaceScreen: View {
             ]
         )
         let effect = model.splitFocusedTmuxPaneInteractionEffect()
-        prepareTopologyActionInteraction(effect)
-        completeTopologyActionInteraction(
-            effect,
-            outcome: model.splitFocusedTmuxPane(direction)
-        )
+        performTopologyActionInteraction(effect) {
+            model.splitFocusedTmuxPane(direction)
+        }
     }
 
     private func selectTmuxPaneFromSelectionSheet(_ id: UUID) {
@@ -1265,8 +1260,9 @@ struct GhosttySurfaceScreen: View {
 
     private func closeTmuxPaneFromSelectionSheet(_ id: UUID, topLevelID: UUID) {
         let effect = model.closeTmuxPaneInteractionEffect(id, inTopLevel: topLevelID)
-        prepareTopologyActionInteraction(effect)
-        completeTopologyActionInteraction(effect, outcome: model.closeTmuxPane(id))
+        performTopologyActionInteraction(effect) {
+            model.closeTmuxPane(id)
+        }
     }
 
     @ViewBuilder
