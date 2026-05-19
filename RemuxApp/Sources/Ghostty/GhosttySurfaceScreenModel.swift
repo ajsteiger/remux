@@ -63,11 +63,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     var terminalReadinessSnapshot: TerminalReadinessSnapshot {
-        TerminalReadinessProjector.snapshot(
+        let topology = surfaceRegistry.topologySnapshot
+        return TerminalReadinessProjector.snapshot(
             phase: terminalRuntimePhase,
             transportWritable: hostSessionSlot.isWriteAvailable,
-            topLevelCount: surfaceRegistry.topLevels.count,
-            selectedActiveLeafID: surfaceRegistry.selectedActiveLeafID
+            topLevelCount: topology.topLevels.count,
+            selectedActiveLeafID: topology.selectedActiveLeafID
         )
     }
 
@@ -338,16 +339,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendInput end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
+        let topology = surfaceRegistry.topologySnapshot
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "model.sendInput.end",
             fields: [
                 "accepted": "\(result.isAccepted)",
-                "activeLeaf": ghosttyDiagnosticShortID(surfaceRegistry.selectedActiveLeafID),
+                "activeLeaf": ghosttyDiagnosticShortID(topology.selectedActiveLeafID),
                 "bytes": "\(text.lengthOfBytes(using: .utf8))",
                 "result": result.description,
                 "state": "\(state)",
-                "topLevels": "\(surfaceRegistry.topLevels.count)",
+                "topLevels": "\(topology.topLevels.count)",
             ]
         )
 
@@ -621,12 +623,14 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return .missingSurface(surfaceID)
         }
 
-        guard surfaceRegistry.selectedActiveLeafID != surfaceID else {
+        let initialTopology = surfaceRegistry.topologySnapshot
+        guard initialTopology.selectedActiveLeafID != surfaceID else {
             return .alreadySelected
         }
 
         surfaceRegistry.selectSurface(surfaceID, reason: reason)
-        guard surfaceRegistry.selectedActiveLeafID == surfaceID else {
+        let selectedTopology = surfaceRegistry.topologySnapshot
+        guard selectedTopology.selectedActiveLeafID == surfaceID else {
             debugStatus = "surface selection dropped: pane missing"
             return .missingSurface(surfaceID)
         }
@@ -694,9 +698,11 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.diagnostics(
             "model.focusAdjacentTmuxTopLevel begin direction=\(direction) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        let currentIndex = surfaceRegistry.selectedTopLevelIndex ?? 0
-        let nextIndex = surfaceRegistry.topLevels.count > 1
-            ? direction.advancedIndex(from: currentIndex, count: surfaceRegistry.topLevels.count)
+        let topology = surfaceRegistry.topologySnapshot
+        let currentIndex = topology.selectedTopLevelIndex ?? 0
+        let topLevelCount = topology.topLevels.count
+        let nextIndex = topLevelCount > 1
+            ? direction.advancedIndex(from: currentIndex, count: topLevelCount)
             : nil
         let outcome = tmuxActionCoordinator.focusAdjacentTopLevel(direction)
         switch outcome {
@@ -772,7 +778,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             event: "model.splitFocusedTmuxPane.begin",
             fields: ["direction": "\(direction)"]
         )
-        let surfaceID = surfaceRegistry.selectedActiveLeafID
+        let surfaceID = surfaceRegistry.topologySnapshot.selectedActiveLeafID
         let outcome = tmuxActionCoordinator.splitFocusedPane(direction)
         switch outcome {
         case .missingTarget(.focusedPane):
@@ -1020,27 +1026,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         commandFailureMessage = nil
     }
 
-    private var canSubmitInputToFocusedSurface: Bool {
-        TerminalReadinessProjector.canSubmitInput(
-            phase: terminalRuntimePhase,
-            transportWritable: hostSessionSlot.isWriteAvailable,
-            hasFocusedSurface: surfaceRegistry.selectedActiveLeafID != nil
-        )
-    }
-
-    private var isTerminalTransportAvailableForInput: Bool {
-        TerminalReadinessProjector.isTransportAvailableForInput(
-            phase: terminalRuntimePhase,
-            transportWritable: hostSessionSlot.isWriteAvailable
-        )
-    }
-
     private func preflightFocusedTerminalInputSubmission() -> FocusedTerminalInputSubmissionResult? {
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
+        let readiness = terminalReadinessSnapshot
+        guard readiness.selectedActiveLeafID != nil else {
             return .noFocusedSurface
         }
 
-        guard canSubmitInputToFocusedSurface else {
+        guard TerminalReadinessProjector.canSubmitInput(readiness) else {
             return .transportUnavailable
         }
 
@@ -1048,11 +1040,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     private func preflightFocusedMouseInputSubmission() -> GhosttyMouseInputSubmissionOutcome? {
-        guard surfaceRegistry.selectedActiveLeafID != nil else {
+        let readiness = terminalReadinessSnapshot
+        guard readiness.selectedActiveLeafID != nil else {
             return .noFocusedSurface
         }
 
-        guard canSubmitInputToFocusedSurface else {
+        guard TerminalReadinessProjector.canSubmitInput(readiness) else {
             return .transportUnavailable
         }
 
@@ -1064,7 +1057,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             return .missingTarget(surfaceID)
         }
 
-        guard isTerminalTransportAvailableForInput else {
+        guard TerminalReadinessProjector.isTransportAvailableForInput(
+            phase: terminalRuntimePhase,
+            transportWritable: hostSessionSlot.isWriteAvailable
+        ) else {
             return .transportUnavailable
         }
 
