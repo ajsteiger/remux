@@ -414,7 +414,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(releaseCount, 1)
         XCTAssertTrue(releaseSawSurfaceStillRegistered)
         XCTAssertTrue(model.surfaceRegistry.allManagedSurfaces().isEmpty)
-        XCTAssertTrue(model.surfaceRegistry.topLevels.isEmpty)
+        XCTAssertTrue(model.surfaceRegistry.topologySnapshot.topLevels.isEmpty)
     }
 
     func testModelReportsRuntimeFailureAndForegroundDisconnectedOnce() {
@@ -583,7 +583,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         registry.runtimeCloseSurface(id: managed.id, processAlive: true)
 
-        XCTAssertEqual(registry.topLevels.count, 1)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
         XCTAssertNotNil(registry.managedSurface(for: managed.id))
         XCTAssertTrue(registry.debugSummary.contains("close_surface deferred"))
     }
@@ -601,7 +601,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         registry.runtimeCloseSurface(id: managed.id, processAlive: false)
 
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertNil(registry.managedSurface(for: managed.id))
         XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
         XCTAssertEqual(releaseCount, 1)
@@ -641,7 +641,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(events, ["focus:true"])
         XCTAssertNil(registry.managedSurface(for: managed.id))
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertTrue(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id) === managed)
         XCTAssertNotNil(managed.view.superview)
 
@@ -653,7 +653,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(releaseSawScrollCallbackCleared)
         XCTAssertTrue(releaseSawDisplayCallbackCleared)
         XCTAssertNil(registry.managedSurface(for: managed.id))
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
     }
 
@@ -727,7 +727,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(releaseSawScrollCallbackCleared)
         XCTAssertTrue(releaseSawDisplayCallbackCleared)
         XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
     }
 
     func testRuntimeTmuxProtocolErrorRecordsDiagnosticWithoutTopologyMutation() {
@@ -738,7 +738,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             delivered = error
         }
         registry.registerManagedSurfaceForTesting(managed)
-        let topLevelIDsBefore = registry.topLevels.map(\.id)
+        let topLevelIDsBefore = registry.topologySnapshot.topLevels.map(\.id)
 
         let error = TmuxControlProtocolError(
             reason: .idleNonPercent,
@@ -748,8 +748,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(registry.lastTmuxProtocolError, error)
         XCTAssertEqual(delivered, error)
-        XCTAssertEqual(registry.topLevels.map(\.id), topLevelIDsBefore)
-        XCTAssertEqual(registry.selectedActiveLeafID, managed.id)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.map(\.id), topLevelIDsBefore)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, managed.id)
         XCTAssertNotNil(registry.managedSurface(for: managed.id))
     }
 
@@ -776,7 +776,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         }
         XCTAssertTrue(didRun)
 
-        let topLevelIDsBefore = model.surfaceRegistry.topLevels.map(\.id)
+        let topLevelIDsBefore = model.surfaceRegistry.topologySnapshot.topLevels.map(\.id)
         let updatesBefore = updates
         let error = TmuxControlProtocolError(
             reason: .malformedNotification,
@@ -790,7 +790,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(model.failureReason)
         XCTAssertNil(model.commandFailureMessage)
         XCTAssertEqual(model.surfaceRegistry.lastTmuxProtocolError, error)
-        XCTAssertEqual(model.surfaceRegistry.topLevels.map(\.id), topLevelIDsBefore)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.topLevels.map(\.id), topLevelIDsBefore)
         XCTAssertEqual(updates, updatesBefore)
     }
 
@@ -884,7 +884,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             surface: second.controlSurface.handle
         )
 
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, second.id)
         XCTAssertTrue(registry.debugSummary.contains("selected surface="))
     }
 
@@ -905,7 +905,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             lease: staleLease
         )
 
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, first.id)
 
         registry.runtimeSelectSurface(
             app: nil,
@@ -913,7 +913,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             lease: currentLease
         )
 
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, second.id)
     }
 
     func testInputRoutesToFocusedManagedSurface() {
@@ -959,8 +959,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
-        XCTAssertEqual(registry.selectedActiveLeafID, first.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, first.id)
         XCTAssertEqual(registry.sendInputToFocusedSurface("echo fallback\r"), .accepted)
         XCTAssertEqual(firstInput, ["echo fallback\r"])
     }
@@ -992,8 +992,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         registry.selectSurface(second.id)
 
-        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
-        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
         XCTAssertEqual(registry.sendInputToFocusedSurface("echo pending\r"), .accepted)
         XCTAssertEqual(secondInput, ["echo pending\r"])
@@ -1005,8 +1005,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
         registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
 
-        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
-        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfacePresentationForTesting(surfaceID: second.id)
@@ -1069,7 +1069,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.selectSurface(second.id)
         registry.selectSurface(second.id)
 
-        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, second.id)
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfaceDisplayUpdateForTesting(
@@ -1079,7 +1079,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
         registry.selectSurface(second.id)
 
-        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, second.id)
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfacePresentationForTesting(surfaceID: second.id)
@@ -1095,15 +1095,15 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let second = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x606)!)
 
         registry.registerManagedSurfaceForTesting(first)
-        let firstTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
+        let firstTopLevelID = try XCTUnwrap(registry.topologySnapshot.selectedTopLevel?.id)
 
         registry.registerManagedSurfaceForTesting(second)
-        let secondTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
+        let secondTopLevelID = try XCTUnwrap(registry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertNotEqual(firstTopLevelID, secondTopLevelID)
-        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
-        XCTAssertEqual(registry.selectedTopLevel?.id, secondTopLevelID)
-        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.id, secondTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfaceDisplayUpdateForTesting(
@@ -1113,9 +1113,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
         registry.refreshPhonePresentationReadinessForTesting(surfaceID: second.id)
 
-        XCTAssertEqual(registry.selectedActiveLeafID, second.id)
-        XCTAssertEqual(registry.selectedTopLevel?.id, secondTopLevelID)
-        XCTAssertEqual(registry.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.id, secondTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.phonePresentedLeafIDs, [second.id])
         XCTAssertEqual(registry.pendingPhonePresentationSurfaceIDForView, second.id)
 
         registry.recordSurfacePresentationForTesting(surfaceID: second.id)
@@ -1255,8 +1255,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(second)
         registry.forceSelectedTopLevelIDForTesting(UUID())
 
-        XCTAssertNil(registry.selectedTopLevel)
-        XCTAssertNil(registry.selectedActiveLeafID)
+        XCTAssertNil(registry.topologySnapshot.selectedTopLevel)
+        XCTAssertNil(registry.topologySnapshot.selectedActiveLeafID)
         XCTAssertEqual(registry.sendInputToFocusedSurface("echo nowhere\r"), .noFocusedSurface)
         XCTAssertTrue(firstInput.isEmpty)
         XCTAssertTrue(secondInput.isEmpty)
@@ -1272,13 +1272,13 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(second)
         registry.registerManagedSurfaceForTesting(third)
 
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, third.id)
 
         XCTAssertTrue(registry.selectAdjacentTopLevel(.next))
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, first.id)
 
         XCTAssertTrue(registry.selectAdjacentTopLevel(.previous))
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, third.id)
     }
 
     func testAdjacentTopLevelSelectionRejectsSingleWindow() {
@@ -1288,7 +1288,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertFalse(registry.selectAdjacentTopLevel(.next))
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, managed.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, managed.id)
     }
 
     func testAdjacentPaneSelectionWrapsWithinSelectedWindow() {
@@ -1316,13 +1316,13 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
 
         XCTAssertTrue(registry.selectAdjacentPane(.next))
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, third.id)
 
         XCTAssertTrue(registry.selectAdjacentPane(.next))
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, first.id)
 
         XCTAssertTrue(registry.selectAdjacentPane(.previous))
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, third.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, third.id)
     }
 
     func testAdjacentPaneSelectionRejectsSinglePane() {
@@ -1332,7 +1332,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         registry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertFalse(registry.selectAdjacentPane(.next))
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, managed.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, managed.id)
     }
 
     func testSurfaceTreeReplacementPreservesTopLevelIdentityForParentSurface() throws {
@@ -1353,7 +1353,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             focusedLeafID: oldSecond.id
         )
 
-        let originalTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let originalTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
         let newFirst = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3001)!)
         let newSecond = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3002)!)
         let newThird = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3003)!)
@@ -1377,17 +1377,17 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replacingTopLevelContaining: oldFirst.id
         )
 
-        XCTAssertEqual(registry.topLevels.count, 1)
-        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
-        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, newSecond.id)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, newSecond.id)
 
         registry.runtimeCloseSurface(id: oldFirst.id, processAlive: false)
         registry.runtimeCloseSurface(id: oldSecond.id, processAlive: false)
 
-        XCTAssertEqual(registry.topLevels.count, 1)
-        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
-        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
     }
 
     func testSurfaceTreeReplacementCanTargetSingleOpenTopLevel() throws {
@@ -1408,7 +1408,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             focusedLeafID: oldSecond.id
         )
 
-        let originalTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let originalTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
         let newFirst = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3101)!)
         let newSecond = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3102)!)
         let newThird = Self.managedSurface(handle: UnsafeMutableRawPointer(bitPattern: 0x3103)!)
@@ -1432,17 +1432,17 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replacingTopLevelID: originalTopLevelID
         )
 
-        XCTAssertEqual(registry.topLevels.count, 1)
-        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
-        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, newThird.id)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, newThird.id)
 
         registry.runtimeCloseSurface(id: oldFirst.id, processAlive: false)
         registry.runtimeCloseSurface(id: oldSecond.id, processAlive: false)
 
-        XCTAssertEqual(registry.topLevels.count, 1)
-        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
-        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.leafIDs, [newFirst.id, newSecond.id, newThird.id])
     }
 
     func testSurfaceTreeInstallAppendsUnrelatedManualTrees() throws {
@@ -1459,7 +1459,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replaceByManualIdentity: true
         )
 
-        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let firstTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
         let second = Self.managedSurface(
             handle: UnsafeMutableRawPointer(bitPattern: 0x2202)!,
             manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xBB01)!
@@ -1472,11 +1472,11 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replaceByManualIdentity: true
         )
 
-        XCTAssertEqual(registry.topLevels.count, 2)
-        XCTAssertEqual(registry.topLevels[0].id, firstTopLevelID)
-        XCTAssertEqual(registry.topLevels[0].leafIDs, [first.id])
-        XCTAssertEqual(registry.topLevels[1].leafIDs, [second.id])
-        XCTAssertEqual(registry.selectedTopLevel?.id, firstTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 2)
+        XCTAssertEqual(registry.topologySnapshot.topLevels[0].id, firstTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels[0].leafIDs, [first.id])
+        XCTAssertEqual(registry.topologySnapshot.topLevels[1].leafIDs, [second.id])
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.id, firstTopLevelID)
     }
 
     func testClosingSelectedTopLevelNormalizesToAdjacentWindow() throws {
@@ -1486,20 +1486,20 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let third = Self.managedSurface()
 
         registry.registerManagedSurfaceForTesting(first)
-        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let firstTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
         registry.registerManagedSurfaceForTesting(second)
-        let secondTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+        let secondTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.last?.id)
         registry.registerManagedSurfaceForTesting(third)
-        let thirdTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+        let thirdTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.last?.id)
 
         registry.selectTopLevel(secondTopLevelID)
         registry.runtimeCloseSurface(id: second.id, processAlive: false)
 
-        XCTAssertEqual(registry.selectedTopLevel?.id, thirdTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.id, thirdTopLevelID)
 
         registry.runtimeCloseSurface(id: third.id, processAlive: false)
 
-        XCTAssertEqual(registry.selectedTopLevel?.id, firstTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.id, firstTopLevelID)
     }
 
     func testSurfaceTreeReplacementDoesNotStealSelectionFromOtherWindow() throws {
@@ -1519,7 +1519,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             focusedLeafID: firstWindowPane.id,
             replaceByManualIdentity: true
         )
-        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let firstTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
 
         registry.registerManagedSurfaceTreeForTesting(
             [secondWindowPane],
@@ -1541,8 +1541,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replaceByManualIdentity: true
         )
 
-        XCTAssertEqual(registry.selectedTopLevel?.id, firstTopLevelID)
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, firstWindowPane.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.id, firstTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, firstWindowPane.id)
     }
 
     func testSurfaceTreeInstallReplacesOverlappingManualTree() throws {
@@ -1570,7 +1570,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replaceByManualIdentity: true
         )
 
-        let originalTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let originalTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
         let newFirst = Self.managedSurface(
             handle: UnsafeMutableRawPointer(bitPattern: 0x3301)!,
             manualUserdata: UnsafeMutableRawPointer(bitPattern: 0xCA01)!
@@ -1594,16 +1594,16 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replaceByManualIdentity: true
         )
 
-        XCTAssertEqual(registry.topLevels.count, 1)
-        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
-        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id])
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.leafIDs, [newFirst.id, newSecond.id])
 
         registry.runtimeCloseSurface(id: oldFirst.id, processAlive: false)
         registry.runtimeCloseSurface(id: oldSecond.id, processAlive: false)
 
-        XCTAssertEqual(registry.topLevels.count, 1)
-        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
-        XCTAssertEqual(registry.topLevels.first?.leafIDs, [newFirst.id, newSecond.id])
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.leafIDs, [newFirst.id, newSecond.id])
     }
 
     func testSurfaceTreeReplacementPreservesFocusedPaneByManualIdentity() throws {
@@ -1630,7 +1630,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             focusedLeafID: oldSecond.id,
             replaceByManualIdentity: true
         )
-        let originalTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let originalTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
 
         var routedInput: [String] = []
         let newFirst = Self.managedSurface(
@@ -1659,8 +1659,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             replaceByManualIdentity: true
         )
 
-        XCTAssertEqual(registry.topLevels.first?.id, originalTopLevelID)
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, newSecond.id)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, originalTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, newSecond.id)
         XCTAssertEqual(registry.sendInputToFocusedSurface("echo preserved\r"), .accepted)
         XCTAssertEqual(routedInput, ["echo preserved\r"])
     }
@@ -2068,7 +2068,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(releaseCount, 1)
         XCTAssertTrue(releaseSawSurfaceStillRegistered)
         XCTAssertTrue(model.surfaceRegistry.allManagedSurfaces().isEmpty)
-        XCTAssertTrue(model.surfaceRegistry.topLevels.isEmpty)
+        XCTAssertTrue(model.surfaceRegistry.topologySnapshot.topLevels.isEmpty)
     }
 
     func testModelInvalidatesTransportWhenStartFails() async {
@@ -2696,7 +2696,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let managed = Self.managedSurface()
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
-        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             model.terminalTreePresentationProjection,
@@ -2875,7 +2875,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let second = Self.managedSurface()
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
-        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             model.closeTmuxWindowInteractionEffect(firstTopLevelID),
@@ -2883,7 +2883,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(second)
-        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(model.closeTmuxWindowInteractionEffect(firstTopLevelID), .none)
         XCTAssertEqual(model.closeTmuxWindowInteractionEffect(secondTopLevelID), .none)
@@ -2906,7 +2906,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let onlyPane = Self.managedSurface()
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(onlyPane)
-        let singlePaneTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let singlePaneTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             model.closeTmuxPaneInteractionEffect(onlyPane.id, inTopLevel: singlePaneTopLevelID),
@@ -2926,7 +2926,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 )
             )
         )
-        let multiPaneTopLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let multiPaneTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             model.closeTmuxPaneInteractionEffect(first.id, inTopLevel: multiPaneTopLevelID),
@@ -2946,7 +2946,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let managed = Self.managedSurface()
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
-        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(model.closeTmuxPaneInteractionEffect(UUID(), inTopLevel: topLevelID), .none)
         XCTAssertEqual(model.closeTmuxPaneInteractionEffect(managed.id, inTopLevel: UUID()), .none)
@@ -3030,7 +3030,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             ),
             focusedLeafID: second.id
         )
-        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             model.selectedPaneSheetPresentationProjection(),
@@ -3052,7 +3052,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let managed = Self.managedSurface()
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
-        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertTrue(model.containsTopLevel(topLevelID))
         XCTAssertFalse(model.containsTopLevel(UUID()))
@@ -3073,7 +3073,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let third = Self.managedSurface()
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
-        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.first?.id)
+        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.first?.id)
         model.surfaceRegistry.registerManagedSurfaceTreeForTesting(
             [second, third],
             tree: GhosttySurfaceTree(
@@ -3086,7 +3086,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             ),
             focusedLeafID: third.id
         )
-        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.last?.id)
+        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.last?.id)
 
         model.surfaceRegistry.selectTopLevel(firstTopLevelID)
 
@@ -3127,9 +3127,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let second = Self.managedSurface()
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
-        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.first?.id)
+        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.first?.id)
         model.surfaceRegistry.registerManagedSurfaceForTesting(second)
-        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.last?.id)
+        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.last?.id)
 
         model.surfaceRegistry.selectTopLevel(firstTopLevelID)
         XCTAssertEqual(model.windowSelectionSheetRenderProjection().selectedWindowID, firstTopLevelID)
@@ -3172,7 +3172,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             ),
             focusedLeafID: second.id
         )
-        let topLevelID = try XCTUnwrap(model.surfaceRegistry.selectedTopLevel?.id)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             model.paneSelectionSheetRenderProjection(topLevelID: topLevelID),
@@ -3364,7 +3364,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
         model.surfaceRegistry.forceSelectedTopLevelIDForTesting(nil)
-        XCTAssertNil(model.surfaceRegistry.selectedActiveLeafID)
+        XCTAssertNil(model.surfaceRegistry.topologySnapshot.selectedActiveLeafID)
 
         let event = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
         XCTAssertEqual(model.sendMouseScroll(to: managed.id, event), .sent)
@@ -3626,7 +3626,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(coordinator.focusPane(second.id), .localSelectionOnly(.noTarget))
         XCTAssertEqual(focusCallCount, 1)
-        XCTAssertEqual(registry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(registry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, second.id)
     }
 
     func testTmuxActionCoordinatorCreateWindowUsesCurrentHostSubmission() {
@@ -3665,7 +3665,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         registry.registerManagedSurfaceForTesting(first)
         registry.registerManagedSurfaceForTesting(second)
-        let secondTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+        let secondTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.last?.id)
         registry.selectSurface(first.id)
 
         XCTAssertEqual(coordinator.closeWindow(secondTopLevelID), .queued)
@@ -3688,7 +3688,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tree: GhosttySurfaceTree(root: .leaf(missingID)),
             focusedLeafID: missingID
         )
-        let missingTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+        let missingTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.last?.id)
 
         XCTAssertEqual(
             coordinator.closeWindow(missingTopLevelID),
@@ -3714,7 +3714,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(model.focusTmuxPane(second.id), .queued)
         XCTAssertEqual(focusCallCount, 1)
-        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, second.id)
         XCTAssertEqual(model.debugStatus, "tmux focus queued")
     }
 
@@ -3754,7 +3754,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(model.focusTmuxPane(second.id), .localSelectionOnly(.noTarget))
         XCTAssertEqual(focusCallCount, 1)
-        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, second.id)
         XCTAssertEqual(model.debugStatus, "tmux focus selected locally; remote sync no target")
     }
 
@@ -3780,7 +3780,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tree: GhosttySurfaceTree(root: .leaf(missingID)),
             focusedLeafID: missingID
         )
-        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.last?.id)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.last?.id)
 
         XCTAssertEqual(model.focusTmuxTopLevel(topLevelID), .missingTarget(.pane(missingID)))
         XCTAssertEqual(model.debugStatus, "tmux focus dropped: pane missing")
@@ -3800,7 +3800,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
         model.surfaceRegistry.registerManagedSurfaceForTesting(second)
-        guard let firstTopLevelID = model.surfaceRegistry.topLevels.first?.id else {
+        guard let firstTopLevelID = model.surfaceRegistry.topologySnapshot.topLevels.first?.id else {
             XCTFail("expected first top-level to exist")
             return
         }
@@ -3808,7 +3808,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertEqual(model.focusAdjacentTmuxTopLevel(.next), .queued)
         XCTAssertEqual(focusCallCount, 1)
-        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, second.id)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, second.id)
     }
 
     func testModelFocusAdjacentTmuxTopLevelReportsMissingManagedPane() throws {
@@ -3825,7 +3825,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tree: GhosttySurfaceTree(root: .leaf(missingID)),
             focusedLeafID: missingID
         )
-        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.first?.id)
+        let firstTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.first?.id)
         model.surfaceRegistry.selectTopLevel(firstTopLevelID)
 
         XCTAssertEqual(model.focusAdjacentTmuxTopLevel(.next), .missingTarget(.pane(missingID)))
@@ -4014,9 +4014,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.closeTmuxPane(second.id), .queued)
         XCTAssertNotNil(model.surfaceRegistry.managedSurface(for: first.id))
         XCTAssertNil(model.surfaceRegistry.managedSurface(for: second.id))
-        XCTAssertEqual(model.surfaceRegistry.topLevels.count, 1)
-        XCTAssertEqual(model.surfaceRegistry.topLevels.first?.leafIDs, [first.id])
-        XCTAssertEqual(model.surfaceRegistry.selectedTopLevel?.resolvedFocusedLeafID, first.id)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.topLevels.count, 1)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.topLevels.first?.leafIDs, [first.id])
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.resolvedFocusedLeafID, first.id)
         XCTAssertTrue(model.surfaceRegistry.materializationContext.surfacePendingPermanentRemoval(for: second.id) === second)
         XCTAssertEqual(model.debugStatus, "tmux close-pane queued")
     }
@@ -4083,7 +4083,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(first)
         model.surfaceRegistry.registerManagedSurfaceForTesting(second)
-        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.last?.id)
+        let secondTopLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.last?.id)
         model.surfaceRegistry.selectSurface(first.id)
 
         XCTAssertEqual(model.closeTmuxWindow(secondTopLevelID), .queued)
@@ -4100,7 +4100,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let managed = Self.managedSurface(tmuxCloseWindow: { .notTmuxBound })
 
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
-        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topLevels.first?.id)
+        let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.topLevels.first?.id)
 
         XCTAssertEqual(model.closeTmuxWindow(topLevelID), .rejected(.notTmuxBound))
         XCTAssertEqual(model.debugStatus, "tmux close-window rejected: not tmux backed")
@@ -4178,7 +4178,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         model.surfaceRegistry.registerManagedSurfaceForTesting(second)
 
         XCTAssertEqual(model.selectTerminalSurface(first.id, reason: "test"), .selected)
-        XCTAssertEqual(model.surfaceRegistry.selectedActiveLeafID, first.id)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.selectedActiveLeafID, first.id)
     }
 
     func testModelSelectTerminalSurfaceReportsAlreadySelectedSurface() {
@@ -4191,7 +4191,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertEqual(model.selectTerminalSurface(managed.id, reason: "test"), .alreadySelected)
-        XCTAssertEqual(model.surfaceRegistry.selectedActiveLeafID, managed.id)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.selectedActiveLeafID, managed.id)
     }
 
     func testModelSelectTerminalSurfaceReportsMissingSurfaceWithoutChangingSelection() {
@@ -4205,7 +4205,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertEqual(model.selectTerminalSurface(missingID, reason: "test"), .missingSurface(missingID))
-        XCTAssertEqual(model.surfaceRegistry.selectedActiveLeafID, managed.id)
+        XCTAssertEqual(model.surfaceRegistry.topologySnapshot.selectedActiveLeafID, managed.id)
         XCTAssertEqual(model.debugStatus, "surface selection dropped: pane missing")
     }
 

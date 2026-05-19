@@ -55,11 +55,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         tmuxErrorChannel.lastProtocolError
     }
 
-    var topLevels: [GhosttyTopLevelSurface] {
+    private var topLevels: [GhosttyTopLevelSurface] {
         topologySelection.topLevels
     }
 
-    var selectedTopLevelID: UUID? {
+    private var selectedTopLevelID: UUID? {
         topologySelection.selectedTopLevelID
     }
 
@@ -94,7 +94,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
     )
 
-    var selectedTopLevel: GhosttyTopLevelSurface? {
+    private var selectedTopLevel: GhosttyTopLevelSurface? {
         topologySelection.selectedTopLevel
     }
 
@@ -144,7 +144,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
     }
 
-    var selectedTopLevelIndex: Int? {
+    private var selectedTopLevelIndex: Int? {
         topologySelection.selectedTopLevelIndex
     }
 
@@ -339,7 +339,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         removeManagedSurface(id)
     }
 
-    var selectedActiveLeafID: UUID? {
+    private var selectedActiveLeafID: UUID? {
         topologySelection.selectedActiveLeafID
     }
 

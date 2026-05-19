@@ -169,7 +169,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let secondID = try XCTUnwrap(
             registry.managedSurfaceIDForTesting(handle: leafSurfaces[1])
         )
-        XCTAssertEqual(registry.selectedActiveLeafID, secondID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, secondID)
 
         registry.prepareForRuntimeTeardown()
     }
@@ -267,7 +267,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let selectedID = try XCTUnwrap(
             registry.managedSurfaceIDForTesting(handle: leafSurfaces[1])
         )
-        XCTAssertEqual(registry.selectedActiveLeafID, selectedID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, selectedID)
 
         var notificationCount = 0
         registry.onChange = {
@@ -279,7 +279,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
             surface: leafSurfaces[1]
         )
 
-        XCTAssertEqual(registry.selectedActiveLeafID, selectedID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, selectedID)
         XCTAssertEqual(notificationCount, 0)
     }
 
@@ -324,7 +324,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
             surface: leafSurfaces[0]
         )
 
-        XCTAssertEqual(registry.selectedActiveLeafID, firstID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, firstID)
         XCTAssertEqual(notificationCount, 1)
 
         registry.runtimeSelectSurface(
@@ -332,7 +332,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
             surface: leafSurfaces[0]
         )
 
-        XCTAssertEqual(registry.selectedActiveLeafID, firstID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, firstID)
         XCTAssertEqual(notificationCount, 1)
     }
 
@@ -368,7 +368,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let firstFocusedID = try XCTUnwrap(
             registry.managedSurfaceIDForTesting(handle: firstLeafSurfaces[0])
         )
-        XCTAssertEqual(registry.selectedActiveLeafID, firstFocusedID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, firstFocusedID)
 
         var thirdConfig = Self.manualRuntimeTreeConfig(
             context: GHOSTTY_SURFACE_CONTEXT_TAB,
@@ -400,7 +400,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let secondFocusedID = try XCTUnwrap(
             registry.managedSurfaceIDForTesting(handle: secondLeafSurfaces[1])
         )
-        XCTAssertEqual(registry.selectedActiveLeafID, secondFocusedID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, secondFocusedID)
         XCTAssertEqual(notificationCount, 1)
     }
 
@@ -436,7 +436,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let previousSelectedID = try XCTUnwrap(
             registry.managedSurfaceIDForTesting(handle: firstLeafSurfaces[0])
         )
-        XCTAssertEqual(registry.selectedActiveLeafID, previousSelectedID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, previousSelectedID)
 
         var thirdConfig = Self.manualRuntimeTreeConfig(
             context: GHOSTTY_SURFACE_CONTEXT_TAB,
@@ -488,7 +488,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let finalSelectedID = try XCTUnwrap(
             registry.managedSurfaceIDForTesting(handle: secondLeafSurfaces[1])
         )
-        XCTAssertEqual(registry.selectedActiveLeafID, finalSelectedID)
+        XCTAssertEqual(registry.topologySnapshot.selectedActiveLeafID, finalSelectedID)
         XCTAssertNotEqual(previousSelectedID, finalSelectedID)
         XCTAssertEqual(notificationCount, 1)
     }
@@ -523,9 +523,9 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         }
 
         XCTAssertTrue(firstCreated)
-        XCTAssertEqual(registry.topLevels.count, 1)
-        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
-        let firstTreeLeafIDs = registry.topLevels.first?.leafIDs ?? []
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 1)
+        let firstTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
+        let firstTreeLeafIDs = registry.topologySnapshot.topLevels.first?.leafIDs ?? []
 
         var overlappingConfig = Self.manualRuntimeTreeConfig(
             context: GHOSTTY_SURFACE_CONTEXT_TAB,
@@ -550,11 +550,11 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         }
 
         XCTAssertTrue(secondCreated)
-        XCTAssertEqual(registry.topLevels.count, 2)
-        XCTAssertEqual(registry.topLevels.first?.id, firstTopLevelID)
-        XCTAssertEqual(registry.topLevels.first?.leafIDs, firstTreeLeafIDs)
-        XCTAssertEqual(registry.topLevels.last?.leafIDs.count, 2)
-        XCTAssertNotEqual(registry.topLevels.first?.id, registry.topLevels.last?.id)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.count, 2)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.id, firstTopLevelID)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.first?.leafIDs, firstTreeLeafIDs)
+        XCTAssertEqual(registry.topologySnapshot.topLevels.last?.leafIDs.count, 2)
+        XCTAssertNotEqual(registry.topologySnapshot.topLevels.first?.id, registry.topologySnapshot.topLevels.last?.id)
     }
 
     func testRuntimeCloseSurfaceReleasesSurfaceBeforeRuntimeDeinit() throws {
@@ -591,7 +591,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         registry.runtimeCloseSurface(id: firstID, processAlive: false)
         registry.runtimeCloseSurface(id: secondID, processAlive: false)
 
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertNil(registry.managedSurface(for: firstID))
         XCTAssertNil(registry.managedSurface(for: secondID))
     }
@@ -615,7 +615,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         }
 
         XCTAssertNil(surface)
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
     }
 
     func testRuntimeTmuxProtocolErrorCallbackReachesRegistry() throws {
@@ -719,7 +719,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         }
 
         XCTAssertFalse(created)
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertNil(leafSurfaces[0])
         XCTAssertNil(leafSurfaces[1])
         _ = staleRuntime
@@ -748,7 +748,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         }
 
         XCTAssertNil(surface)
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertTrue(registry.allManagedSurfaces().isEmpty)
         _ = staleRuntime
     }
@@ -777,7 +777,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         }
 
         XCTAssertFalse(created)
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertNil(leafSurfaces[0])
         XCTAssertNil(leafSurfaces[1])
     }
@@ -844,7 +844,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         }
 
         XCTAssertFalse(created)
-        XCTAssertTrue(registry.topLevels.isEmpty)
+        XCTAssertTrue(registry.topologySnapshot.topLevels.isEmpty)
         XCTAssertNil(leafSurfaces[0])
         XCTAssertNil(leafSurfaces[1])
     }

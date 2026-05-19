@@ -563,7 +563,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
 
         let onlyPane = Self.managedSurface()
         registry.registerManagedSurfaceForTesting(onlyPane)
-        let singlePaneTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
+        let singlePaneTopLevelID = try XCTUnwrap(registry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.closeTmuxWindowInteractionEffect(
@@ -594,7 +594,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
                 )
             )
         )
-        let multiPaneTopLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
+        let multiPaneTopLevelID = try XCTUnwrap(registry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.closeTmuxWindowInteractionEffect(
@@ -657,7 +657,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         let third = Self.managedSurface()
 
         registry.registerManagedSurfaceForTesting(first)
-        let firstTopLevelID = try XCTUnwrap(registry.topLevels.first?.id)
+        let firstTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.first?.id)
         registry.registerManagedSurfaceTreeForTesting(
             [second, third],
             tree: GhosttySurfaceTree(
@@ -670,7 +670,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
             ),
             focusedLeafID: third.id
         )
-        let secondTopLevelID = try XCTUnwrap(registry.topLevels.last?.id)
+        let secondTopLevelID = try XCTUnwrap(registry.topologySnapshot.topLevels.last?.id)
 
         registry.selectTopLevel(firstTopLevelID)
 
@@ -746,7 +746,7 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
             ),
             focusedLeafID: second.id
         )
-        let topLevelID = try XCTUnwrap(registry.selectedTopLevel?.id)
+        let topLevelID = try XCTUnwrap(registry.topologySnapshot.selectedTopLevel?.id)
 
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.paneSelectionSheetRenderProjection(
