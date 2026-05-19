@@ -391,6 +391,11 @@ final class GhosttyControlHostSurface {
                         chunkCount: 1,
                         eventPrefix: "tmux.signal.host.pump.receive"
                     )
+                    GhosttyTmuxActionTrace.traceInboundQueryResponses(
+                        in: bytes,
+                        source: "host.pump.receive",
+                        chunkCount: 1
+                    )
                     await sequencer.enqueue(bytes)
                 }
 
@@ -510,6 +515,12 @@ final class GhosttyControlHostSurface {
             source: "host.pump.processOutput",
             chunkCount: chunkCount,
             eventPrefix: "tmux.signal.host.pump.processOutput.end"
+        )
+        GhosttyTmuxActionTrace.traceProcessedQueryResponses(
+            in: data,
+            source: "host.pump.processOutput",
+            chunkCount: chunkCount,
+            accepted: accepted
         )
         guard accepted else {
             onDebugEvent?("Ghostty rejected tmux output after \(receivedByteCount) bytes")

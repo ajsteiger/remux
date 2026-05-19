@@ -704,6 +704,179 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         )
     }
 
+    func testTmuxActionTraceClassifiesQueryCommands() {
+        let startupEntries = GhosttyTmuxActionTrace.commandQueueEntries(
+            in: Data(
+                """
+                display-message -p '#{version}'
+                list-windows -F '#{session_id} #{window_id} #{window_active}'
+                """.utf8
+            )
+        )
+
+        XCTAssertEqual(startupEntries.map(\.kind), [.tmuxVersion, .listWindows])
+        XCTAssertEqual(startupEntries.map(\.command), ["tmux_version", "list_windows"])
+
+        let materializationEntries = GhosttyTmuxActionTrace.commandQueueEntries(
+            in: Data(
+                """
+                display-message -p -t %3 '#{pane_id};#{history_size}'
+                capture-pane -p -e -q -C -N -S -1000 -E -1 -t %3
+                capture-pane -p -e -q -C -N -t %3 ; capture-pane -p -e -q -C -N -a -t %3
+                capture-pane -p -P -C -t %3
+                list-panes -s -F '#{pane_id};#{pane_active}'
+                """.utf8
+            )
+        )
+
+        XCTAssertEqual(
+            materializationEntries.map(\.kind),
+            [
+                .paneMetadata,
+                .paneHistory,
+                .paneVisible,
+                .paneVisible,
+                .panePendingOutput,
+                .paneState,
+            ]
+        )
+    }
+
+    func testTmuxControlResponseParserHandlesSplitResponseLines() {
+        var parser = GhosttyTmuxControlResponseParser()
+
+        XCTAssertEqual(parser.responses(in: Data("%en".utf8)), [])
+        XCTAssertEqual(
+            parser.responses(in: Data("d 1 2 0\r\n%error 1 3 0\r".utf8)),
+            [.end, .error]
+        )
+        XCTAssertEqual(parser.responses(in: Data("\n".utf8)), [])
+    }
+
+    func testTmuxCommandTraceStoreKeepsResponseAlignmentAcrossUntrackedCommands() {
+        let store = GhosttyTmuxCommandTraceStore()
+        let outbound = store.reserveOutbound(
+            [
+                GhosttyTmuxActionTrace.CommandQueueEntry(kind: nil, command: "new-window"),
+                GhosttyTmuxActionTrace.CommandQueueEntry(kind: .listWindows, command: "list_windows"),
+            ],
+            flows: [GhosttyTmuxActionTrace.FlowContext(name: "tmux.newWindow", startedAt: 100)]
+        ).events
+
+        XCTAssertEqual(outbound.count, 1)
+        XCTAssertEqual(outbound.first?.kind, .listWindows)
+        XCTAssertEqual(outbound.first?.sequence, 2)
+
+        XCTAssertEqual(
+            store.recordReceivedResponses(in: Data("%begin 1 1 0\r\n%end 1 1 0\r\n".utf8)).count,
+            0
+        )
+        let received = store.recordReceivedResponses(
+            in: Data("%begin 1 2 0\r\n%end 1 2 0\r\n".utf8)
+        )
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(received.first?.kind, .listWindows)
+        XCTAssertEqual(received.first?.outcome, .end)
+
+        XCTAssertEqual(
+            store.recordProcessedResponses(in: Data("%begin 1 1 0\r\n%end 1 1 0\r\n".utf8)).count,
+            0
+        )
+        let processed = store.recordProcessedResponses(
+            in: Data("%begin 1 2 0\r\n%end 1 2 0\r\n".utf8)
+        )
+        XCTAssertEqual(processed.count, 1)
+        XCTAssertEqual(processed.first?.kind, .listWindows)
+        XCTAssertEqual(processed.first?.sequence, 2)
+    }
+
+    func testTmuxCommandTraceStoreKeepsAlignmentAcrossFlowlessCommands() {
+        let store = GhosttyTmuxCommandTraceStore()
+
+        XCTAssertEqual(
+            store.reserveOutbound(
+                [GhosttyTmuxActionTrace.CommandQueueEntry(kind: .listWindows, command: "list_windows")],
+                flows: []
+            ).events.count,
+            0
+        )
+
+        let outbound = store.reserveOutbound(
+            [
+                GhosttyTmuxActionTrace.CommandQueueEntry(kind: nil, command: "new-window"),
+                GhosttyTmuxActionTrace.CommandQueueEntry(kind: .listWindows, command: "list_windows"),
+            ],
+            flows: [GhosttyTmuxActionTrace.FlowContext(name: "tmux.newWindow", startedAt: 100)]
+        ).events
+        XCTAssertEqual(outbound.count, 1)
+        XCTAssertEqual(outbound.first?.sequence, 3)
+
+        XCTAssertEqual(
+            store.recordReceivedResponses(in: Data("%begin 1 1 0\r\n%end 1 1 0\r\n".utf8)).count,
+            0
+        )
+        XCTAssertEqual(
+            store.recordReceivedResponses(in: Data("%begin 1 2 0\r\n%end 1 2 0\r\n".utf8)).count,
+            0
+        )
+
+        let received = store.recordReceivedResponses(
+            in: Data("%begin 1 3 0\r\n%end 1 3 0\r\n".utf8)
+        )
+        XCTAssertEqual(received.count, 1)
+        XCTAssertEqual(received.first?.sequence, 3)
+    }
+
+    func testTmuxCommandTraceStoreCarriesFlowStartForLateResponses() {
+        let store = GhosttyTmuxCommandTraceStore()
+        let flow = GhosttyTmuxActionTrace.FlowContext(name: "tmux.splitPane", startedAt: 123)
+
+        let outbound = store.reserveOutbound(
+            [GhosttyTmuxActionTrace.CommandQueueEntry(kind: .paneState, command: "list_panes")],
+            flows: [flow]
+        ).events
+        XCTAssertEqual(outbound.first?.flows, [flow])
+
+        let received = store.recordReceivedResponses(
+            in: Data("%begin 1 1 0\r\n%end 1 1 0\r\n".utf8)
+        )
+        XCTAssertEqual(received.first?.flows, [flow])
+
+        let processed = store.recordProcessedResponses(
+            in: Data("%begin 1 1 0\r\n%end 1 1 0\r\n".utf8)
+        )
+        XCTAssertEqual(processed.first?.flows, [flow])
+    }
+
+    func testTmuxCommandTraceStoreCancelsFailedOutboundReservation() {
+        let store = GhosttyTmuxCommandTraceStore()
+        let flow = GhosttyTmuxActionTrace.FlowContext(name: "tmux.newWindow", startedAt: 100)
+        let failed = store.reserveOutbound(
+            [
+                GhosttyTmuxActionTrace.CommandQueueEntry(kind: nil, command: "new-window"),
+                GhosttyTmuxActionTrace.CommandQueueEntry(kind: .listWindows, command: "list_windows"),
+            ],
+            flows: [flow]
+        )
+
+        store.cancelOutboundReservation(failed)
+        XCTAssertEqual(
+            store.recordReceivedResponses(in: Data("%begin 1 1 0\r\n%end 1 1 0\r\n".utf8)).count,
+            0
+        )
+
+        let outbound = store.reserveOutbound(
+            [GhosttyTmuxActionTrace.CommandQueueEntry(kind: .listWindows, command: "list_windows")],
+            flows: [flow]
+        ).events
+        XCTAssertEqual(outbound.first?.sequence, 3)
+
+        let received = store.recordReceivedResponses(
+            in: Data("%begin 1 3 0\r\n%end 1 3 0\r\n".utf8)
+        )
+        XCTAssertEqual(received.first?.sequence, 3)
+    }
+
     func testTmuxActionTraceClassifiesInboundTopologySignals() {
         let newWindowSignals = GhosttyTmuxActionTrace.inboundSignals(
             in: Data("%session-window-changed $1 @2\n%window-add @2\n".utf8)

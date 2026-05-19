@@ -86,6 +86,11 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
                 event: "host.write.send.begin",
                 at: sendStart
             )
+            let queryReservation = GhosttyTmuxActionTrace.traceOutboundQueryCommands(
+                data,
+                event: "host.write.send.begin",
+                at: sendStart
+            )
             do {
                 try await transport.send(data)
                 GhosttyRuntimeTrace.latency(
@@ -99,6 +104,7 @@ final class TmuxControlWriteSequencer: @unchecked Sendable {
                     ]
                 )
             } catch {
+                GhosttyTmuxActionTrace.cancelOutboundQueryCommands(queryReservation)
                 GhosttyRuntimeTrace.latency(
                     "writeSequencer.send failed bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: sendStart)) error=\(String(describing: error))"
                 )
