@@ -89,6 +89,7 @@ private struct RemuxWorkspaceShell: View {
                 let isSelected = selectedTerminalID == entry.id
                 ActiveTerminalSessionView(
                     entry: entry,
+                    isSelected: isSelected,
                     shortcutStore: shortcutStore,
                     onReconnect: {
                         model.reconnectActiveSession(entry.id, source: .manualButton)
@@ -236,6 +237,7 @@ struct RemuxAppLifecycleProjection: Equatable {
 
 private struct ActiveTerminalSessionView: View {
     let entry: ActiveTerminalScreenEntry
+    let isSelected: Bool
     let shortcutStore: ShortcutStore
     let onReconnect: () -> Void
     let onShowLibrary: () -> Void
@@ -244,6 +246,7 @@ private struct ActiveTerminalSessionView: View {
         GhosttySurfaceScreen(
             model: entry.model,
             presentation: entry.presentation,
+            isSelected: isSelected,
             shortcutStore: shortcutStore,
             onReconnect: onReconnect,
             onEditConnection: onShowLibrary

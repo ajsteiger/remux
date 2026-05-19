@@ -12,6 +12,7 @@ struct GhosttySurfaceScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var model: GhosttySurfaceScreenModel
     private let presentation: GhosttySurfaceScreenPresentation
+    private let isSelected: Bool
     private let shortcutStore: ShortcutStore
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var terminalInputController = GhosttyTerminalInputController()
@@ -35,12 +36,14 @@ struct GhosttySurfaceScreen: View {
     init(
         model: GhosttySurfaceScreenModel,
         presentation: GhosttySurfaceScreenPresentation,
+        isSelected: Bool,
         shortcutStore: ShortcutStore,
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void
     ) {
         self.model = model
         self.presentation = presentation
+        self.isSelected = isSelected
         self.shortcutStore = shortcutStore
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
@@ -131,7 +134,8 @@ struct GhosttySurfaceScreen: View {
 
                         GhosttyTerminalResponderRepresentable(
                             isEnabled: interactionProjection.isInputAvailable,
-                            wantsFirstResponder: inputCoordinator.keyboardMode.enablesSystemKeyboard
+                            wantsFirstResponder: isSelected
+                                && inputCoordinator.keyboardMode.enablesSystemKeyboard
                                 && interactionProjection.isInputAvailable,
                             activationToken: inputCoordinator.terminalActivationToken,
                             sendText: sendTerminalText,
@@ -348,7 +352,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private var shouldHandleTerminalKeyboardNotification: Bool {
-        !isShortcutsSettingsPresented && shortcutEditorRequest == nil
+        isSelected && !isShortcutsSettingsPresented && shortcutEditorRequest == nil
     }
 
     private var selectionSheetBinding: Binding<GhosttySurfaceSelectionSheet?> {
@@ -449,7 +453,10 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
-        let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: phase)
+        let projection = GhosttySurfaceScreenLifecycleProjection(
+            scenePhase: phase,
+            isSelected: isSelected
+        )
 
         guard projection.shouldRefocusSystemKeyboard else { return }
         refocusSystemKeyboardIfActive()
@@ -1669,13 +1676,15 @@ private extension TerminalTheme {
 
 struct GhosttySurfaceScreenLifecycleProjection: Equatable {
     let scenePhase: ScenePhase
+    let isSelected: Bool
     let shouldRefocusSystemKeyboard: Bool
 
-    init(scenePhase: ScenePhase) {
+    init(scenePhase: ScenePhase, isSelected: Bool) {
         self.scenePhase = scenePhase
+        self.isSelected = isSelected
         switch scenePhase {
         case .active:
-            self.shouldRefocusSystemKeyboard = true
+            self.shouldRefocusSystemKeyboard = isSelected
         case .inactive:
             self.shouldRefocusSystemKeyboard = false
         case .background:

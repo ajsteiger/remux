@@ -477,21 +477,42 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
     }
 
     func testScreenLifecycleProjectionMapsActiveSceneToRefocus() {
-        let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .active)
+        let projection = GhosttySurfaceScreenLifecycleProjection(
+            scenePhase: .active,
+            isSelected: true
+        )
 
         XCTAssertEqual(projection.scenePhase, .active)
+        XCTAssertTrue(projection.isSelected)
         XCTAssertTrue(projection.shouldRefocusSystemKeyboard)
     }
 
+    func testScreenLifecycleProjectionDoesNotRefocusUnselectedActiveScene() {
+        let projection = GhosttySurfaceScreenLifecycleProjection(
+            scenePhase: .active,
+            isSelected: false
+        )
+
+        XCTAssertEqual(projection.scenePhase, .active)
+        XCTAssertFalse(projection.isSelected)
+        XCTAssertFalse(projection.shouldRefocusSystemKeyboard)
+    }
+
     func testScreenLifecycleProjectionMapsInactiveSceneWithoutRefocus() {
-        let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .inactive)
+        let projection = GhosttySurfaceScreenLifecycleProjection(
+            scenePhase: .inactive,
+            isSelected: true
+        )
 
         XCTAssertEqual(projection.scenePhase, .inactive)
         XCTAssertFalse(projection.shouldRefocusSystemKeyboard)
     }
 
     func testScreenLifecycleProjectionMapsBackgroundSceneWithoutRefocus() {
-        let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .background)
+        let projection = GhosttySurfaceScreenLifecycleProjection(
+            scenePhase: .background,
+            isSelected: true
+        )
 
         XCTAssertEqual(projection.scenePhase, .background)
         XCTAssertFalse(projection.shouldRefocusSystemKeyboard)
