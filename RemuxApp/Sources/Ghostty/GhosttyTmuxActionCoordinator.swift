@@ -22,27 +22,41 @@ enum GhosttyTmuxModelActionOutcome: Equatable, Sendable {
 }
 
 @MainActor
+protocol GhosttyTmuxActionSurfaceRouting: AnyObject {
+    var topologySnapshot: GhosttyRuntimeSurfaceTopologySnapshot { get }
+
+    func managedSurface(for id: UUID) -> GhosttyManagedSurface?
+
+    @discardableResult
+    func selectSurface(_ id: UUID, reason: String) -> Bool
+
+    func retireSurfaceAfterQueuedClose(_ id: UUID)
+}
+
+extension GhosttyRuntimeSurfaceRegistry: GhosttyTmuxActionSurfaceRouting {}
+
+@MainActor
 final class GhosttyTmuxActionCoordinator {
     typealias HostNewWindowSubmission = @MainActor () -> TmuxActionSubmissionResult?
 
-    private let surfaceRegistry: GhosttyRuntimeSurfaceRegistry
+    private let surfaceRouting: any GhosttyTmuxActionSurfaceRouting
     private let submitHostNewWindow: HostNewWindowSubmission
 
     init(
-        surfaceRegistry: GhosttyRuntimeSurfaceRegistry,
+        surfaceRegistry: any GhosttyTmuxActionSurfaceRouting,
         submitHostNewWindow: @escaping HostNewWindowSubmission
     ) {
-        self.surfaceRegistry = surfaceRegistry
+        self.surfaceRouting = surfaceRegistry
         self.submitHostNewWindow = submitHostNewWindow
     }
 
     @discardableResult
     func focusPane(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
-        guard let surface = surfaceRegistry.managedSurface(for: id) else {
+        guard let surface = surfaceRouting.managedSurface(for: id) else {
             return .missingTarget(.pane(id))
         }
 
-        surfaceRegistry.selectSurface(id, reason: "model.focusTmuxPane")
+        surfaceRouting.selectSurface(id, reason: "model.focusTmuxPane")
         let submission = surface.tmuxFocus()
         return submission.isQueued ? .queued : .localSelectionOnly(submission)
     }
@@ -89,7 +103,7 @@ final class GhosttyTmuxActionCoordinator {
         case .missing:
             return .missingTarget(.focusedPane)
         }
-        guard let surface = surfaceRegistry.managedSurface(for: surfaceID) else {
+        guard let surface = surfaceRouting.managedSurface(for: surfaceID) else {
             return .missingTarget(.focusedPane)
         }
 
@@ -109,7 +123,7 @@ final class GhosttyTmuxActionCoordinator {
 
     @discardableResult
     func closePane(_ id: UUID) -> GhosttyTmuxModelActionOutcome {
-        guard let surface = surfaceRegistry.managedSurface(for: id) else {
+        guard let surface = surfaceRouting.managedSurface(for: id) else {
             return .missingTarget(.pane(id))
         }
 
@@ -118,7 +132,7 @@ final class GhosttyTmuxActionCoordinator {
             return .rejected(submission)
         }
 
-        surfaceRegistry.retireSurfaceAfterQueuedClose(id)
+        surfaceRouting.retireSurfaceAfterQueuedClose(id)
         return .queued
     }
 
@@ -141,7 +155,7 @@ final class GhosttyTmuxActionCoordinator {
         case .missing(let target):
             return .missingTarget(target)
         }
-        guard let surface = surfaceRegistry.managedSurface(for: surfaceID) else {
+        guard let surface = surfaceRouting.managedSurface(for: surfaceID) else {
             return .missingTarget(.pane(surfaceID))
         }
 
@@ -158,7 +172,7 @@ final class GhosttyTmuxActionCoordinator {
         case .missing(let target):
             return .missingTarget(target)
         }
-        guard let surface = surfaceRegistry.managedSurface(for: surfaceID) else {
+        guard let surface = surfaceRouting.managedSurface(for: surfaceID) else {
             return .missingTarget(.focusedPane)
         }
 
@@ -167,6 +181,6 @@ final class GhosttyTmuxActionCoordinator {
     }
 
     private var targetResolver: GhosttyTmuxActionTargetResolver {
-        GhosttyTmuxActionTargetResolver(snapshot: surfaceRegistry.topologySnapshot)
+        GhosttyTmuxActionTargetResolver(snapshot: surfaceRouting.topologySnapshot)
     }
 }
