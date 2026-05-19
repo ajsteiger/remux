@@ -189,15 +189,18 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         GhosttyRuntimeTrace.diagnostics(
             "tree.update bounds=\(diagnosticRect(bounds)) top=\(ghosttyDiagnosticShortID(projection.topLevel?.id)) \(materializationContext.diagnosticSelectionSummary())"
         )
+        let needsVisibleTreeLayout = previousProjection != projection ||
+            previousSourceIdentity != materializationContext.sourceIdentity
         syncAttachedViews()
-        layoutPresentationOverlay()
-        if previousProjection != projection || previousSourceIdentity != materializationContext.sourceIdentity {
-            setNeedsLayout()
-        }
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "ui.tree.update.end",
             fields: treeUpdateTraceFields(projection: self.projection)
         )
+        if needsVisibleTreeLayout {
+            flushVisibleTreeLayoutIfPossible()
+        } else {
+            layoutPresentationOverlay()
+        }
     }
 
     override func layoutSubviews() {
@@ -385,6 +388,17 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         guard let presentationOverlayView else { return }
         presentationOverlayView.frame = bounds
         bringSubviewToFront(presentationOverlayView)
+    }
+
+    private func flushVisibleTreeLayoutIfPossible() {
+        guard bounds.width > 1, bounds.height > 1 else {
+            setNeedsLayout()
+            layoutPresentationOverlay()
+            return
+        }
+
+        layoutVisibleTree()
+        layoutPresentationOverlay()
     }
 
     private func syncAttachedViews() {
