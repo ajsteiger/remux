@@ -340,7 +340,27 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
             outcome: .missingTarget(.focusedPane)
         )
 
-        XCTAssertEqual(effect, .cancelRefocus(ownsKeyboardTransition: false))
+        XCTAssertNil(effect)
+        XCTAssertFalse(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorQueuedDismissesSheetEvenWhenPrepareWasIgnored() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+
+        XCTAssertNil(
+            coordinator.prepare(
+                actionEffect: .refocusAndDismissOnQueued,
+                activeLeafID: UUID(),
+                keyboardMode: .hidden
+            )
+        )
+
+        let effect = coordinator.complete(
+            actionEffect: .refocusAndDismissOnQueued,
+            outcome: .queued
+        )
+
+        XCTAssertEqual(effect, .dismissSelectionSheet)
         XCTAssertFalse(coordinator.isActive)
     }
 

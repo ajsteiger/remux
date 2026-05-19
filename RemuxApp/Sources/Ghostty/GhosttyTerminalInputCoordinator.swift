@@ -209,6 +209,7 @@ struct GhosttyTopologyActionInputRefocusCoordinator: Equatable {
     ) -> Effect? {
         guard outcome.isQueued else {
             guard actionEffect.requestsInputRefocus else { return nil }
+            guard pendingRefocus.isActive else { return nil }
 
             let ownsKeyboardTransition = pendingRefocus.ownsKeyboardTransition
             pendingRefocus.cancel()
