@@ -345,6 +345,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         topologySelection.selectedActiveLeafID
     }
 
+    private var surfaceInputRouter: GhosttyRuntimeSurfaceInputRouter {
+        GhosttyRuntimeSurfaceInputRouter(
+            selectedActiveLeafID: selectedActiveLeafID,
+            managedSurfaceStore: managedSurfaceStore
+        )
+    }
+
     private struct PhonePresentationTarget {
         let leafID: UUID
     }
@@ -821,17 +828,73 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         ghosttyDiagnosticShortID(id)
     }
 
+    private func elapsedMilliseconds(from start: UInt64?) -> String {
+        guard let start else { return "n/a" }
+        return GhosttyRuntimeTrace.elapsedMilliseconds(from: start)
+    }
+
+    private func updateDebugSummaryForSelectionReadOutcome(
+        _ outcome: GhosttyTerminalSelectionReadOutcome
+    ) {
+        switch outcome {
+        case .text(let selection):
+            updateDebugSummary("read selection bytes=\(selection.lengthOfBytes(using: .utf8))")
+        case .noFocusedSurface:
+            updateDebugSummary("copy dropped: no focused surface")
+        case .missingSurface:
+            updateDebugSummary("copy dropped: missing surface")
+        case .emptySelection:
+            updateDebugSummary("copy dropped: empty selection")
+        }
+    }
+
+    private func updateDebugSummaryForSelectionAvailabilityOutcome(
+        _ outcome: GhosttyTerminalSelectionAvailabilityOutcome
+    ) {
+        switch outcome {
+        case .available:
+            updateDebugSummary("selection available")
+        case .noFocusedSurface:
+            updateDebugSummary("selection check dropped: no focused surface")
+        case .missingSurface:
+            updateDebugSummary("selection check dropped: missing surface")
+        case .emptySelection:
+            updateDebugSummary("selection unavailable")
+        }
+    }
+
+    private func updateDebugSummaryForMouseOutcome(
+        _ outcome: GhosttyMouseInputSubmissionOutcome,
+        focusedKind: String,
+        targetedKind: String,
+        rejectionTarget: String
+    ) {
+        switch outcome {
+        case .sent:
+            return
+        case .noFocusedSurface:
+            updateDebugSummary("\(focusedKind) dropped: no focused surface")
+        case .missingTarget:
+            updateDebugSummary("\(targetedKind) dropped: target surface missing")
+        case .transportUnavailable:
+            updateDebugSummary("\(targetedKind) dropped: terminal transport unavailable")
+        case .surfaceRejected:
+            updateDebugSummary("\(targetedKind) rejected by \(rejectionTarget)")
+        }
+    }
+
     @MainActor
     @discardableResult
     func sendInputToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult {
         guard !text.isEmpty else { return .empty }
-        let start = GhosttyRuntimeTrace.nowNanos()
-        guard let surface = selectedActiveSurface else {
+        let start = GhosttyRuntimeTrace.latencyEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        let router = surfaceInputRouter
+        guard let surface = router.selectedActiveSurface else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendInput drop-no-surface bytes=\(text.lengthOfBytes(using: .utf8)) \(diagnosticSelectionSummary())"
             )
             GhosttyRuntimeTrace.latency(
-                "registry.sendInput dropped noSurface bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
+                "registry.sendInput dropped noSurface bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
             )
             updateDebugSummary("input dropped: no focused surface")
             return .noFocusedSurface
@@ -843,13 +906,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.latency(
             "registry.sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())}"
         )
-        let result = surface.sendInput(text)
+        let result = router.sendInput(text, to: surface)
         guard result.isAccepted else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendInput rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
             )
             GhosttyRuntimeTrace.latency(
-                "registry.sendInput rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
+                "registry.sendInput rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
             )
             updateDebugSummary("input rejected by focused surface")
             return result
@@ -859,7 +922,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             "sendInput accepted result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
         GhosttyRuntimeTrace.latency(
-            "registry.sendInput accepted result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
+            "registry.sendInput accepted result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())}"
         )
         return result
     }
@@ -868,7 +931,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @discardableResult
     func sendPasteToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult {
         guard !text.isEmpty else { return .empty }
-        guard let surface = selectedActiveSurface else {
+        let router = surfaceInputRouter
+        guard let surface = router.selectedActiveSurface else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendPaste drop-no-surface bytes=\(text.lengthOfBytes(using: .utf8)) \(diagnosticSelectionSummary())"
             )
@@ -879,7 +943,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.diagnostics(
             "sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
-        let result = surface.sendPaste(text)
+        let result = router.sendPaste(text, to: surface)
         guard result.isAccepted else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendPaste rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
@@ -896,56 +960,47 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     @MainActor
     func readSelectionFromFocusedSurface() -> GhosttyTerminalSelectionReadOutcome {
-        guard let surfaceID = selectedActiveLeafID else {
+        let outcome = surfaceInputRouter.readSelectionFromFocusedSurface()
+        guard outcome != .noFocusedSurface else {
             updateDebugSummary("copy dropped: no focused surface")
-            return .noFocusedSurface
+            return outcome
         }
 
-        return readSelection(from: surfaceID)
+        updateDebugSummaryForSelectionReadOutcome(outcome)
+        return outcome
     }
 
     @MainActor
     func readSelection(from surfaceID: UUID) -> GhosttyTerminalSelectionReadOutcome {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
-            updateDebugSummary("copy dropped: missing surface")
-            return .missingSurface(surfaceID)
-        }
-
-        guard let selection = surface.readSelection(), !selection.isEmpty else {
-            updateDebugSummary("copy dropped: empty selection")
-            return .emptySelection
-        }
-
-        updateDebugSummary("read selection bytes=\(selection.lengthOfBytes(using: .utf8))")
-        return .text(selection)
+        let outcome = surfaceInputRouter.readSelection(from: surfaceID)
+        updateDebugSummaryForSelectionReadOutcome(outcome)
+        return outcome
     }
 
     @MainActor
     func focusedSelectionAvailability() -> GhosttyTerminalSelectionAvailabilityOutcome {
-        guard let surfaceID = selectedActiveLeafID else {
+        let outcome = surfaceInputRouter.focusedSelectionAvailability()
+        guard outcome != .noFocusedSurface else {
             updateDebugSummary("selection check dropped: no focused surface")
-            return .noFocusedSurface
+            return outcome
         }
 
-        return selectionAvailability(for: surfaceID)
+        updateDebugSummaryForSelectionAvailabilityOutcome(outcome)
+        return outcome
     }
 
     @MainActor
     func selectionAvailability(for surfaceID: UUID) -> GhosttyTerminalSelectionAvailabilityOutcome {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
-            updateDebugSummary("selection check dropped: missing surface")
-            return .missingSurface(surfaceID)
-        }
-
-        let hasSelection = surface.hasSelection()
-        updateDebugSummary(hasSelection ? "selection available" : "selection unavailable")
-        return hasSelection ? .available : .emptySelection
+        let outcome = surfaceInputRouter.selectionAvailability(for: surfaceID)
+        updateDebugSummaryForSelectionAvailabilityOutcome(outcome)
+        return outcome
     }
 
     @MainActor
     @discardableResult
     func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> FocusedTerminalInputSubmissionResult {
-        guard let surface = selectedActiveSurface else {
+        let router = surfaceInputRouter
+        guard let surface = router.selectedActiveSurface else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendKey drop-no-surface event=\(event) \(diagnosticSelectionSummary())"
             )
@@ -956,7 +1011,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeTrace.diagnostics(
             "sendKey begin event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
         )
-        let result = surface.sendKeyEvent(event)
+        let result = router.sendKeyEvent(event, to: surface)
         guard result.isAccepted else {
             GhosttyRuntimeTrace.diagnostics(
                 "sendKey rejected result=\(result) event=\(event) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
@@ -974,17 +1029,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     @MainActor
     @discardableResult
     func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = selectedActiveSurface else {
-            updateDebugSummary("mouse button dropped: no focused surface")
-            return .noFocusedSurface
-        }
-
-        guard surface.sendMouseButton(event) else {
-            updateDebugSummary("mouse button rejected by focused surface")
-            return .surfaceRejected
-        }
-
-        return .sent
+        let outcome = surfaceInputRouter.sendMouseButtonToFocusedSurface(event)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse button",
+            targetedKind: "mouse button",
+            rejectionTarget: "focused surface"
+        )
+        return outcome
     }
 
     @MainActor
@@ -993,37 +1045,40 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = selectedActiveSurface else {
-            updateDebugSummary("mouse position dropped: no focused surface")
-            return .noFocusedSurface
-        }
-
-        surface.sendMousePosition(position, mods: mods)
-        return .sent
+        let outcome = surfaceInputRouter.sendMousePositionToFocusedSurface(position, mods: mods)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse position",
+            targetedKind: "mouse position",
+            rejectionTarget: "focused surface"
+        )
+        return outcome
     }
 
     @MainActor
     @discardableResult
     func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = selectedActiveSurface else {
-            updateDebugSummary("mouse scroll dropped: no focused surface")
-            return .noFocusedSurface
-        }
-
-        surface.sendMouseScroll(event)
-        return .sent
+        let outcome = surfaceInputRouter.sendMouseScrollToFocusedSurface(event)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse scroll",
+            targetedKind: "mouse scroll",
+            rejectionTarget: "focused surface"
+        )
+        return outcome
     }
 
     @MainActor
     @discardableResult
     func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = selectedActiveSurface else {
-            updateDebugSummary("mouse pressure dropped: no focused surface")
-            return .noFocusedSurface
-        }
-
-        surface.sendMousePressure(event)
-        return .sent
+        let outcome = surfaceInputRouter.sendMousePressureToFocusedSurface(event)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse pressure",
+            targetedKind: "mouse pressure",
+            rejectionTarget: "focused surface"
+        )
+        return outcome
     }
 
     @MainActor
@@ -1032,17 +1087,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseButtonEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
-            updateDebugSummary("mouse button dropped: target surface missing")
-            return .missingTarget(surfaceID)
-        }
-
-        guard surface.sendMouseButton(event) else {
-            updateDebugSummary("mouse button rejected by target surface")
-            return .surfaceRejected
-        }
-
-        return .sent
+        let outcome = surfaceInputRouter.sendMouseButton(to: surfaceID, event)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse button",
+            targetedKind: "mouse button",
+            rejectionTarget: "target surface"
+        )
+        return outcome
     }
 
     @MainActor
@@ -1052,13 +1104,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
-            updateDebugSummary("mouse position dropped: target surface missing")
-            return .missingTarget(surfaceID)
-        }
-
-        surface.sendMousePosition(position, mods: mods)
-        return .sent
+        let outcome = surfaceInputRouter.sendMousePosition(to: surfaceID, position, mods: mods)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse position",
+            targetedKind: "mouse position",
+            rejectionTarget: "target surface"
+        )
+        return outcome
     }
 
     @MainActor
@@ -1067,13 +1120,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseScrollEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
-            updateDebugSummary("mouse scroll dropped: target surface missing")
-            return .missingTarget(surfaceID)
-        }
-
-        surface.sendMouseScroll(event)
-        return .sent
+        let outcome = surfaceInputRouter.sendMouseScroll(to: surfaceID, event)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse scroll",
+            targetedKind: "mouse scroll",
+            rejectionTarget: "target surface"
+        )
+        return outcome
     }
 
     @MainActor
@@ -1082,31 +1136,24 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         to surfaceID: UUID,
         _ event: GhosttySurfaceMousePressureEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
-            updateDebugSummary("mouse pressure dropped: target surface missing")
-            return .missingTarget(surfaceID)
-        }
-
-        surface.sendMousePressure(event)
-        return .sent
+        let outcome = surfaceInputRouter.sendMousePressure(to: surfaceID, event)
+        updateDebugSummaryForMouseOutcome(
+            outcome,
+            focusedKind: "mouse pressure",
+            targetedKind: "mouse pressure",
+            rejectionTarget: "target surface"
+        )
+        return outcome
     }
 
     @MainActor
     func focusedSurfaceMouseCaptured() -> Bool {
-        guard let surface = selectedActiveSurface else {
-            return false
-        }
-
-        return surface.isMouseCaptured()
+        surfaceInputRouter.focusedSurfaceMouseCaptured()
     }
 
     @MainActor
     func isMouseCaptured(for surfaceID: UUID) -> Bool {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else {
-            return false
-        }
-
-        return surface.isMouseCaptured()
+        surfaceInputRouter.isMouseCaptured(for: surfaceID)
     }
 
     func runtimeCreateSurface(
@@ -1919,11 +1966,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
         }
         return managed
-    }
-
-    private var selectedActiveSurface: GhosttyManagedSurface? {
-        guard let surfaceID = selectedActiveLeafID else { return nil }
-        return managedSurfaceStore.managedSurface(for: surfaceID)
     }
 
     private func recordSurfaceDisplayUpdate(surfaceID: UUID, size: CGSize, scale: CGFloat) {
