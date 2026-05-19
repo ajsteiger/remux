@@ -293,6 +293,30 @@ registry_notify_begin = registry_callback_event("registry.notifyChanged.begin")
 registry_notify_end = registry_callback_event("registry.notifyChanged.end")
 registry_managed_create_begin = registry_callback_event("registry.managedSurface.create.begin")
 registry_managed_create_end = registry_callback_event("registry.managedSurface.create.end")
+factory_config_begin = registry_callback_event("managedSurface.factory.config.begin")
+factory_config_end = registry_callback_event("managedSurface.factory.config.end")
+factory_view_allocate_begin = registry_callback_event("managedSurface.factory.view.allocate.begin")
+factory_view_allocate_end = registry_callback_event("managedSurface.factory.view.allocate.end")
+factory_platform_config_begin = registry_callback_event("managedSurface.factory.platformConfig.begin")
+factory_platform_config_end = registry_callback_event("managedSurface.factory.platformConfig.end")
+factory_native_surface_new_begin = registry_callback_event("managedSurface.factory.nativeSurface.new.begin")
+factory_native_surface_new_end = registry_callback_event("managedSurface.factory.nativeSurface.new.end")
+factory_lifecycle_bind_begin = registry_callback_event("managedSurface.factory.lifecycleBind.begin")
+factory_lifecycle_bind_end = registry_callback_event("managedSurface.factory.lifecycleBind.end")
+factory_control_surface_init_begin = registry_callback_event("managedSurface.factory.controlSurface.init.begin")
+factory_control_surface_init_end = registry_callback_event("managedSurface.factory.controlSurface.init.end")
+factory_initial_state_begin = registry_callback_event("managedSurface.factory.initialState.begin")
+factory_initial_state_end = registry_callback_event("managedSurface.factory.initialState.end")
+factory_scroll_state_begin = registry_callback_event("managedSurface.factory.scrollState.begin")
+factory_scroll_state_end = registry_callback_event("managedSurface.factory.scrollState.end")
+factory_managed_init_begin = registry_callback_event("managedSurface.factory.managed.init.begin")
+factory_managed_init_end = registry_callback_event("managedSurface.factory.managed.init.end")
+factory_display_callback_assign_begin = registry_callback_event(
+    "managedSurface.factory.displayCallback.assign.begin"
+)
+factory_display_callback_assign_end = registry_callback_event(
+    "managedSurface.factory.displayCallback.assign.end"
+)
 registry_managed_register_begin = registry_callback_event("registry.managedSurface.register.begin")
 registry_managed_register_end = registry_callback_event("registry.managedSurface.register.end")
 registry_stage_presentation_begin = registry_callback_event("registry.stagePresentation.begin")
@@ -585,6 +609,111 @@ SEGMENTS = [
     Segment(
         "managed_create_begin->managed_create_end",
         registry_managed_create_begin,
+        registry_managed_create_end,
+    ),
+    Segment(
+        "managed_create_begin->factory_config_begin",
+        registry_managed_create_begin,
+        factory_config_begin,
+    ),
+    Segment(
+        "factory_config_begin->factory_config_end",
+        factory_config_begin,
+        factory_config_end,
+    ),
+    Segment(
+        "factory_config_end->factory_view_allocate_begin",
+        factory_config_end,
+        factory_view_allocate_begin,
+    ),
+    Segment(
+        "factory_view_allocate_begin->factory_view_allocate_end",
+        factory_view_allocate_begin,
+        factory_view_allocate_end,
+    ),
+    Segment(
+        "factory_view_allocate_end->factory_platform_config_begin",
+        factory_view_allocate_end,
+        factory_platform_config_begin,
+    ),
+    Segment(
+        "factory_platform_config_begin->factory_platform_config_end",
+        factory_platform_config_begin,
+        factory_platform_config_end,
+    ),
+    Segment(
+        "factory_platform_config_end->factory_native_surface_new_begin",
+        factory_platform_config_end,
+        factory_native_surface_new_begin,
+    ),
+    Segment(
+        "factory_native_surface_new_begin->factory_native_surface_new_end",
+        factory_native_surface_new_begin,
+        factory_native_surface_new_end,
+    ),
+    Segment(
+        "factory_native_surface_new_end->factory_lifecycle_bind_begin",
+        factory_native_surface_new_end,
+        factory_lifecycle_bind_begin,
+    ),
+    Segment(
+        "factory_lifecycle_bind_begin->factory_lifecycle_bind_end",
+        factory_lifecycle_bind_begin,
+        factory_lifecycle_bind_end,
+    ),
+    Segment(
+        "factory_lifecycle_bind_end->factory_control_surface_init_begin",
+        factory_lifecycle_bind_end,
+        factory_control_surface_init_begin,
+    ),
+    Segment(
+        "factory_control_surface_init_begin->factory_control_surface_init_end",
+        factory_control_surface_init_begin,
+        factory_control_surface_init_end,
+    ),
+    Segment(
+        "factory_control_surface_init_end->factory_initial_state_begin",
+        factory_control_surface_init_end,
+        factory_initial_state_begin,
+    ),
+    Segment(
+        "factory_initial_state_begin->factory_initial_state_end",
+        factory_initial_state_begin,
+        factory_initial_state_end,
+    ),
+    Segment(
+        "factory_initial_state_end->factory_scroll_state_begin",
+        factory_initial_state_end,
+        factory_scroll_state_begin,
+    ),
+    Segment(
+        "factory_scroll_state_begin->factory_scroll_state_end",
+        factory_scroll_state_begin,
+        factory_scroll_state_end,
+    ),
+    Segment(
+        "factory_scroll_state_end->factory_managed_init_begin",
+        factory_scroll_state_end,
+        factory_managed_init_begin,
+    ),
+    Segment(
+        "factory_managed_init_begin->factory_managed_init_end",
+        factory_managed_init_begin,
+        factory_managed_init_end,
+    ),
+    Segment(
+        "factory_managed_init_end->factory_display_callback_assign_begin",
+        factory_managed_init_end,
+        factory_display_callback_assign_begin,
+    ),
+    Segment(
+        "factory_display_callback_assign_begin->factory_display_callback_assign_end",
+        factory_display_callback_assign_begin,
+        factory_display_callback_assign_end,
+    ),
+    Segment(
+        "factory_display_callback_assign_end->managed_create_end",
+        factory_display_callback_assign_end,
         registry_managed_create_end,
     ),
     Segment(
@@ -1052,6 +1181,26 @@ Remux flow t=27060000 flow=tmux.splitPane event=registry.debugSummary.update.end
 Remux flow t=27070000 flow=tmux.splitPane event=registry.notifyChanged.begin since_ms=7.070
 Remux flow t=27090000 flow=tmux.splitPane event=registry.notifyChanged.end since_ms=7.090
 Remux flow t=27100000 flow=tmux.splitPane event=registry.managedSurface.create.begin since_ms=7.100
+Remux flow t=27110000 flow=tmux.splitPane event=managedSurface.factory.config.begin since_ms=7.110
+Remux flow t=27120000 flow=tmux.splitPane event=managedSurface.factory.config.end since_ms=7.120
+Remux flow t=27130000 flow=tmux.splitPane event=managedSurface.factory.view.allocate.begin since_ms=7.130
+Remux flow t=27150000 flow=tmux.splitPane event=managedSurface.factory.view.allocate.end since_ms=7.150
+Remux flow t=27160000 flow=tmux.splitPane event=managedSurface.factory.platformConfig.begin since_ms=7.160
+Remux flow t=27170000 flow=tmux.splitPane event=managedSurface.factory.platformConfig.end since_ms=7.170
+Remux flow t=27180000 flow=tmux.splitPane event=managedSurface.factory.nativeSurface.new.begin since_ms=7.180
+Remux flow t=27300000 flow=tmux.splitPane event=managedSurface.factory.nativeSurface.new.end since_ms=7.300
+Remux flow t=27310000 flow=tmux.splitPane event=managedSurface.factory.lifecycleBind.begin since_ms=7.310
+Remux flow t=27320000 flow=tmux.splitPane event=managedSurface.factory.lifecycleBind.end since_ms=7.320
+Remux flow t=27330000 flow=tmux.splitPane event=managedSurface.factory.controlSurface.init.begin since_ms=7.330
+Remux flow t=27340000 flow=tmux.splitPane event=managedSurface.factory.controlSurface.init.end since_ms=7.340
+Remux flow t=27345000 flow=tmux.splitPane event=managedSurface.factory.initialState.begin since_ms=7.345
+Remux flow t=27360000 flow=tmux.splitPane event=managedSurface.factory.initialState.end since_ms=7.360
+Remux flow t=27365000 flow=tmux.splitPane event=managedSurface.factory.scrollState.begin since_ms=7.365
+Remux flow t=27380000 flow=tmux.splitPane event=managedSurface.factory.scrollState.end since_ms=7.380
+Remux flow t=27385000 flow=tmux.splitPane event=managedSurface.factory.managed.init.begin since_ms=7.385
+Remux flow t=27390000 flow=tmux.splitPane event=managedSurface.factory.managed.init.end since_ms=7.390
+Remux flow t=27392000 flow=tmux.splitPane event=managedSurface.factory.displayCallback.assign.begin since_ms=7.392
+Remux flow t=27395000 flow=tmux.splitPane event=managedSurface.factory.displayCallback.assign.end since_ms=7.395
 Remux flow t=27400000 flow=tmux.splitPane event=registry.managedSurface.create.end since_ms=7.400
 Remux flow t=27450000 flow=tmux.splitPane event=registry.insertSplit.parentLookup.begin since_ms=7.450
 Remux flow t=27500000 flow=tmux.splitPane event=registry.insertSplit.parentLookup.end since_ms=7.500
@@ -1115,6 +1264,21 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     assert "tree_install_begin->tree_install_end: n=1 p50_ms=0.500" in output
     assert "tree_handle_write_end->topology_installed: n=1 p50_ms=0.800" in output
     assert "managed_create_begin->managed_create_end: n=1 p50_ms=0.300" in output
+    assert "factory_config_begin->factory_config_end: n=1 p50_ms=0.010" in output
+    assert (
+        "factory_view_allocate_begin->factory_view_allocate_end: "
+        "n=1 p50_ms=0.020"
+    ) in output
+    assert (
+        "factory_native_surface_new_begin->factory_native_surface_new_end: "
+        "n=1 p50_ms=0.120"
+    ) in output
+    assert "factory_initial_state_begin->factory_initial_state_end: n=1 p50_ms=0.015" in output
+    assert "factory_scroll_state_begin->factory_scroll_state_end: n=1 p50_ms=0.015" in output
+    assert (
+        "factory_display_callback_assign_end->managed_create_end: "
+        "n=1 p50_ms=0.005"
+    ) in output
     assert "insert_parent_lookup_begin->insert_parent_lookup_end: n=1 p50_ms=0.050" in output
     assert "managed_register_begin->managed_register_end: n=1 p50_ms=0.100" in output
     assert "stage_presentation_begin->stage_presentation_end: n=1 p50_ms=0.050" in output
