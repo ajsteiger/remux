@@ -104,6 +104,9 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         onRuntimeStateChange: onRuntimeStateChange
     )
     private var didTraceTerminalReady = false
+    // Root removal can precede SwiftUI dismantling the old terminal view.
+    // Keep the native runtime alive until the removed view reports dismantle.
+    private var stoppedRuntimeRemovalHold: GhosttyStoppedRuntimeRemovalHold?
 
     init(
         target: TmuxConnectionTarget,
@@ -267,17 +270,60 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     }
 
     func stop() {
+        _ = stop(
+            retainStoppedRuntimeUntilModelRelease: false,
+            publishModelState: true
+        )
+    }
+
+    @discardableResult
+    func stopForRemoval() -> Bool {
+        stop(
+            retainStoppedRuntimeUntilModelRelease: true,
+            publishModelState: false
+        )
+    }
+
+    @discardableResult
+    private func stop(
+        retainStoppedRuntimeUntilModelRelease: Bool,
+        publishModelState: Bool
+    ) -> Bool {
         GhosttyRuntimeTrace.flowEvent(sessionOpenFlowID, event: "model.stop")
         runtimeStateReporter.suppress()
-        clearCommandFailureMessage()
+        if publishModelState {
+            clearCommandFailureMessage()
+        }
         debugLatencyProbeController.cancel()
         runtimePrecreationController.clear()
-        hostSessionSlot.stopCurrent(retainingStoppedSessionFor: {
-            tearDownRuntimeSurfacesBeforeRuntimeRelease()
-        })
-        state = .idle
-        debugStatus = "stopped"
-        failureReason = nil
+        let stoppedRuntime = hostSessionSlot.stopCurrent(
+            retainingStoppedSessionFor: {
+                tearDownRuntimeSurfacesBeforeRuntimeRelease(
+                    retainingSurfaceViewsForRuntimeRemoval: retainStoppedRuntimeUntilModelRelease
+                )
+            },
+            retainingHostSurfaceUntilSessionRelease: retainStoppedRuntimeUntilModelRelease
+        )
+        let retainedStoppedRuntime = retainOrReleaseStoppedRuntime(
+            stoppedRuntime,
+            untilModelRelease: retainStoppedRuntimeUntilModelRelease
+        )
+        if publishModelState {
+            state = .idle
+            debugStatus = "stopped"
+            failureReason = nil
+        }
+        return retainedStoppedRuntime
+    }
+
+    #if DEBUG
+    var stoppedRuntimeRemovalHoldRetainedForTesting: Bool {
+        stoppedRuntimeRemovalHold?.isEmpty == false
+    }
+    #endif
+
+    func releaseStoppedRuntimeAfterViewDismantle() {
+        stoppedRuntimeRemovalHold = nil
     }
 
     func reportRuntimeReadinessIfNeeded() {
@@ -1161,12 +1207,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         failureReason = transition.reason
         debugStatus = transition.reason.message
         reportRuntimeStateIfNeeded(source: .runtime)
-        let failedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
+        let stoppedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
             tearDownRuntimeSurfacesBeforeRuntimeRelease()
         })
 
-        Task {
-            await failedSession?.close(disposition: transition.closeDisposition)
+        Task { @MainActor [
+            failedSession = stoppedSession.session,
+            teardownHold = stoppedSession.teardownResult,
+            closeDisposition = transition.closeDisposition
+        ] in
+            await failedSession?.close(disposition: closeDisposition)
+            withExtendedLifetime(teardownHold) {}
         }
     }
 
@@ -1189,20 +1240,61 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         failureReason = transition.reason
         debugStatus = transition.reason.message
         reportRuntimeStateIfNeeded(source: transition.reportSource)
-        let failedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
+        let stoppedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
             tearDownRuntimeSurfacesBeforeRuntimeRelease()
         })
 
-        Task {
-            await failedSession?.close(disposition: transition.closeDisposition)
+        Task { @MainActor [
+            failedSession = stoppedSession.session,
+            teardownHold = stoppedSession.teardownResult,
+            closeDisposition = transition.closeDisposition
+        ] in
+            await failedSession?.close(disposition: closeDisposition)
+            withExtendedLifetime(teardownHold) {}
         }
     }
 
-    private func tearDownRuntimeSurfacesBeforeRuntimeRelease() {
-        // Runtime-managed ghostty_surface_t handles must be released before
-        // the owning GhosttyKitRuntime/ghostty_app_t is allowed to deinit.
-        surfaceRegistry.prepareForRuntimeTeardown()
-        surfaceRegistry.reset()
+    private func tearDownRuntimeSurfacesBeforeRuntimeRelease(
+        retainingSurfaceViewsForRuntimeRemoval: Bool = false
+    ) -> GhosttyRuntimeSurfaceTeardownHold {
+        // Runtime-removal teardown keeps surfaces with the old app until view
+        // dismantle; ordinary stop keeps the existing pre-release semantics.
+        let teardownHold = surfaceRegistry.prepareForRuntimeTeardown(
+            retainingSurfaceViewsForRuntimeRemoval: retainingSurfaceViewsForRuntimeRemoval
+        )
+        surfaceRegistry.resetAfterRuntimeTeardown(
+            notifyChange: !retainingSurfaceViewsForRuntimeRemoval
+        )
+        return teardownHold
+    }
+
+    @discardableResult
+    private func retainOrReleaseStoppedRuntime(
+        _ stoppedRuntime: (
+            session: GhosttyHostSession?,
+            teardownResult: GhosttyRuntimeSurfaceTeardownHold
+        ),
+        untilModelRelease: Bool
+    ) -> Bool {
+        let hold = GhosttyStoppedRuntimeRemovalHold(
+            session: stoppedRuntime.session,
+            surfaceHold: stoppedRuntime.teardownResult
+        )
+        guard !hold.isEmpty else {
+            if !untilModelRelease {
+                stoppedRuntimeRemovalHold = nil
+            }
+            return false
+        }
+
+        guard untilModelRelease else {
+            stoppedRuntimeRemovalHold = nil
+            withExtendedLifetime(hold) {}
+            return false
+        }
+
+        stoppedRuntimeRemovalHold = hold
+        return true
     }
 
     private func traceFields(errorDescription: String?) -> [String: String] {
@@ -1253,5 +1345,29 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         debugLatencyProbeController.scheduleIfNeeded(readiness: terminalReadinessSnapshot) { [weak self] in
             self?.submitDebugLatencyProbeIfReady()
         }
+    }
+}
+
+private final class GhosttyStoppedRuntimeRemovalHold {
+    private var session: GhosttyHostSession?
+    private var surfaceHold: GhosttyRuntimeSurfaceTeardownHold?
+
+    init(
+        session: GhosttyHostSession?,
+        surfaceHold: GhosttyRuntimeSurfaceTeardownHold
+    ) {
+        self.session = session
+        self.surfaceHold = surfaceHold
+    }
+
+    var isEmpty: Bool {
+        session == nil && (surfaceHold?.retainedSurfaceCount ?? 0) == 0
+    }
+
+    deinit {
+        let retainedSurfaceHold = surfaceHold
+        session = nil
+        withExtendedLifetime(retainedSurfaceHold) {}
+        surfaceHold = nil
     }
 }

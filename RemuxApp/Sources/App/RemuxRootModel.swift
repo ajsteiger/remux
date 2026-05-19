@@ -55,6 +55,11 @@ struct TerminalRuntimeAttemptKey: Hashable, Sendable {
     }
 }
 
+enum GhosttyTerminalScreenViewComponent: Hashable, Sendable {
+    case hostSurface
+    case surfaceTree
+}
+
 struct ActiveTerminalScreenEntry: Identifiable {
     let id: SavedWorkspace.ID
     let instanceID: UUID
@@ -135,6 +140,10 @@ final class RemuxRootModel: ObservableObject {
     private let librarySSHPrewarmCoordinator: RemuxLibrarySSHPrewarmCoordinator
     private let terminalScreenModelFactory: TerminalScreenModelFactory
     private var terminalScreenModels: [TerminalRuntimeAttemptKey: GhosttySurfaceScreenModel] = [:]
+    private var retiredTerminalScreenModels: [TerminalRuntimeAttemptKey: RetiredTerminalScreenModel] = [:]
+    private var mountedTerminalScreenViewComponentCounts: [
+        TerminalRuntimeAttemptKey: [GhosttyTerminalScreenViewComponent: Int]
+    ] = [:]
     private var currentAppLifecyclePhase: GhosttySurfaceScreenModel.AppLifecyclePhase?
 
     init(
@@ -669,6 +678,54 @@ final class RemuxRootModel: ObservableObject {
         terminalScreenModels[TerminalRuntimeAttemptKey(session: session)] != nil
     }
 
+    func terminalScreenViewDidMount(
+        workspaceID: SavedWorkspace.ID,
+        instanceID: UUID,
+        component: GhosttyTerminalScreenViewComponent
+    ) {
+        let key = TerminalRuntimeAttemptKey(
+            workspaceID: workspaceID,
+            instanceID: instanceID
+        )
+        mountedTerminalScreenViewComponentCounts[key, default: [:]][component, default: 0] += 1
+    }
+
+    func terminalScreenViewDidDismantle(
+        workspaceID: SavedWorkspace.ID,
+        instanceID: UUID,
+        component: GhosttyTerminalScreenViewComponent
+    ) {
+        let key = TerminalRuntimeAttemptKey(
+            workspaceID: workspaceID,
+            instanceID: instanceID
+        )
+        decrementMountedTerminalScreenViewComponent(key: key, component: component)
+        guard var retired = retiredTerminalScreenModels[key] else { return }
+
+        retired.recordDismantle(component: component)
+        guard retired.isReadyToRelease else {
+            retiredTerminalScreenModels[key] = retired
+            return
+        }
+
+        retired.model.releaseStoppedRuntimeAfterViewDismantle()
+        retiredTerminalScreenModels[key] = nil
+    }
+
+    private func decrementMountedTerminalScreenViewComponent(
+        key: TerminalRuntimeAttemptKey,
+        component: GhosttyTerminalScreenViewComponent
+    ) {
+        guard var counts = mountedTerminalScreenViewComponentCounts[key] else { return }
+        guard let count = counts[component], count > 0 else { return }
+        if count == 1 {
+            counts[component] = nil
+        } else {
+            counts[component] = count - 1
+        }
+        mountedTerminalScreenViewComponentCounts[key] = counts.isEmpty ? nil : counts
+    }
+
     private func closePreparedTransport(for workspaceID: SavedWorkspace.ID) {
         preparedTransportCoordinator.remove(workspaceID: workspaceID)
     }
@@ -803,9 +860,27 @@ final class RemuxRootModel: ObservableObject {
         for key in removed.keys {
             terminalScreenModels[key] = nil
         }
-        for model in removed.values {
-            model.stop()
+        for (key, model) in removed {
+            if model.stopForRemoval() {
+                retainRetiredTerminalScreenModel(model, key: key)
+            }
         }
+    }
+
+    private func retainRetiredTerminalScreenModel(
+        _ model: GhosttySurfaceScreenModel,
+        key: TerminalRuntimeAttemptKey
+    ) {
+        let pendingDismantleComponentCounts = mountedTerminalScreenViewComponentCounts[key] ?? [:]
+        guard !pendingDismantleComponentCounts.isEmpty else {
+            model.releaseStoppedRuntimeAfterViewDismantle()
+            return
+        }
+
+        retiredTerminalScreenModels[key] = RetiredTerminalScreenModel(
+            model: model,
+            pendingDismantleComponentCounts: pendingDismantleComponentCounts
+        )
     }
 
     private func transitionToFailed(_ error: any Error) {
@@ -928,5 +1003,25 @@ final class RemuxRootModel: ObservableObject {
 
     private func sessionReconnectFlowID(_ workspaceID: SavedWorkspace.ID) -> String {
         "session.reconnect.\(workspaceID.uuidString)"
+    }
+}
+
+private struct RetiredTerminalScreenModel {
+    let model: GhosttySurfaceScreenModel
+    var pendingDismantleComponentCounts: [GhosttyTerminalScreenViewComponent: Int]
+
+    var isReadyToRelease: Bool {
+        pendingDismantleComponentCounts.isEmpty
+    }
+
+    mutating func recordDismantle(component: GhosttyTerminalScreenViewComponent) {
+        guard let count = pendingDismantleComponentCounts[component], count > 0 else {
+            return
+        }
+        if count == 1 {
+            pendingDismantleComponentCounts[component] = nil
+        } else {
+            pendingDismantleComponentCounts[component] = count - 1
+        }
     }
 }

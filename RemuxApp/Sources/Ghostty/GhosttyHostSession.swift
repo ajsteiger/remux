@@ -98,11 +98,13 @@ final class GhosttyHostSession {
         controlSurface?.tmuxNewWindow()
     }
 
-    func stop() {
+    func stop(retainingControlSurfaceUntilSessionRelease: Bool = false) {
         isStopped = true
         transportStartGeneration &+= 1
-        bridge.stop()
-        controlSurface = nil
+        bridge.stop(retainingHostSurfaceUntilRelease: retainingControlSurfaceUntilSessionRelease)
+        if !retainingControlSurfaceUntilSessionRelease {
+            controlSurface = nil
+        }
         displayUpdateTracker.reset()
         attachmentTracker.reset()
         controlStateTracker.reset()

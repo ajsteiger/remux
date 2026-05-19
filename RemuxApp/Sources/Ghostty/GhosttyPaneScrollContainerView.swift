@@ -169,6 +169,15 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         detachSurfaceIfNeeded(surface)
     }
 
+    func prepareForRuntimeTeardown() {
+        surface?.onScrollStateChange = nil
+        self.surface = nil
+        submitRouteForwardedMouseScroll = nil
+        lastAppliedScrollRoute = nil
+        pendingContentOffset = nil
+        invalidateDisplayLink()
+    }
+
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         pinSurfaceToVisibleBounds()
         guard !isApplyingProgrammaticUpdate else { return }

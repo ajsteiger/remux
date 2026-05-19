@@ -9,6 +9,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
     static let empty = GhosttyRuntimeSurfaceMaterializationContext(
         sourceIdentity: ObjectIdentifier(emptySource),
         isAvailable: { false },
+        isRuntimeRemovalInProgress: { false },
         allManagedSurfaces: { [] },
         managedSurfaceCount: { 0 },
         managedSurface: { _ in nil },
@@ -21,6 +22,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
     let sourceIdentity: ObjectIdentifier
 
     private let isAvailableHandler: () -> Bool
+    private let isRuntimeRemovalInProgressHandler: () -> Bool
     private let allManagedSurfacesHandler: () -> [GhosttyManagedSurface]
     private let managedSurfaceCountHandler: () -> Int
     private let managedSurfaceHandler: (UUID) -> GhosttyManagedSurface?
@@ -32,6 +34,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
     init(
         sourceIdentity: ObjectIdentifier,
         isAvailable: @escaping () -> Bool,
+        isRuntimeRemovalInProgress: @escaping () -> Bool,
         allManagedSurfaces: @escaping () -> [GhosttyManagedSurface],
         managedSurfaceCount: @escaping () -> Int,
         managedSurface: @escaping (UUID) -> GhosttyManagedSurface?,
@@ -42,6 +45,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
     ) {
         self.sourceIdentity = sourceIdentity
         self.isAvailableHandler = isAvailable
+        self.isRuntimeRemovalInProgressHandler = isRuntimeRemovalInProgress
         self.allManagedSurfacesHandler = allManagedSurfaces
         self.managedSurfaceCountHandler = managedSurfaceCount
         self.managedSurfaceHandler = managedSurface
@@ -53,6 +57,10 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
 
     var isAvailable: Bool {
         isAvailableHandler()
+    }
+
+    var isRuntimeRemovalInProgress: Bool {
+        isRuntimeRemovalInProgressHandler()
     }
 
     func allManagedSurfaces() -> [GhosttyManagedSurface] {

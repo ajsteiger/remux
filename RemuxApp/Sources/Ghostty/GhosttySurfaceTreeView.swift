@@ -18,6 +18,8 @@ struct GhosttyRuntimePaneTreeView: View {
     let submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    let onDismantle: () -> Void
+    let onMount: () -> Void
 
     var body: some View {
         GhosttySurfaceTreeContainerRepresentable(
@@ -32,7 +34,9 @@ struct GhosttyRuntimePaneTreeView: View {
             submitMouseButton: submitMouseButton,
             submitMousePosition: submitMousePosition,
             submitMouseScroll: submitMouseScroll,
-            submitMousePressure: submitMousePressure
+            submitMousePressure: submitMousePressure,
+            onDismantle: onDismantle,
+            onMount: onMount
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -51,15 +55,20 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     let submitMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
     let submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    let onDismantle: () -> Void
+    let onMount: () -> Void
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
         view.backgroundColor = GhosttyPhoneChromePalette.uiBackground
         view.clipsToBounds = true
+        view.onDismantle = onDismantle
+        onMount()
         return view
     }
 
     func updateUIView(_ uiView: GhosttySurfaceTreeContainerUIView, context: Context) {
+        uiView.onDismantle = onDismantle
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "ui.updateUIView.begin",
             fields: [
@@ -93,6 +102,10 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
             ]
         )
     }
+
+    static func dismantleUIView(_ uiView: GhosttySurfaceTreeContainerUIView, coordinator: ()) {
+        uiView.dismantle()
+    }
 }
 
 private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecognizerDelegate, @preconcurrency UIEditMenuInteractionDelegate {
@@ -123,6 +136,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var presentationOverlayHeldSurfaceIDs: Set<UUID> = []
     private var presentationOverlayHeldInteractionStates: [UUID: Bool] = [:]
     private var selectionCopyMenuSourcePoint = CGPoint.zero
+    var onDismantle: (() -> Void)?
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
         recognizer.maximumNumberOfTouches = 1
@@ -164,6 +178,17 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         submitMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?,
         submitMousePressure: ((UUID, GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome)?
     ) {
+        guard !materializationContext.isRuntimeRemovalInProgress else {
+            self.materializationContext = materializationContext
+            disableRuntimeSurfaceInteractions()
+            resetActivePanState()
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "ui.tree.update.skipRuntimeRemoval",
+                fields: treeUpdateTraceFields(projection: projection)
+            )
+            return
+        }
+
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "ui.tree.update.begin",
             fields: treeUpdateTraceFields(projection: projection)
@@ -201,6 +226,42 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         } else {
             layoutPresentationOverlay()
         }
+    }
+
+    func dismantle() {
+        disableRuntimeSurfaceInteractions()
+        resetActivePanState()
+        for container in scrollContainersBySurfaceID.values {
+            container.prepareForRuntimeTeardown()
+        }
+        scrollContainersBySurfaceID = [:]
+        surfaceIDsByView = [:]
+        visibleSurfaceIDs = []
+        materializationContext = .empty
+        projection = .empty
+        presentationOverlayView = nil
+        presentationOverlayPendingSurfaceID = nil
+        presentationOverlayHeldSurfaceIDs = []
+        presentationOverlayHeldInteractionStates = [:]
+
+        let dismantleCallback = onDismantle
+        onDismantle = nil
+        dismantleCallback?()
+    }
+
+    private func disableRuntimeSurfaceInteractions() {
+        onSurfaceTap = nil
+        onWindowSwipe = nil
+        onCopySelection = nil
+        selectionAvailability = { _ in .noFocusedSurface }
+        selectSurface = { surfaceID, _ in .missingSurface(surfaceID) }
+        isMouseCaptured = { _ in false }
+        submitMouseButton = nil
+        submitMousePosition = nil
+        submitMouseScroll = nil
+        submitMousePressure = nil
+        activeSelectionSurfaceID = nil
+        selectionCopyMenuSurfaceID = nil
     }
 
     override func layoutSubviews() {

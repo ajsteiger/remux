@@ -83,6 +83,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var createSurfaceTreeCount = 0
     private var topologySelection = GhosttyRuntimeSurfaceTopologySelection()
     private var readinessCoordinator = GhosttyRuntimeSurfaceReadinessCoordinator()
+    private var isRuntimeRemovalInProgress = false
     private var pendingPhonePresentationRefreshTask: Task<Void, Never>?
     private var pendingPhonePresentationRefreshAttempt = 0
     private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
@@ -118,7 +119,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyRuntimeSurfaceMaterializationContext(
             sourceIdentity: ObjectIdentifier(self),
             isAvailable: { [weak self] in
-                self != nil
+                guard let self else { return false }
+                return !self.isRuntimeRemovalInProgress
+            },
+            isRuntimeRemovalInProgress: { [weak self] in
+                self?.isRuntimeRemovalInProgress ?? false
             },
             allManagedSurfaces: { [weak self] in
                 self?.allManagedSurfaces() ?? []
@@ -149,6 +154,15 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func reset() {
+        isRuntimeRemovalInProgress = false
+        reset(notifyChange: true)
+    }
+
+    func resetAfterRuntimeTeardown(notifyChange: Bool) {
+        reset(notifyChange: notifyChange)
+    }
+
+    private func reset(notifyChange: Bool) {
         topologySelection = GhosttyRuntimeSurfaceTopologySelection()
         debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
         let pendingRemovalSurfaces = managedSurfaceStore.resetAfterExternalRelease()
@@ -157,7 +171,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
         clearPresentationReadiness()
-        notifyChanged()
+        if notifyChange {
+            notifyChanged()
+        }
     }
 
     func makeRuntimeCallbackLease() -> GhosttyRuntimeCallbackLease? {
@@ -194,18 +210,23 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         tmuxErrorChannel.deliverProtocolError(error)
     }
 
-    func prepareForRuntimeTeardown() {
+    @discardableResult
+    func prepareForRuntimeTeardown(
+        retainingSurfaceViewsForRuntimeRemoval: Bool = false
+    ) -> GhosttyRuntimeSurfaceTeardownHold {
+        if retainingSurfaceViewsForRuntimeRemoval {
+            isRuntimeRemovalInProgress = true
+        }
         runtimeCallbackLeaseStore.invalidateActiveLease()
         clearPresentationReadiness()
 
-        // Release all surfaces still tracked by Remux before the Ghostty app is
-        // freed. Surfaces removed earlier are released at the removal boundary.
-        let activeSurfaces = managedSurfaceStore.activeSurfacesForRuntimeTeardown()
-        for surface in activeSurfaces {
-            surface.releaseBeforePermanentRemoval()
+        guard retainingSurfaceViewsForRuntimeRemoval else {
+            releaseSurfacesForRuntimeTeardown()
+            return GhosttyRuntimeSurfaceTeardownHold(surfaces: [])
         }
-        managedSurfaceStore.clearAfterExternalRelease()
-        releaseAfterPreparingForPermanentRemoval(managedSurfaceStore.takePendingPermanentRemovals())
+
+        let drain = managedSurfaceStore.takeSurfacesForRuntimeTeardown()
+        return prepareForRetainedRuntimeTeardown(drain.active + drain.pendingPermanentRemoval)
     }
 
     func selectTopLevel(_ id: UUID, reason: String = "selectTopLevel") {
@@ -2202,6 +2223,22 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         }
     }
 
+    private func releaseSurfacesForRuntimeTeardown() {
+        let activeSurfaces = managedSurfaceStore.activeSurfacesForRuntimeTeardown()
+        for surface in activeSurfaces {
+            surface.releaseBeforePermanentRemoval()
+        }
+        managedSurfaceStore.clearAfterExternalRelease()
+        releaseAfterPreparingForPermanentRemoval(managedSurfaceStore.takePendingPermanentRemovals())
+    }
+
+    private func prepareForRetainedRuntimeTeardown(_ surfaces: [GhosttyManagedSurface]) -> GhosttyRuntimeSurfaceTeardownHold {
+        for surface in surfaces {
+            GhosttyRuntimeManagedSurfaceStore.prepareForRuntimeTeardown(surface)
+        }
+        return GhosttyRuntimeSurfaceTeardownHold(surfaces: surfaces)
+    }
+
     private func updateDebugSummary(_ event: String) {
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.debugSummary.update.begin",
@@ -2298,6 +2335,7 @@ final class GhosttyManagedSurface {
     private let tmuxCloseWindowHandler: (@MainActor () -> TmuxActionSubmissionResult)?
     private let tmuxCopyModeHandler: (@MainActor () -> TmuxActionSubmissionResult)?
     private let releaseBeforePermanentRemovalHandler: (@MainActor () -> Void)?
+    private let transferRuntimeSurfaceLifetimeToAppShutdownHandler: (@MainActor () -> Void)?
     private var displayUpdateTracker = GhosttySurfaceDisplayUpdateTracker()
 
     init(
@@ -2325,7 +2363,8 @@ final class GhosttyManagedSurface {
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxCopyMode: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
-        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil
+        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil,
+        transferRuntimeSurfaceLifetimeToAppShutdown: (@MainActor () -> Void)? = nil
     ) {
         self.id = id
         self.view = view
@@ -2352,6 +2391,7 @@ final class GhosttyManagedSurface {
         self.tmuxCloseWindowHandler = tmuxCloseWindow
         self.tmuxCopyModeHandler = tmuxCopyMode
         self.releaseBeforePermanentRemovalHandler = releaseBeforePermanentRemoval
+        self.transferRuntimeSurfaceLifetimeToAppShutdownHandler = transferRuntimeSurfaceLifetimeToAppShutdown
     }
 
     @MainActor
@@ -2393,6 +2433,15 @@ final class GhosttyManagedSurface {
     }
 
     @MainActor
+    func transferRuntimeSurfaceLifetimeToAppShutdown() {
+        if let transferRuntimeSurfaceLifetimeToAppShutdownHandler {
+            transferRuntimeSurfaceLifetimeToAppShutdownHandler()
+            return
+        }
+        controlSurface.transferRuntimeManagedSurfaceToAppShutdown()
+    }
+
+    @MainActor
     func prepareForPermanentRemoval() {
         onDisplayUpdate = nil
         onScrollStateChange = nil
@@ -2402,6 +2451,12 @@ final class GhosttyManagedSurface {
         if view.superview != nil {
             view.removeFromSuperview()
         }
+    }
+
+    @MainActor
+    func prepareForRuntimeTeardown() {
+        onDisplayUpdate = nil
+        onScrollStateChange = nil
     }
 
     @MainActor

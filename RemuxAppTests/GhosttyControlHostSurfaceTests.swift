@@ -165,6 +165,24 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertEqual(closeDispositions, [.reusable])
     }
 
+    func testStopCanAvoidMarkingBackingExitedForRuntimeRemoval() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let host = GhosttyControlHostSurface(
+            transport: transport,
+            surface: surface
+        )
+
+        host.stop(markBackingExited: false)
+
+        let finished = await waitUntilAsync {
+            await transport.closeDispositions() == [.reusable]
+        }
+
+        XCTAssertTrue(finished)
+        XCTAssertTrue(surface.backingExited.isEmpty)
+    }
+
     func testWriteSequencerPreservesCommandOrderAcrossAsyncTransportSends() async {
         let transport = RecordingTmuxControlTransport(sendDelay: .milliseconds(5))
         let sequencer = TmuxControlWriteSequencer(transport: transport)
@@ -408,6 +426,29 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertTrue(didClose)
         XCTAssertFalse(bridge.manualWriteHandler(Data("send-keys -t %1 a\n".utf8), false))
         XCTAssertEqual(surface.backingExited, [true])
+    }
+
+    func testHostTransportBridgeStopCanRetainHostSurfaceWithoutBackingExit() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in }
+        )
+        bridge.bind(surface: surface)
+        bridge.startPump()
+
+        bridge.stop(retainingHostSurfaceUntilRelease: true)
+
+        let didClose = await waitUntilAsync {
+            await transport.closeDispositions() == [.reusable]
+        }
+
+        XCTAssertTrue(didClose)
+        XCTAssertFalse(bridge.manualWriteHandler(Data("send-keys -t %1 a\n".utf8), false))
+        XCTAssertTrue(surface.backingExited.isEmpty)
     }
 
     func testHostTransportBridgePumpForwardsInboundBytes() async {

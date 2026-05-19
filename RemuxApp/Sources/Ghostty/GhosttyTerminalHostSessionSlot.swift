@@ -46,15 +46,17 @@ final class GhosttyTerminalHostSessionSlot {
     /// Runs teardown while the current session is still strongly retained by the slot.
     ///
     /// Use this for cleanup that must happen before the owning Ghostty runtime can deinit.
-    func takeCurrent(retainingSessionFor teardown: () -> Void) -> GhosttyHostSession? {
+    func takeCurrent<T>(retainingSessionFor teardown: () -> T) -> (
+        session: GhosttyHostSession?,
+        teardownResult: T
+    ) {
         guard let session = current else {
-            teardown()
-            return nil
+            return (nil, teardown())
         }
 
-        teardown()
+        let result = teardown()
         current = nil
-        return session
+        return (session, result)
     }
 
     func takeIfCurrent(_ session: GhosttyHostSession) -> GhosttyHostSession? {
@@ -63,19 +65,28 @@ final class GhosttyTerminalHostSessionSlot {
     }
 
     /// Stops the current session, runs teardown while its runtime is still retained, then clears it.
-    func stopCurrent(retainingStoppedSessionFor teardown: () -> Void) {
+    @discardableResult
+    func stopCurrent<T>(
+        retainingStoppedSessionFor teardown: () -> T,
+        retainingHostSurfaceUntilSessionRelease: Bool = false
+    ) -> (
+        session: GhosttyHostSession?,
+        teardownResult: T
+    ) {
         guard let session = current else {
-            teardown()
-            return
+            return (nil, teardown())
         }
 
-        session.stop()
-        teardown()
+        session.stop(
+            retainingControlSurfaceUntilSessionRelease: retainingHostSurfaceUntilSessionRelease
+        )
+        let result = teardown()
         current = nil
+        return (session, result)
     }
 
     func stopCurrent() {
-        stopCurrent(retainingStoppedSessionFor: {})
+        _ = stopCurrent(retainingStoppedSessionFor: {})
     }
 
     func foregroundStatus() -> GhosttyTerminalTransportHostStatus {

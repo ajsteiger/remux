@@ -842,7 +842,7 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertTrue(harness.model.terminalScreenModel(for: session) === terminalModel)
     }
 
-    func testCloseActiveSessionStopsAndRemovesTerminalModelWithoutViewDisappearance() async throws {
+    func testCloseActiveSessionRetainsStoppedRuntimeUntilTerminalViewsDismantle() async throws {
         let server = SavedServer(
             displayName: "Build Host",
             host: "build.example.test",
@@ -870,11 +870,46 @@ final class RemuxRootModelTests: XCTestCase {
         let session = try XCTUnwrap(harness.model.activeSessions.first)
         let terminalModel = harness.model.terminalScreenModel(for: session)
         await attachAndWaitForRunning(terminalModel)
+        harness.model.terminalScreenViewDidMount(
+            workspaceID: workspace.id,
+            instanceID: session.instanceID,
+            component: .hostSurface
+        )
+        harness.model.terminalScreenViewDidMount(
+            workspaceID: workspace.id,
+            instanceID: session.instanceID,
+            component: .hostSurface
+        )
+        harness.model.terminalScreenViewDidMount(
+            workspaceID: workspace.id,
+            instanceID: session.instanceID,
+            component: .surfaceTree
+        )
 
         harness.model.closeActiveSession(workspace.id)
 
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
-        XCTAssertEqual(terminalModel.state, .idle)
+        XCTAssertTrue(terminalModel.surfaceRegistry.materializationContext.isRuntimeRemovalInProgress)
+        XCTAssertFalse(terminalModel.surfaceRegistry.materializationContext.isAvailable)
+        XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
+        harness.model.terminalScreenViewDidDismantle(
+            workspaceID: workspace.id,
+            instanceID: session.instanceID,
+            component: .hostSurface
+        )
+        XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
+        harness.model.terminalScreenViewDidDismantle(
+            workspaceID: workspace.id,
+            instanceID: session.instanceID,
+            component: .surfaceTree
+        )
+        XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
+        harness.model.terminalScreenViewDidDismantle(
+            workspaceID: workspace.id,
+            instanceID: session.instanceID,
+            component: .hostSurface
+        )
+        XCTAssertFalse(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
         let didClose = await waitUntil {
             transportFactory.events.contains { event in
                 if case .closed = event { return true }
@@ -882,6 +917,28 @@ final class RemuxRootModelTests: XCTestCase {
             }
         }
         XCTAssertTrue(didClose)
+    }
+
+    func testCloseActiveSessionReleasesStoppedRuntimeImmediatelyWhenTerminalViewsNeverMounted() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+        await attachAndWaitForRunning(terminalModel)
+
+        harness.model.closeActiveSession(workspace.id)
+
+        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
+        XCTAssertFalse(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
     }
 
     func testAppLifecyclePhaseForwardsToOwnedTerminalModel() async throws {
@@ -1006,10 +1063,12 @@ final class RemuxRootModelTests: XCTestCase {
         let newSession = try XCTUnwrap(harness.model.activeSessions.first)
         let newModel = harness.model.terminalScreenModel(for: newSession)
         await attachAndWaitForRunning(newModel)
+        let oldDebugStatusAfterReconnect = oldModel.debugStatus
 
         harness.model.handleAppLifecyclePhase(.active)
 
-        XCTAssertEqual(oldModel.debugStatus, "stopped")
+        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
+        XCTAssertEqual(oldModel.debugStatus, oldDebugStatusAfterReconnect)
         XCTAssertEqual(newModel.debugStatus, "transport active after foreground")
     }
 
@@ -1036,6 +1095,16 @@ final class RemuxRootModelTests: XCTestCase {
             view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
             size: CGSize(width: 120, height: 80)
         )
+        harness.model.terminalScreenViewDidMount(
+            workspaceID: workspace.id,
+            instanceID: oldSession.instanceID,
+            component: .hostSurface
+        )
+        harness.model.terminalScreenViewDidMount(
+            workspaceID: workspace.id,
+            instanceID: oldSession.instanceID,
+            component: .surfaceTree
+        )
 
         harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
 
@@ -1043,7 +1112,19 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertNotEqual(newSession.instanceID, oldSession.instanceID)
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
         XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
-        XCTAssertEqual(oldModel.state, .idle)
+        XCTAssertTrue(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)
+        harness.model.terminalScreenViewDidDismantle(
+            workspaceID: workspace.id,
+            instanceID: oldSession.instanceID,
+            component: .hostSurface
+        )
+        harness.model.terminalScreenViewDidDismantle(
+            workspaceID: workspace.id,
+            instanceID: oldSession.instanceID,
+            component: .surfaceTree
+        )
+        XCTAssertFalse(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)
+        XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
         XCTAssertEqual(
             modelFactory.createdKeys,
             [TerminalRuntimeAttemptKey(session: oldSession), TerminalRuntimeAttemptKey(session: newSession)]
@@ -1080,7 +1161,7 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertNotEqual(newSession.instanceID, oldSession.instanceID)
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
         XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
-        XCTAssertEqual(oldModel.state, .idle)
+        XCTAssertFalse(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)
     }
 
     func testDeleteWorkspaceStopsOwnedTerminalModel() async throws {
@@ -1111,7 +1192,8 @@ final class RemuxRootModelTests: XCTestCase {
 
         XCTAssertEqual(harness.model.state, .library)
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
-        XCTAssertEqual(terminalModel.state, .idle)
+        XCTAssertTrue(terminalModel.surfaceRegistry.materializationContext.isRuntimeRemovalInProgress)
+        XCTAssertFalse(terminalModel.surfaceRegistry.materializationContext.isAvailable)
     }
 
     func testDeleteServerStopsAssociatedTerminalModels() async throws {
@@ -1181,7 +1263,8 @@ final class RemuxRootModelTests: XCTestCase {
             return
         }
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
-        XCTAssertEqual(terminalModel.state, .idle)
+        XCTAssertTrue(terminalModel.surfaceRegistry.materializationContext.isRuntimeRemovalInProgress)
+        XCTAssertFalse(terminalModel.surfaceRegistry.materializationContext.isAvailable)
     }
 
     func testRuntimeDisconnectMarksActiveSessionDisconnected() async throws {

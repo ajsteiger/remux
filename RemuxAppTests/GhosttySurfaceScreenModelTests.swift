@@ -389,7 +389,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
         let managedID = UUID()
         var releaseCount = 0
+        var transferCount = 0
         var releaseSawSurfaceStillRegistered = false
+        var releaseSawTopologyBeforeReset = false
 
         model.attach(
             view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
@@ -401,18 +403,88 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         }
         XCTAssertTrue(didRun)
 
-        model.surfaceRegistry.registerManagedSurfaceForTesting(Self.managedSurface(
+        let managed = Self.managedSurface(
             id: managedID,
             releaseBeforePermanentRemoval: {
                 releaseCount += 1
                 releaseSawSurfaceStillRegistered = model.surfaceRegistry.managedSurface(for: managedID) != nil
+                releaseSawTopologyBeforeReset = !model.surfaceRegistry.topologySnapshot.topLevels.isEmpty
+            },
+            transferRuntimeSurfaceLifetimeToAppShutdown: {
+                transferCount += 1
             }
-        ))
+        )
+        managed.onScrollStateChange = {}
+        managed.onDisplayUpdate = { _, _, _ in }
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         model.stop()
 
         XCTAssertEqual(releaseCount, 1)
+        XCTAssertEqual(transferCount, 0)
         XCTAssertTrue(releaseSawSurfaceStillRegistered)
+        XCTAssertTrue(releaseSawTopologyBeforeReset)
+        XCTAssertTrue(model.surfaceRegistry.allManagedSurfaces().isEmpty)
+        XCTAssertTrue(model.surfaceRegistry.topologySnapshot.topLevels.isEmpty)
+    }
+
+    func testModelStopForRemovalKeepsRuntimeSurfaceViewsAttachedWithoutPublishingEmptyTree() async throws {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+        let parent = UIView()
+        var releaseCount = 0
+        var transferCount = 0
+        var transferSawViewStillAttached = false
+        var transferSawViewStillVisible = false
+        weak var managedRef: GhosttyManagedSurface?
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        var managed: GhosttyManagedSurface? = Self.managedSurface(
+            releaseBeforePermanentRemoval: {
+                releaseCount += 1
+            },
+            transferRuntimeSurfaceLifetimeToAppShutdown: {
+                transferCount += 1
+                transferSawViewStillAttached = managedRef?.view.superview === parent
+                transferSawViewStillVisible = managedRef?.view.isHidden == false
+            }
+        )
+        managedRef = managed
+        let managedView = try XCTUnwrap(managed?.view)
+        parent.addSubview(managedView)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(try XCTUnwrap(managed))
+
+        let revisionBeforeStop = model.surfaceRegistryRevision
+
+        model.stopForRemoval()
+        managed = nil
+        XCTAssertNotNil(managedRef)
+
+        model.stopForRemoval()
+
+        let materializationContext = model.surfaceRegistry.materializationContext
+        XCTAssertEqual(releaseCount, 0)
+        XCTAssertEqual(transferCount, 1)
+        XCTAssertTrue(transferSawViewStillAttached)
+        XCTAssertTrue(transferSawViewStillVisible)
+        XCTAssertNotNil(managedRef)
+        XCTAssertTrue(managedView.superview === parent)
+        XCTAssertFalse(managedView.isHidden)
+        XCTAssertEqual(model.surfaceRegistryRevision, revisionBeforeStop)
+        XCTAssertTrue(materializationContext.isRuntimeRemovalInProgress)
+        XCTAssertFalse(materializationContext.isAvailable)
         XCTAssertTrue(model.surfaceRegistry.allManagedSurfaces().isEmpty)
         XCTAssertTrue(model.surfaceRegistry.topologySnapshot.topLevels.isEmpty)
     }
@@ -657,20 +729,24 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
     }
 
-    func testRuntimeTeardownReleasesSurfacePendingPermanentRemoval() {
+    func testRuntimeTeardownRetiresPendingPermanentRemovalToAppShutdown() {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let parent = UIView()
         var releaseCount = 0
-        var releaseSawViewDetached = false
-        var releaseSawScrollCallbackCleared = false
-        var releaseSawDisplayCallbackCleared = false
+        var transferCount = 0
+        var transferSawViewStillAttached = false
+        var transferSawScrollCallbackCleared = false
+        var transferSawDisplayCallbackCleared = false
         weak var managedRef: GhosttyManagedSurface?
         let managed = Self.managedSurface(
             releaseBeforePermanentRemoval: {
                 releaseCount += 1
-                releaseSawViewDetached = managedRef?.view.superview == nil
-                releaseSawScrollCallbackCleared = managedRef?.onScrollStateChange == nil
-                releaseSawDisplayCallbackCleared = managedRef?.onDisplayUpdate == nil
+            },
+            transferRuntimeSurfaceLifetimeToAppShutdown: {
+                transferCount += 1
+                transferSawViewStillAttached = managedRef?.view.superview === parent
+                transferSawScrollCallbackCleared = managedRef?.onScrollStateChange == nil
+                transferSawDisplayCallbackCleared = managedRef?.onDisplayUpdate == nil
             }
         )
         managedRef = managed
@@ -684,13 +760,54 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(releaseCount, 0)
         XCTAssertTrue(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id) === managed)
 
-        registry.prepareForRuntimeTeardown()
+        registry.prepareForRuntimeTeardown(retainingSurfaceViewsForRuntimeRemoval: true)
 
-        XCTAssertEqual(releaseCount, 1)
-        XCTAssertTrue(releaseSawViewDetached)
-        XCTAssertTrue(releaseSawScrollCallbackCleared)
-        XCTAssertTrue(releaseSawDisplayCallbackCleared)
+        XCTAssertEqual(releaseCount, 0)
+        XCTAssertEqual(transferCount, 1)
+        XCTAssertTrue(transferSawViewStillAttached)
+        XCTAssertTrue(transferSawScrollCallbackCleared)
+        XCTAssertTrue(transferSawDisplayCallbackCleared)
         XCTAssertNil(registry.materializationContext.surfacePendingPermanentRemoval(for: managed.id))
+    }
+
+    func testRuntimeTeardownRetiresActiveSurfaceWithoutNativeVisibilityMutation() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let parent = UIView()
+        var releaseCount = 0
+        var transferCount = 0
+        var transferSawViewStillAttached = false
+        var transferSawViewStillVisible = false
+        var transferSawScrollCallbackCleared = false
+        var transferSawDisplayCallbackCleared = false
+        weak var managedRef: GhosttyManagedSurface?
+        let managed = Self.managedSurface(
+            releaseBeforePermanentRemoval: {
+                releaseCount += 1
+            },
+            transferRuntimeSurfaceLifetimeToAppShutdown: {
+                transferCount += 1
+                transferSawViewStillAttached = managedRef?.view.superview === parent
+                transferSawViewStillVisible = managedRef?.view.isHidden == false
+                transferSawScrollCallbackCleared = managedRef?.onScrollStateChange == nil
+                transferSawDisplayCallbackCleared = managedRef?.onDisplayUpdate == nil
+            }
+        )
+        managedRef = managed
+        parent.addSubview(managed.view)
+        managed.onScrollStateChange = {}
+        managed.onDisplayUpdate = { _, _, _ in }
+
+        registry.registerManagedSurfaceForTesting(managed)
+
+        registry.prepareForRuntimeTeardown(retainingSurfaceViewsForRuntimeRemoval: true)
+
+        XCTAssertEqual(releaseCount, 0)
+        XCTAssertEqual(transferCount, 1)
+        XCTAssertTrue(transferSawViewStillAttached)
+        XCTAssertTrue(transferSawViewStillVisible)
+        XCTAssertTrue(transferSawScrollCallbackCleared)
+        XCTAssertTrue(transferSawDisplayCallbackCleared)
+        XCTAssertNil(registry.managedSurface(for: managed.id))
     }
 
     func testRegistryResetReleasesSurfacePendingPermanentRemoval() {
@@ -2037,7 +2154,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
         let managedID = UUID()
         var releaseCount = 0
+        var transferCount = 0
         var releaseSawSurfaceStillRegistered = false
+        var releaseSawTopologyBeforeReset = false
 
         model.attach(
             view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
@@ -2049,13 +2168,20 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         }
         XCTAssertTrue(didRun)
 
-        model.surfaceRegistry.registerManagedSurfaceForTesting(Self.managedSurface(
+        let managed = Self.managedSurface(
             id: managedID,
             releaseBeforePermanentRemoval: {
                 releaseCount += 1
                 releaseSawSurfaceStillRegistered = model.surfaceRegistry.managedSurface(for: managedID) != nil
+                releaseSawTopologyBeforeReset = !model.surfaceRegistry.topologySnapshot.topLevels.isEmpty
+            },
+            transferRuntimeSurfaceLifetimeToAppShutdown: {
+                transferCount += 1
             }
-        ))
+        )
+        managed.onScrollStateChange = {}
+        managed.onDisplayUpdate = { _, _, _ in }
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         await transport.fail(ScreenModelTransportError.disconnected)
 
@@ -2066,7 +2192,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         XCTAssertTrue(didFail)
         XCTAssertEqual(releaseCount, 1)
+        XCTAssertEqual(transferCount, 0)
         XCTAssertTrue(releaseSawSurfaceStillRegistered)
+        XCTAssertTrue(releaseSawTopologyBeforeReset)
         XCTAssertTrue(model.surfaceRegistry.allManagedSurfaces().isEmpty)
         XCTAssertTrue(model.surfaceRegistry.topologySnapshot.topLevels.isEmpty)
     }
@@ -4487,7 +4615,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         tmuxClosePane: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxCloseWindow: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
         tmuxCopyMode: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
-        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil
+        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil,
+        transferRuntimeSurfaceLifetimeToAppShutdown: (@MainActor () -> Void)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: id,
@@ -4517,7 +4646,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             tmuxClosePane: tmuxClosePane ?? { .noTarget },
             tmuxCloseWindow: tmuxCloseWindow ?? { .noTarget },
             tmuxCopyMode: tmuxCopyMode ?? { .noTarget },
-            releaseBeforePermanentRemoval: releaseBeforePermanentRemoval
+            releaseBeforePermanentRemoval: releaseBeforePermanentRemoval,
+            transferRuntimeSurfaceLifetimeToAppShutdown: transferRuntimeSurfaceLifetimeToAppShutdown
         )
     }
 

@@ -174,6 +174,11 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     }
 
     @MainActor
+    func transferRuntimeManagedSurfaceToAppShutdown() {
+        storage.transferRuntimeManagedSurfaceToAppShutdown()
+    }
+
+    @MainActor
     @discardableResult
     func sendInput(_ text: String) -> Bool {
         guard !text.isEmpty else { return true }
@@ -495,7 +500,7 @@ private final class GhosttyKitControlSurfaceStorage: @unchecked Sendable {
 
     private let ownership: GhosttyKitControlSurfaceOwnership
     private let retainedObjects: [AnyObject]
-    private var runtimeManagedSurfaceReleased = false
+    private var runtimeManagedSurfaceReleaseHandled = false
 
     init(
         surface: ghostty_surface_t,
@@ -512,7 +517,7 @@ private final class GhosttyKitControlSurfaceStorage: @unchecked Sendable {
             ghostty_surface_free(surface)
         }
 #if DEBUG
-        if ownership == .runtimeAppOwned && !runtimeManagedSurfaceReleased {
+        if ownership == .runtimeAppOwned && !runtimeManagedSurfaceReleaseHandled {
             assertionFailure("runtime-managed surfaces must be released before dropping storage")
         }
 #endif
@@ -527,10 +532,23 @@ private final class GhosttyKitControlSurfaceStorage: @unchecked Sendable {
             }
             return
         }
-        guard !runtimeManagedSurfaceReleased else { return }
+        guard !runtimeManagedSurfaceReleaseHandled else { return }
 
-        runtimeManagedSurfaceReleased = true
+        runtimeManagedSurfaceReleaseHandled = true
         ghostty_surface_set_backing_exited(surface, true)
         ghostty_surface_free(surface)
+    }
+
+    @MainActor
+    func transferRuntimeManagedSurfaceToAppShutdown() {
+        guard ownership == .runtimeAppOwned else {
+            if ownership == .storageOwned {
+                assertionFailure("storage-owned surfaces are freed by GhosttyKitControlSurfaceStorage.deinit")
+            }
+            return
+        }
+        guard !runtimeManagedSurfaceReleaseHandled else { return }
+
+        runtimeManagedSurfaceReleaseHandled = true
     }
 }

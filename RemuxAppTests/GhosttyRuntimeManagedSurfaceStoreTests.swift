@@ -176,44 +176,87 @@ final class GhosttyRuntimeManagedSurfaceStoreTests: XCTestCase {
         XCTAssertNil(pending.view.superview)
     }
 
-    func testRuntimeTeardownReleasesActiveSurfacesOnceAndDrainsPendingRemovals() {
+    func testRuntimeTeardownDrainsActiveAndPendingSurfacesForSeparateReleasePolicies() {
         var store = GhosttyRuntimeManagedSurfaceStore()
         let parent = UIView()
         var activeReleaseCount = 0
+        var activeTransferCount = 0
         var pendingReleaseCount = 0
+        var pendingTransferCount = 0
+        var activeTransferSawRuntimeRetiredSurface = false
+        var pendingTransferSawRuntimeRetiredSurface = false
+        weak var activeRef: GhosttyManagedSurface?
+        weak var pendingRef: GhosttyManagedSurface?
         let active = Self.managedSurface(
             handle: UnsafeMutableRawPointer(bitPattern: 0x4704)!,
             releaseBeforePermanentRemoval: {
                 activeReleaseCount += 1
+            },
+            transferRuntimeSurfaceLifetimeToAppShutdown: {
+                activeTransferCount += 1
+                activeTransferSawRuntimeRetiredSurface = Self.isRetiredForRuntimeTeardown(activeRef)
             }
         )
         let pending = Self.managedSurface(
             handle: UnsafeMutableRawPointer(bitPattern: 0x4705)!,
             releaseBeforePermanentRemoval: {
                 pendingReleaseCount += 1
+            },
+            transferRuntimeSurfaceLifetimeToAppShutdown: {
+                pendingTransferCount += 1
+                pendingTransferSawRuntimeRetiredSurface = Self.isRetiredForRuntimeTeardown(pendingRef)
             }
         )
+        activeRef = active
+        pendingRef = pending
+        parent.addSubview(active.view)
         parent.addSubview(pending.view)
+        active.onScrollStateChange = {}
+        pending.onScrollStateChange = {}
+        active.onDisplayUpdate = { _, _, _ in }
+        pending.onDisplayUpdate = { _, _, _ in }
         store.register([active, pending])
         store.retireForPermanentRemoval(id: pending.id)
 
-        Self.releaseAllBeforeRuntimeTeardown(&store)
-        Self.releaseAllBeforeRuntimeTeardown(&store)
+        let drain = store.takeSurfacesForRuntimeTeardown()
+        let duplicateDrain = store.takeSurfacesForRuntimeTeardown()
+        drain.active.forEach {
+            GhosttyRuntimeManagedSurfaceStore.prepareForRuntimeTeardown($0)
+        }
+        drain.pendingPermanentRemoval.forEach {
+            GhosttyRuntimeManagedSurfaceStore.prepareForRuntimeTeardown($0)
+        }
+        duplicateDrain.active.forEach {
+            GhosttyRuntimeManagedSurfaceStore.prepareForRuntimeTeardown($0)
+        }
+        duplicateDrain.pendingPermanentRemoval.forEach {
+            GhosttyRuntimeManagedSurfaceStore.prepareForRuntimeTeardown($0)
+        }
 
-        XCTAssertEqual(activeReleaseCount, 1)
-        XCTAssertEqual(pendingReleaseCount, 1)
+        XCTAssertEqual(drain.active.map(\.id), [active.id])
+        XCTAssertEqual(drain.pendingPermanentRemoval.map(\.id), [pending.id])
+        XCTAssertTrue(duplicateDrain.active.isEmpty)
+        XCTAssertTrue(duplicateDrain.pendingPermanentRemoval.isEmpty)
+        XCTAssertEqual(activeReleaseCount, 0)
+        XCTAssertEqual(activeTransferCount, 1)
+        XCTAssertEqual(pendingReleaseCount, 0)
+        XCTAssertEqual(pendingTransferCount, 1)
+        XCTAssertTrue(activeTransferSawRuntimeRetiredSurface)
+        XCTAssertTrue(pendingTransferSawRuntimeRetiredSurface)
         XCTAssertEqual(store.count, 0)
         XCTAssertTrue(store.allSurfaces().isEmpty)
         XCTAssertNil(store.managedSurface(for: active.id))
         XCTAssertNil(store.id(forHandle: active.controlSurface.handle))
         XCTAssertNil(store.surfacePendingPermanentRemoval(for: pending.id))
-        XCTAssertNil(pending.view.superview)
+        XCTAssertTrue(active.view.superview === parent)
+        XCTAssertTrue(pending.view.superview === parent)
     }
 
     private static func managedSurface(
         id: UUID = UUID(),
         handle: ghostty_surface_t,
-        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil
+        releaseBeforePermanentRemoval: (@MainActor () -> Void)? = nil,
+        transferRuntimeSurfaceLifetimeToAppShutdown: (@MainActor () -> Void)? = nil
     ) -> GhosttyManagedSurface {
         GhosttyManagedSurface(
             id: id,
@@ -222,19 +265,15 @@ final class GhosttyRuntimeManagedSurfaceStoreTests: XCTestCase {
                 surface: handle,
                 ownership: .borrowed
             ),
-            releaseBeforePermanentRemoval: releaseBeforePermanentRemoval
+            releaseBeforePermanentRemoval: releaseBeforePermanentRemoval,
+            transferRuntimeSurfaceLifetimeToAppShutdown: transferRuntimeSurfaceLifetimeToAppShutdown
         )
     }
 
-    private static func releaseAllBeforeRuntimeTeardown(
-        _ store: inout GhosttyRuntimeManagedSurfaceStore
-    ) {
-        for surface in store.activeSurfacesForRuntimeTeardown() {
-            surface.releaseBeforePermanentRemoval()
-        }
-        store.clearAfterExternalRelease()
-        store.takePendingPermanentRemovals().forEach {
-            GhosttyRuntimeManagedSurfaceStore.releaseAfterPreparingForPermanentRemoval($0)
-        }
+    private static func isRetiredForRuntimeTeardown(_ surface: GhosttyManagedSurface?) -> Bool {
+        surface?.view.superview != nil &&
+            surface?.view.isHidden == false &&
+            surface?.onScrollStateChange == nil &&
+            surface?.onDisplayUpdate == nil
     }
 }

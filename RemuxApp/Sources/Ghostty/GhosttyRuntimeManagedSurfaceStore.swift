@@ -8,6 +8,11 @@ struct GhosttyRuntimeManagedSurfaceStore {
         case readyToRelease(GhosttyManagedSurface)
     }
 
+    struct RuntimeTeardownDrain {
+        let active: [GhosttyManagedSurface]
+        let pendingPermanentRemoval: [GhosttyManagedSurface]
+    }
+
     private var surfacesByID: [UUID: GhosttyManagedSurface] = [:]
     private var surfaceIDsByHandle: [ghostty_surface_t: UUID] = [:]
     private var surfacesPendingPermanentRemoval: [UUID: GhosttyManagedSurface] = [:]
@@ -65,13 +70,28 @@ struct GhosttyRuntimeManagedSurfaceStore {
         surfacesPendingPermanentRemoval.removeValue(forKey: id)
     }
 
+    mutating func resetAfterExternalRelease() -> [GhosttyManagedSurface] {
+        clearAfterExternalRelease()
+        return takePendingPermanentRemovals()
+    }
+
     func activeSurfacesForRuntimeTeardown() -> [GhosttyManagedSurface] {
         Array(surfacesByID.values)
     }
 
-    mutating func resetAfterExternalRelease() -> [GhosttyManagedSurface] {
+    mutating func takeSurfacesForRuntimeTeardown() -> RuntimeTeardownDrain {
+        let activeSurfaces = Array(surfacesByID.values)
+        let activeIDs = Set(activeSurfaces.map(\.id))
+        let pendingSurfaces = surfacesPendingPermanentRemoval.values.filter {
+            !activeIDs.contains($0.id)
+        }
         clearAfterExternalRelease()
-        return takePendingPermanentRemovals()
+        surfacesPendingPermanentRemoval = [:]
+
+        return RuntimeTeardownDrain(
+            active: activeSurfaces,
+            pendingPermanentRemoval: Array(pendingSurfaces)
+        )
     }
 
     mutating func clearAfterExternalRelease() {
@@ -88,5 +108,22 @@ struct GhosttyRuntimeManagedSurfaceStore {
     static func releaseAfterPreparingForPermanentRemoval(_ surface: GhosttyManagedSurface) {
         surface.prepareForPermanentRemoval()
         surface.releaseBeforePermanentRemoval()
+    }
+
+    static func prepareForRuntimeTeardown(_ surface: GhosttyManagedSurface) {
+        surface.prepareForRuntimeTeardown()
+        surface.transferRuntimeSurfaceLifetimeToAppShutdown()
+    }
+}
+
+struct GhosttyRuntimeSurfaceTeardownHold {
+    private let surfaces: [GhosttyManagedSurface]
+
+    init(surfaces: [GhosttyManagedSurface]) {
+        self.surfaces = surfaces
+    }
+
+    var retainedSurfaceCount: Int {
+        surfaces.count
     }
 }

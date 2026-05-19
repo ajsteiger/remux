@@ -92,10 +92,11 @@ final class GhosttyTerminalHostSessionSlotTests: XCTestCase {
         var teardownSawCurrentSession = false
 
         slot.install(current)
-        slot.stopCurrent(retainingStoppedSessionFor: {
+        let stopped = slot.stopCurrent(retainingStoppedSessionFor: {
             teardownSawCurrentSession = slot.isCurrent(current)
         })
 
+        XCTAssertTrue(stopped.session === current)
         XCTAssertTrue(teardownSawCurrentSession)
         XCTAssertFalse(slot.isCurrent(current))
         XCTAssertFalse(slot.foregroundStatus().isPresent)
@@ -111,7 +112,7 @@ final class GhosttyTerminalHostSessionSlotTests: XCTestCase {
             teardownSawCurrentSession = slot.isCurrent(current)
         })
 
-        XCTAssertTrue(taken === current)
+        XCTAssertTrue(taken.session === current)
         XCTAssertTrue(teardownSawCurrentSession)
         XCTAssertFalse(slot.isCurrent(current))
     }

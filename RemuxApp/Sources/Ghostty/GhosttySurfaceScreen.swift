@@ -31,6 +31,8 @@ struct GhosttySurfaceScreen: View {
 
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
+    private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
+    private let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
     private static let tmuxPrefixFlushDelay: Duration = .milliseconds(750)
 
     init(
@@ -39,7 +41,9 @@ struct GhosttySurfaceScreen: View {
         isSelected: Bool,
         shortcutStore: ShortcutStore,
         onReconnect: @escaping () -> Void,
-        onEditConnection: @escaping () -> Void
+        onEditConnection: @escaping () -> Void,
+        onMount: @escaping (GhosttyTerminalScreenViewComponent) -> Void,
+        onDismantle: @escaping (GhosttyTerminalScreenViewComponent) -> Void
     ) {
         self.model = model
         self.presentation = presentation
@@ -47,6 +51,8 @@ struct GhosttySurfaceScreen: View {
         self.shortcutStore = shortcutStore
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
+        self.onMount = onMount
+        self.onDismantle = onDismantle
     }
 
     private var isAwaitingSystemKeyboardPresentation: Bool {
@@ -86,7 +92,16 @@ struct GhosttySurfaceScreen: View {
                     )
 
                     ZStack(alignment: .topLeading) {
-                        GhosttyHostSurfaceView(model: model, size: terminalViewportSize)
+                        GhosttyHostSurfaceView(
+                            model: model,
+                            size: terminalViewportSize,
+                            onMount: {
+                                onMount(.hostSurface)
+                            },
+                            onDismantle: {
+                                onDismantle(.hostSurface)
+                            }
+                        )
                             .frame(
                                 width: terminalViewportSize.width,
                                 height: terminalViewportSize.height,
@@ -123,6 +138,12 @@ struct GhosttySurfaceScreen: View {
                             },
                             submitMousePressure: { surfaceID, event in
                                 model.sendMousePressure(to: surfaceID, event)
+                            },
+                            onDismantle: {
+                                onDismantle(.surfaceTree)
+                            },
+                            onMount: {
+                                onMount(.surfaceTree)
                             }
                         )
                             .frame(
@@ -1615,9 +1636,22 @@ final class GhosttyHostAttachmentScheduler {
 private struct GhosttyHostSurfaceView: UIViewRepresentable {
     @ObservedObject var model: GhosttySurfaceScreenModel
     let size: CGSize
+    let onMount: () -> Void
+    let onDismantle: () -> Void
 
     final class Coordinator {
         private let attachmentScheduler = GhosttyHostAttachmentScheduler()
+        private var didDismantle = false
+        var onMount: () -> Void
+        var onDismantle: () -> Void
+
+        init(
+            onMount: @escaping () -> Void,
+            onDismantle: @escaping () -> Void
+        ) {
+            self.onMount = onMount
+            self.onDismantle = onDismantle
+        }
 
         @MainActor
         func scheduleAttach(
@@ -1635,10 +1669,18 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
         func cancelPendingAttach() {
             attachmentScheduler.cancel()
         }
+
+        @MainActor
+        func dismantle() {
+            guard !didDismantle else { return }
+            didDismantle = true
+            cancelPendingAttach()
+            onDismantle()
+        }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(onMount: onMount, onDismantle: onDismantle)
     }
 
     func makeUIView(context: Context) -> GhosttyKitSurfaceView {
@@ -1650,16 +1692,19 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
         view.backgroundColor = GhosttyPhoneChromePalette.uiBackground
         view.isOpaque = true
         view.isHidden = true
+        context.coordinator.onMount()
         return view
     }
 
     func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
+        context.coordinator.onMount = onMount
+        context.coordinator.onDismantle = onDismantle
         uiView.isHidden = true
         context.coordinator.scheduleAttach(model: model, view: uiView, size: size)
     }
 
-    static func dismantleUIView(_ uiView: GhosttyKitSurfaceView, coordinator: Coordinator) {
-        coordinator.cancelPendingAttach()
+    static func dismantleUIView(_: GhosttyKitSurfaceView, coordinator: Coordinator) {
+        coordinator.dismantle()
     }
 }
 

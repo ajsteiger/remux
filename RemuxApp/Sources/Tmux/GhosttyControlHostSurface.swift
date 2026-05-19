@@ -425,12 +425,14 @@ final class GhosttyControlHostSurface {
         complete(error: error, markBackingExited: false, notifyDebugEvent: false)
     }
 
-    func stop() {
+    func stop(markBackingExited: Bool = true) {
         pumpTask?.cancel()
         pumpTask = nil
         isRunning = false
         didComplete = true
-        surface?.setBackingExited(true)
+        if markBackingExited {
+            surface?.setBackingExited(true)
+        }
 
         Task { [transport] in
             await transport.close(disposition: .reusable)

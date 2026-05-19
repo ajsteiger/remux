@@ -97,6 +97,20 @@ private struct RemuxWorkspaceShell: View {
                     onShowLibrary: {
                         dismissKeyboard()
                         Task { await model.showLibrary() }
+                    },
+                    onMount: { component in
+                        model.terminalScreenViewDidMount(
+                            workspaceID: entry.id,
+                            instanceID: entry.instanceID,
+                            component: component
+                        )
+                    },
+                    onDismantle: { component in
+                        model.terminalScreenViewDidDismantle(
+                            workspaceID: entry.id,
+                            instanceID: entry.instanceID,
+                            component: component
+                        )
                     }
                 )
                 .id(entry.instanceID)
@@ -241,6 +255,8 @@ private struct ActiveTerminalSessionView: View {
     let shortcutStore: ShortcutStore
     let onReconnect: () -> Void
     let onShowLibrary: () -> Void
+    let onMount: (GhosttyTerminalScreenViewComponent) -> Void
+    let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
 
     var body: some View {
         GhosttySurfaceScreen(
@@ -249,7 +265,9 @@ private struct ActiveTerminalSessionView: View {
             isSelected: isSelected,
             shortcutStore: shortcutStore,
             onReconnect: onReconnect,
-            onEditConnection: onShowLibrary
+            onEditConnection: onShowLibrary,
+            onMount: onMount,
+            onDismantle: onDismantle
         )
     }
 }
