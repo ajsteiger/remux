@@ -72,7 +72,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     var terminalSettings: TerminalSettings = .default
 
     private var managedSurfaceStore = GhosttyRuntimeManagedSurfaceStore()
-    private var surfacesPendingPermanentRemoval: [UUID: GhosttyManagedSurface] = [:]
     private let tmuxErrorChannel = GhosttyRuntimeTmuxErrorChannel()
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
@@ -155,8 +154,8 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         topLevels = []
         selectedTopLevelID = nil
         debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
-        managedSurfaceStore.clearAfterExternalRelease()
-        releasePendingPermanentRemovals()
+        let pendingRemovalSurfaces = managedSurfaceStore.resetAfterExternalRelease()
+        releaseAfterPreparingForPermanentRemoval(pendingRemovalSurfaces)
         tmuxErrorChannel.reset()
         createSurfaceCount = 0
         createSurfaceTreeCount = 0
@@ -204,10 +203,12 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
         // Release all surfaces still tracked by Remux before the Ghostty app is
         // freed. Surfaces removed earlier are released at the removal boundary.
-        for surface in managedSurfaceStore.allSurfaces() {
+        let activeSurfaces = managedSurfaceStore.activeSurfacesForRuntimeTeardown()
+        for surface in activeSurfaces {
             surface.releaseBeforePermanentRemoval()
         }
-        releasePendingPermanentRemovals()
+        managedSurfaceStore.clearAfterExternalRelease()
+        releaseAfterPreparingForPermanentRemoval(managedSurfaceStore.takePendingPermanentRemovals())
     }
 
     func selectTopLevel(_ id: UUID, reason: String = "selectTopLevel") {
@@ -334,7 +335,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func surfacePendingPermanentRemoval(for id: UUID) -> GhosttyManagedSurface? {
-        surfacesPendingPermanentRemoval[id]
+        managedSurfaceStore.surfacePendingPermanentRemoval(for: id)
     }
 
     func retireSurfaceAfterQueuedClose(_ id: UUID) {
@@ -2112,7 +2113,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func removeManagedSurface(_ id: UUID) {
-        guard let removed = managedSurfaceStore.remove(id: id) else { return }
+        guard let retirement = managedSurfaceStore.retireForPermanentRemoval(id: id) else { return }
         removePresentationReadiness(for: id)
 #if DEBUG
         NSLog(
@@ -2122,38 +2123,29 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             topLevels.count
         )
 #endif
-        schedulePermanentRemoval(removed, id: id)
 
         var selection = topologySelection
         _ = selection.removeLeaf(id)
         topologySelection = selection
-        _ = removed
         updateDebugSummary("managed surfaces=\(managedSurfaceStore.count)")
-    }
-
-    private func schedulePermanentRemoval(_ removed: GhosttyManagedSurface, id: UUID) {
-        guard removed.view.superview != nil else {
-            removed.prepareForPermanentRemoval()
-            removed.releaseBeforePermanentRemoval()
-            return
-        }
-
-        surfacesPendingPermanentRemoval[id] = removed
+        releaseSurfaceIfNeeded(retirement)
     }
 
     private func completePermanentRemoval(of id: UUID) {
-        guard let removed = surfacesPendingPermanentRemoval.removeValue(forKey: id) else { return }
-        removed.prepareForPermanentRemoval()
-        removed.releaseBeforePermanentRemoval()
+        guard let surface = managedSurfaceStore.completePermanentRemoval(of: id) else { return }
+        GhosttyRuntimeManagedSurfaceStore.releaseAfterPreparingForPermanentRemoval(surface)
     }
 
-    private func releasePendingPermanentRemovals() {
-        let pendingSurfaces = surfacesPendingPermanentRemoval
-        surfacesPendingPermanentRemoval = [:]
+    private func releaseSurfaceIfNeeded(
+        _ retirement: GhosttyRuntimeManagedSurfaceStore.PermanentRemovalRetirement
+    ) {
+        guard case .readyToRelease(let surface) = retirement else { return }
+        GhosttyRuntimeManagedSurfaceStore.releaseAfterPreparingForPermanentRemoval(surface)
+    }
 
-        for surface in pendingSurfaces.values {
-            surface.prepareForPermanentRemoval()
-            surface.releaseBeforePermanentRemoval()
+    private func releaseAfterPreparingForPermanentRemoval(_ surfaces: [GhosttyManagedSurface]) {
+        for surface in surfaces {
+            GhosttyRuntimeManagedSurfaceStore.releaseAfterPreparingForPermanentRemoval(surface)
         }
     }
 
