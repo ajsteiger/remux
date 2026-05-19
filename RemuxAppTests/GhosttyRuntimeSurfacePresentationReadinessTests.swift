@@ -105,6 +105,184 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
         XCTAssertFalse(readiness.hasViewPresentation(secondID))
     }
 
+    func testPhonePresentationStagePlannerClearsMissingTarget() {
+        let targetID = Self.id(1)
+        let previousID = Self.id(2)
+
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.stage(
+                GhosttyPhonePresentationStageContext(
+                    targetSurfaceID: targetID,
+                    previousSurfaceID: previousID,
+                    pendingSurfaceID: targetID,
+                    targetIsInTopology: false,
+                    targetIsReady: true
+                )
+            ),
+            .clearPending
+        )
+    }
+
+    func testPhonePresentationStagePlannerCompletesReadyTarget() {
+        let targetID = Self.id(1)
+        let previousID = Self.id(2)
+
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.stage(
+                GhosttyPhonePresentationStageContext(
+                    targetSurfaceID: targetID,
+                    previousSurfaceID: previousID,
+                    pendingSurfaceID: targetID,
+                    targetIsInTopology: true,
+                    targetIsReady: true
+                )
+            ),
+            .completeReady(tracePendingReady: true)
+        )
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.stage(
+                GhosttyPhonePresentationStageContext(
+                    targetSurfaceID: targetID,
+                    previousSurfaceID: previousID,
+                    pendingSurfaceID: nil,
+                    targetIsInTopology: true,
+                    targetIsReady: true
+                )
+            ),
+            .completeReady(tracePendingReady: false)
+        )
+    }
+
+    func testPhonePresentationStagePlannerRequiresPreviousPresentationBeforePending() {
+        let targetID = Self.id(1)
+
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.stage(
+                GhosttyPhonePresentationStageContext(
+                    targetSurfaceID: targetID,
+                    previousSurfaceID: nil,
+                    pendingSurfaceID: nil,
+                    targetIsInTopology: true,
+                    targetIsReady: false
+                )
+            ),
+            .clearPending
+        )
+    }
+
+    func testPhonePresentationStagePlannerRefreshesRepeatedPendingTarget() {
+        let targetID = Self.id(1)
+
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.stage(
+                GhosttyPhonePresentationStageContext(
+                    targetSurfaceID: targetID,
+                    previousSurfaceID: targetID,
+                    pendingSurfaceID: targetID,
+                    targetIsInTopology: true,
+                    targetIsReady: false
+                )
+            ),
+            .refreshPending(reason: "selection.repeat")
+        )
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.stage(
+                GhosttyPhonePresentationStageContext(
+                    targetSurfaceID: targetID,
+                    previousSurfaceID: targetID,
+                    pendingSurfaceID: nil,
+                    targetIsInTopology: true,
+                    targetIsReady: false
+                )
+            ),
+            .clearPending
+        )
+    }
+
+    func testPhonePresentationStagePlannerBeginsPendingForChangedTarget() {
+        let targetID = Self.id(1)
+        let previousID = Self.id(2)
+
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.stage(
+                GhosttyPhonePresentationStageContext(
+                    targetSurfaceID: targetID,
+                    previousSurfaceID: previousID,
+                    pendingSurfaceID: nil,
+                    targetIsInTopology: true,
+                    targetIsReady: false
+                )
+            ),
+            .beginPending(previousSurfaceID: previousID, targetSurfaceID: targetID)
+        )
+    }
+
+    func testPhonePresentationPromotionPlannerDecisions() {
+        let surfaceID = Self.id(1)
+        let otherID = Self.id(2)
+
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.promote(
+                GhosttyPhonePresentationPromotionContext(
+                    surfaceID: surfaceID,
+                    pendingSurfaceID: nil,
+                    selectedActiveLeafID: surfaceID,
+                    surfaceIsInTopology: true,
+                    surfaceIsReady: true
+                )
+            ),
+            .notPendingTarget
+        )
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.promote(
+                GhosttyPhonePresentationPromotionContext(
+                    surfaceID: surfaceID,
+                    pendingSurfaceID: surfaceID,
+                    selectedActiveLeafID: otherID,
+                    surfaceIsInTopology: true,
+                    surfaceIsReady: true
+                )
+            ),
+            .clearStalePending
+        )
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.promote(
+                GhosttyPhonePresentationPromotionContext(
+                    surfaceID: surfaceID,
+                    pendingSurfaceID: surfaceID,
+                    selectedActiveLeafID: surfaceID,
+                    surfaceIsInTopology: false,
+                    surfaceIsReady: true
+                )
+            ),
+            .clearStalePending
+        )
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.promote(
+                GhosttyPhonePresentationPromotionContext(
+                    surfaceID: surfaceID,
+                    pendingSurfaceID: surfaceID,
+                    selectedActiveLeafID: surfaceID,
+                    surfaceIsInTopology: true,
+                    surfaceIsReady: false
+                )
+            ),
+            .waitForReadiness
+        )
+        XCTAssertEqual(
+            GhosttyPhonePresentationPlanner.promote(
+                GhosttyPhonePresentationPromotionContext(
+                    surfaceID: surfaceID,
+                    pendingSurfaceID: surfaceID,
+                    selectedActiveLeafID: surfaceID,
+                    surfaceIsInTopology: true,
+                    surfaceIsReady: true
+                )
+            ),
+            .promoteReady
+        )
+    }
+
     func testCoordinatorCompletesTrackedFlowOnlyAfterRenderAndPresentationFacts() {
         let surfaceID = Self.id(1)
         var coordinator = GhosttyRuntimeSurfaceReadinessCoordinator()

@@ -367,13 +367,25 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
         }
 
-        guard topLevels.contains(where: { $0.tree.contains(targetSurfaceID) }) else {
+        let targetIsInTopology = topLevels.contains { $0.tree.contains(targetSurfaceID) }
+        let targetIsReady = targetIsInTopology && surfaceIsReadyForPhonePresentation(targetSurfaceID)
+        let decision = GhosttyPhonePresentationPlanner.stage(
+            GhosttyPhonePresentationStageContext(
+                targetSurfaceID: targetSurfaceID,
+                previousSurfaceID: previousPresentation?.leafID,
+                pendingSurfaceID: pendingPhonePresentationSurfaceID,
+                targetIsInTopology: targetIsInTopology,
+                targetIsReady: targetIsReady
+            )
+        )
+
+        switch decision {
+        case .clearPending:
             clearPendingPhonePresentation()
             return
-        }
 
-        if surfaceIsReadyForPhonePresentation(targetSurfaceID) {
-            if pendingPhonePresentationSurfaceID == targetSurfaceID {
+        case .completeReady(let tracePendingReady):
+            if tracePendingReady {
                 tracePendingPhonePresentation(
                     event: "ready",
                     surfaceID: targetSurfaceID,
@@ -386,65 +398,55 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 reason: "selection.renderable"
             )
             return
-        }
 
-        if previousPresentation == nil {
-            clearPendingPhonePresentation()
+        case .refreshPending(let reason):
+            schedulePendingPhonePresentationRefresh(
+                surfaceID: targetSurfaceID,
+                reason: reason
+            )
             return
+
+        case .beginPending(let previousSurfaceID, let targetSurfaceID):
+            pendingPhonePresentationTrace = makePendingPhonePresentationTrace(
+                previousSurfaceID: previousSurfaceID,
+                targetSurfaceID: targetSurfaceID
+            )
+            beginPendingPhonePresentation(surfaceID: targetSurfaceID)
+            tracePendingPhonePresentation(
+                event: "pending",
+                surfaceID: targetSurfaceID,
+                reason: "presentation.pending"
+            )
+
+            GhosttyRuntimeTrace.flowEventIfActive(
+                "tmux.newWindow",
+                event: "ui.presentation.pending",
+                fields: [
+                    "previous": ghosttyDiagnosticShortID(previousSurfaceID),
+                    "target": ghosttyDiagnosticShortID(targetSurfaceID),
+                ]
+            )
+            GhosttyRuntimeTrace.flowEventIfActive(
+                "tmux.splitPane",
+                event: "ui.presentation.pending",
+                fields: [
+                    "previous": ghosttyDiagnosticShortID(previousSurfaceID),
+                    "target": ghosttyDiagnosticShortID(targetSurfaceID),
+                ]
+            )
+            GhosttyRuntimeTrace.flowEventIfActive(
+                Self.windowSwipeFlow,
+                event: "ui.presentation.pending",
+                fields: [
+                    "previous": ghosttyDiagnosticShortID(previousSurfaceID),
+                    "target": ghosttyDiagnosticShortID(targetSurfaceID),
+                ]
+            )
+            schedulePendingPhonePresentationRefresh(
+                surfaceID: targetSurfaceID,
+                reason: "presentation.pending"
+            )
         }
-
-        guard let previousPresentation else { return }
-        if previousPresentation.leafID == targetSurfaceID {
-            if pendingPhonePresentationSurfaceID == targetSurfaceID {
-                schedulePendingPhonePresentationRefresh(
-                    surfaceID: targetSurfaceID,
-                    reason: "selection.repeat"
-                )
-            } else {
-                clearPendingPhonePresentation()
-            }
-            return
-        }
-
-        pendingPhonePresentationTrace = makePendingPhonePresentationTrace(
-            previousSurfaceID: previousPresentation.leafID,
-            targetSurfaceID: targetSurfaceID
-        )
-        beginPendingPhonePresentation(surfaceID: targetSurfaceID)
-        tracePendingPhonePresentation(
-            event: "pending",
-            surfaceID: targetSurfaceID,
-            reason: "presentation.pending"
-        )
-
-        GhosttyRuntimeTrace.flowEventIfActive(
-            "tmux.newWindow",
-            event: "ui.presentation.pending",
-            fields: [
-                "previous": ghosttyDiagnosticShortID(previousPresentation.leafID),
-                "target": ghosttyDiagnosticShortID(targetSurfaceID),
-            ]
-        )
-        GhosttyRuntimeTrace.flowEventIfActive(
-            "tmux.splitPane",
-            event: "ui.presentation.pending",
-            fields: [
-                "previous": ghosttyDiagnosticShortID(previousPresentation.leafID),
-                "target": ghosttyDiagnosticShortID(targetSurfaceID),
-            ]
-        )
-        GhosttyRuntimeTrace.flowEventIfActive(
-            Self.windowSwipeFlow,
-            event: "ui.presentation.pending",
-            fields: [
-                "previous": ghosttyDiagnosticShortID(previousPresentation.leafID),
-                "target": ghosttyDiagnosticShortID(targetSurfaceID),
-            ]
-        )
-        schedulePendingPhonePresentationRefresh(
-            surfaceID: targetSurfaceID,
-            reason: "presentation.pending"
-        )
     }
 
     private func clearPendingPhonePresentation() {
@@ -622,17 +624,35 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         reason: String,
         notificationDelivery: GhosttyRuntimeSurfaceChangeNotificationDelivery = .immediate
     ) -> Bool {
-        guard pendingPhonePresentationSurfaceID == surfaceID else { return true }
-        guard selectedActiveLeafID == surfaceID else {
-            clearPendingPhonePresentation()
-            return true
-        }
-        guard topLevels.contains(where: { $0.tree.contains(surfaceID) }) else {
-            clearPendingPhonePresentation()
-            return true
-        }
-        guard surfaceIsReadyForPhonePresentation(surfaceID) else { return false }
+        let pendingSurfaceID = pendingPhonePresentationSurfaceID
+        let selectedSurfaceID = selectedActiveLeafID
+        let shouldCheckSurfaceReadiness = pendingSurfaceID == surfaceID && selectedSurfaceID == surfaceID
+        let surfaceIsInTopology = shouldCheckSurfaceReadiness && topLevels.contains { $0.tree.contains(surfaceID) }
+        let surfaceIsReady = surfaceIsInTopology && surfaceIsReadyForPhonePresentation(surfaceID)
+        let decision = GhosttyPhonePresentationPlanner.promote(
+            GhosttyPhonePresentationPromotionContext(
+                surfaceID: surfaceID,
+                pendingSurfaceID: pendingSurfaceID,
+                selectedActiveLeafID: selectedSurfaceID,
+                surfaceIsInTopology: surfaceIsInTopology,
+                surfaceIsReady: surfaceIsReady
+            )
+        )
 
+        switch decision {
+        case .notPendingTarget:
+            return true
+
+        case .clearStalePending:
+            clearPendingPhonePresentation()
+            return true
+
+        case .waitForReadiness:
+            return false
+
+        case .promoteReady:
+            break
+        }
         traceTopologyPresentationEvent(
             event: "ui.presentation.promote.ready",
             surfaceID: surfaceID,

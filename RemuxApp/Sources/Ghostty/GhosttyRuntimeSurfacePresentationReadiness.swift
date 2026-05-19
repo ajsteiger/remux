@@ -74,6 +74,86 @@ struct GhosttyRuntimeSurfacePresentationReadiness: Equatable {
     }
 }
 
+struct GhosttyPhonePresentationStageContext: Equatable {
+    let targetSurfaceID: UUID
+    let previousSurfaceID: UUID?
+    let pendingSurfaceID: UUID?
+    let targetIsInTopology: Bool
+    let targetIsReady: Bool
+}
+
+enum GhosttyPhonePresentationStageDecision: Equatable {
+    case clearPending
+    case completeReady(tracePendingReady: Bool)
+    case refreshPending(reason: String)
+    case beginPending(previousSurfaceID: UUID, targetSurfaceID: UUID)
+}
+
+struct GhosttyPhonePresentationPromotionContext: Equatable {
+    let surfaceID: UUID
+    let pendingSurfaceID: UUID?
+    let selectedActiveLeafID: UUID?
+    let surfaceIsInTopology: Bool
+    let surfaceIsReady: Bool
+}
+
+enum GhosttyPhonePresentationPromotionDecision: Equatable {
+    case notPendingTarget
+    case clearStalePending
+    case waitForReadiness
+    case promoteReady
+}
+
+enum GhosttyPhonePresentationPlanner {
+    static func stage(
+        _ context: GhosttyPhonePresentationStageContext
+    ) -> GhosttyPhonePresentationStageDecision {
+        guard context.targetIsInTopology else {
+            return .clearPending
+        }
+
+        if context.targetIsReady {
+            return .completeReady(
+                tracePendingReady: context.pendingSurfaceID == context.targetSurfaceID
+            )
+        }
+
+        guard let previousSurfaceID = context.previousSurfaceID else {
+            return .clearPending
+        }
+
+        if previousSurfaceID == context.targetSurfaceID {
+            if context.pendingSurfaceID == context.targetSurfaceID {
+                return .refreshPending(reason: "selection.repeat")
+            }
+            return .clearPending
+        }
+
+        return .beginPending(
+            previousSurfaceID: previousSurfaceID,
+            targetSurfaceID: context.targetSurfaceID
+        )
+    }
+
+    static func promote(
+        _ context: GhosttyPhonePresentationPromotionContext
+    ) -> GhosttyPhonePresentationPromotionDecision {
+        guard context.pendingSurfaceID == context.surfaceID else {
+            return .notPendingTarget
+        }
+        guard context.selectedActiveLeafID == context.surfaceID else {
+            return .clearStalePending
+        }
+        guard context.surfaceIsInTopology else {
+            return .clearStalePending
+        }
+        guard context.surfaceIsReady else {
+            return .waitForReadiness
+        }
+        return .promoteReady
+    }
+}
+
 struct GhosttyRuntimeSurfaceReadinessCoordinator {
     private var presentationReadiness = GhosttyRuntimeSurfacePresentationReadiness()
     private let interactiveReadinessTracker = GhosttyInteractiveReadinessTracker()
