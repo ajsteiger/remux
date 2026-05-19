@@ -216,7 +216,7 @@ struct GhosttyRuntimeSurfaceReadinessCoordinator {
         surfaceID: UUID,
         size: CGSize,
         state: GhosttyInteractiveSurfaceReadinessState
-    ) -> [GhosttyInteractiveReadinessCompletion] {
+    ) -> GhosttyInteractiveReadinessEvaluation {
         interactiveReadinessTracker.recordRender(
             surfaceID: surfaceID,
             size: size,
@@ -227,7 +227,7 @@ struct GhosttyRuntimeSurfaceReadinessCoordinator {
     func updateInteractivePresentation(
         surfaceID: UUID,
         state: GhosttyInteractiveSurfaceReadinessState
-    ) -> [GhosttyInteractiveReadinessCompletion] {
+    ) -> GhosttyInteractiveReadinessEvaluation {
         interactiveReadinessTracker.updatePresentation(
             surfaceID: surfaceID,
             state: state

@@ -2028,7 +2028,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
         guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else { return }
-        let completions = readinessCoordinator.recordRender(
+        let evaluation = readinessCoordinator.recordRender(
             surfaceID: surfaceID,
             size: size,
             state: interactiveReadinessState(for: surface)
@@ -2042,10 +2042,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "size": "\(Int(size.width))x\(Int(size.height))",
             ]
         )
-        if completions.isEmpty {
-            traceInteractiveWaiting(surfaceID: surfaceID, reason: "display.update", scale: scale)
+        if let waiting = evaluation.waiting {
+            traceInteractiveWaiting(waiting, reason: "display.update", scale: scale)
         }
-        for completion in completions {
+        for completion in evaluation.completions {
             traceInteractiveReady(completion, reason: "display.update", scale: scale)
         }
     }
@@ -2087,14 +2087,14 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     ) {
         guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
         guard let surface = surface ?? managedSurfaceStore.managedSurface(for: surfaceID) else { return }
-        let completions = readinessCoordinator.updateInteractivePresentation(
+        let evaluation = readinessCoordinator.updateInteractivePresentation(
             surfaceID: surfaceID,
             state: interactiveReadinessState(for: surface)
         )
-        if completions.isEmpty {
-            traceInteractiveWaiting(surfaceID: surfaceID, reason: reason, scale: nil)
+        if let waiting = evaluation.waiting {
+            traceInteractiveWaiting(waiting, reason: reason, scale: nil)
         }
-        for completion in completions {
+        for completion in evaluation.completions {
             traceInteractiveReady(completion, reason: reason, scale: nil)
         }
     }
@@ -2139,27 +2139,28 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
     }
 
-    private func traceInteractiveWaiting(surfaceID: UUID, reason: String, scale: CGFloat?) {
-        guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else { return }
-        let state = interactiveReadinessState(for: surface)
-        let renderStatus = readinessCoordinator.renderStatus(for: surfaceID)
+    private func traceInteractiveWaiting(
+        _ waiting: GhosttyInteractiveReadinessWaiting,
+        reason: String,
+        scale: CGFloat?
+    ) {
         var fields = [
-            "runtimePresentationReady": "\(state.runtimePresentationReady)",
-            "focused": "\(state.focused)",
-            "presentationReady": "\(state.presentationReady)",
+            "runtimePresentationReady": "\(waiting.state.runtimePresentationReady)",
+            "focused": "\(waiting.state.focused)",
+            "presentationReady": "\(waiting.state.presentationReady)",
             "reason": reason,
-            "rendered": "\(renderStatus.rendered)",
-            "selected": "\(state.selected)",
-            "surface": ghosttyDiagnosticShortID(surfaceID),
-            "visible": "\(state.visible)",
+            "rendered": "\(waiting.rendered)",
+            "selected": "\(waiting.state.selected)",
+            "surface": ghosttyDiagnosticShortID(waiting.surfaceID),
+            "visible": "\(waiting.state.visible)",
         ]
-        if let size = renderStatus.size {
+        if let size = waiting.size {
             fields["size"] = "\(Int(size.width))x\(Int(size.height))"
         }
         if let scale {
             fields["scale"] = String(format: "%.1f", Double(scale))
         }
-        for flow in readinessCoordinator.pendingFlows(for: surfaceID) {
+        for flow in waiting.pendingFlows {
             GhosttyRuntimeTrace.flowEventIfActive(flow, event: "interactive.waiting", fields: fields)
         }
     }

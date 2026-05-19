@@ -1727,31 +1727,31 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 surfaceID: surfaceID,
                 size: CGSize(width: 1, height: 300),
                 state: ready
-            ).isEmpty
+            ).completions.isEmpty
         )
         XCTAssertTrue(
             tracker.recordRender(
                 surfaceID: surfaceID,
                 size: CGSize(width: 200, height: 300),
                 state: notSelected
-            ).isEmpty
+            ).completions.isEmpty
         )
         XCTAssertTrue(
             tracker.updatePresentation(
                 surfaceID: surfaceID,
                 state: waitingForRuntimePresentation
-            ).isEmpty
+            ).completions.isEmpty
         )
         XCTAssertTrue(
             tracker.updatePresentation(
                 surfaceID: surfaceID,
                 state: waitingForPresentation
-            ).isEmpty
+            ).completions.isEmpty
         )
 
-        let completions = tracker.updatePresentation(surfaceID: surfaceID, state: ready)
+        let evaluation = tracker.updatePresentation(surfaceID: surfaceID, state: ready)
         XCTAssertEqual(
-            completions,
+            evaluation.completions,
             [
                 GhosttyInteractiveReadinessCompletion(
                     flow: "tmux.splitPane",
@@ -1762,7 +1762,8 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 ),
             ]
         )
-        XCTAssertTrue(tracker.updatePresentation(surfaceID: surfaceID, state: ready).isEmpty)
+        XCTAssertNil(evaluation.waiting)
+        XCTAssertTrue(tracker.updatePresentation(surfaceID: surfaceID, state: ready).completions.isEmpty)
     }
 
     func testPasteRoutesToFocusedManagedSurface() {

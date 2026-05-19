@@ -21,6 +21,19 @@ struct GhosttyInteractiveReadinessCompletion: Equatable {
     let state: GhosttyInteractiveSurfaceReadinessState
 }
 
+struct GhosttyInteractiveReadinessWaiting: Equatable {
+    let surfaceID: UUID
+    let rendered: Bool
+    let size: CGSize?
+    let state: GhosttyInteractiveSurfaceReadinessState
+    let pendingFlows: [String]
+}
+
+struct GhosttyInteractiveReadinessEvaluation: Equatable {
+    let completions: [GhosttyInteractiveReadinessCompletion]
+    let waiting: GhosttyInteractiveReadinessWaiting?
+}
+
 final class GhosttyInteractiveReadinessTracker {
     private struct Pending {
         let flow: String
@@ -67,20 +80,61 @@ final class GhosttyInteractiveReadinessTracker {
         surfaceID: UUID,
         size: CGSize,
         state: GhosttyInteractiveSurfaceReadinessState
-    ) -> [GhosttyInteractiveReadinessCompletion] {
+    ) -> GhosttyInteractiveReadinessEvaluation {
         let rendered = size.width > 1 && size.height > 1
         renderedSurfaces[surfaceID] = RenderState(
             rendered: rendered,
             size: rendered ? size : nil
         )
-        return completeReadyPending(surfaceID: surfaceID, state: state)
+        return evaluate(
+            surfaceID: surfaceID,
+            state: state,
+            completions: completeReadyPending(surfaceID: surfaceID, state: state)
+        )
     }
 
     func updatePresentation(
         surfaceID: UUID,
         state: GhosttyInteractiveSurfaceReadinessState
-    ) -> [GhosttyInteractiveReadinessCompletion] {
-        completeReadyPending(surfaceID: surfaceID, state: state)
+    ) -> GhosttyInteractiveReadinessEvaluation {
+        evaluate(
+            surfaceID: surfaceID,
+            state: state,
+            completions: completeReadyPending(surfaceID: surfaceID, state: state)
+        )
+    }
+
+    private func evaluate(
+        surfaceID: UUID,
+        state: GhosttyInteractiveSurfaceReadinessState,
+        completions: [GhosttyInteractiveReadinessCompletion]
+    ) -> GhosttyInteractiveReadinessEvaluation {
+        guard completions.isEmpty else {
+            return GhosttyInteractiveReadinessEvaluation(
+                completions: completions,
+                waiting: nil
+            )
+        }
+
+        let pendingFlows = pendingFlows(for: surfaceID)
+        guard !pendingFlows.isEmpty else {
+            return GhosttyInteractiveReadinessEvaluation(
+                completions: [],
+                waiting: nil
+            )
+        }
+
+        let renderState = renderedSurfaces[surfaceID]
+        return GhosttyInteractiveReadinessEvaluation(
+            completions: [],
+            waiting: GhosttyInteractiveReadinessWaiting(
+                surfaceID: surfaceID,
+                rendered: renderState?.rendered ?? false,
+                size: renderState?.size,
+                state: state,
+                pendingFlows: pendingFlows
+            )
+        )
     }
 
     private func completeReadyPending(

@@ -293,13 +293,15 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
             size: CGSize(width: 120, height: 80),
             state: Self.interactiveState(runtimePresentationReady: false)
         )
-        XCTAssertTrue(renderedBeforeRuntimeReady.isEmpty)
+        XCTAssertTrue(renderedBeforeRuntimeReady.completions.isEmpty)
+        XCTAssertEqual(renderedBeforeRuntimeReady.waiting?.pendingFlows, ["tmux.newWindow"])
+        XCTAssertEqual(renderedBeforeRuntimeReady.waiting?.rendered, true)
         XCTAssertTrue(coordinator.renderStatus(for: surfaceID).rendered)
         XCTAssertEqual(coordinator.pendingFlows(for: surfaceID), ["tmux.newWindow"])
 
         coordinator.markRuntimePresentationReady(surfaceID)
         coordinator.markViewPresented(surfaceID)
-        let completions = coordinator.updateInteractivePresentation(
+        let evaluation = coordinator.updateInteractivePresentation(
             surfaceID: surfaceID,
             state: Self.interactiveState(
                 runtimePresentationReady: coordinator.hasRuntimePresentationReadiness(surfaceID),
@@ -307,11 +309,13 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
             )
         )
 
+        let completions = evaluation.completions
         XCTAssertEqual(completions.count, 1)
         XCTAssertEqual(completions.first?.flow, "tmux.newWindow")
         XCTAssertEqual(completions.first?.surfaceID, surfaceID)
         XCTAssertEqual(completions.first?.rendered, true)
         XCTAssertEqual(completions.first?.size, CGSize(width: 120, height: 80))
+        XCTAssertNil(evaluation.waiting)
         XCTAssertTrue(coordinator.pendingFlows(for: surfaceID).isEmpty)
     }
 
@@ -331,11 +335,13 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
                 presentationReady: coordinator.pendingPresentationSurfaceID != surfaceID
             )
         )
-        XCTAssertTrue(blocked.isEmpty)
+        XCTAssertTrue(blocked.completions.isEmpty)
+        XCTAssertEqual(blocked.waiting?.pendingFlows, ["tmux.splitPane"])
+        XCTAssertEqual(blocked.waiting?.state.presentationReady, false)
         XCTAssertEqual(coordinator.pendingFlows(for: surfaceID), ["tmux.splitPane"])
 
         coordinator.clearPendingPresentation()
-        let completions = coordinator.updateInteractivePresentation(
+        let evaluation = coordinator.updateInteractivePresentation(
             surfaceID: surfaceID,
             state: Self.interactiveState(
                 runtimePresentationReady: coordinator.hasRuntimePresentationReadiness(surfaceID),
@@ -343,9 +349,11 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
             )
         )
 
+        let completions = evaluation.completions
         XCTAssertEqual(completions.count, 1)
         XCTAssertEqual(completions.first?.flow, "tmux.splitPane")
         XCTAssertEqual(completions.first?.surfaceID, surfaceID)
+        XCTAssertNil(evaluation.waiting)
     }
 
     func testCoordinatorRemoveSurfaceClearsPresentationAndInteractiveState() {
@@ -364,7 +372,8 @@ final class GhosttyRuntimeSurfacePresentationReadinessTests: XCTestCase {
                 presentationReady: false
             )
         )
-        XCTAssertTrue(blocked.isEmpty)
+        XCTAssertTrue(blocked.completions.isEmpty)
+        XCTAssertEqual(blocked.waiting?.pendingFlows, ["tmux.newWindow"])
         XCTAssertTrue(coordinator.renderStatus(for: surfaceID).rendered)
 
         let change = coordinator.removeSurface(surfaceID)
