@@ -722,7 +722,7 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(entry.presentation.workspaceID, workspace.id)
         XCTAssertEqual(entry.presentation.sessionName, "logs")
         XCTAssertEqual(entry.presentation.terminalTheme, settings.theme)
-        XCTAssertEqual(entry.session.target.workspace.sessionName, "logs")
+        XCTAssertEqual(sessionAfterEdit.target.workspace.sessionName, "logs")
     }
 
     func testConnectMultipleWorkspacesKeepsBothActiveWhileReturningToLibrary() async throws {
@@ -805,14 +805,14 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(entries.map(\.id), harness.model.activeSessions.map(\.id))
         XCTAssertEqual(entries.map(\.instanceID), harness.model.activeSessions.map(\.instanceID))
 
-        for entry in entries {
-            let key = TerminalRuntimeAttemptKey(session: entry.session)
+        for (entry, session) in zip(entries, harness.model.activeSessions) {
+            let key = TerminalRuntimeAttemptKey(session: session)
             let recordedModel = try XCTUnwrap(modelFactory.createdModels[key])
 
             XCTAssertTrue(entry.model === recordedModel)
-            XCTAssertEqual(entry.presentation.workspaceID, entry.session.target.workspace.id)
-            XCTAssertEqual(entry.presentation.sessionName, entry.session.target.workspace.sessionName)
-            XCTAssertEqual(entry.presentation.terminalTheme, entry.session.target.terminalSettings.theme)
+            XCTAssertEqual(entry.presentation.workspaceID, session.target.workspace.id)
+            XCTAssertEqual(entry.presentation.sessionName, session.target.workspace.sessionName)
+            XCTAssertEqual(entry.presentation.terminalTheme, session.target.terminalSettings.theme)
         }
     }
 

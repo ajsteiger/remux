@@ -56,23 +56,20 @@ struct TerminalRuntimeAttemptKey: Hashable, Sendable {
 }
 
 struct ActiveTerminalScreenEntry: Identifiable {
-    let session: ActiveTerminalSession
+    let id: SavedWorkspace.ID
+    let instanceID: UUID
+    let presentation: GhosttySurfaceScreenPresentation
     let model: GhosttySurfaceScreenModel
 
-    var id: SavedWorkspace.ID {
-        session.id
-    }
-
-    var instanceID: UUID {
-        session.instanceID
-    }
-
-    var presentation: GhosttySurfaceScreenPresentation {
-        GhosttySurfaceScreenPresentation(
+    init(session: ActiveTerminalSession, model: GhosttySurfaceScreenModel) {
+        self.id = session.id
+        self.instanceID = session.instanceID
+        self.presentation = GhosttySurfaceScreenPresentation(
             workspaceID: session.target.workspace.id,
             sessionName: session.target.workspace.sessionName,
             terminalTheme: session.target.terminalSettings.theme
         )
+        self.model = model
     }
 }
 
