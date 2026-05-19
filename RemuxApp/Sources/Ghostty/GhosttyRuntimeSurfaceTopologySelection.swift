@@ -54,6 +54,14 @@ struct GhosttyRuntimeSurfaceTopologySelection: Equatable {
     private(set) var topLevels: [GhosttyTopLevelSurface]
     private(set) var selectedTopLevelID: UUID?
 
+    init(
+        topLevels: [GhosttyTopLevelSurface] = [],
+        selectedTopLevelID: UUID? = nil
+    ) {
+        self.topLevels = topLevels
+        self.selectedTopLevelID = selectedTopLevelID
+    }
+
     var selectedTopLevel: GhosttyTopLevelSurface? {
         guard let selectedTopLevelID else { return nil }
         return topLevels.first(where: { $0.id == selectedTopLevelID })
@@ -209,4 +217,10 @@ struct GhosttyRuntimeSurfaceTopologySelection: Equatable {
         }
         return topLevels.first?.id
     }
+
+#if DEBUG
+    mutating func forceSelectedTopLevelIDForTesting(_ id: UUID?) {
+        selectedTopLevelID = id
+    }
+#endif
 }

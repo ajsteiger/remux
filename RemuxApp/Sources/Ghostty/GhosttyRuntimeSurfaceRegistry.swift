@@ -50,11 +50,17 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
     nonisolated private let runtimeCallbackLeaseStore = GhosttyRuntimeCallbackLeaseStore()
 
-    @Published private(set) var topLevels: [GhosttyTopLevelSurface] = []
-    @Published private(set) var selectedTopLevelID: UUID?
     @Published private(set) var debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
     var lastTmuxProtocolError: TmuxControlProtocolError? {
         tmuxErrorChannel.lastProtocolError
+    }
+
+    var topLevels: [GhosttyTopLevelSurface] {
+        topologySelection.topLevels
+    }
+
+    var selectedTopLevelID: UUID? {
+        topologySelection.selectedTopLevelID
     }
 
     var onChange: (() -> Void)? {
@@ -75,6 +81,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private let tmuxErrorChannel = GhosttyRuntimeTmuxErrorChannel()
     private var createSurfaceCount = 0
     private var createSurfaceTreeCount = 0
+    private var topologySelection = GhosttyRuntimeSurfaceTopologySelection()
     private var readinessCoordinator = GhosttyRuntimeSurfaceReadinessCoordinator()
     private var pendingPhonePresentationRefreshTask: Task<Void, Never>?
     private var pendingPhonePresentationRefreshAttempt = 0
@@ -86,18 +93,6 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             self?.objectWillChange.send()
         }
     )
-    private var topologySelection: GhosttyRuntimeSurfaceTopologySelection {
-        get {
-            GhosttyRuntimeSurfaceTopologySelection(
-                topLevels: topLevels,
-                selectedTopLevelID: selectedTopLevelID
-            )
-        }
-        set {
-            topLevels = newValue.topLevels
-            selectedTopLevelID = newValue.selectedTopLevelID
-        }
-    }
 
     var selectedTopLevel: GhosttyTopLevelSurface? {
         topologySelection.selectedTopLevel
@@ -154,8 +149,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     func reset() {
-        topLevels = []
-        selectedTopLevelID = nil
+        topologySelection = GhosttyRuntimeSurfaceTopologySelection()
         debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
         let pendingRemovalSurfaces = managedSurfaceStore.resetAfterExternalRelease()
         releaseAfterPreparingForPermanentRemoval(pendingRemovalSurfaces)
@@ -1797,9 +1791,11 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         )
     }
 
+#if DEBUG
     func forceSelectedTopLevelIDForTesting(_ id: UUID?) {
-        selectedTopLevelID = id
+        topologySelection.forceSelectedTopLevelIDForTesting(id)
     }
+#endif
 
     func refreshPhonePresentationReadinessForTesting(surfaceID: UUID) {
         promotePendingPhonePresentationIfReady(
