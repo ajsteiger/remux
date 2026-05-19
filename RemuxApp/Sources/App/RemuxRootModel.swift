@@ -67,8 +67,12 @@ struct ActiveTerminalScreenEntry: Identifiable {
         session.instanceID
     }
 
-    var target: TmuxConnectionTarget {
-        session.target
+    var presentation: GhosttySurfaceScreenPresentation {
+        GhosttySurfaceScreenPresentation(
+            workspaceID: session.target.workspace.id,
+            sessionName: session.target.workspace.sessionName,
+            terminalTheme: session.target.terminalSettings.theme
+        )
     }
 }
 

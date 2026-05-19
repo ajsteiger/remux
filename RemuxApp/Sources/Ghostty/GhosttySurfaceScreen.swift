@@ -2,9 +2,16 @@ import SwiftUI
 import UIKit
 import GhosttyKit
 
+struct GhosttySurfaceScreenPresentation: Equatable {
+    let workspaceID: SavedWorkspace.ID
+    let sessionName: String
+    let terminalTheme: TerminalTheme
+}
+
 struct GhosttySurfaceScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var model: GhosttySurfaceScreenModel
+    private let presentation: GhosttySurfaceScreenPresentation
     private let shortcutStore: ShortcutStore
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var terminalInputController = GhosttyTerminalInputController()
@@ -21,20 +28,19 @@ struct GhosttySurfaceScreen: View {
     @State private var isShortcutsSettingsPresented = false
     @State private var shortcutEditorRequest: ShortcutEditorRequest?
 
-    private let target: TmuxConnectionTarget
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
     private static let tmuxPrefixFlushDelay: Duration = .milliseconds(750)
 
     init(
-        target: TmuxConnectionTarget,
         model: GhosttySurfaceScreenModel,
+        presentation: GhosttySurfaceScreenPresentation,
         shortcutStore: ShortcutStore,
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void
     ) {
-        self.target = target
         self.model = model
+        self.presentation = presentation
         self.shortcutStore = shortcutStore
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
@@ -53,7 +59,7 @@ struct GhosttySurfaceScreen: View {
             let interactionProjection = model.terminalInteractionProjection
 
             ZStack {
-                target.terminalSettings.theme.terminalSurfaceBackground
+                presentation.terminalTheme.terminalSurfaceBackground
                     .ignoresSafeArea(.all, edges: .all)
 
                 GeometryReader { proxy in
@@ -121,7 +127,7 @@ struct GhosttySurfaceScreen: View {
                                 height: terminalViewportSize.height,
                                 alignment: .topLeading
                             )
-                            .background(target.terminalSettings.theme.terminalSurfaceBackground)
+                            .background(presentation.terminalTheme.terminalSurfaceBackground)
 
                         GhosttyTerminalResponderRepresentable(
                             isEnabled: interactionProjection.isInputAvailable,
@@ -221,7 +227,7 @@ struct GhosttySurfaceScreen: View {
                 .padding(.top, 4)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
-                .background(target.terminalSettings.theme.terminalSurfaceBackground)
+                .background(presentation.terminalTheme.terminalSurfaceBackground)
                 .background {
                     GeometryReader { chromeProxy in
                         Color.clear.preference(
@@ -325,8 +331,8 @@ struct GhosttySurfaceScreen: View {
                 sessionOpenFlowID,
                 event: "ui.terminalScreen.appear",
                 fields: [
-                    "session": target.workspace.sessionName,
-                    "workspaceID": target.workspace.id.uuidString,
+                    "session": presentation.sessionName,
+                    "workspaceID": presentation.workspaceID.uuidString,
                 ]
             )
             handleScenePhaseChange(scenePhase)
@@ -371,7 +377,7 @@ struct GhosttySurfaceScreen: View {
             event: "ui.tap.surface",
             fields: [
                 "surface": ghosttyDiagnosticShortID(surfaceID),
-                "workspaceID": target.workspace.id.uuidString,
+                "workspaceID": presentation.workspaceID.uuidString,
             ]
         )
         let didActivatePane = model.focusTmuxPane(surfaceID).isHandled
@@ -414,7 +420,7 @@ struct GhosttySurfaceScreen: View {
             fields: [
                 "inputAvailable": "\(isTerminalInputAvailable)",
                 "mode": "\(inputCoordinator.keyboardMode)",
-                "workspaceID": target.workspace.id.uuidString,
+                "workspaceID": presentation.workspaceID.uuidString,
             ]
         )
         let projection = GhosttyKeyboardToggleProjection(
@@ -1190,7 +1196,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private var sessionOpenFlowID: String {
-        "session.open.\(target.workspace.id.uuidString)"
+        "session.open.\(presentation.workspaceID.uuidString)"
     }
 
     private func terminalInputTraceFields(extra: [String: String] = [:]) -> [String: String] {
@@ -1201,7 +1207,7 @@ struct GhosttySurfaceScreen: View {
             "keyboardMode": "\(inputCoordinator.keyboardMode)",
             "state": "\(model.state)",
             "topLevels": "\(interactionProjection.windowCount)",
-            "workspaceID": target.workspace.id.uuidString,
+            "workspaceID": presentation.workspaceID.uuidString,
         ]
         for (key, value) in extra {
             fields[key] = value
@@ -1215,7 +1221,7 @@ struct GhosttySurfaceScreen: View {
             event: "ui.tap.newWindow",
             fields: [
                 "topLevelsBefore": "\(model.terminalInteractionProjection.windowCount)",
-                "workspaceID": target.workspace.id.uuidString,
+                "workspaceID": presentation.workspaceID.uuidString,
             ]
         )
         let effect = model.createTmuxWindowInteractionEffect()
@@ -1245,7 +1251,7 @@ struct GhosttySurfaceScreen: View {
             event: event,
             fields: [
                 "panesBefore": "\(model.paneSheetDetentPaneCount(topLevelID: topLevelID))",
-                "workspaceID": target.workspace.id.uuidString,
+                "workspaceID": presentation.workspaceID.uuidString,
             ]
         )
         let effect = model.splitFocusedTmuxPaneInteractionEffect()
@@ -1275,7 +1281,7 @@ struct GhosttySurfaceScreen: View {
             GhosttyWindowSelectionSheet(
                 session: session,
                 projection: model.windowSelectionSheetRenderProjection(),
-                sessionName: target.workspace.sessionName,
+                sessionName: presentation.sessionName,
                 onCreateWindow: createTmuxWindowFromSelectionSheet,
                 onSelect: selectTmuxWindowFromSelectionSheet,
                 onRemoveWindow: closeTmuxWindowFromSelectionSheet

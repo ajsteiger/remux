@@ -212,8 +212,8 @@ private struct ActiveTerminalSessionView: View {
 
     var body: some View {
         GhosttySurfaceScreen(
-            target: entry.target,
             model: entry.model,
+            presentation: entry.presentation,
             shortcutStore: shortcutStore,
             onReconnect: onReconnect,
             onEditConnection: onShowLibrary

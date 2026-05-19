@@ -678,6 +678,46 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(snapshot.workspaces.first?.lastOpenedAt, lastOpenedAt)
     }
 
+    func testEditActiveWorkspaceRefreshesScreenPresentationWithoutReplacingModel() async throws {
+        let settings = TerminalSettings(fontSize: 13, theme: .remuxLight)
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            settings: settings,
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("demo-password", for: server.id)
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let sessionBeforeEdit = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: sessionBeforeEdit)
+        XCTAssertEqual(harness.model.activeTerminalScreenEntries.first?.presentation.sessionName, "base")
+
+        await harness.model.beginEditWorkspace(serverID: server.id, workspaceID: workspace.id)
+        harness.model.updateDraft { draft in
+            draft.sessionName = "logs"
+        }
+
+        await harness.model.saveAndConnect()
+
+        let sessionAfterEdit = try XCTUnwrap(harness.model.activeSessions.first)
+        let entry = try XCTUnwrap(harness.model.activeTerminalScreenEntries.first)
+        XCTAssertEqual(sessionAfterEdit.instanceID, sessionBeforeEdit.instanceID)
+        XCTAssertTrue(entry.model === terminalModel)
+        XCTAssertEqual(entry.presentation.workspaceID, workspace.id)
+        XCTAssertEqual(entry.presentation.sessionName, "logs")
+        XCTAssertEqual(entry.presentation.terminalTheme, settings.theme)
+        XCTAssertEqual(entry.session.target.workspace.sessionName, "logs")
+    }
+
     func testConnectMultipleWorkspacesKeepsBothActiveWhileReturningToLibrary() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -763,8 +803,9 @@ final class RemuxRootModelTests: XCTestCase {
             let recordedModel = try XCTUnwrap(modelFactory.createdModels[key])
 
             XCTAssertTrue(entry.model === recordedModel)
-            XCTAssertEqual(entry.target.workspace.id, entry.session.target.workspace.id)
-            XCTAssertEqual(entry.target.server.id, entry.session.target.server.id)
+            XCTAssertEqual(entry.presentation.workspaceID, entry.session.target.workspace.id)
+            XCTAssertEqual(entry.presentation.sessionName, entry.session.target.workspace.sessionName)
+            XCTAssertEqual(entry.presentation.terminalTheme, entry.session.target.terminalSettings.theme)
         }
     }
 
