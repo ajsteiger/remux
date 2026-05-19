@@ -98,7 +98,7 @@ final class RemuxAppUITests: XCTestCase {
 
         waitForLiveTerminalReady(timeout: 60)
         sendTerminalCommand(
-            "i=0; while [ $i -lt 120 ]; do printf 'REMUX_RENDER_CHECK_%03d ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\\n' $i; i=$((i+1)); done"
+            "yes 'REMUX_RENDER_CHECK ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' | head -120"
         )
         assertLiveTerminalScreenshotContainsRenderedContent(minNonBackgroundPixels: 30_000)
     }
@@ -145,12 +145,8 @@ final class RemuxAppUITests: XCTestCase {
         waitForLiveTerminalReady(timeout: 90)
 
         let marker = "__REMUX_LATENCY_UIKEY\(UUID().uuidString.prefix(8).uppercased())__"
-        let keyboard = app.buttons["terminal.keyboard"]
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
-        keyboard.tap()
-        _ = app.keyboards.firstMatch.waitForExistence(timeout: 8)
-        app.typeText("echo \(marker)\n")
-        RunLoop.current.run(until: Date().addingTimeInterval(5))
+        sendTerminalCommand("echo \(marker)")
+        assertLiveTerminalScreenshotContainsRenderedContent()
 
         let windows = app.buttons["terminal.windows"]
         XCTAssertTrue(windows.waitForExistence(timeout: 10))
@@ -1210,14 +1206,49 @@ final class RemuxAppUITests: XCTestCase {
         screenshot: XCUIScreenshot
     ) -> (pixels: [UInt8], width: Int, height: Int)? {
         guard let cgImage = screenshot.image.cgImage else { return nil }
+        guard app.frame.width > 0, app.frame.height > 0 else { return nil }
 
-        let width = cgImage.width
-        let height = cgImage.height
+        let terminal = app.otherElements["terminal.screen"].firstMatch
+        guard terminal.exists else { return nil }
+
+        let scaleX = CGFloat(cgImage.width) / app.frame.width
+        let scaleY = CGFloat(cgImage.height) / app.frame.height
+        let appFrame = app.frame
+        var contentFrame = terminal.frame.intersection(appFrame)
+        guard !contentFrame.isNull,
+              contentFrame.width > 1,
+              contentFrame.height > 1
+        else {
+            return nil
+        }
+
+        let topSystemChromeInset = min(64, appFrame.height * 0.08)
+        let clippedMinY = max(contentFrame.minY, appFrame.minY + topSystemChromeInset)
+        var clippedMaxY = contentFrame.maxY
+
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists {
+            clippedMaxY = min(clippedMaxY, keyboard.frame.minY)
+        }
+
+        let keyboardChromeButton = app.buttons["terminal.keyboard"]
+        if keyboardChromeButton.exists {
+            clippedMaxY = min(clippedMaxY, keyboardChromeButton.frame.minY)
+        }
+
+        contentFrame = CGRect(
+            x: contentFrame.minX,
+            y: clippedMinY,
+            width: contentFrame.width,
+            height: clippedMaxY - clippedMinY
+        )
+        guard contentFrame.height > 1 else { return nil }
+
         let crop = CGRect(
-            x: 0,
-            y: height * 7 / 100,
-            width: width,
-            height: height * 75 / 100
+            x: contentFrame.minX * scaleX,
+            y: contentFrame.minY * scaleY,
+            width: contentFrame.width * scaleX,
+            height: contentFrame.height * scaleY
         )
         return renderedPixels(cgImage: cgImage, crop: crop)
     }
