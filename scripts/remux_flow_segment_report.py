@@ -19,6 +19,15 @@ FLOW_RE = re.compile(
     r"since_ms=(?P<since>[0-9.]+)"
 )
 
+NATIVE_SURFACE_INIT_RE = re.compile(
+    r"Ghostty surfaceInit t=(?P<timestamp>-?\d+) "
+    r"seq=(?P<sequence>\d+) "
+    r"phase=(?P<phase>[^ ]+) "
+    r"duration_ns=(?P<duration_ns>\d+)"
+    r"(?: .*?context=(?P<context>[^ ]+) "
+    r"backing=(?P<backing>[^ ]+))?"
+)
+
 
 @dataclass(frozen=True)
 class FlowEvent:
@@ -26,6 +35,17 @@ class FlowEvent:
     flow: str
     event: str
     since_ms: float
+    source: str
+
+
+@dataclass(frozen=True)
+class NativeSurfaceInitEvent:
+    timestamp: int
+    sequence: int
+    phase: str
+    duration_ms: float
+    context: str
+    backing: str
     source: str
 
 
@@ -1024,6 +1044,91 @@ def parse_events(paths: Iterable[Path]) -> list[FlowEvent]:
     return sorted(events.values(), key=lambda event: event.timestamp)
 
 
+def parse_native_surface_init_events(paths: Iterable[Path]) -> list[NativeSurfaceInitEvent]:
+    events: list[NativeSurfaceInitEvent] = []
+    for path in paths:
+        for line in path.read_text(errors="replace").splitlines():
+            match = NATIVE_SURFACE_INIT_RE.search(line)
+            if match is None:
+                continue
+
+            events.append(native_surface_init_event(match, source=str(path)))
+
+    return sorted(
+        dedupe_native_surface_events(fill_native_surface_context(events)),
+        key=lambda event: (event.timestamp, event.source, event.sequence, event.phase),
+    )
+
+
+def native_surface_init_event(
+    match: re.Match[str],
+    source: str,
+) -> NativeSurfaceInitEvent:
+    return NativeSurfaceInitEvent(
+        timestamp=int(match.group("timestamp")),
+        sequence=int(match.group("sequence")),
+        phase=match.group("phase"),
+        duration_ms=int(match.group("duration_ns")) / 1_000_000,
+        context=match.group("context") or "unknown",
+        backing=match.group("backing") or "unknown",
+        source=source,
+    )
+
+
+def fill_native_surface_context(
+    events: list[NativeSurfaceInitEvent],
+) -> list[NativeSurfaceInitEvent]:
+    known_contexts: dict[tuple[str, int], tuple[str, str]] = {}
+    for event in events:
+        if event.context == "unknown" or event.backing == "unknown":
+            continue
+        known_contexts.setdefault(
+            (event.source, event.sequence),
+            (event.context, event.backing),
+        )
+
+    filled: list[NativeSurfaceInitEvent] = []
+    for event in events:
+        if event.context != "unknown" and event.backing != "unknown":
+            filled.append(event)
+            continue
+
+        context, backing = known_contexts.get(
+            (event.source, event.sequence),
+            (event.context, event.backing),
+        )
+        filled.append(
+            NativeSurfaceInitEvent(
+                timestamp=event.timestamp,
+                sequence=event.sequence,
+                phase=event.phase,
+                duration_ms=event.duration_ms,
+                context=context,
+                backing=backing,
+                source=event.source,
+            )
+        )
+
+    return filled
+
+
+def dedupe_native_surface_events(
+    events: list[NativeSurfaceInitEvent],
+) -> list[NativeSurfaceInitEvent]:
+    deduped: dict[tuple[int, int, str, float, str, str], NativeSurfaceInitEvent] = {}
+    for event in events:
+        key = (
+            event.timestamp,
+            event.sequence,
+            event.phase,
+            event.duration_ms,
+            event.context,
+            event.backing,
+        )
+        deduped.setdefault(key, event)
+    return list(deduped.values())
+
+
 def group_flow_instances(events: Iterable[FlowEvent]) -> list[FlowInstance]:
     start_events = {
         "tmux.newWindow": "ui.tap.newWindow",
@@ -1066,6 +1171,87 @@ def percentile(values: list[float], percentile_value: float) -> float:
 
 def segment_duration_ms(start: FlowEvent, end: FlowEvent) -> float:
     return (end.timestamp - start.timestamp) / 1_000_000
+
+
+NATIVE_SURFACE_PHASE_ORDER = [
+    "native.surfaceNew.capi",
+    "native.surfaceNew.wrapper",
+    "native.app.newSurface.alloc",
+    "native.app.newSurface.surfaceInit",
+    "native.embeddedSurface.init.total",
+    "native.embeddedSurface.fields",
+    "native.embeddedSurface.appAdd",
+    "native.embeddedSurface.config",
+    "native.embeddedSurface.coreSurfaceInit",
+    "native.coreSurface.init.total",
+    "native.coreSurface.conditionalConfig",
+    "native.coreSurface.derivedConfig",
+    "native.coreSurface.renderer.surfaceInit",
+    "native.coreSurface.contentScale",
+    "native.coreSurface.fontGridRef",
+    "native.coreSurface.size",
+    "native.coreSurface.renderer.init",
+    "native.coreSurface.rendererState",
+    "native.coreSurface.rendererThread.init",
+    "native.coreSurface.ioThread.init",
+    "native.coreSurface.assignState",
+    "native.coreSurface.termio.init",
+    "native.coreSurface.appActions",
+    "native.coreSurface.resize",
+    "native.coreSurface.renderer.finalize",
+    "native.coreSurface.rendererThread.spawn",
+    "native.coreSurface.ioThread.spawn",
+]
+
+
+def native_phase_order(phases: Iterable[str]) -> list[str]:
+    phase_set = set(phases)
+    ordered = [phase for phase in NATIVE_SURFACE_PHASE_ORDER if phase in phase_set]
+    extras = sorted(phase_set - set(NATIVE_SURFACE_PHASE_ORDER))
+    return ordered + extras
+
+
+def report_native_surface_init(events: list[NativeSurfaceInitEvent]) -> str:
+    if not events:
+        return "native_surface_init_traces=0"
+
+    lines = [f"native_surface_init_traces={len(events)}"]
+    groups: list[tuple[str, list[NativeSurfaceInitEvent]]] = [("all", events)]
+    grouped_keys = sorted({(event.context, event.backing) for event in events})
+    groups.extend(
+        (
+            f"context={context} backing={backing}",
+            [
+                event
+                for event in events
+                if event.context == context and event.backing == backing
+            ],
+        )
+        for context, backing in grouped_keys
+    )
+
+    for label, group_events in groups:
+        surface_count = len({(event.source, event.sequence) for event in group_events})
+        lines.append(
+            f"[native.surfaceInit {label}] surfaces={surface_count} samples={len(group_events)}"
+        )
+        for phase in native_phase_order(event.phase for event in group_events):
+            values = [
+                event.duration_ms
+                for event in group_events
+                if event.phase == phase
+            ]
+            if not values:
+                continue
+            lines.append(
+                f"{phase}: "
+                f"n={len(values)} "
+                f"p50_ms={statistics.median(values):.3f} "
+                f"p95_ms={percentile(values, 0.95):.3f} "
+                f"max_ms={max(values):.3f}"
+            )
+
+    return "\n".join(lines)
 
 
 def report(instances: list[FlowInstance]) -> str:
@@ -1188,6 +1374,9 @@ Remux flow t=27150000 flow=tmux.splitPane event=managedSurface.factory.view.allo
 Remux flow t=27160000 flow=tmux.splitPane event=managedSurface.factory.platformConfig.begin since_ms=7.160
 Remux flow t=27170000 flow=tmux.splitPane event=managedSurface.factory.platformConfig.end since_ms=7.170
 Remux flow t=27180000 flow=tmux.splitPane event=managedSurface.factory.nativeSurface.new.begin since_ms=7.180
+Ghostty surfaceInit t=27190000 seq=1 phase=native.coreSurface.termio.init duration_ns=2000000 context=split backing=manual
+Ghostty surfaceInit t=27195000 seq=1 phase=native.coreSurface.assignState duration_ns=100000
+Ghostty surfaceInit t=27200000 seq=1 phase=native.coreSurface.renderer.init duration_ns=500000 context=split backing=manual
 Remux flow t=27300000 flow=tmux.splitPane event=managedSurface.factory.nativeSurface.new.end since_ms=7.300
 Remux flow t=27310000 flow=tmux.splitPane event=managedSurface.factory.lifecycleBind.begin since_ms=7.310
 Remux flow t=27320000 flow=tmux.splitPane event=managedSurface.factory.lifecycleBind.end since_ms=7.320
@@ -1233,6 +1422,36 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
 
     instances = group_flow_instances(events)
     output = report(instances)
+    native_events = []
+    for line in sample.splitlines():
+        match = NATIVE_SURFACE_INIT_RE.search(line)
+        if match is None:
+            continue
+        native_events.append(native_surface_init_event(match, source="self-test"))
+    native_events.append(
+        NativeSurfaceInitEvent(
+            timestamp=27250000,
+            sequence=1,
+            phase="native.coreSurface.assignState",
+            duration_ms=0.2,
+            context="split",
+            backing="manual",
+            source="second-self-test-log",
+        )
+    )
+    native_events.append(
+        NativeSurfaceInitEvent(
+            timestamp=27190000,
+            sequence=1,
+            phase="native.coreSurface.termio.init",
+            duration_ms=2.0,
+            context="split",
+            backing="manual",
+            source="duplicate-self-test-log",
+        )
+    )
+    native_events = dedupe_native_surface_events(fill_native_surface_context(native_events))
+    native_output = report_native_surface_init(native_events)
     assert "distinct_action_flows=2" in output
     assert "send_end->ssh_channel_read: n=1 p50_ms=1.000" in output
     assert "processOutput_end->runtime_callback_entry: n=1 p50_ms=0.400" in output
@@ -1297,6 +1516,10 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
         "n=0 missing=0 out_of_order=1"
     ) in output
     assert "last_presentation_fact->interactive_ready: n=1 p50_ms=1.000" in output
+    assert "[native.surfaceInit all] surfaces=2 samples=4" in native_output
+    assert "native.coreSurface.renderer.init: n=1 p50_ms=0.500" in native_output
+    assert "native.coreSurface.termio.init: n=1 p50_ms=2.000" in native_output
+    assert "native.coreSurface.assignState: n=2 p50_ms=0.150" in native_output
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -1329,6 +1552,10 @@ def main(argv: list[str]) -> int:
         return 2
 
     print(report(group_flow_instances(parse_events(args.logs))))
+    native_report = report_native_surface_init(parse_native_surface_init_events(args.logs))
+    if native_report != "native_surface_init_traces=0":
+        print()
+        print(native_report)
     return 0
 
 

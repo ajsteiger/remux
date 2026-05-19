@@ -667,6 +667,7 @@ REMUX_LIVE_PREPARED_FIXTURE="$fixture_name" \
 REMUX_LIVE_SESSION_NAME_OVERRIDE="$fixture_session" \
 REMUX_TRACE_LATENCY=1 \
 REMUX_TRACE_PERF=1 \
+GHOSTTY_TRACE_SURFACE_INIT=1 \
 xcodebuild "${xcode_args[@]}" 2>&1 | tee "$log"
 xcode_status=$?
 set -e
