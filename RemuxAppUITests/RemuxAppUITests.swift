@@ -170,6 +170,7 @@ final class RemuxAppUITests: XCTestCase {
 
     func testLiveHighOutputRuntimeWhenConfigured() throws {
         let sessionName = try generatedLiveLatencySessionName("flow")
+        let doneMarker = "REMUX_FLOW_DONE_\(UUID().uuidString.prefix(8).uppercased())"
         defer {
             cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
         }
@@ -185,14 +186,20 @@ final class RemuxAppUITests: XCTestCase {
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 8))
 
         let payload = String(repeating: "x", count: 80)
-        app.typeText(
-            "i=0; while [ $i -lt 5000 ]; do printf 'REMUX_FLOW_%05d \(payload)\\n' $i; i=$((i+1)); done\n"
+        sendTerminalCommand(
+            "clear; i=0; while [ $i -lt 5000 ]; do printf 'REMUX_FLOW_%05d \(payload)\\n' $i; i=$((i+1)); done; echo \(doneMarker)"
         )
 
         RunLoop.current.run(until: Date().addingTimeInterval(10))
+        assertLiveTerminalScreenshotContainsRenderedContent(minNonBackgroundPixels: 30_000)
 
         XCTAssertFalse(app.staticTexts["terminal.status.failed"].exists)
         XCTAssertTrue(app.otherElements["terminal.screen"].exists || app.staticTexts["terminal.screen"].exists)
+        recordLiveTmuxPaneCaptureExpectation(
+            sessionName: sessionName,
+            paneIndex: 1,
+            marker: doneMarker
+        )
 
         let panes = app.buttons["terminal.panes"]
         XCTAssertTrue(panes.waitForExistence(timeout: 10))
