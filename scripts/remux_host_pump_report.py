@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Iterable
 
 
+TRACE_RE = re.compile(
+    r"Remux (?:latency|perf|flow|tmuxViewport) "
+    r"t=(?P<timestamp>\d+) "
+    r"(?P<body>.*)$"
+)
 RECEIVE_RE = re.compile(
     r"host\.pump\.receive "
     r"bytes=(?P<bytes>\d+) "
@@ -27,12 +32,46 @@ PROCESS_RE = re.compile(
     r"chunks=(?P<chunks>\d+) "
     r"elapsed_ms=(?P<elapsed>[0-9.]+)"
 )
+PREVIEW_RE = re.compile(r"preview=(?P<preview>.*)$")
+FLOW_EVENT_RE = re.compile(r"(?:^| )event=(?P<event>[^ ]+)")
+
+NANOS_PER_MILLISECOND = 1_000_000
+SIDE_EFFECT_POST_TOLERANCE_NS = 2 * NANOS_PER_MILLISECOND
+OUTBOUND_WRITE_KINDS = {
+    "hostSurface.onWrite",
+    "writeSequencer.enqueue",
+    "writeSequencer.send.begin",
+    "writeSequencer.send.end",
+    "transport.send.begin",
+    "transport.send.end",
+    "ssh.writeAndFlush.begin",
+    "ssh.writeAndFlush.end",
+}
+
+
+@dataclass(frozen=True)
+class LogLine:
+    source: str
+    line: int
+    timestamp: int | None
+    body: str
+
+
+@dataclass(frozen=True)
+class SideEffect:
+    source: str
+    line: int
+    timestamp: int
+    kind: str
+    body: str
+    query_hint: str | None
 
 
 @dataclass(frozen=True)
 class ReceiveBatch:
     source: str
     line: int
+    timestamp: int | None
     byte_count: int
     chunk_count: int
     total_byte_count: int
@@ -43,17 +82,58 @@ class ReceiveBatch:
 class ProcessBatch:
     source: str
     line: int
+    timestamp: int | None
     accepted: bool
     byte_count: int
     chunk_count: int
     elapsed_ms: float
     receive: ReceiveBatch | None
+    side_effects: tuple[SideEffect, ...] = ()
 
     @property
     def payload_class(self) -> str:
         if self.receive is None:
             return "missing_receive"
-        return classify_preview(self.receive.preview)
+        return classify_receive(self.receive)
+
+    @property
+    def start_timestamp(self) -> int | None:
+        if self.timestamp is None:
+            return None
+        return self.timestamp - round(self.elapsed_ms * NANOS_PER_MILLISECOND)
+
+    @property
+    def has_correlated_outbound_write(self) -> bool:
+        return any(
+            effect.kind in OUTBOUND_WRITE_KINDS or effect.kind.startswith("host.write.")
+            for effect in self.side_effects
+        )
+
+    @property
+    def has_correlated_runtime_callback(self) -> bool:
+        return any(effect.kind.startswith("runtime.") for effect in self.side_effects)
+
+    @property
+    def primary_query_hint(self) -> str:
+        hints = [effect.query_hint for effect in self.side_effects if effect.query_hint is not None]
+        if not hints:
+            return "none"
+
+        priority = [
+            "capture_pane",
+            "list_panes",
+            "display_message",
+            "refresh_client",
+            "select_window_or_pane",
+            "send_keys",
+            "new_window",
+            "split_window",
+            "tmux_other",
+        ]
+        for hint in priority:
+            if hint in hints:
+                return hint
+        return sorted(set(hints))[0]
 
 
 @dataclass(frozen=True)
@@ -61,6 +141,26 @@ class ParseResult:
     process_batches: tuple[ProcessBatch, ...]
     unpaired_receives: int
     mismatched_pairs: int
+
+
+def parse_log_line(source: str, line_number: int, line: str) -> LogLine:
+    if trace := TRACE_RE.search(line):
+        return LogLine(
+            source=source,
+            line=line_number,
+            timestamp=int(trace.group("timestamp")),
+            body=trace.group("body"),
+        )
+    return LogLine(source=source, line=line_number, timestamp=None, body=line)
+
+
+def classify_receive(receive: ReceiveBatch) -> str:
+    preview_class = classify_preview(receive.preview)
+    if preview_class != "other":
+        return preview_class
+    if receive.byte_count >= 1024 and receive.chunk_count > 1:
+        return "continuation_fragment"
+    return preview_class
 
 
 def classify_preview(preview: str) -> str:
@@ -77,6 +177,8 @@ def classify_preview(preview: str) -> str:
             "%layout-change",
         )
     )
+    has_pane_state_shape = ";VT10x" in preview or re.search(r"%\d+;\d+;\d+;", preview) is not None
+    has_capture_response_shape = "\\134x0D" in preview and preview.count("\\134x0D") >= 8
 
     if has_extended_output and (has_control_begin or has_layout or has_tmux_signal):
         return "mixed_output_control"
@@ -84,6 +186,12 @@ def classify_preview(preview: str) -> str:
         return "bulk_output"
     if has_layout:
         return "layout_signal"
+    if has_control_begin and has_pane_state_shape:
+        return "pane_state_response"
+    if has_control_begin and has_capture_response_shape:
+        return "pane_history_response"
+    if has_pane_state_shape:
+        return "pane_state_fragment"
     if has_control_begin:
         return "control_response"
     if has_tmux_signal:
@@ -91,6 +199,76 @@ def classify_preview(preview: str) -> str:
     if preview:
         return "other"
     return "empty"
+
+
+def side_effect_kind(body: str) -> str | None:
+    if body.startswith("hostSurface.onWrite "):
+        return "hostSurface.onWrite"
+    if body.startswith("writeSequencer.enqueue "):
+        return "writeSequencer.enqueue"
+    if body.startswith("writeSequencer.send begin "):
+        return "writeSequencer.send.begin"
+    if body.startswith("writeSequencer.send end "):
+        return "writeSequencer.send.end"
+    if body.startswith("transport.send begin "):
+        return "transport.send.begin"
+    if body.startswith("transport.send end "):
+        return "transport.send.end"
+    if body.startswith("ssh.writeAndFlush begin "):
+        return "ssh.writeAndFlush.begin"
+    if body.startswith("ssh.writeAndFlush end "):
+        return "ssh.writeAndFlush.end"
+    if " runtime.action " in body or body.endswith(" runtime.action route=main"):
+        return "runtime.action"
+    if " runtime.selectSurface " in body or body.endswith(" runtime.selectSurface route=main"):
+        return "runtime.selectSurface"
+    if " runtime.createSurface" in body:
+        return "runtime.createSurface"
+
+    flow_event = FLOW_EVENT_RE.search(body)
+    if flow_event:
+        event = flow_event.group("event")
+        if event.startswith("runtime."):
+            return event
+        if event.startswith("host.write."):
+            return event
+        if event.startswith("tmux.query.") and ".response." in event:
+            return event
+        if event.startswith("tmux.signal.host.pump.processOutput.end."):
+            return event
+
+    return None
+
+
+def preview_from_body(body: str) -> str:
+    if preview := PREVIEW_RE.search(body):
+        return preview.group("preview")
+    return body
+
+
+def query_hint(body: str) -> str | None:
+    preview = preview_from_body(body)
+    if "capture-pane" in preview:
+        return "capture_pane"
+    if "list-panes" in preview:
+        return "list_panes"
+    if "display-message" in preview:
+        return "display_message"
+    if "refresh-client" in preview:
+        return "refresh_client"
+    if "select-window" in preview or "select-pane" in preview:
+        return "select_window_or_pane"
+    if "send-keys" in preview:
+        return "send_keys"
+    if "new-window" in preview:
+        return "new_window"
+    if "split-window" in preview:
+        return "split_window"
+    if "tmux.query." in body:
+        return "tmux_query"
+    if "host.write." in body:
+        return "tmux_other"
+    return None
 
 
 def byte_bucket(byte_count: int) -> str:
@@ -113,17 +291,66 @@ def chunk_bucket(chunk_count: int) -> str:
     return "5+"
 
 
+def attach_side_effects(
+    batches: list[ProcessBatch],
+    side_effects: list[SideEffect],
+) -> list[ProcessBatch]:
+    attributed: list[ProcessBatch] = []
+    for batch in batches:
+        start = batch.start_timestamp
+        end = batch.timestamp
+        if start is None or end is None:
+            attributed.append(batch)
+            continue
+
+        matched = tuple(
+            effect
+            for effect in side_effects
+            if start <= effect.timestamp <= end + SIDE_EFFECT_POST_TOLERANCE_NS
+        )
+        attributed.append(
+            ProcessBatch(
+                source=batch.source,
+                line=batch.line,
+                timestamp=batch.timestamp,
+                accepted=batch.accepted,
+                byte_count=batch.byte_count,
+                chunk_count=batch.chunk_count,
+                elapsed_ms=batch.elapsed_ms,
+                receive=batch.receive,
+                side_effects=matched,
+            )
+        )
+    return attributed
+
+
 def parse_lines(source: str, lines: Iterable[str]) -> ParseResult:
     pending_receives: list[ReceiveBatch] = []
     process_batches: list[ProcessBatch] = []
+    side_effects: list[SideEffect] = []
     mismatched_pairs = 0
 
     for line_number, line in enumerate(lines, 1):
-        if match := RECEIVE_RE.search(line):
+        log_line = parse_log_line(source, line_number, line)
+        if log_line.timestamp is not None:
+            if kind := side_effect_kind(log_line.body):
+                side_effects.append(
+                    SideEffect(
+                        source=source,
+                        line=line_number,
+                        timestamp=log_line.timestamp,
+                        kind=kind,
+                        body=log_line.body.strip(),
+                        query_hint=query_hint(log_line.body),
+                    )
+                )
+
+        if match := RECEIVE_RE.search(log_line.body):
             pending_receives.append(
                 ReceiveBatch(
                     source=source,
                     line=line_number,
+                    timestamp=log_line.timestamp,
                     byte_count=int(match.group("bytes")),
                     chunk_count=int(match.group("chunks")),
                     total_byte_count=int(match.group("total")),
@@ -132,7 +359,7 @@ def parse_lines(source: str, lines: Iterable[str]) -> ParseResult:
             )
             continue
 
-        if match := PROCESS_RE.search(line):
+        if match := PROCESS_RE.search(log_line.body):
             byte_count = int(match.group("bytes"))
             chunk_count = int(match.group("chunks"))
             receive = pending_receives.pop(0) if pending_receives else None
@@ -144,6 +371,7 @@ def parse_lines(source: str, lines: Iterable[str]) -> ParseResult:
                 ProcessBatch(
                     source=source,
                     line=line_number,
+                    timestamp=log_line.timestamp,
                     accepted=match.group("accepted") == "true",
                     byte_count=byte_count,
                     chunk_count=chunk_count,
@@ -153,7 +381,7 @@ def parse_lines(source: str, lines: Iterable[str]) -> ParseResult:
             )
 
     return ParseResult(
-        process_batches=tuple(process_batches),
+        process_batches=tuple(attach_side_effects(process_batches, side_effects)),
         unpaired_receives=len(pending_receives),
         mismatched_pairs=mismatched_pairs,
     )
@@ -202,10 +430,38 @@ def summarize_bucket(batches: list[ProcessBatch]) -> str:
     )
 
 
+def summarize_counted(label: str, batches: list[ProcessBatch]) -> str:
+    return f"{label}: {summarize_bucket(batches)}"
+
+
 def shorten(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[: max(0, limit - 3)] + "..."
+
+
+def effect_counts(batch: ProcessBatch) -> str:
+    if not batch.side_effects:
+        return "none"
+
+    counts: dict[str, int] = {}
+    for effect in batch.side_effects:
+        counts[effect.kind] = counts.get(effect.kind, 0) + 1
+    return ",".join(f"{kind}:{counts[kind]}" for kind in sorted(counts))
+
+
+def effect_preview(batch: ProcessBatch, limit: int) -> str:
+    if batch.timestamp is None or not batch.side_effects:
+        return "none"
+
+    parts: list[str] = []
+    for effect in batch.side_effects[:6]:
+        delta_ms = (effect.timestamp - batch.timestamp) / NANOS_PER_MILLISECOND
+        preview = shorten(preview_from_body(effect.body), limit)
+        parts.append(f"{effect.kind}@{delta_ms:+.3f}ms:{preview}")
+    if len(batch.side_effects) > 6:
+        parts.append(f"...+{len(batch.side_effects) - 6}")
+    return " | ".join(parts)
 
 
 def print_report(result: ParseResult, top_count: int, preview_limit: int) -> None:
@@ -241,6 +497,26 @@ def print_report(result: ParseResult, top_count: int, preview_limit: int) -> Non
         print(f"{bucket}: {summarize_bucket(bucket_batches)}")
 
     print()
+    print("by correlated outbound write")
+    outbound = [batch for batch in batches if batch.has_correlated_outbound_write]
+    no_outbound = [batch for batch in batches if not batch.has_correlated_outbound_write]
+    print(summarize_counted("outbound_write", outbound))
+    print(summarize_counted("no_outbound_write", no_outbound))
+
+    print()
+    print("by correlated runtime callback")
+    runtime = [batch for batch in batches if batch.has_correlated_runtime_callback]
+    no_runtime = [batch for batch in batches if not batch.has_correlated_runtime_callback]
+    print(summarize_counted("runtime_callback", runtime))
+    print(summarize_counted("no_runtime_callback", no_runtime))
+
+    print()
+    print("by side-effect query hint")
+    for hint in sorted({batch.primary_query_hint for batch in batches}):
+        bucket_batches = [batch for batch in batches if batch.primary_query_hint == hint]
+        print(f"{hint}: {summarize_bucket(bucket_batches)}")
+
+    print()
     print(f"top {top_count} slowest")
     for batch in sorted(batches, key=lambda item: item.elapsed_ms, reverse=True)[:top_count]:
         receive = batch.receive
@@ -253,20 +529,28 @@ def print_report(result: ParseResult, top_count: int, preview_limit: int) -> Non
             f"chunks={batch.chunk_count} "
             f"total={total} "
             f"class={batch.payload_class} "
+            f"correlatedOutboundWrite={batch.has_correlated_outbound_write} "
+            f"correlatedRuntimeCallback={batch.has_correlated_runtime_callback} "
+            f"queryHint={batch.primary_query_hint} "
+            f"effects={effect_counts(batch)} "
             f"source={batch.source}:{batch.line} "
             f"receive_line={receive_line} "
-            f"preview={preview}"
+            f"preview={preview} "
+            f"effect_preview={effect_preview(batch, preview_limit)}"
         )
 
 
 def run_self_test() -> None:
     synthetic = [
         "Remux latency t=1 host.pump.receive bytes=4096 chunks=4 total=4096 preview=%extended-output %1 0 : REMUX_FLOW_00001 abc",
-        "Remux latency t=2 host.pump.processOutput end accepted=true bytes=4096 chunks=4 elapsed_ms=80.000",
-        "Remux latency t=3 host.pump.receive bytes=119 chunks=1 total=4215 preview=%begin 1 2 1\\x0D\\x0A%layout-change @1",
+        "Remux latency t=80000001 host.pump.processOutput end accepted=true bytes=4096 chunks=4 elapsed_ms=80.000",
+        "Remux latency t=81000000 hostSurface.onWrite bytes=42 preview=capture-pane -p -e -q -C -N -t %1\\x0A",
+        "Remux latency t=90000000 writeSequencer.enqueue bytes=42 accepted=true startDrain=true elapsed_ms=0.001 preview=capture-pane -p -e -q -C -N -t %1\\x0A",
+        "Remux latency t=100000000 host.pump.receive bytes=119 chunks=1 total=4215 preview=%begin 1 2 1\\x0D\\x0A%layout-change @1",
         "noise",
-        "Remux latency t=4 host.pump.processOutput end accepted=true bytes=119 chunks=1 elapsed_ms=1032.149",
-        "Remux latency t=5 host.pump.processOutput end accepted=false bytes=55 chunks=1 elapsed_ms=0.100",
+        "Remux latency t=1132149000 host.pump.processOutput end accepted=true bytes=119 chunks=1 elapsed_ms=1032.149",
+        "Remux perf t=1132150000 thread=main runtime.action route=main",
+        "Remux latency t=1133000000 host.pump.processOutput end accepted=false bytes=55 chunks=1 elapsed_ms=0.100",
     ]
     result = parse_lines("synthetic.log", synthetic)
     batches = list(result.process_batches)
@@ -277,7 +561,10 @@ def run_self_test() -> None:
     assert result.mismatched_pairs == 0
     assert sum(1 for batch in batches if batch.receive is None) == 1
     assert batches[0].payload_class == "bulk_output"
+    assert batches[0].has_correlated_outbound_write
+    assert batches[0].primary_query_hint == "capture_pane"
     assert batches[1].payload_class == "layout_signal"
+    assert batches[1].has_correlated_runtime_callback
     assert batches[2].payload_class == "missing_receive"
     assert percentile(sorted(batch.elapsed_ms for batch in batches), 0.95) == 1032.149
     print("self-test passed")
