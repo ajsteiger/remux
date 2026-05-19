@@ -16,10 +16,10 @@ struct GhosttySurfaceScreen: View {
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
     @State private var terminalInputController = GhosttyTerminalInputController()
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
+    @State private var selectionSheetPresentationState = GhosttySelectionSheetPresentationState()
     @State private var bottomChromeHeight: CGFloat = 0
     @State private var softwareKeyboardOverlapHeight: CGFloat = 0
     @State private var lastSoftwareKeyboardOverlapHeight: CGFloat = 0
-    @State private var selectionSheetBottomReplacementHeight: CGFloat = 0
     @State private var terminalViewportCoordinator = GhosttyTerminalViewportCoordinator()
     @State private var keyboardViewportTransitionCoordinator = GhosttyKeyboardViewportTransitionCoordinator()
     @State private var topologyActionInputRefocusCoordinator = GhosttyTopologyActionInputRefocusCoordinator()
@@ -668,18 +668,12 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func applySelectionSheetPresentation(_ newValue: GhosttySurfaceSelectionSheet?) {
-        let change = GhosttySelectionSheetPresentationChange(
-            currentKind: selectionSheet?.presentationKind,
-            nextKind: newValue?.presentationKind
-        )
+        let change = selectionSheetPresentationState.apply(nextKind: newValue?.presentationKind)
         if change.shouldCancelCurrentPreviewSession {
             cancelSelectionSheetPreviewSession(selectionSheet)
         }
 
         selectionSheet = newValue
-        if change.shouldResetBottomReplacementHeight {
-            selectionSheetBottomReplacementHeight = 0
-        }
     }
 
     private func cancelSelectionSheetPreviewSession(_ sheet: GhosttySurfaceSelectionSheet?) {
@@ -703,7 +697,7 @@ struct GhosttySurfaceScreen: View {
                     .height(
                         GhosttySelectionSheetSizing.fixedDetentHeight(
                             preferredHeight: height,
-                            bottomReplacementHeight: selectionSheetBottomReplacementHeight
+                            bottomReplacementHeight: selectionSheetPresentationState.bottomReplacementHeight
                         )
                     ),
                 ]
@@ -719,7 +713,7 @@ struct GhosttySurfaceScreen: View {
                     .height(
                         GhosttySelectionSheetSizing.fixedDetentHeight(
                             preferredHeight: height,
-                            bottomReplacementHeight: selectionSheetBottomReplacementHeight
+                            bottomReplacementHeight: selectionSheetPresentationState.bottomReplacementHeight
                         )
                     ),
                 ]
@@ -1186,12 +1180,13 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func captureSelectionSheetBottomReplacementHeight() {
-        selectionSheetBottomReplacementHeight = GhosttySelectionSheetSizing.bottomReplacementHeight(
+        let replacementHeight = GhosttySelectionSheetSizing.bottomReplacementHeight(
             bottomChromeHeight: bottomChromeHeight,
             softwareKeyboardOverlapHeight: softwareKeyboardOverlapHeight
         )
+        selectionSheetPresentationState.captureBottomReplacementHeight(replacementHeight)
         GhosttyRuntimeTrace.tmuxViewport(
-            "selectionSheet.captureBottomReplacement bottomChrome=\(bottomChromeHeight.traceLabel) keyboardOverlap=\(softwareKeyboardOverlapHeight.traceLabel) replacement=\(selectionSheetBottomReplacementHeight.traceLabel) keyboardMode=\(inputCoordinator.keyboardMode.traceLabel)"
+            "selectionSheet.captureBottomReplacement bottomChrome=\(bottomChromeHeight.traceLabel) keyboardOverlap=\(softwareKeyboardOverlapHeight.traceLabel) replacement=\(selectionSheetPresentationState.bottomReplacementHeight.traceLabel) keyboardMode=\(inputCoordinator.keyboardMode.traceLabel)"
         )
     }
 

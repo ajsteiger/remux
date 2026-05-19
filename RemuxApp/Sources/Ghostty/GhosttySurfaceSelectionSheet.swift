@@ -45,6 +45,29 @@ struct GhosttySelectionSheetPresentationChange: Equatable, Sendable {
     }
 }
 
+struct GhosttySelectionSheetPresentationState: Equatable {
+    private(set) var presentedKind: GhosttySelectionSheetPresentationKind?
+    private(set) var bottomReplacementHeight: CGFloat = 0
+
+    mutating func captureBottomReplacementHeight(_ height: CGFloat) {
+        bottomReplacementHeight = height
+    }
+
+    mutating func apply(
+        nextKind: GhosttySelectionSheetPresentationKind?
+    ) -> GhosttySelectionSheetPresentationChange {
+        let change = GhosttySelectionSheetPresentationChange(
+            currentKind: presentedKind,
+            nextKind: nextKind
+        )
+        presentedKind = nextKind
+        if change.shouldResetBottomReplacementHeight {
+            bottomReplacementHeight = 0
+        }
+        return change
+    }
+}
+
 private enum GhosttySheetPalette {
     static let row = Color(red: 0.23, green: 0.25, blue: 0.30)
     static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.14)

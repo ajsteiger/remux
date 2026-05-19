@@ -44,6 +44,69 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         XCTAssertFalse(change.shouldResetBottomReplacementHeight)
     }
 
+    func testSelectionSheetPresentationStatePreservesCapturedHeightWhenPresenting() {
+        var state = GhosttySelectionSheetPresentationState()
+        state.captureBottomReplacementHeight(128)
+
+        let change = state.apply(nextKind: .windows)
+
+        XCTAssertEqual(state.presentedKind, .windows)
+        XCTAssertEqual(state.bottomReplacementHeight, 128)
+        XCTAssertFalse(change.shouldCancelCurrentPreviewSession)
+        XCTAssertFalse(change.shouldResetBottomReplacementHeight)
+    }
+
+    func testSelectionSheetPresentationStateDismissalResetsHeightAndRequestsCancellation() {
+        var state = GhosttySelectionSheetPresentationState()
+        state.captureBottomReplacementHeight(96)
+        _ = state.apply(nextKind: .windows)
+
+        let change = state.apply(nextKind: nil)
+
+        XCTAssertNil(state.presentedKind)
+        XCTAssertEqual(state.bottomReplacementHeight, 0)
+        XCTAssertTrue(change.shouldCancelCurrentPreviewSession)
+        XCTAssertTrue(change.shouldResetBottomReplacementHeight)
+    }
+
+    func testSelectionSheetPresentationStatePreservesHeightWhenReplacingPresentedSheet() {
+        var state = GhosttySelectionSheetPresentationState()
+        state.captureBottomReplacementHeight(72)
+        _ = state.apply(nextKind: .windows)
+
+        let change = state.apply(nextKind: .panes)
+
+        XCTAssertEqual(state.presentedKind, .panes)
+        XCTAssertEqual(state.bottomReplacementHeight, 72)
+        XCTAssertFalse(change.shouldCancelCurrentPreviewSession)
+        XCTAssertFalse(change.shouldResetBottomReplacementHeight)
+    }
+
+    func testSelectionSheetPresentationStatePreservesHeightWhenReplacingSameKind() {
+        var state = GhosttySelectionSheetPresentationState()
+        state.captureBottomReplacementHeight(64)
+        _ = state.apply(nextKind: .panes)
+
+        let change = state.apply(nextKind: .panes)
+
+        XCTAssertEqual(state.presentedKind, .panes)
+        XCTAssertEqual(state.bottomReplacementHeight, 64)
+        XCTAssertFalse(change.shouldCancelCurrentPreviewSession)
+        XCTAssertFalse(change.shouldResetBottomReplacementHeight)
+    }
+
+    func testSelectionSheetPresentationStateAbsentDismissalResetsHeightWithoutCancellation() {
+        var state = GhosttySelectionSheetPresentationState()
+        state.captureBottomReplacementHeight(44)
+
+        let change = state.apply(nextKind: nil)
+
+        XCTAssertNil(state.presentedKind)
+        XCTAssertEqual(state.bottomReplacementHeight, 0)
+        XCTAssertFalse(change.shouldCancelCurrentPreviewSession)
+        XCTAssertTrue(change.shouldResetBottomReplacementHeight)
+    }
+
     func testReadinessProjectionReportsRuntimeStateSemantics() {
         let reason = TerminalDisconnectReason(
             kind: .transportIO,
