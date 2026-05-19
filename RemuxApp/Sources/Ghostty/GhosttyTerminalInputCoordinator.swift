@@ -66,6 +66,73 @@ struct GhosttyTerminalInputCoordinator: Equatable {
     }
 }
 
+struct GhosttyTerminalInputController: Equatable {
+    enum TextAction: Equatable {
+        case submit(String)
+        case schedulePrefixFlush(token: UInt64)
+        case enterCopyMode(fallbackInput: String)
+    }
+
+    struct PasteAction: Equatable {
+        var pendingPrefixInput: String?
+        var text: String
+    }
+
+    struct KeyEventAction: Equatable {
+        var pendingPrefixInput: String?
+        var event: GhosttySurfaceKeyEvent
+    }
+
+    private var modifierState = GhosttyModifierState()
+    private var tmuxPrefixInputBuffer = GhosttyTmuxPrefixInputBuffer()
+
+    var isControlArmed: Bool {
+        modifierState.isControlArmed
+    }
+
+    mutating func toggleControl() {
+        modifierState.toggleControl()
+    }
+
+    mutating func clearControl() {
+        modifierState.clearControl()
+    }
+
+    mutating func receiveText(_ text: String) -> TextAction {
+        let outbound = modifierState.apply(to: text)
+        switch tmuxPrefixInputBuffer.handleText(outbound) {
+        case .submit(let input):
+            return .submit(input)
+        case .armPrefix(let token):
+            return .schedulePrefixFlush(token: token)
+        case .enterCopyMode(let fallbackInput):
+            return .enterCopyMode(fallbackInput: fallbackInput)
+        }
+    }
+
+    mutating func receivePaste(_ text: String) -> PasteAction {
+        PasteAction(
+            pendingPrefixInput: tmuxPrefixInputBuffer.flushPendingInput(),
+            text: text
+        )
+    }
+
+    mutating func receiveKeyEvent(_ event: GhosttySurfaceKeyEvent) -> KeyEventAction {
+        KeyEventAction(
+            pendingPrefixInput: tmuxPrefixInputBuffer.flushPendingInput(),
+            event: modifierState.apply(to: event)
+        )
+    }
+
+    mutating func flushPendingTmuxPrefixInput() -> String? {
+        tmuxPrefixInputBuffer.flushPendingInput()
+    }
+
+    mutating func flushPendingTmuxPrefixInput(matching token: UInt64) -> String? {
+        tmuxPrefixInputBuffer.flushPendingInput(matching: token)
+    }
+}
+
 struct GhosttyPendingTopologyInputRefocus: Equatable {
     private var isPending = false
     private var sourceActiveLeafID: UUID?

@@ -7,7 +7,7 @@ struct GhosttySurfaceScreen: View {
     @ObservedObject private var model: GhosttySurfaceScreenModel
     private let shortcutStore: ShortcutStore
     @State private var inputCoordinator = GhosttyTerminalInputCoordinator()
-    @State private var modifierState = GhosttyModifierState()
+    @State private var terminalInputController = GhosttyTerminalInputController()
     @State private var selectionSheet: GhosttySurfaceSelectionSheet?
     @State private var bottomChromeHeight: CGFloat = 0
     @State private var softwareKeyboardOverlapHeight: CGFloat = 0
@@ -21,7 +21,6 @@ struct GhosttySurfaceScreen: View {
     @State private var isShortcutPalettePresented = false
     @State private var isShortcutsSettingsPresented = false
     @State private var shortcutEditorRequest: ShortcutEditorRequest?
-    @State private var tmuxPrefixInputBuffer = GhosttyTmuxPrefixInputBuffer()
 
     private let target: TmuxConnectionTarget
     private let onReconnect: () -> Void
@@ -202,7 +201,7 @@ struct GhosttySurfaceScreen: View {
                     keyboardMode: renderedKeyboardMode,
                     isEnabled: interactionProjection.isInputAvailable,
                     isCompact: chrome.isCompact,
-                    isControlArmed: modifierState.isControlArmed,
+                    isControlArmed: terminalInputController.isControlArmed,
                     selectedWindowIndex: interactionProjection.selectedWindowIndex,
                     windowCount: interactionProjection.windowCount,
                     selectedPaneIndex: interactionProjection.selectedPaneIndex,
@@ -617,7 +616,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showShortcutPalette() {
-        modifierState.clearControl()
+        terminalInputController.clearControl()
         isShortcutPalettePresented = true
     }
 
@@ -634,8 +633,8 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func toggleControlModifier() {
-        modifierState.toggleControl()
-        if modifierState.isControlArmed, inputCoordinator.keyboardMode == .hidden {
+        terminalInputController.toggleControl()
+        if terminalInputController.isControlArmed, inputCoordinator.keyboardMode == .hidden {
             showSystemKeyboard()
         }
     }
@@ -764,8 +763,26 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func sendTerminalText(_ text: String) -> Bool {
-        let outbound = modifierState.apply(to: text)
-        return handleTmuxPrefixInput(outbound)
+        switch terminalInputController.receiveText(text) {
+        case .submit(let input):
+            return submitTerminalText(input)
+
+        case .schedulePrefixFlush(let token):
+            scheduleTmuxPrefixInputFlush(token: token)
+            return true
+
+        case .enterCopyMode(let fallbackInput):
+            let outcome = model.enterFocusedTmuxCopyMode()
+            if outcome.isQueued {
+                GhosttyRuntimeTrace.flowEventIfActive(
+                    "terminal.input",
+                    event: "ui.tmuxPrefix.copyMode.queued"
+                )
+                return true
+            }
+
+            return submitTerminalText(fallbackInput)
+        }
     }
 
     private func submitTerminalText(_ outbound: String) -> Bool {
@@ -808,29 +825,6 @@ struct GhosttySurfaceScreen: View {
         return result.isAccepted
     }
 
-    private func handleTmuxPrefixInput(_ outbound: String) -> Bool {
-        switch tmuxPrefixInputBuffer.handleText(outbound) {
-        case .submit(let input):
-            return submitTerminalText(input)
-
-        case .armPrefix(let token):
-            scheduleTmuxPrefixInputFlush(token: token)
-            return true
-
-        case .enterCopyMode(let fallbackInput):
-            let outcome = model.enterFocusedTmuxCopyMode()
-            if outcome.isQueued {
-                GhosttyRuntimeTrace.flowEventIfActive(
-                    "terminal.input",
-                    event: "ui.tmuxPrefix.copyMode.queued"
-                )
-                return true
-            }
-
-            return submitTerminalText(fallbackInput)
-        }
-    }
-
     private func scheduleTmuxPrefixInputFlush(token: UInt64) {
         Task { @MainActor in
             do {
@@ -844,18 +838,21 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func flushPendingTmuxPrefixInputIfNeeded() {
-        guard let input = tmuxPrefixInputBuffer.flushPendingInput() else { return }
+        guard let input = terminalInputController.flushPendingTmuxPrefixInput() else { return }
         _ = submitTerminalText(input)
     }
 
     private func flushPendingTmuxPrefixInputIfNeeded(matching token: UInt64) {
-        guard let input = tmuxPrefixInputBuffer.flushPendingInput(matching: token) else { return }
+        guard let input = terminalInputController.flushPendingTmuxPrefixInput(matching: token) else { return }
         _ = submitTerminalText(input)
     }
 
     private func sendTerminalPaste(_ text: String) -> Bool {
-        flushPendingTmuxPrefixInputIfNeeded()
-        return model.sendPasteToFocusedSurface(text).isAccepted
+        let action = terminalInputController.receivePaste(text)
+        if let pendingPrefixInput = action.pendingPrefixInput {
+            _ = submitTerminalText(pendingPrefixInput)
+        }
+        return model.sendPasteToFocusedSurface(action.text).isAccepted
     }
 
     private func copyTerminalSelection(from surfaceID: UUID) -> Bool {
@@ -868,10 +865,12 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
-        flushPendingTmuxPrefixInputIfNeeded()
-        let outbound = modifierState.apply(to: event)
+        let action = terminalInputController.receiveKeyEvent(event)
+        if let pendingPrefixInput = action.pendingPrefixInput {
+            _ = submitTerminalText(pendingPrefixInput)
+        }
         let start = GhosttyRuntimeTrace.nowNanos()
-        let result = model.sendKeyEventToFocusedSurface(outbound)
+        let result = model.sendKeyEventToFocusedSurface(action.event)
         GhosttyRuntimeTrace.perf(
             "input.sendKey result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )

@@ -381,4 +381,129 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.isActive)
         XCTAssertNil(coordinator.cancelForCommandFailure())
     }
+
+    func testInputControllerSubmitsNormalTextUnchanged() {
+        var controller = GhosttyTerminalInputController()
+
+        XCTAssertEqual(controller.receiveText("ls\r"), .submit("ls\r"))
+    }
+
+    func testInputControllerControlTextSubmitsTranslatedInputAndClearsControl() {
+        var controller = GhosttyTerminalInputController()
+        controller.toggleControl()
+
+        XCTAssertEqual(controller.receiveText("c"), .submit("\u{03}"))
+
+        XCTAssertFalse(controller.isControlArmed)
+    }
+
+    func testInputControllerUnsupportedControlTextFallsBackAndClearsControl() {
+        var controller = GhosttyTerminalInputController()
+        controller.toggleControl()
+
+        XCTAssertEqual(controller.receiveText("7"), .submit("7"))
+
+        XCTAssertFalse(controller.isControlArmed)
+    }
+
+    func testInputControllerControlKeyAddsCtrlModifierAndClearsControl() {
+        var controller = GhosttyTerminalInputController()
+        controller.toggleControl()
+        let event = GhosttySurfaceKeyEvent(keyCode: .arrowUp)
+
+        let action = controller.receiveKeyEvent(event)
+
+        XCTAssertNil(action.pendingPrefixInput)
+        XCTAssertEqual(action.event, GhosttySurfaceKeyEvent(keyCode: .arrowUp, mods: [.ctrl]))
+        XCTAssertFalse(controller.isControlArmed)
+    }
+
+    func testInputControllerPrefixArmsFlushWithoutSubmitting() {
+        var controller = GhosttyTerminalInputController()
+
+        XCTAssertEqual(
+            controller.receiveText(GhosttyTmuxPrefixInputBuffer.defaultPrefixInput),
+            .schedulePrefixFlush(token: 1)
+        )
+    }
+
+    func testInputControllerMatchingPrefixFlushSubmitsPrefixOnce() {
+        var controller = GhosttyTerminalInputController()
+        XCTAssertEqual(
+            controller.receiveText(GhosttyTmuxPrefixInputBuffer.defaultPrefixInput),
+            .schedulePrefixFlush(token: 1)
+        )
+
+        XCTAssertEqual(
+            controller.flushPendingTmuxPrefixInput(matching: 1),
+            GhosttyTmuxPrefixInputBuffer.defaultPrefixInput
+        )
+        XCTAssertNil(controller.flushPendingTmuxPrefixInput(matching: 1))
+    }
+
+    func testInputControllerStalePrefixFlushDoesNotClearPendingPrefix() {
+        var controller = GhosttyTerminalInputController()
+        XCTAssertEqual(
+            controller.receiveText(GhosttyTmuxPrefixInputBuffer.defaultPrefixInput),
+            .schedulePrefixFlush(token: 1)
+        )
+
+        XCTAssertNil(controller.flushPendingTmuxPrefixInput(matching: 99))
+        XCTAssertEqual(
+            controller.flushPendingTmuxPrefixInput(matching: 1),
+            GhosttyTmuxPrefixInputBuffer.defaultPrefixInput
+        )
+    }
+
+    func testInputControllerPrefixNormalTextSubmitsCombinedInputAndCancelsFlush() {
+        var controller = GhosttyTerminalInputController()
+        XCTAssertEqual(
+            controller.receiveText(GhosttyTmuxPrefixInputBuffer.defaultPrefixInput),
+            .schedulePrefixFlush(token: 1)
+        )
+
+        XCTAssertEqual(controller.receiveText("c"), .submit("\u{2}c"))
+        XCTAssertNil(controller.flushPendingTmuxPrefixInput(matching: 1))
+    }
+
+    func testInputControllerPrefixBracketRequestsCopyModeFallbackAndCancelsFlush() {
+        var controller = GhosttyTerminalInputController()
+        XCTAssertEqual(
+            controller.receiveText(GhosttyTmuxPrefixInputBuffer.defaultPrefixInput),
+            .schedulePrefixFlush(token: 1)
+        )
+
+        XCTAssertEqual(controller.receiveText("["), .enterCopyMode(fallbackInput: "\u{2}["))
+        XCTAssertNil(controller.flushPendingTmuxPrefixInput(matching: 1))
+    }
+
+    func testInputControllerPasteFlushesPendingPrefixBeforePasteWithoutClearingControl() {
+        var controller = GhosttyTerminalInputController()
+        XCTAssertEqual(
+            controller.receiveText(GhosttyTmuxPrefixInputBuffer.defaultPrefixInput),
+            .schedulePrefixFlush(token: 1)
+        )
+        controller.toggleControl()
+
+        let action = controller.receivePaste("paste")
+
+        XCTAssertEqual(action.pendingPrefixInput, GhosttyTmuxPrefixInputBuffer.defaultPrefixInput)
+        XCTAssertEqual(action.text, "paste")
+        XCTAssertTrue(controller.isControlArmed)
+    }
+
+    func testInputControllerKeyFlushesPendingPrefixBeforeSendingModifiedKey() {
+        var controller = GhosttyTerminalInputController()
+        XCTAssertEqual(
+            controller.receiveText(GhosttyTmuxPrefixInputBuffer.defaultPrefixInput),
+            .schedulePrefixFlush(token: 1)
+        )
+        controller.toggleControl()
+
+        let action = controller.receiveKeyEvent(GhosttySurfaceKeyEvent(keyCode: .arrowUp))
+
+        XCTAssertEqual(action.pendingPrefixInput, GhosttyTmuxPrefixInputBuffer.defaultPrefixInput)
+        XCTAssertEqual(action.event, GhosttySurfaceKeyEvent(keyCode: .arrowUp, mods: [.ctrl]))
+        XCTAssertFalse(controller.isControlArmed)
+    }
 }
