@@ -128,6 +128,9 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             allManagedSurfaces: { [weak self] in
                 self?.allManagedSurfaces() ?? []
             },
+            managedSurfaceCount: { [weak self] in
+                self?.managedSurfaceStore.count ?? 0
+            },
             managedSurface: { [weak self] id in
                 self?.managedSurface(for: id)
             },

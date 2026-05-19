@@ -404,13 +404,14 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private func syncAttachedViews() {
         guard materializationContext.isAvailable else { return }
         let perfStartedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        let managedSurfaceCount = materializationContext.managedSurfaceCount()
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "ui.tree.sync.begin",
             fields: treeUpdateTraceFields(projection: projection)
         )
-        let managedSurfaces = materializationContext.allManagedSurfaces()
 
         let visibleIDs = Set(projection.topLevel?.phonePresentedLeafIDs ?? [])
+        let previousVisibleIDs = visibleSurfaceIDs
         defer {
             GhosttyTmuxActionTrace.traceActiveTopologyFlows(
                 event: "ui.tree.sync.end",
@@ -418,7 +419,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             )
             if let perfStartedAt {
                 GhosttyRuntimeTrace.perf(
-                    "tree.sync managed=\(managedSurfaces.count) visible=\(visibleIDs.count) containers=\(scrollContainersBySurfaceID.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
+                    "tree.sync managed=\(managedSurfaceCount) visible=\(visibleIDs.count) containers=\(scrollContainersBySurfaceID.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: perfStartedAt))"
                 )
             }
         }
@@ -447,59 +448,101 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             resetActivePanState()
         }
         surfaceIDsByView = [:]
-        let managedIDs = Set(managedSurfaces.map(\.id))
-        for (surfaceID, container) in scrollContainersBySurfaceID where !managedIDs.contains(surfaceID) {
+
+        var detachedSurfaceIDs = Set<UUID>()
+        for surfaceID in Array(scrollContainersBySurfaceID.keys) where !visibleIDs.contains(surfaceID) {
+            if presentationOverlayHeldSurfaceIDs.contains(surfaceID),
+               let surface = materializationContext.managedSurface(for: surfaceID) {
+                surface.setFocused(false)
+                continue
+            }
+
+            reconcileInactiveContainer(for: surfaceID)
+            detachedSurfaceIDs.insert(surfaceID)
+        }
+
+        for surfaceID in previousVisibleIDs.subtracting(visibleIDs)
+            where scrollContainersBySurfaceID[surfaceID] == nil && !detachedSurfaceIDs.contains(surfaceID) {
+            markInactiveSurfaceIfKnown(surfaceID)
+        }
+
+        for surfaceID in visibleIDs {
+            guard let surface = materializationContext.managedSurface(for: surfaceID) else {
+                reconcileInactiveContainer(for: surfaceID)
+                continue
+            }
+
+            let isHeldForPresentationOverlay = presentationOverlayHeldSurfaceIDs.contains(surface.id)
+            surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
+            ensureInteractionRecognizers(for: surface.view)
+            if isHeldForPresentationOverlay {
+                surface.setVisible(true)
+                surface.setFocused(surface.id == projection.selectedActiveLeafID)
+                continue
+            }
+
+            let container = scrollContainer(for: surface)
+            let didChangeContainer = container.update(
+                surface: surface,
+                displayScale: effectiveScale,
+                submitRouteForwardedMouseScroll: submitMouseScroll
+            )
+            if container.superview !== self {
+                container.removeFromSuperview()
+                addSubview(container)
+            }
+            if didChangeContainer {
+                container.layoutIfNeeded()
+            }
+        }
+    }
+
+    private func reconcileInactiveContainer(for surfaceID: UUID) {
+        guard let container = scrollContainersBySurfaceID[surfaceID] else { return }
+
+        if let retiringSurface = materializationContext.surfacePendingPermanentRemoval(for: surfaceID) {
             presentationOverlayHeldSurfaceIDs.remove(surfaceID)
             presentationOverlayHeldInteractionStates[surfaceID] = nil
-            if let retiringSurface = materializationContext.surfacePendingPermanentRemoval(for: surfaceID) {
-                container.detachSurfaceIfNeeded(retiringSurface)
-            }
+            retiringSurface.setFocused(false)
+            retiringSurface.setVisible(false)
+            container.detachSurfaceIfNeeded(retiringSurface)
             container.removeFromSuperview()
             scrollContainersBySurfaceID[surfaceID] = nil
             materializationContext.completePermanentRemoval(of: surfaceID)
+            return
         }
 
-        for surface in managedSurfaces {
-            let isHeldForPresentationOverlay = presentationOverlayHeldSurfaceIDs.contains(surface.id)
-            if visibleIDs.contains(surface.id) {
-                surfaceIDsByView[ObjectIdentifier(surface.view)] = surface.id
-                ensureInteractionRecognizers(for: surface.view)
-                if isHeldForPresentationOverlay {
-                    surface.setVisible(true)
-                    surface.setFocused(surface.id == projection.selectedActiveLeafID)
-                    continue
-                }
-
-                let container = scrollContainer(for: surface)
-                let didChangeContainer = container.update(
-                    surface: surface,
-                    displayScale: effectiveScale,
-                    submitRouteForwardedMouseScroll: submitMouseScroll
-                )
-                if container.superview !== self {
-                    container.removeFromSuperview()
-                    addSubview(container)
-                }
-                if didChangeContainer {
-                    container.layoutIfNeeded()
-                }
-            } else {
-                if isHeldForPresentationOverlay {
-                    surface.setFocused(false)
-                    continue
-                }
-
-                if let container = scrollContainersBySurfaceID[surface.id] {
-                    container.detachSurfaceIfNeeded(surface)
-                    container.removeFromSuperview()
-                }
-                GhosttyRuntimeTrace.diagnostics(
-                    "tree.detach surface={\(surface.diagnosticSummary())}"
-                )
-                surface.setFocused(false)
-                surface.setVisible(false)
-            }
+        if let surface = materializationContext.managedSurface(for: surfaceID) {
+            GhosttyRuntimeTrace.diagnostics(
+                "tree.detach surface={\(surface.diagnosticSummary())}"
+            )
+            surface.setFocused(false)
+            surface.setVisible(false)
+            container.detachSurfaceIfNeeded(surface)
+            container.removeFromSuperview()
+            return
+        } else {
+            presentationOverlayHeldSurfaceIDs.remove(surfaceID)
+            presentationOverlayHeldInteractionStates[surfaceID] = nil
+            container.detachCurrentSurfaceForRemoval()
         }
+
+        container.removeFromSuperview()
+        scrollContainersBySurfaceID[surfaceID] = nil
+    }
+
+    private func markInactiveSurfaceIfKnown(_ surfaceID: UUID) {
+        guard let surface = materializationContext.managedSurface(for: surfaceID) else { return }
+        if presentationOverlayHeldSurfaceIDs.contains(surfaceID) {
+            surface.setFocused(false)
+            return
+        }
+
+        GhosttyRuntimeTrace.diagnostics(
+            "tree.detach surface={\(surface.diagnosticSummary())}"
+        )
+        surface.setFocused(false)
+        surface.setVisible(false)
     }
 
     private func layoutVisibleTree() {

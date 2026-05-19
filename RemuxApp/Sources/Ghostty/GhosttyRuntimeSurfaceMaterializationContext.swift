@@ -10,6 +10,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
         sourceIdentity: ObjectIdentifier(emptySource),
         isAvailable: { false },
         allManagedSurfaces: { [] },
+        managedSurfaceCount: { 0 },
         managedSurface: { _ in nil },
         surfacePendingPermanentRemoval: { _ in nil },
         completePermanentRemoval: { _ in },
@@ -21,6 +22,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
 
     private let isAvailableHandler: () -> Bool
     private let allManagedSurfacesHandler: () -> [GhosttyManagedSurface]
+    private let managedSurfaceCountHandler: () -> Int
     private let managedSurfaceHandler: (UUID) -> GhosttyManagedSurface?
     private let surfacePendingPermanentRemovalHandler: (UUID) -> GhosttyManagedSurface?
     private let completePermanentRemovalHandler: (UUID) -> Void
@@ -31,6 +33,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
         sourceIdentity: ObjectIdentifier,
         isAvailable: @escaping () -> Bool,
         allManagedSurfaces: @escaping () -> [GhosttyManagedSurface],
+        managedSurfaceCount: @escaping () -> Int,
         managedSurface: @escaping (UUID) -> GhosttyManagedSurface?,
         surfacePendingPermanentRemoval: @escaping (UUID) -> GhosttyManagedSurface?,
         completePermanentRemoval: @escaping (UUID) -> Void,
@@ -40,6 +43,7 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
         self.sourceIdentity = sourceIdentity
         self.isAvailableHandler = isAvailable
         self.allManagedSurfacesHandler = allManagedSurfaces
+        self.managedSurfaceCountHandler = managedSurfaceCount
         self.managedSurfaceHandler = managedSurface
         self.surfacePendingPermanentRemovalHandler = surfacePendingPermanentRemoval
         self.completePermanentRemovalHandler = completePermanentRemoval
@@ -53,6 +57,10 @@ struct GhosttyRuntimeSurfaceMaterializationContext {
 
     func allManagedSurfaces() -> [GhosttyManagedSurface] {
         allManagedSurfacesHandler()
+    }
+
+    func managedSurfaceCount() -> Int {
+        managedSurfaceCountHandler()
     }
 
     func managedSurface(for id: UUID) -> GhosttyManagedSurface? {
