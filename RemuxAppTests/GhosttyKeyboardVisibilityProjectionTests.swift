@@ -178,6 +178,146 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         XCTAssertFalse(projection.shouldAwaitSystemKeyboardPresentation)
     }
 
+    func testTransitionCoordinatorToggleShowRecordsAwaitingPresentation() throws {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .hidden,
+            isInputAvailable: true
+        )
+
+        let request = try XCTUnwrap(coordinator.transitionRequest(forToggle: projection))
+
+        XCTAssertEqual(
+            request,
+            GhosttyKeyboardViewportTransitionRequest(
+                target: .shown,
+                allowsTargetOverride: true,
+                fallbackDelay: GhosttyKeyboardViewportTransitionTiming.systemPresentationFallbackDelay
+            )
+        )
+        XCTAssertTrue(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
+    func testTransitionCoordinatorToggleHideClearsAwaitingPresentation() throws {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        _ = coordinator.prepareUnexpectedHideRecovery()
+
+        let request = try XCTUnwrap(
+            coordinator.transitionRequest(
+                forToggle: GhosttyKeyboardToggleProjection(
+                    keyboardMode: .system,
+                    isInputAvailable: true
+                )
+            )
+        )
+
+        XCTAssertEqual(
+            request,
+            GhosttyKeyboardViewportTransitionRequest(
+                target: .hidden,
+                allowsTargetOverride: true,
+                fallbackDelay: GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
+            )
+        )
+        XCTAssertFalse(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
+    func testTransitionCoordinatorVisibleKeyboardClearsAwaitingPresentation() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        _ = coordinator.prepareUnexpectedHideRecovery()
+
+        coordinator.observeKeyboardVisibility(isVisible: false)
+        XCTAssertTrue(coordinator.isAwaitingSystemKeyboardPresentation)
+
+        coordinator.observeKeyboardVisibility(isVisible: true)
+        XCTAssertFalse(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
+    func testTransitionCoordinatorCompletionInvalidatesFallbackToken() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+
+        let token = coordinator.issueFallbackToken()
+        XCTAssertTrue(coordinator.acceptsFallbackToken(token))
+
+        coordinator.completeActiveTransition()
+
+        XCTAssertFalse(coordinator.acceptsFallbackToken(token))
+    }
+
+    func testTransitionCoordinatorLiveSizeCompletionRequiresActiveAllowedUsableChange() {
+        let previousSize = CGSize(width: 402, height: 726)
+        let nextSize = CGSize(width: 402, height: 452)
+        let coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        var viewport = GhosttyTerminalViewportCoordinator()
+
+        XCTAssertFalse(
+            coordinator.shouldCompleteFromLiveSize(
+                nextSize,
+                previousSize: previousSize,
+                viewportCoordinator: viewport
+            )
+        )
+
+        XCTAssertTrue(viewport.observeLiveSize(previousSize))
+        viewport.beginKeyboardTransition(
+            target: .shown,
+            allowsTargetOverride: true,
+            allowsLiveSizeCompletion: false,
+            liveSize: previousSize
+        )
+        XCTAssertFalse(
+            coordinator.shouldCompleteFromLiveSize(
+                nextSize,
+                previousSize: previousSize,
+                viewportCoordinator: viewport
+            )
+        )
+
+        viewport.beginKeyboardTransition(
+            target: .shown,
+            allowsTargetOverride: true,
+            allowsLiveSizeCompletion: true,
+            liveSize: previousSize
+        )
+        XCTAssertFalse(
+            coordinator.shouldCompleteFromLiveSize(
+                previousSize,
+                previousSize: previousSize,
+                viewportCoordinator: viewport
+            )
+        )
+        XCTAssertFalse(
+            coordinator.shouldCompleteFromLiveSize(
+                CGSize(width: 1, height: 1),
+                previousSize: previousSize,
+                viewportCoordinator: viewport
+            )
+        )
+        XCTAssertTrue(
+            coordinator.shouldCompleteFromLiveSize(
+                nextSize,
+                previousSize: previousSize,
+                viewportCoordinator: viewport
+            )
+        )
+    }
+
+    func testTransitionCoordinatorUnexpectedHideRecoveryRequestsShownTransition() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+
+        let request = coordinator.prepareUnexpectedHideRecovery()
+
+        XCTAssertEqual(
+            request,
+            GhosttyKeyboardViewportTransitionRequest(
+                target: .shown,
+                allowsTargetOverride: true,
+                fallbackDelay: GhosttyKeyboardViewportTransitionTiming.systemPresentationFallbackDelay
+            )
+        )
+        XCTAssertTrue(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
     func testFallbackTokenGateIssuesIncreasingTokens() {
         var gate = GhosttyKeyboardViewportFallbackTokenGate()
 

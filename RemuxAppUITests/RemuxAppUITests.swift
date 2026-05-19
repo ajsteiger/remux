@@ -121,7 +121,10 @@ final class RemuxAppUITests: XCTestCase {
             waitForKeyboardPresence(true, label: "initial system show")
         )
 
-        app.typeText("echo remux-keyboard-resize\r")
+        app.typeText(
+            "for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do echo REMUX_KEYBOARD_RESIZE_RENDER_$n ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789; done\r"
+        )
+        assertLiveTerminalScreenshotContainsRenderedContent()
         keyboard.tap()
         XCTAssertNotNil(
             waitForKeyboardPresence(false, label: "system hide")
@@ -360,6 +363,11 @@ final class RemuxAppUITests: XCTestCase {
         )
         dismissTopSheetIfPresent()
         waitForLiveTerminalReady(timeout: 30)
+
+        let marker = "REMUX_ACTION_CYCLE_RENDER_\(UUID().uuidString.prefix(8).uppercased())"
+        sendTerminalCommand("printf '\(marker)\\n'")
+        hideKeyboardIfPresent()
+        assertLiveTerminalScreenshotContainsRenderedContent(minNonBackgroundPixels: 2_500)
 
         let keyboard = app.buttons["terminal.keyboard"]
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10))

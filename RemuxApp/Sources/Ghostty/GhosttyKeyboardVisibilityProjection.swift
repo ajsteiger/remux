@@ -1,6 +1,50 @@
 import CoreGraphics
 import Foundation
 
+enum GhosttyKeyboardViewportTransitionTarget: Equatable {
+    case shown
+    case hidden
+
+    var traceLabel: String {
+        switch self {
+        case .shown:
+            return "shown"
+        case .hidden:
+            return "hidden"
+        }
+    }
+}
+
+extension Optional where Wrapped == GhosttyKeyboardViewportTransitionTarget {
+    var traceLabel: String {
+        switch self {
+        case .some(let target):
+            return target.traceLabel
+        case .none:
+            return "nil"
+        }
+    }
+}
+
+struct GhosttyKeyboardViewportTransitionRequest: Equatable {
+    let target: GhosttyKeyboardViewportTransitionTarget?
+    let allowsTargetOverride: Bool
+    let allowsLiveSizeCompletion: Bool
+    let fallbackDelay: TimeInterval
+
+    init(
+        target: GhosttyKeyboardViewportTransitionTarget?,
+        allowsTargetOverride: Bool = false,
+        allowsLiveSizeCompletion: Bool = false,
+        fallbackDelay: TimeInterval = GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
+    ) {
+        self.target = target
+        self.allowsTargetOverride = allowsTargetOverride
+        self.allowsLiveSizeCompletion = allowsLiveSizeCompletion
+        self.fallbackDelay = fallbackDelay
+    }
+}
+
 struct GhosttyKeyboardVisibilityProjection: Equatable {
     let frameEnd: CGRect
     let screenBounds: CGRect
@@ -41,6 +85,14 @@ struct GhosttyKeyboardVisibilityProjection: Equatable {
             notificationTarget: target,
             keyboardMode: keyboardMode,
             isDismissSystemKeyboardRequested: isDismissSystemKeyboardRequested
+        )
+    }
+
+    var transitionRequest: GhosttyKeyboardViewportTransitionRequest? {
+        guard shouldBeginViewportTransition else { return nil }
+        return GhosttyKeyboardViewportTransitionRequest(
+            target: transitionTarget,
+            fallbackDelay: fallbackDelay
         )
     }
 
@@ -88,6 +140,21 @@ struct GhosttyKeyboardToggleProjection: Equatable {
             startsSystemKeyboardTransition && expectedMode == .system
     }
 
+    var transitionRequest: GhosttyKeyboardViewportTransitionRequest? {
+        guard startsSystemKeyboardTransition,
+              let transitionTarget,
+              let fallbackDelay
+        else {
+            return nil
+        }
+
+        return GhosttyKeyboardViewportTransitionRequest(
+            target: transitionTarget,
+            allowsTargetOverride: true,
+            fallbackDelay: fallbackDelay
+        )
+    }
+
     private static func isSystemKeyboardTransition(
         from previousMode: GhosttyKeyboardChromeMode,
         to nextMode: GhosttyKeyboardChromeMode
@@ -116,6 +183,62 @@ struct GhosttyKeyboardToggleProjection: Equatable {
         case .hidden:
             return GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
         }
+    }
+}
+
+struct GhosttyKeyboardViewportTransitionCoordinator: Equatable {
+    private(set) var isAwaitingSystemKeyboardPresentation = false
+    private var fallbackGate = GhosttyKeyboardViewportFallbackTokenGate()
+
+    mutating func transitionRequest(
+        forToggle projection: GhosttyKeyboardToggleProjection
+    ) -> GhosttyKeyboardViewportTransitionRequest? {
+        guard let request = projection.transitionRequest else { return nil }
+        isAwaitingSystemKeyboardPresentation = projection.shouldAwaitSystemKeyboardPresentation
+        return request
+    }
+
+    mutating func observeKeyboardVisibility(isVisible: Bool) {
+        guard isVisible else { return }
+        isAwaitingSystemKeyboardPresentation = false
+    }
+
+    mutating func clearAwaitingSystemKeyboardPresentation() {
+        isAwaitingSystemKeyboardPresentation = false
+    }
+
+    mutating func completeActiveTransition() {
+        fallbackGate.invalidate()
+        isAwaitingSystemKeyboardPresentation = false
+    }
+
+    mutating func prepareUnexpectedHideRecovery() -> GhosttyKeyboardViewportTransitionRequest {
+        isAwaitingSystemKeyboardPresentation = true
+        return GhosttyKeyboardViewportTransitionRequest(
+            target: .shown,
+            allowsTargetOverride: true,
+            fallbackDelay: GhosttyKeyboardViewportTransitionTiming.systemPresentationFallbackDelay
+        )
+    }
+
+    mutating func issueFallbackToken() -> UInt64 {
+        fallbackGate.issueToken()
+    }
+
+    func acceptsFallbackToken(_ token: UInt64) -> Bool {
+        fallbackGate.accepts(token)
+    }
+
+    func shouldCompleteFromLiveSize(
+        _ normalizedSize: CGSize,
+        previousSize: CGSize,
+        viewportCoordinator: GhosttyTerminalViewportCoordinator
+    ) -> Bool {
+        guard viewportCoordinator.isKeyboardTransitionActive else { return false }
+        guard viewportCoordinator.keyboardTransitionAllowsLiveSizeCompletion else { return false }
+        guard normalizedSize != previousSize else { return false }
+        guard normalizedSize.width > 1, normalizedSize.height > 1 else { return false }
+        return true
     }
 }
 
