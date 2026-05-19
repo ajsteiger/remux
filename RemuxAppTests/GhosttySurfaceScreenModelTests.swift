@@ -476,11 +476,10 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
-    func testScreenLifecycleProjectionMapsActiveSceneToModelPhaseAndRefocus() {
+    func testScreenLifecycleProjectionMapsActiveSceneToRefocus() {
         let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .active)
 
         XCTAssertEqual(projection.scenePhase, .active)
-        XCTAssertEqual(projection.appLifecyclePhase, .active)
         XCTAssertTrue(projection.shouldRefocusSystemKeyboard)
     }
 
@@ -488,7 +487,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .inactive)
 
         XCTAssertEqual(projection.scenePhase, .inactive)
-        XCTAssertEqual(projection.appLifecyclePhase, .inactive)
         XCTAssertFalse(projection.shouldRefocusSystemKeyboard)
     }
 
@@ -496,7 +494,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: .background)
 
         XCTAssertEqual(projection.scenePhase, .background)
-        XCTAssertEqual(projection.appLifecyclePhase, .background)
         XCTAssertFalse(projection.shouldRefocusSystemKeyboard)
     }
 

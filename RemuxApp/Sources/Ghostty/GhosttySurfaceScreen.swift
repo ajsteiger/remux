@@ -450,7 +450,6 @@ struct GhosttySurfaceScreen: View {
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         let projection = GhosttySurfaceScreenLifecycleProjection(scenePhase: phase)
-        model.handleAppLifecyclePhase(projection.appLifecyclePhase)
 
         guard projection.shouldRefocusSystemKeyboard else { return }
         refocusSystemKeyboardIfActive()
@@ -1670,23 +1669,18 @@ private extension TerminalTheme {
 
 struct GhosttySurfaceScreenLifecycleProjection: Equatable {
     let scenePhase: ScenePhase
-    let appLifecyclePhase: GhosttySurfaceScreenModel.AppLifecyclePhase
     let shouldRefocusSystemKeyboard: Bool
 
     init(scenePhase: ScenePhase) {
         self.scenePhase = scenePhase
         switch scenePhase {
         case .active:
-            self.appLifecyclePhase = .active
             self.shouldRefocusSystemKeyboard = true
         case .inactive:
-            self.appLifecyclePhase = .inactive
             self.shouldRefocusSystemKeyboard = false
         case .background:
-            self.appLifecyclePhase = .background
             self.shouldRefocusSystemKeyboard = false
         @unknown default:
-            self.appLifecyclePhase = .inactive
             self.shouldRefocusSystemKeyboard = false
         }
     }

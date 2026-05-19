@@ -138,6 +138,7 @@ final class RemuxRootModel: ObservableObject {
     private let librarySSHPrewarmCoordinator: RemuxLibrarySSHPrewarmCoordinator
     private let terminalScreenModelFactory: TerminalScreenModelFactory
     private var terminalScreenModels: [TerminalRuntimeAttemptKey: GhosttySurfaceScreenModel] = [:]
+    private var currentAppLifecyclePhase: GhosttySurfaceScreenModel.AppLifecyclePhase?
 
     init(
         dependencies: RemuxAppDependencies,
@@ -564,6 +565,7 @@ final class RemuxRootModel: ObservableObject {
         replaceTerminalScreenModel(for: session)
         RemuxActiveSessionCollection.replaceRuntime(with: session, in: &activeSessions)
         state = .terminal(id)
+        applyCurrentAppLifecyclePhase(to: session)
         GhosttyRuntimeTrace.flowEvent(
             sessionReconnectFlowID(id),
             event: "model.reconnect.recreated",
@@ -589,6 +591,14 @@ final class RemuxRootModel: ObservableObject {
             reconnectActiveSession(update.workspaceID, source: source)
         }
         return outcome
+    }
+
+    func handleAppLifecyclePhase(_ phase: GhosttySurfaceScreenModel.AppLifecyclePhase) {
+        currentAppLifecyclePhase = phase
+        let models = Array(terminalScreenModels.values)
+        for model in models {
+            model.handleAppLifecyclePhase(phase)
+        }
     }
 
     func closeActiveSession(_ id: SavedWorkspace.ID) {
@@ -707,6 +717,7 @@ final class RemuxRootModel: ObservableObject {
         )
 
         state = .terminal(workspace.id)
+        applyCurrentAppLifecyclePhase(to: activeSession)
         GhosttyRuntimeTrace.flowEvent(
             flow,
             event: "model.activate.end",
@@ -751,7 +762,7 @@ final class RemuxRootModel: ObservableObject {
         let transportFactory: GhosttySurfaceScreenModel.TransportFactory = { [preparedTransportCoordinator] target in
             preparedTransportCoordinator.claimOrCreateTransport(for: target)
         }
-        terminalScreenModels[key] = terminalScreenModelFactory(
+        let model = terminalScreenModelFactory(
             session.target,
             session.instanceID,
             transportFactory,
@@ -760,6 +771,14 @@ final class RemuxRootModel: ObservableObject {
                 _ = self.handleTerminalRuntimeStateUpdate(update)
             }
         )
+        terminalScreenModels[key] = model
+    }
+
+    private func applyCurrentAppLifecyclePhase(to session: ActiveTerminalSession) {
+        if let currentAppLifecyclePhase {
+            terminalScreenModels[TerminalRuntimeAttemptKey(session: session)]?
+                .handleAppLifecyclePhase(currentAppLifecyclePhase)
+        }
     }
 
     private func stopTerminalScreenModels(workspaceID: SavedWorkspace.ID) {

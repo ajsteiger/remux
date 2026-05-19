@@ -1,10 +1,17 @@
 import GhosttyKit
+import SwiftUI
 import UIKit
 import XCTest
 @testable import Remux
 
 @MainActor
 final class RemuxRootModelTests: XCTestCase {
+    func testAppLifecycleProjectionMapsScenePhases() {
+        XCTAssertEqual(RemuxAppLifecycleProjection(scenePhase: .active).appLifecyclePhase, .active)
+        XCTAssertEqual(RemuxAppLifecycleProjection(scenePhase: .inactive).appLifecyclePhase, .inactive)
+        XCTAssertEqual(RemuxAppLifecycleProjection(scenePhase: .background).appLifecyclePhase, .background)
+    }
+
     func testSaveAndConnectPersistsNewProfileAndUsesCurrentSettings() async throws {
         let settings = TerminalSettings(fontSize: 15, theme: .remuxDark)
         let harness = makeHarness(settings: settings)
@@ -877,6 +884,135 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertTrue(didClose)
     }
 
+    func testAppLifecyclePhaseForwardsToOwnedTerminalModel() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+        await attachAndWaitForRunning(terminalModel)
+
+        harness.model.handleAppLifecyclePhase(.active)
+
+        XCTAssertEqual(terminalModel.debugStatus, "transport active after foreground")
+    }
+
+    func testAppLifecyclePhaseForwardsToAllOwnedTerminalModels() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let base = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let logs = SavedWorkspace(serverID: server.id, sessionName: "logs")
+        let harness = makeHarness(servers: [server], workspaces: [base, logs])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: base.id)
+        await harness.model.connect(to: logs.id)
+
+        let models = harness.model.activeSessions.map { session in
+            harness.model.terminalScreenModel(for: session)
+        }
+        for model in models {
+            await attachAndWaitForRunning(model)
+        }
+
+        harness.model.handleAppLifecyclePhase(.active)
+
+        XCTAssertEqual(
+            models.map(\.debugStatus),
+            Array(repeating: "transport active after foreground", count: models.count)
+        )
+    }
+
+    func testObservedAppLifecyclePhaseDoesNotInventForegroundStateForIdleNewModel() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        harness.model.handleAppLifecyclePhase(.active)
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+
+        XCTAssertEqual(terminalModel.debugStatus, "not started")
+
+        await attachAndWaitForRunning(terminalModel)
+
+        XCTAssertEqual(terminalModel.debugStatus, "transport started")
+    }
+
+    func testObservedAppLifecyclePhaseAppliesAfterNewSessionIsInstalled() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = LifecycleRuntimeUpdateSessionPresenceRecorder()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        modelFactory.rootModel = harness.model
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        harness.model.handleAppLifecyclePhase(.active)
+        await harness.model.connect(to: workspace.id)
+
+        XCTAssertEqual(modelFactory.foregroundReportsSawInstalledSession, [true])
+    }
+
+    func testAppLifecyclePhaseDoesNotForwardToReplacedTerminalModel() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.passwordStore.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let oldModel = harness.model.terminalScreenModel(for: oldSession)
+        await attachAndWaitForRunning(oldModel)
+
+        harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
+        let newSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let newModel = harness.model.terminalScreenModel(for: newSession)
+        await attachAndWaitForRunning(newModel)
+
+        harness.model.handleAppLifecyclePhase(.active)
+
+        XCTAssertEqual(oldModel.debugStatus, "stopped")
+        XCTAssertEqual(newModel.debugStatus, "transport active after foreground")
+    }
+
     func testReconnectStopsOldAttemptModelAndInstallsNewAttemptModel() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -1602,6 +1738,51 @@ private final class RecordingTerminalScreenModelFactory: @unchecked Sendable {
         createdKeys.append(key)
         createdModels[key] = model
         return model
+    }
+}
+
+@MainActor
+private final class LifecycleRuntimeUpdateSessionPresenceRecorder: @unchecked Sendable {
+    weak var rootModel: RemuxRootModel?
+    private(set) var foregroundReportsSawInstalledSession: [Bool] = []
+
+    var factory: RemuxRootModel.TerminalScreenModelFactory {
+        { target, sessionInstanceID, transportFactory, onRuntimeStateChange in
+            self.makeModel(
+                target: target,
+                sessionInstanceID: sessionInstanceID,
+                transportFactory: transportFactory,
+                onRuntimeStateChange: onRuntimeStateChange
+            )
+        }
+    }
+
+    func makeModel(
+        target: TmuxConnectionTarget,
+        sessionInstanceID: UUID,
+        transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
+    ) -> GhosttySurfaceScreenModel {
+        GhosttySurfaceScreenModel(
+            target: target,
+            sessionInstanceID: sessionInstanceID,
+            transportFactory: transportFactory,
+            onRuntimeStateChange: { update in
+                self.record(update)
+                onRuntimeStateChange(update)
+            },
+            precreateRuntime: false,
+            debugLatencyProbe: nil
+        )
+    }
+
+    private func record(_ update: TerminalRuntimeStateUpdate) {
+        guard update.source == .foreground else { return }
+        foregroundReportsSawInstalledSession.append(
+            rootModel?.activeSessions.contains {
+                $0.id == update.workspaceID && $0.instanceID == update.instanceID
+            } == true
+        )
     }
 }
 

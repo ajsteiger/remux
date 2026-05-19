@@ -54,6 +54,7 @@ private struct RemuxRootContentView: View {
 }
 
 private struct RemuxWorkspaceShell: View {
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var model: RemuxRootModel
     let shortcutStore: ShortcutStore
 
@@ -61,6 +62,16 @@ private struct RemuxWorkspaceShell: View {
         ZStack {
             activeTerminalLayer
             routeLayer
+        }
+        .onAppear {
+            model.handleAppLifecyclePhase(
+                RemuxAppLifecycleProjection(scenePhase: scenePhase).appLifecyclePhase
+            )
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            model.handleAppLifecyclePhase(
+                RemuxAppLifecycleProjection(scenePhase: newPhase).appLifecyclePhase
+            )
         }
     }
 
@@ -202,6 +213,25 @@ private struct RemuxWorkspaceShell: View {
         "session.show.\(workspaceID.uuidString)"
     }
 
+}
+
+struct RemuxAppLifecycleProjection: Equatable {
+    let scenePhase: ScenePhase
+    let appLifecyclePhase: GhosttySurfaceScreenModel.AppLifecyclePhase
+
+    init(scenePhase: ScenePhase) {
+        self.scenePhase = scenePhase
+        switch scenePhase {
+        case .active:
+            self.appLifecyclePhase = .active
+        case .inactive:
+            self.appLifecyclePhase = .inactive
+        case .background:
+            self.appLifecyclePhase = .background
+        @unknown default:
+            self.appLifecyclePhase = .inactive
+        }
+    }
 }
 
 private struct ActiveTerminalSessionView: View {
