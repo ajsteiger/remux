@@ -97,9 +97,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             self?.hostSessionSlot.submitHostTmuxNewWindow()
         }
     )
-    private lazy var inputSubmissionCoordinator = GhosttyTerminalInputSubmissionCoordinator(
-        surfaceRegistry: surfaceRegistry
-    )
     private lazy var runtimeStateReporter = GhosttyTerminalRuntimeStateReporter(
         workspaceID: target.workspace.id,
         sessionInstanceID: sessionInstanceID,
@@ -319,10 +316,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendInput begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        let result = inputSubmissionCoordinator.sendInputToFocusedSurface(
-            text,
-            isTransportAvailable: canSubmitInputToFocusedSurface
-        )
+        let result = preflightFocusedTerminalInputSubmission()
+            ?? surfaceRegistry.sendInputToFocusedSurface(text)
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "input")
             switch result {
@@ -368,10 +363,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        let result = inputSubmissionCoordinator.sendPasteToFocusedSurface(
-            text,
-            isTransportAvailable: canSubmitInputToFocusedSurface
-        )
+        let result = preflightFocusedTerminalInputSubmission()
+            ?? surfaceRegistry.sendPasteToFocusedSurface(text)
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "paste")
             switch result {
@@ -504,10 +497,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         GhosttyRuntimeTrace.latency(
             "model.sendKey begin event=\(event) \(surfaceRegistry.diagnosticSelectionSummary())"
         )
-        let result = inputSubmissionCoordinator.sendKeyEventToFocusedSurface(
-            event,
-            isTransportAvailable: canSubmitInputToFocusedSurface
-        )
+        let result = preflightFocusedTerminalInputSubmission()
+            ?? surfaceRegistry.sendKeyEventToFocusedSurface(event)
         if !result.isAccepted {
             updateDebugStatusForTerminalInputResult(result, kind: "key")
             switch result {
@@ -534,10 +525,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func sendMouseButtonToFocusedSurface(_ event: GhosttySurfaceMouseButtonEvent) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMouseButtonToFocusedSurface(
-            event,
-            isTransportAvailable: canSubmitInputToFocusedSurface
-        )
+        let outcome = preflightFocusedMouseInputSubmission()
+            ?? surfaceRegistry.sendMouseButtonToFocusedSurface(event)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "focused tmux pane")
         return outcome
     }
@@ -547,31 +536,24 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMousePositionToFocusedSurface(
-            position,
-            mods: mods,
-            isTransportAvailable: canSubmitInputToFocusedSurface
-        )
+        let outcome = preflightFocusedMouseInputSubmission()
+            ?? surfaceRegistry.sendMousePositionToFocusedSurface(position, mods: mods)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "focused tmux pane")
         return outcome
     }
 
     @discardableResult
     func sendMouseScrollToFocusedSurface(_ event: GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMouseScrollToFocusedSurface(
-            event,
-            isTransportAvailable: canSubmitInputToFocusedSurface
-        )
+        let outcome = preflightFocusedMouseInputSubmission()
+            ?? surfaceRegistry.sendMouseScrollToFocusedSurface(event)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "focused tmux pane")
         return outcome
     }
 
     @discardableResult
     func sendMousePressureToFocusedSurface(_ event: GhosttySurfaceMousePressureEvent) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMousePressureToFocusedSurface(
-            event,
-            isTransportAvailable: canSubmitInputToFocusedSurface
-        )
+        let outcome = preflightFocusedMouseInputSubmission()
+            ?? surfaceRegistry.sendMousePressureToFocusedSurface(event)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "focused tmux pane")
         return outcome
     }
@@ -581,11 +563,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseButtonEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMouseButton(
-            to: surfaceID,
-            event,
-            isTransportAvailable: isTerminalTransportAvailableForInput
-        )
+        let outcome = preflightTargetedMouseInputSubmission(to: surfaceID)
+            ?? surfaceRegistry.sendMouseButton(to: surfaceID, event)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse button", targetDescription: "target tmux pane")
         return outcome
     }
@@ -596,12 +575,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         _ position: CGPoint,
         mods: GhosttySurfaceKeyEvent.Mods = []
     ) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMousePosition(
-            to: surfaceID,
-            position,
-            mods: mods,
-            isTransportAvailable: isTerminalTransportAvailableForInput
-        )
+        let outcome = preflightTargetedMouseInputSubmission(to: surfaceID)
+            ?? surfaceRegistry.sendMousePosition(to: surfaceID, position, mods: mods)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse position", targetDescription: "target tmux pane")
         return outcome
     }
@@ -611,11 +586,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         to surfaceID: UUID,
         _ event: GhosttySurfaceMouseScrollEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMouseScroll(
-            to: surfaceID,
-            event,
-            isTransportAvailable: isTerminalTransportAvailableForInput
-        )
+        let outcome = preflightTargetedMouseInputSubmission(to: surfaceID)
+            ?? surfaceRegistry.sendMouseScroll(to: surfaceID, event)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse scroll", targetDescription: "target tmux pane")
         return outcome
     }
@@ -625,11 +597,8 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         to surfaceID: UUID,
         _ event: GhosttySurfaceMousePressureEvent
     ) -> GhosttyMouseInputSubmissionOutcome {
-        let outcome = inputSubmissionCoordinator.sendMousePressure(
-            to: surfaceID,
-            event,
-            isTransportAvailable: isTerminalTransportAvailableForInput
-        )
+        let outcome = preflightTargetedMouseInputSubmission(to: surfaceID)
+            ?? surfaceRegistry.sendMousePressure(to: surfaceID, event)
         updateDebugStatusForMouseInputOutcome(outcome, kind: "mouse pressure", targetDescription: "target tmux pane")
         return outcome
     }
@@ -1064,6 +1033,42 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             phase: terminalRuntimePhase,
             transportWritable: hostSessionSlot.isWriteAvailable
         )
+    }
+
+    private func preflightFocusedTerminalInputSubmission() -> FocusedTerminalInputSubmissionResult? {
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
+            return .noFocusedSurface
+        }
+
+        guard canSubmitInputToFocusedSurface else {
+            return .transportUnavailable
+        }
+
+        return nil
+    }
+
+    private func preflightFocusedMouseInputSubmission() -> GhosttyMouseInputSubmissionOutcome? {
+        guard surfaceRegistry.selectedActiveLeafID != nil else {
+            return .noFocusedSurface
+        }
+
+        guard canSubmitInputToFocusedSurface else {
+            return .transportUnavailable
+        }
+
+        return nil
+    }
+
+    private func preflightTargetedMouseInputSubmission(to surfaceID: UUID) -> GhosttyMouseInputSubmissionOutcome? {
+        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
+            return .missingTarget(surfaceID)
+        }
+
+        guard isTerminalTransportAvailableForInput else {
+            return .transportUnavailable
+        }
+
+        return nil
     }
 
     private func updateDebugStatusForTerminalInputResult(

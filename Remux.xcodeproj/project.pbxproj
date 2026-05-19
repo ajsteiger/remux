@@ -74,7 +74,6 @@
 		4584819FFF5D6C0B991AFB19 /* GhosttyClipboardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6282629A486DBAF222F888B /* GhosttyClipboardContent.swift */; };
 		48124543E4A60E49F2B1051B /* GhosttyTerminalResponderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB7372853BCE26F35945D24A /* GhosttyTerminalResponderView.swift */; };
 		4C607CCE048705D4D93A7EBB /* GhosttyHostSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C78D9218B4DA76BC2D9106 /* GhosttyHostSession.swift */; };
-		4DE961CA3002BC6645DDEEF8 /* GhosttyTerminalInputSubmissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A607699A067C7A8280DD639F /* GhosttyTerminalInputSubmissionCoordinator.swift */; };
 		D0D1D2D3D4D5D6D7D8D9DA02 /* GhosttyTmuxPrefixInputBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D1D2D3D4D5D6D7D8D9DA01 /* GhosttyTmuxPrefixInputBuffer.swift */; };
 		4DF6D2D4E5668EE584E1E1CB /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE99FC51EBF3F94B73928414 /* GhosttyRuntimeSurfaceTreeRemovalPlanner.swift */; };
 		50AE7AC63E5504EF8BDA0123 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A88D2F77D33C12B09B8F6A2 /* GhosttyRuntimeSurfaceTreeRemovalPlannerTests.swift */; };
@@ -312,7 +311,6 @@
 		AA11BB22CC33DD44EE55F604 /* GhosttyRuntimeSurfaceActionDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceActionDispatcherTests.swift; sourceTree = "<group>"; };
 		AC8CD3E9DC874EAFBCBAFC01 /* GhosttyRuntimeSurfaceMaterializationContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfaceMaterializationContextTests.swift; sourceTree = "<group>"; };
 		FEDCBA0987654321FEDCBA09 /* GhosttyRuntimeSurfacePresentationReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeSurfacePresentationReadinessTests.swift; sourceTree = "<group>"; };
-		A607699A067C7A8280DD639F /* GhosttyTerminalInputSubmissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalInputSubmissionCoordinator.swift; sourceTree = "<group>"; };
 		D0D1D2D3D4D5D6D7D8D9DA01 /* GhosttyTmuxPrefixInputBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTmuxPrefixInputBuffer.swift; sourceTree = "<group>"; };
 		A88FBFD7D50B9817DC09FED6 /* GhosttySurfaceMouseEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceMouseEventTests.swift; sourceTree = "<group>"; };
 		A9BEEA4655420D5DCEDE5C23 /* GhosttyPhoneChromeLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPhoneChromeLayoutTests.swift; sourceTree = "<group>"; };
@@ -615,7 +613,6 @@
 				5AFD04E7DE9B95DB25DD2BBD /* GhosttyTerminalHostSessionSlot.swift */,
 				D9833C08D41E6F199BE856F5 /* GhosttyTerminalInitialAttachTransaction.swift */,
 				29658D4FE019C12073CC58BE /* GhosttyTerminalInputCoordinator.swift */,
-				A607699A067C7A8280DD639F /* GhosttyTerminalInputSubmissionCoordinator.swift */,
 				D0D1D2D3D4D5D6D7D8D9DA01 /* GhosttyTmuxPrefixInputBuffer.swift */,
 				4D407500AB027C206B65EE7C /* GhosttyTerminalPresentationProjector.swift */,
 				25DBECAA1C7625528DD0831B /* GhosttyTerminalResponderTextInputShim.swift */,
@@ -819,7 +816,6 @@
 				450475A5B79608BEBE1C09AB /* GhosttyTerminalHostSessionSlot.swift in Sources */,
 				B8416C606C0A7209E5F9B04F /* GhosttyTerminalInitialAttachTransaction.swift in Sources */,
 				AA0449DB0EEBE5F640BF6B79 /* GhosttyTerminalInputCoordinator.swift in Sources */,
-				4DE961CA3002BC6645DDEEF8 /* GhosttyTerminalInputSubmissionCoordinator.swift in Sources */,
 				D0D1D2D3D4D5D6D7D8D9DA02 /* GhosttyTmuxPrefixInputBuffer.swift in Sources */,
 				DEC0360F7ED54DE71B345B60 /* GhosttyTerminalPresentationProjector.swift in Sources */,
 				842E6402F6F631B4DB19B8DE /* GhosttyTerminalResponderTextInputShim.swift in Sources */,

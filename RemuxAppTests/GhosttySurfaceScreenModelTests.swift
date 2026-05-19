@@ -3221,55 +3221,49 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(received, [event])
     }
 
-    func testInputSubmissionCoordinatorFocusedInputHonorsFocusAndTransportBeforeRegistry() {
-        let registry = GhosttyRuntimeSurfaceRegistry()
-        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
-        var shouldAcceptInput = true
+    func testModelFocusedInputChecksFocusBeforeTransportAndRegistry() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
         var receivedInput: [String] = []
         let managed = Self.managedSurface(sendInput: {
             receivedInput.append($0)
-            return shouldAcceptInput
+            return true
         })
 
         XCTAssertEqual(
-            coordinator.sendInputToFocusedSurface("echo nowhere\r", isTransportAvailable: true),
+            model.sendInputToFocusedSurface("echo nowhere\r"),
             .noFocusedSurface
         )
+        XCTAssertEqual(model.debugStatus, "input dropped: no focused tmux pane")
+        XCTAssertEqual(receivedInput, [])
 
-        registry.registerManagedSurfaceForTesting(managed)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertEqual(
-            coordinator.sendInputToFocusedSurface("echo unavailable\r", isTransportAvailable: false),
+            model.sendInputToFocusedSurface("echo unavailable\r"),
             .transportUnavailable
         )
+        XCTAssertEqual(model.debugStatus, "input dropped: terminal transport unavailable")
         XCTAssertEqual(receivedInput, [])
-
-        XCTAssertEqual(
-            coordinator.sendInputToFocusedSurface("", isTransportAvailable: true),
-            .empty
-        )
-        XCTAssertEqual(receivedInput, [])
-
-        XCTAssertEqual(
-            coordinator.sendInputToFocusedSurface("echo accepted\r", isTransportAvailable: true),
-            .accepted
-        )
-        XCTAssertEqual(receivedInput, ["echo accepted\r"])
-
-        shouldAcceptInput = false
-        XCTAssertEqual(
-            coordinator.sendInputToFocusedSurface("echo rejected\r", isTransportAvailable: true),
-            .surfaceRejected
-        )
-        XCTAssertEqual(receivedInput, ["echo accepted\r", "echo rejected\r"])
     }
 
-    func testInputSubmissionCoordinatorPasteAndKeyRouteToFocusedSurface() {
-        let registry = GhosttyRuntimeSurfaceRegistry()
-        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
+    func testModelFocusedInputRoutesThroughRegistryWhenTransportRuns() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+        var receivedInput: [String] = []
         var receivedPaste: [String] = []
         var receivedKeys: [GhosttySurfaceKeyEvent] = []
         let managed = Self.managedSurface(
+            sendInput: {
+                receivedInput.append($0)
+                return true
+            },
             sendPaste: {
                 receivedPaste.append($0)
                 return true
@@ -3280,63 +3274,160 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             }
         )
 
-        registry.registerManagedSurfaceForTesting(managed)
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
         XCTAssertEqual(
-            coordinator.sendPasteToFocusedSurface("paste", isTransportAvailable: true),
+            model.sendInputToFocusedSurface(""),
+            .empty
+        )
+        XCTAssertEqual(receivedInput, [])
+
+        XCTAssertEqual(
+            model.sendInputToFocusedSurface("echo accepted\r"),
+            .accepted
+        )
+        XCTAssertEqual(receivedInput, ["echo accepted\r"])
+
+        XCTAssertEqual(
+            model.sendPasteToFocusedSurface("paste"),
             .accepted
         )
         XCTAssertEqual(receivedPaste, ["paste"])
 
         let event = GhosttySurfaceKeyEvent(keyCode: .tab)
         XCTAssertEqual(
-            coordinator.sendKeyEventToFocusedSurface(event, isTransportAvailable: true),
+            model.sendKeyEventToFocusedSurface(event),
             .surfaceRejected
         )
         XCTAssertEqual(receivedKeys, [event])
     }
 
-    func testInputSubmissionCoordinatorFocusedMouseHonorsFocusAndTransportBeforeRegistry() {
-        let registry = GhosttyRuntimeSurfaceRegistry()
-        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
-        var shouldAcceptMouseButton = false
+    func testModelFocusedMouseChecksFocusBeforeTransportAndRegistry() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
         var receivedButtons: [GhosttySurfaceMouseButtonEvent] = []
         let managed = Self.managedSurface(sendMouseButton: {
             receivedButtons.append($0)
-            return shouldAcceptMouseButton
+            return true
         })
         let event = GhosttySurfaceMouseButtonEvent(state: .press, button: .left)
 
         XCTAssertEqual(
-            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: true),
+            model.sendMouseButtonToFocusedSurface(event),
             .noFocusedSurface
         )
-
-        registry.registerManagedSurfaceForTesting(managed)
-
-        XCTAssertEqual(
-            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: false),
-            .transportUnavailable
-        )
+        XCTAssertEqual(model.debugStatus, "mouse button dropped: no focused tmux pane")
         XCTAssertEqual(receivedButtons, [])
 
-        XCTAssertEqual(
-            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: true),
-            .surfaceRejected
-        )
-        XCTAssertEqual(receivedButtons, [event])
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
-        shouldAcceptMouseButton = true
         XCTAssertEqual(
-            coordinator.sendMouseButtonToFocusedSurface(event, isTransportAvailable: true),
-            .sent
+            model.sendMouseButtonToFocusedSurface(event),
+            .transportUnavailable
         )
-        XCTAssertEqual(receivedButtons, [event, event])
+        XCTAssertEqual(model.debugStatus, "mouse button dropped: terminal transport unavailable")
+        XCTAssertEqual(receivedButtons, [])
     }
 
-    func testInputSubmissionCoordinatorTargetMouseChecksTargetBeforeTransportAndRoutesToRequestedSurface() {
-        let registry = GhosttyRuntimeSurfaceRegistry()
-        let coordinator = GhosttyTerminalInputSubmissionCoordinator(surfaceRegistry: registry)
+    func testModelFocusedMouseRoutesThroughRegistryWhenTransportRuns() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+        var buttonCallCount = 0
+        var receivedButtons: [GhosttySurfaceMouseButtonEvent] = []
+        var receivedScrolls: [GhosttySurfaceMouseScrollEvent] = []
+        let managed = Self.managedSurface(
+            sendMouseButton: {
+                receivedButtons.append($0)
+                buttonCallCount += 1
+                return buttonCallCount > 1
+            },
+            sendMouseScroll: {
+                receivedScrolls.append($0)
+            }
+        )
+        let scroll = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+        let button = GhosttySurfaceMouseButtonEvent(state: .press, button: .left)
+
+        XCTAssertEqual(
+            model.sendMouseButtonToFocusedSurface(button),
+            .surfaceRejected
+        )
+        XCTAssertEqual(receivedButtons, [button])
+
+        XCTAssertEqual(
+            model.sendMouseButtonToFocusedSurface(button),
+            .sent
+        )
+        XCTAssertEqual(receivedButtons, [button, button])
+
+        XCTAssertEqual(
+            model.sendMouseScrollToFocusedSurface(scroll),
+            .sent
+        )
+        XCTAssertEqual(receivedScrolls, [scroll])
+    }
+
+    func testModelTargetMouseChecksTargetBeforeTransport() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        var received: [GhosttySurfaceMouseScrollEvent] = []
+        let managed = Self.managedSurface(sendMouseScroll: {
+            received.append($0)
+        })
+        let event = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
+        let missingID = UUID()
+
+        XCTAssertEqual(
+            model.sendMouseScroll(to: missingID, event),
+            .missingTarget(missingID)
+        )
+
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(
+            model.sendMouseScroll(to: managed.id, event),
+            .transportUnavailable
+        )
+        XCTAssertEqual(received, [])
+    }
+
+    func testModelTargetMouseRoutesToRequestedSurfaceWhenTransportRuns() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
         var firstReceived: [GhosttySurfaceMouseScrollEvent] = []
         var secondReceived: [GhosttySurfaceMouseScrollEvent] = []
         let first = Self.managedSurface(sendMouseScroll: {
@@ -3346,28 +3437,22 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             secondReceived.append($0)
         })
         let event = GhosttySurfaceMouseScrollEvent(deltaX: 0, deltaY: -12)
-        let missingID = UUID()
 
-        XCTAssertEqual(
-            coordinator.sendMouseScroll(to: missingID, event, isTransportAvailable: false),
-            .missingTarget(missingID)
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
         )
 
-        registry.registerManagedSurfaceForTesting(first)
-        registry.registerManagedSurfaceForTesting(second)
-        registry.selectSurface(first.id)
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
 
-        XCTAssertEqual(
-            coordinator.sendMouseScroll(to: second.id, event, isTransportAvailable: false),
-            .transportUnavailable
-        )
-        XCTAssertEqual(firstReceived, [])
-        XCTAssertEqual(secondReceived, [])
+        model.surfaceRegistry.registerManagedSurfaceForTesting(first)
+        model.surfaceRegistry.registerManagedSurfaceForTesting(second)
+        model.surfaceRegistry.selectSurface(first.id)
 
-        XCTAssertEqual(
-            coordinator.sendMouseScroll(to: second.id, event, isTransportAvailable: true),
-            .sent
-        )
+        XCTAssertEqual(model.sendMouseScroll(to: second.id, event), .sent)
         XCTAssertEqual(firstReceived, [])
         XCTAssertEqual(secondReceived, [event])
     }
