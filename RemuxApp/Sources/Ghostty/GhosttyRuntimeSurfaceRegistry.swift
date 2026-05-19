@@ -1308,6 +1308,18 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
+        var phaseStartedAt = start
+        func traceCreateSurfaceTreePhase(_ phase: String, fields: @autoclosure () -> [String: String] = [:]) {
+            guard GhosttyRuntimeTrace.latencyEnabled else { return }
+
+            let now = GhosttyRuntimeTrace.nowNanos()
+            let formattedFields = GhosttyRuntimeTrace.formatTraceFields(fields())
+            let suffix = formattedFields.isEmpty ? "" : " \(formattedFields)"
+            GhosttyRuntimeTrace.latency(
+                "registry.runtimeCreateSurfaceTree.phase phase=\(phase) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: phaseStartedAt, to: now)) total_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start, to: now))\(suffix)"
+            )
+            phaseStartedAt = now
+        }
         GhosttyRuntimeTrace.tmuxViewport(
             "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index) parent=\(String(describing: request.parent))"
         )
@@ -1374,8 +1386,23 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 ]
             )
             updateDebugSummary("create_surface_tree decode failed: \(error.description)")
+            traceCreateSurfaceTreePhase(
+                "decode_failed",
+                fields: [
+                    "error": error.description,
+                    "leaves": "\(request.leaf_surfaces_len)",
+                    "nodes": "\(request.nodes_len)",
+                ]
+            )
             return false
         }
+        traceCreateSurfaceTreePhase(
+            "decode",
+            fields: [
+                "leaves": "\(decodedRequest.leafConfigs.count)",
+                "nodes": "\(decodedRequest.nodes.count)",
+            ]
+        )
 
         var leafSurfaces: [GhosttyManagedSurface] = []
         var installedLeafSurfaces = false
@@ -1431,6 +1458,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             event: "registry.createSurfaceTree.leaves.end",
             fields: ["createdLeaves": "\(leafSurfaces.count)"]
         )
+        traceCreateSurfaceTreePhase(
+            "leaf_create",
+            fields: ["leaves": "\(leafSurfaces.count)"]
+        )
 
         let leafIDs = leafSurfaces.map(\.id)
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
@@ -1455,6 +1486,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.createSurfaceTree.build.end",
             fields: ["success": "true"]
+        )
+        traceCreateSurfaceTreePhase(
+            "tree_build",
+            fields: [
+                "leaves": "\(leafIDs.count)",
+                "nodes": "\(decodedRequest.nodes.count)",
+            ]
         )
         if GhosttyRuntimeTrace.isEnabled {
             NSLog("Remux create_surface_tree built leaves=%d expected=%d", leafSurfaces.count, decodedRequest.leafConfigs.count)
@@ -1484,6 +1522,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 "topLevels": "\(topLevels.count)",
             ]
         )
+        traceCreateSurfaceTreePhase(
+            "install",
+            fields: [
+                "managed": "\(managedSurfaceStore.count)",
+                "topLevels": "\(topLevels.count)",
+            ]
+        )
         installedLeafSurfaces = true
         if GhosttyRuntimeTrace.isEnabled {
             NSLog(
@@ -1508,13 +1553,21 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             event: "registry.createSurfaceTree.handleWrite.end",
             fields: ["leaves": "\(leafSurfaces.count)"]
         )
+        traceCreateSurfaceTreePhase(
+            "handle_write",
+            fields: ["leaves": "\(leafSurfaces.count)"]
+        )
 
-        GhosttyRuntimeTrace.tmuxViewport(
-            "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
-        )
-        GhosttyRuntimeTrace.latency(
-            "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
-        )
+        if GhosttyRuntimeTrace.tmuxViewportEnabled || GhosttyRuntimeTrace.latencyEnabled {
+            let callbackElapsed = GhosttyRuntimeTrace.elapsedMilliseconds(from: start)
+            let callbackSummary = "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(callbackElapsed) selectedTop=\(ghosttyDiagnosticShortID(selectedTopLevelID)) activeLeaf=\(ghosttyDiagnosticShortID(selectedActiveLeafID)) pendingPresentation=\(ghosttyDiagnosticShortID(pendingPhonePresentationSurfaceID)) topLevels=\(topLevels.count) managed=\(managedSurfaceStore.count)"
+            GhosttyRuntimeTrace.tmuxViewport(
+                "\(callbackSummary) \(diagnosticSelectionSummary())"
+            )
+            GhosttyRuntimeTrace.latency(
+                callbackSummary
+            )
+        }
         let readinessSurfaceID = focusedLeafID ?? leafSurfaces.first?.id
         traceTopologyReady(
             "tmux.newWindow",
