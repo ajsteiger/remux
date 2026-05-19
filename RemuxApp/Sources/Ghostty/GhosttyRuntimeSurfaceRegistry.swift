@@ -333,6 +333,23 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         targetSurfaceID: UUID,
         previousPresentation: PhonePresentationTarget?
     ) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.stagePresentation.begin",
+            fields: [
+                "previous": ghosttyDiagnosticShortID(previousPresentation?.leafID),
+                "target": ghosttyDiagnosticShortID(targetSurfaceID),
+            ]
+        )
+        defer {
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.stagePresentation.end",
+                fields: [
+                    "pending": ghosttyDiagnosticShortID(pendingPhonePresentationSurfaceID),
+                    "target": ghosttyDiagnosticShortID(targetSurfaceID),
+                ]
+            )
+        }
+
         guard topLevels.contains(where: { $0.tree.contains(targetSurfaceID) }) else {
             clearPendingPhonePresentation()
             return
@@ -1082,7 +1099,19 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
         }
 
-        guard let managed = createManagedSurface(app: app, baseConfig: configPtr.pointee, lease: lease) else {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.managedSurface.create.begin",
+            fields: ["context": contextTraceName]
+        )
+        let managedSurface = createManagedSurface(app: app, baseConfig: configPtr.pointee, lease: lease)
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.managedSurface.create.end",
+            fields: [
+                "context": contextTraceName,
+                "created": "\(managedSurface != nil)",
+            ]
+        )
+        guard let managed = managedSurface else {
             updateDebugSummary("create_surface failed")
             return nil
         }
@@ -1196,10 +1225,32 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         updateDebugSummary("create_surface_tree nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len)")
 
         let decodedRequest: GhosttyRuntimeSurfaceTreeDecodedRequest
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.decode.begin",
+            fields: [
+                "leaves": "\(request.leaf_surfaces_len)",
+                "nodes": "\(request.nodes_len)",
+            ]
+        )
         switch GhosttyRuntimeSurfaceTreeRequestDecoder.decode(request) {
         case .success(let decoded):
             decodedRequest = decoded
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.createSurfaceTree.decode.end",
+                fields: [
+                    "decodedLeaves": "\(decoded.leafConfigs.count)",
+                    "decodedNodes": "\(decoded.nodes.count)",
+                    "success": "true",
+                ]
+            )
         case .failure(let error):
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.createSurfaceTree.decode.end",
+                fields: [
+                    "error": error.description,
+                    "success": "false",
+                ]
+            )
             updateDebugSummary("create_surface_tree decode failed: \(error.description)")
             return false
         }
@@ -1214,28 +1265,75 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             }
         }
 
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.leaves.begin",
+            fields: ["leaves": "\(decodedRequest.leafConfigs.count)"]
+        )
         for (index, leafConfig) in decodedRequest.leafConfigs.enumerated() {
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.managedSurface.create.begin",
+                fields: [
+                    "context": "treeLeaf",
+                    "index": "\(index)",
+                ]
+            )
             guard let managed = createManagedSurface(app: app, baseConfig: leafConfig, lease: lease) else {
+                GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                    event: "registry.managedSurface.create.end",
+                    fields: [
+                        "context": "treeLeaf",
+                        "created": "false",
+                        "index": "\(index)",
+                    ]
+                )
                 NSLog("Remux failed to create managed surface for decoded leaf[%d]", index)
                 updateDebugSummary("create_surface_tree leaf surface creation failed")
                 return false
             }
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.managedSurface.create.end",
+                fields: [
+                    "context": "treeLeaf",
+                    "created": "true",
+                    "index": "\(index)",
+                    "surface": ghosttyDiagnosticShortID(managed.id),
+                ]
+            )
 
             GhosttyRuntimeTrace.tmuxViewport(
                 "registry.runtimeCreateSurfaceTree leaf index=\(leafSurfaces.count) surface=\(ghosttyDiagnosticShortID(managed.id)) initial=\(ghosttyDiagnosticSurfaceSize(managed.controlSurface.currentSize()))"
             )
             leafSurfaces.append(managed)
         }
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.leaves.end",
+            fields: ["createdLeaves": "\(leafSurfaces.count)"]
+        )
 
         let leafIDs = leafSurfaces.map(\.id)
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.build.begin",
+            fields: [
+                "leaves": "\(leafIDs.count)",
+                "nodes": "\(decodedRequest.nodes.count)",
+            ]
+        )
         guard let tree = GhosttySurfaceTree.build(
             nodes: decodedRequest.nodes,
             rootIndex: decodedRequest.rootIndex,
             leafIDs: leafIDs
         ) else {
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.createSurfaceTree.build.end",
+                fields: ["success": "false"]
+            )
             updateDebugSummary("create_surface_tree build failed")
             return false
         }
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.build.end",
+            fields: ["success": "true"]
+        )
         if GhosttyRuntimeTrace.isEnabled {
             NSLog("Remux create_surface_tree built leaves=%d expected=%d", leafSurfaces.count, decodedRequest.leafConfigs.count)
         }
@@ -1244,6 +1342,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         let replacingParentSurfaceID = decodedRequest.parent.flatMap {
             managedSurfaceStore.id(forHandle: $0)
         }
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.install.begin",
+            fields: ["leaves": "\(leafSurfaces.count)"]
+        )
         installSurfaceTree(
             leafSurfaces: leafSurfaces,
             tree: tree,
@@ -1251,6 +1353,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             replacingTopLevelContaining: replacingParentSurfaceID,
             replacingTopLevelID: nil,
             allowManualIdentityReplacement: false
+        )
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.install.end",
+            fields: [
+                "managed": "\(managedSurfaceStore.count)",
+                "topLevels": "\(topLevels.count)",
+            ]
         )
         installedLeafSurfaces = true
         if GhosttyRuntimeTrace.isEnabled {
@@ -1262,12 +1371,20 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             )
         }
 
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.handleWrite.begin",
+            fields: ["leaves": "\(leafSurfaces.count)"]
+        )
         for (index, surface) in leafSurfaces.enumerated() {
             decodedRequest.leafSurfaceBuffer[index] = surface.controlSurface.handle
             GhosttyRuntimeTrace.tmuxViewport(
                 "registry.runtimeCreateSurfaceTree leafHandle index=\(index) surface=\(ghosttyDiagnosticShortID(surface.id)) size=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize())) focused=\(surface.id == focusedLeafID)"
             )
         }
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.createSurfaceTree.handleWrite.end",
+            fields: ["leaves": "\(leafSurfaces.count)"]
+        )
 
         GhosttyRuntimeTrace.tmuxViewport(
             "registry.runtimeCreateSurfaceTree end leaves=\(leafSurfaces.count) focused=\(ghosttyDiagnosticShortID(focusedLeafID)) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start)) \(diagnosticSelectionSummary())"
@@ -1564,6 +1681,13 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         allowManualIdentityReplacement: Bool
     ) {
         let previousPresentation = currentPhonePresentationTarget()
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.installSurfaceTree.plan.begin",
+            fields: [
+                "incomingLeaves": "\(leafSurfaces.count)",
+                "topLevels": "\(topLevels.count)",
+            ]
+        )
         let plan = GhosttyRuntimeSurfaceTreeInstallPlanner().plan(
             .init(
                 topLevels: topLevels,
@@ -1577,10 +1701,28 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
                 incomingLeafIdentities: runtimeSurfaceTreeLeafIdentities(for: leafSurfaces)
             )
         )
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.installSurfaceTree.plan.end",
+            fields: [
+                "plannedTopLevels": "\(plan.topLevels.count)",
+                "presentationTarget": ghosttyDiagnosticShortID(plan.presentationTargetSurfaceID),
+            ]
+        )
 
         register(leafSurfaces)
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.installSurfaceTree.assign.begin",
+            fields: ["topLevels": "\(plan.topLevels.count)"]
+        )
         topLevels = plan.topLevels
         selectedTopLevelID = plan.selectedTopLevelID
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.installSurfaceTree.assign.end",
+            fields: [
+                "selectedTopLevel": ghosttyDiagnosticShortID(selectedTopLevelID),
+                "topLevels": "\(topLevels.count)",
+            ]
+        )
 
         if let targetSurfaceID = plan.presentationTargetSurfaceID {
             stagePhonePresentationIfNeeded(
@@ -1632,9 +1774,21 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
         // Split insertion consumes Ghostty's typed projection request for a
         // missing native pane surface. It must not infer tmux layout from app
         // state or transport bytes.
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(event: "registry.insertSplit.parentLookup.begin")
         guard let parentHandle, let parentID = managedSurfaceStore.id(forHandle: parentHandle) else {
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.insertSplit.parentLookup.end",
+                fields: ["found": "false"]
+            )
             return false
         }
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.insertSplit.parentLookup.end",
+            fields: [
+                "found": "true",
+                "parent": ghosttyDiagnosticShortID(parentID),
+            ]
+        )
         guard let insertDirection = GhosttySurfaceTree.InsertDirection(native: direction) else {
             return false
         }
@@ -1649,11 +1803,22 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
 
             let previousPresentation = currentPhonePresentationTarget()
             register([managed])
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.insertSplit.assign.begin",
+                fields: ["surface": ghosttyDiagnosticShortID(managed.id)]
+            )
             topLevels[index].tree = tree
             topLevels[index].focusedLeafID = managed.id
             selectedTopLevelID = normalizedSelectionID(
                 preferredID: selectedTopLevelID,
                 fallbackID: topLevels[index].id
+            )
+            GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+                event: "registry.insertSplit.assign.end",
+                fields: [
+                    "selectedTopLevel": ghosttyDiagnosticShortID(selectedTopLevelID),
+                    "surface": ghosttyDiagnosticShortID(managed.id),
+                ]
             )
             stagePhonePresentationIfNeeded(
                 targetSurfaceID: managed.id,
@@ -1667,7 +1832,18 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func register(_ surfaces: [GhosttyManagedSurface]) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.managedSurface.register.begin",
+            fields: ["surfaces": "\(surfaces.count)"]
+        )
         managedSurfaceStore.register(surfaces)
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.managedSurface.register.end",
+            fields: [
+                "managed": "\(managedSurfaceStore.count)",
+                "surfaces": "\(surfaces.count)",
+            ]
+        )
         updateDebugSummary("managed surfaces=\(managedSurfaceStore.count)")
     }
 
@@ -1878,6 +2054,10 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     }
 
     private func updateDebugSummary(_ event: String) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.debugSummary.update.begin",
+            fields: ["debugEvent": event]
+        )
         debugSummary = GhosttyRuntimeSurfaceDebugSummary.format(
             event: event,
             createSurfaceCount: createSurfaceCount,
@@ -1885,11 +2065,23 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
             managedSurfaceCount: managedSurfaceStore.count,
             topLevelCount: topLevels.count
         )
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.debugSummary.update.end",
+            fields: ["debugEvent": event]
+        )
         notifyChanged()
     }
 
     private func notifyChanged(delivery: GhosttyRuntimeSurfaceChangeNotificationDelivery = .immediate) {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.notifyChanged.begin",
+            fields: ["delivery": "\(delivery)"]
+        )
         changeNotifier.notifyChanged(delivery: delivery)
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "registry.notifyChanged.end",
+            fields: ["delivery": "\(delivery)"]
+        )
     }
 }
 

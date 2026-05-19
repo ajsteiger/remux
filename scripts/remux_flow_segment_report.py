@@ -276,6 +276,43 @@ def registry_callback_begin(instance: FlowInstance) -> FlowEvent | None:
     )
 
 
+def registry_callback_event(name: str) -> Callable[[FlowInstance], FlowEvent | None]:
+    def find(instance: FlowInstance) -> FlowEvent | None:
+        start = registry_callback_begin(instance)
+        end = topology_installed(instance)
+        if start is None or end is None:
+            return None
+        return first_event_between(instance, start, end, exact(name))
+
+    return find
+
+
+registry_debug_update_begin = registry_callback_event("registry.debugSummary.update.begin")
+registry_debug_update_end = registry_callback_event("registry.debugSummary.update.end")
+registry_notify_begin = registry_callback_event("registry.notifyChanged.begin")
+registry_notify_end = registry_callback_event("registry.notifyChanged.end")
+registry_managed_create_begin = registry_callback_event("registry.managedSurface.create.begin")
+registry_managed_create_end = registry_callback_event("registry.managedSurface.create.end")
+registry_managed_register_begin = registry_callback_event("registry.managedSurface.register.begin")
+registry_managed_register_end = registry_callback_event("registry.managedSurface.register.end")
+registry_stage_presentation_begin = registry_callback_event("registry.stagePresentation.begin")
+registry_stage_presentation_end = registry_callback_event("registry.stagePresentation.end")
+registry_insert_parent_begin = registry_callback_event("registry.insertSplit.parentLookup.begin")
+registry_insert_parent_end = registry_callback_event("registry.insertSplit.parentLookup.end")
+registry_insert_assign_begin = registry_callback_event("registry.insertSplit.assign.begin")
+registry_insert_assign_end = registry_callback_event("registry.insertSplit.assign.end")
+registry_tree_decode_begin = registry_callback_event("registry.createSurfaceTree.decode.begin")
+registry_tree_decode_end = registry_callback_event("registry.createSurfaceTree.decode.end")
+registry_tree_leaves_begin = registry_callback_event("registry.createSurfaceTree.leaves.begin")
+registry_tree_leaves_end = registry_callback_event("registry.createSurfaceTree.leaves.end")
+registry_tree_build_begin = registry_callback_event("registry.createSurfaceTree.build.begin")
+registry_tree_build_end = registry_callback_event("registry.createSurfaceTree.build.end")
+registry_tree_install_begin = registry_callback_event("registry.createSurfaceTree.install.begin")
+registry_tree_install_end = registry_callback_event("registry.createSurfaceTree.install.end")
+registry_tree_handle_write_begin = registry_callback_event("registry.createSurfaceTree.handleWrite.begin")
+registry_tree_handle_write_end = registry_callback_event("registry.createSurfaceTree.handleWrite.end")
+
+
 model_revision_published = after_topology(exact("model.surfaceRegistryRevision.published"))
 update_ui_view_begin = after_topology(exact("ui.updateUIView.begin"))
 tree_update_begin = after_topology(exact("ui.tree.update.begin"))
@@ -519,6 +556,141 @@ SEGMENTS = [
         "registry_callback_begin->topology_installed",
         registry_callback_begin,
         lambda flow: first_event(flow, exact("registry.topology.installed")),
+    ),
+    Segment(
+        "registry_callback_begin->debug_update_begin",
+        registry_callback_begin,
+        registry_debug_update_begin,
+    ),
+    Segment(
+        "debug_update_begin->debug_update_end",
+        registry_debug_update_begin,
+        registry_debug_update_end,
+    ),
+    Segment(
+        "debug_update_end->notify_begin",
+        registry_debug_update_end,
+        registry_notify_begin,
+    ),
+    Segment(
+        "notify_begin->notify_end",
+        registry_notify_begin,
+        registry_notify_end,
+    ),
+    Segment(
+        "registry_callback_begin->managed_create_begin",
+        registry_callback_begin,
+        registry_managed_create_begin,
+    ),
+    Segment(
+        "managed_create_begin->managed_create_end",
+        registry_managed_create_begin,
+        registry_managed_create_end,
+    ),
+    Segment(
+        "managed_create_end->insert_parent_lookup_begin",
+        registry_managed_create_end,
+        registry_insert_parent_begin,
+    ),
+    Segment(
+        "insert_parent_lookup_begin->insert_parent_lookup_end",
+        registry_insert_parent_begin,
+        registry_insert_parent_end,
+    ),
+    Segment(
+        "insert_parent_lookup_end->managed_register_begin",
+        registry_insert_parent_end,
+        registry_managed_register_begin,
+    ),
+    Segment(
+        "managed_create_end->managed_register_begin",
+        registry_managed_create_end,
+        registry_managed_register_begin,
+    ),
+    Segment(
+        "managed_register_begin->managed_register_end",
+        registry_managed_register_begin,
+        registry_managed_register_end,
+    ),
+    Segment(
+        "managed_register_end->insert_assign_begin",
+        registry_managed_register_end,
+        registry_insert_assign_begin,
+    ),
+    Segment(
+        "insert_assign_begin->insert_assign_end",
+        registry_insert_assign_begin,
+        registry_insert_assign_end,
+    ),
+    Segment(
+        "insert_assign_end->stage_presentation_begin",
+        registry_insert_assign_end,
+        registry_stage_presentation_begin,
+    ),
+    Segment(
+        "managed_register_end->stage_presentation_begin",
+        registry_managed_register_end,
+        registry_stage_presentation_begin,
+    ),
+    Segment(
+        "stage_presentation_begin->stage_presentation_end",
+        registry_stage_presentation_begin,
+        registry_stage_presentation_end,
+    ),
+    Segment(
+        "stage_presentation_end->topology_installed",
+        registry_stage_presentation_end,
+        topology_installed,
+    ),
+    Segment(
+        "tree_decode_begin->tree_decode_end",
+        registry_tree_decode_begin,
+        registry_tree_decode_end,
+    ),
+    Segment(
+        "tree_decode_end->tree_leaves_begin",
+        registry_tree_decode_end,
+        registry_tree_leaves_begin,
+    ),
+    Segment(
+        "tree_leaves_begin->tree_leaves_end",
+        registry_tree_leaves_begin,
+        registry_tree_leaves_end,
+    ),
+    Segment(
+        "tree_leaves_end->tree_build_begin",
+        registry_tree_leaves_end,
+        registry_tree_build_begin,
+    ),
+    Segment(
+        "tree_build_begin->tree_build_end",
+        registry_tree_build_begin,
+        registry_tree_build_end,
+    ),
+    Segment(
+        "tree_build_end->tree_install_begin",
+        registry_tree_build_end,
+        registry_tree_install_begin,
+    ),
+    Segment(
+        "tree_install_begin->tree_install_end",
+        registry_tree_install_begin,
+        registry_tree_install_end,
+    ),
+    Segment(
+        "tree_install_end->tree_handle_write_begin",
+        registry_tree_install_end,
+        registry_tree_handle_write_begin,
+    ),
+    Segment(
+        "tree_handle_write_begin->tree_handle_write_end",
+        registry_tree_handle_write_begin,
+        registry_tree_handle_write_end,
+    ),
+    Segment(
+        "tree_handle_write_end->topology_installed",
+        registry_tree_handle_write_end,
+        topology_installed,
     ),
     Segment(
         "topology_installed->model_revision_published",
@@ -830,6 +1002,16 @@ Remux flow t=8950000 flow=tmux.newWindow event=runtime.wakeup.appTick.end since_
 Remux flow t=9000000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.schedule since_ms=8.000
 Remux flow t=9200000 flow=tmux.newWindow event=runtime.callback.createSurfaceTree.mainActor.begin since_ms=8.200
 Remux flow t=9300000 flow=tmux.newWindow event=registry.createSurfaceTree.begin since_ms=8.300
+Remux flow t=9400000 flow=tmux.newWindow event=registry.createSurfaceTree.decode.begin since_ms=8.400
+Remux flow t=9450000 flow=tmux.newWindow event=registry.createSurfaceTree.decode.end since_ms=8.450
+Remux flow t=9500000 flow=tmux.newWindow event=registry.createSurfaceTree.leaves.begin since_ms=8.500
+Remux flow t=9800000 flow=tmux.newWindow event=registry.createSurfaceTree.leaves.end since_ms=8.800
+Remux flow t=9900000 flow=tmux.newWindow event=registry.createSurfaceTree.build.begin since_ms=8.900
+Remux flow t=9950000 flow=tmux.newWindow event=registry.createSurfaceTree.build.end since_ms=8.950
+Remux flow t=10000000 flow=tmux.newWindow event=registry.createSurfaceTree.install.begin since_ms=9.000
+Remux flow t=10500000 flow=tmux.newWindow event=registry.createSurfaceTree.install.end since_ms=9.500
+Remux flow t=11000000 flow=tmux.newWindow event=registry.createSurfaceTree.handleWrite.begin since_ms=10.000
+Remux flow t=11200000 flow=tmux.newWindow event=registry.createSurfaceTree.handleWrite.end since_ms=10.200
 Remux flow t=12000000 flow=tmux.newWindow event=registry.topology.installed since_ms=11.000
 Remux flow t=12100000 flow=tmux.newWindow event=model.surfaceRegistryRevision.published since_ms=11.100
 Remux flow t=12200000 flow=tmux.newWindow event=ui.updateUIView.begin since_ms=11.200
@@ -865,6 +1047,20 @@ Remux flow t=26600000 flow=tmux.splitPane event=runtime.callback.createSurface.e
 Remux flow t=26650000 flow=tmux.splitPane event=runtime.wakeup.appTick.end since_ms=6.650
 Remux flow t=26700000 flow=tmux.splitPane event=runtime.callback.createSurface.mainActor.begin since_ms=6.700
 Remux flow t=27000000 flow=tmux.splitPane event=registry.createSurface.begin since_ms=7.000
+Remux flow t=27050000 flow=tmux.splitPane event=registry.debugSummary.update.begin since_ms=7.050
+Remux flow t=27060000 flow=tmux.splitPane event=registry.debugSummary.update.end since_ms=7.060
+Remux flow t=27070000 flow=tmux.splitPane event=registry.notifyChanged.begin since_ms=7.070
+Remux flow t=27090000 flow=tmux.splitPane event=registry.notifyChanged.end since_ms=7.090
+Remux flow t=27100000 flow=tmux.splitPane event=registry.managedSurface.create.begin since_ms=7.100
+Remux flow t=27400000 flow=tmux.splitPane event=registry.managedSurface.create.end since_ms=7.400
+Remux flow t=27450000 flow=tmux.splitPane event=registry.insertSplit.parentLookup.begin since_ms=7.450
+Remux flow t=27500000 flow=tmux.splitPane event=registry.insertSplit.parentLookup.end since_ms=7.500
+Remux flow t=27600000 flow=tmux.splitPane event=registry.managedSurface.register.begin since_ms=7.600
+Remux flow t=27700000 flow=tmux.splitPane event=registry.managedSurface.register.end since_ms=7.700
+Remux flow t=27750000 flow=tmux.splitPane event=registry.insertSplit.assign.begin since_ms=7.750
+Remux flow t=27800000 flow=tmux.splitPane event=registry.insertSplit.assign.end since_ms=7.800
+Remux flow t=27850000 flow=tmux.splitPane event=registry.stagePresentation.begin since_ms=7.850
+Remux flow t=27900000 flow=tmux.splitPane event=registry.stagePresentation.end since_ms=7.900
 Remux flow t=28000000 flow=tmux.splitPane event=registry.topology.installed since_ms=8.000
 Remux flow t=29000000 flow=tmux.splitPane event=registry.runtimePresentation.ready since_ms=9.000
 Remux flow t=30000000 flow=tmux.splitPane event=ui.viewPresentation.ready since_ms=10.000
@@ -914,6 +1110,14 @@ Remux flow t=1000000 flow=tmux.newWindow event=ui.tap.newWindow since_ms=0.000
     assert "runtime_callback_entry->registry_callback_begin: n=1 p50_ms=0.400" in output
     assert "mainActor_begin->registry_callback_begin: n=1 p50_ms=0.100" in output
     assert "processOutput_end->registry_callback_begin: n=1 p50_ms=0.800" in output
+    assert "tree_decode_begin->tree_decode_end: n=1 p50_ms=0.050" in output
+    assert "tree_leaves_begin->tree_leaves_end: n=1 p50_ms=0.300" in output
+    assert "tree_install_begin->tree_install_end: n=1 p50_ms=0.500" in output
+    assert "tree_handle_write_end->topology_installed: n=1 p50_ms=0.800" in output
+    assert "managed_create_begin->managed_create_end: n=1 p50_ms=0.300" in output
+    assert "insert_parent_lookup_begin->insert_parent_lookup_end: n=1 p50_ms=0.050" in output
+    assert "managed_register_begin->managed_register_end: n=1 p50_ms=0.100" in output
+    assert "stage_presentation_begin->stage_presentation_end: n=1 p50_ms=0.050" in output
     assert "topology_installed->model_revision_published: n=1 p50_ms=0.100" in output
     assert "tree_update_begin->overlay_update_begin: n=1 p50_ms=0.010" in output
     assert "overlay_update_begin->hold_begin: n=1 p50_ms=0.010" in output
