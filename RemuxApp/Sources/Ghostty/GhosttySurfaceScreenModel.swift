@@ -139,28 +139,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             GhosttyTmuxActionTrace.traceActiveTopologyFlows(
                 event: "model.registryChange.received"
             )
+            guard let self else { return }
+            publishSurfaceRegistryRevision()
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                    event: "model.registryChange.task.begin",
-                    fields: [
-                        "revision": "\(surfaceRegistryRevision + 1)",
-                    ]
-                )
-                surfaceRegistryRevision += 1
-                GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                    event: "model.surfaceRegistryRevision.published",
-                    fields: [
-                        "revision": "\(surfaceRegistryRevision)",
-                    ]
-                )
-                if GhosttyRuntimeTrace.isEnabled {
-                    NSLog("Remux surface registry revision=%d", surfaceRegistryRevision)
-                }
-                scheduleDebugLatencyProbeIfNeeded()
-                submitDebugLatencyProbeIfReady()
-                traceTerminalReadyIfNeeded()
-                reportRuntimeStateIfNeeded(source: .readiness)
+                self?.handleSurfaceRegistryReadinessChange()
             }
         }
         surfaceRegistry.onTmuxCommandFailure = { [weak self] failure in
@@ -175,6 +157,35 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 flowID: sessionOpenFlowID
             )
         }
+    }
+
+    private func publishSurfaceRegistryRevision() {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "model.registryChange.publish.begin",
+            fields: [
+                "revision": "\(surfaceRegistryRevision + 1)",
+            ]
+        )
+        surfaceRegistryRevision += 1
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "model.surfaceRegistryRevision.published",
+            fields: [
+                "revision": "\(surfaceRegistryRevision)",
+            ]
+        )
+        if GhosttyRuntimeTrace.isEnabled {
+            NSLog("Remux surface registry revision=%d", surfaceRegistryRevision)
+        }
+    }
+
+    private func handleSurfaceRegistryReadinessChange() {
+        GhosttyTmuxActionTrace.traceActiveTopologyFlows(
+            event: "model.registryChange.readiness.begin"
+        )
+        scheduleDebugLatencyProbeIfNeeded()
+        submitDebugLatencyProbeIfReady()
+        traceTerminalReadyIfNeeded()
+        reportRuntimeStateIfNeeded(source: .readiness)
     }
 
     func attach(view: GhosttyKitSurfaceView, size: CGSize) {

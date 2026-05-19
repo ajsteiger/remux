@@ -267,7 +267,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         )
     }
 
-    func testRegistryChangesInvalidateScreenModel() async {
+    func testRegistryChangesInvalidateScreenModelSynchronously() {
         let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() }
@@ -277,10 +277,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         model.surfaceRegistry.reset()
 
-        let didIncrementRevision = await waitUntil {
-            model.surfaceRegistryRevision > initialRevision
-        }
-        XCTAssertTrue(didIncrementRevision)
+        XCTAssertEqual(model.surfaceRegistryRevision, initialRevision + 1)
     }
 
     func testModelReportsInitialRuntimeReadinessFromModel() {
