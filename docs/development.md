@@ -69,12 +69,3 @@ allowlisted sessions after the run:
 scripts/remux_live_ui_test_with_cleanup.sh \
   --only-testing RemuxUITests/RemuxAppUITests/testLiveSSHTmuxActionCycleWhenConfigured
 ```
-
-For branch-to-branch regression attribution, run the same live matrix on each
-checkout or commit with an explicit label and destination:
-
-```bash
-scripts/remux_live_regression_matrix.sh \
-  --label current-branch \
-  --destination 'platform=iOS,name=iPhone'
-```
