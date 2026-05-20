@@ -103,6 +103,10 @@ enum TerminalReadinessProjector {
         )
     }
 
+    static func uiTestInputReady(_ snapshot: TerminalReadinessSnapshot) -> Bool {
+        canSubmitInput(snapshot)
+    }
+
     static func canSubmitInput(
         phase: GhosttyTerminalRuntimePhase,
         transportWritable: Bool,

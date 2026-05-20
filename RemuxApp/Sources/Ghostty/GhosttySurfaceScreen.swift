@@ -65,6 +65,7 @@ struct GhosttySurfaceScreen: View {
             let chrome = GhosttyPhoneChromeLayout(
                 screenSize: screenProxy.size
             )
+            let readiness = model.terminalReadinessSnapshot
             let interactionProjection = model.terminalInteractionProjection
 
             ZStack {
@@ -179,11 +180,18 @@ struct GhosttySurfaceScreen: View {
                                 alignment: .topLeading
                             )
                             .allowsHitTesting(false)
+
+                        GhosttyTerminalInputReadyAccessibilityMarker(
+                            isReady: TerminalReadinessProjector.uiTestInputReady(readiness)
+                        )
+                        .frame(width: 1, height: 1, alignment: .topLeading)
+                        .allowsHitTesting(false)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .overlay(alignment: .topLeading) {
                         GhosttySurfaceStatusOverlay(
                             model: model,
+                            readiness: readiness,
                             registry: registry,
                             onReconnect: onReconnect
                         )
@@ -1341,6 +1349,20 @@ private struct GhosttyTerminalScreenAccessibilityMarker: View {
     }
 }
 
+private struct GhosttyTerminalInputReadyAccessibilityMarker: View {
+    let isReady: Bool
+
+    @ViewBuilder
+    var body: some View {
+        if isReady {
+            Color.clear
+                .accessibilityElement()
+                .accessibilityLabel("Terminal input ready")
+                .accessibilityIdentifier("terminal.input.ready")
+        }
+    }
+}
+
 private struct GhosttyBottomChromeHeightPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
@@ -1526,13 +1548,14 @@ struct GhosttySoftwareKeyboardVisibility {
 
 private struct GhosttySurfaceStatusOverlay: View {
     @ObservedObject var model: GhosttySurfaceScreenModel
+    let readiness: TerminalReadinessSnapshot
     @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
     let onReconnect: () -> Void
 
     var body: some View {
         let projection = GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
             state: model.state,
-            readiness: model.terminalReadinessSnapshot,
+            readiness: readiness,
             commandFailureMessage: model.commandFailureMessage,
             debugStatus: model.debugStatus,
             registryDebugSummary: registry.debugSummary

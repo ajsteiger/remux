@@ -121,6 +121,7 @@ final class RemuxAppUITests: XCTestCase {
             waitForKeyboardPresence(true, label: "initial system show")
         )
 
+        waitForLiveTerminalInputReady(timeout: 10)
         app.typeText(
             "for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do echo REMUX_KEYBOARD_RESIZE_RENDER_$n ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789; done\r"
         )
@@ -620,6 +621,7 @@ final class RemuxAppUITests: XCTestCase {
         let ctrl = app.buttons["terminal.ctrl"]
         XCTAssertTrue(ctrl.waitForExistence(timeout: 5))
         ctrl.tap()
+        waitForLiveTerminalInputReady(timeout: 10)
         app.typeText("b")
         app.typeText("[")
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
@@ -1063,6 +1065,36 @@ final class RemuxAppUITests: XCTestCase {
         }
 
         XCTFail("Timed out waiting for a live SSH terminal to become ready.")
+    }
+
+    private func waitForLiveTerminalInputReady(timeout: TimeInterval) {
+        let deadline = Date().addingTimeInterval(timeout)
+        let inputReady = app.descendants(matching: .any)["terminal.input.ready"]
+        let statusReady = app.staticTexts["terminal.status.ready"]
+        let failedStatuses = app.staticTexts.matching(identifier: "terminal.status.failed")
+
+        while Date() < deadline {
+            if inputReady.exists {
+                return
+            }
+
+            if failedStatuses.firstMatch.exists {
+                let messages = failedStatuses.allElementsBoundByIndex
+                    .map { $0.label }
+                    .filter { !$0.isEmpty }
+                XCTFail(
+                    messages.isEmpty
+                        ? "Live SSH terminal failed before input became ready."
+                        : messages.joined(separator: " / ")
+                )
+                return
+            }
+
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+
+        let statusContext = statusReady.exists ? "terminal.status.ready existed" : "terminal.status.ready missing"
+        XCTFail("Timed out waiting for live SSH terminal input readiness (\(statusContext)).")
     }
 
     private func assertLiveTerminalScreenshotContainsRenderedContent(
@@ -1788,6 +1820,8 @@ final class RemuxAppUITests: XCTestCase {
     }
 
     private func sendTerminalCommand(_ command: String) {
+        waitForLiveTerminalInputReady(timeout: 10)
+
         if !app.keyboards.firstMatch.exists {
             let keyboard = app.buttons["terminal.keyboard"]
             XCTAssertTrue(keyboard.waitForExistence(timeout: 10))

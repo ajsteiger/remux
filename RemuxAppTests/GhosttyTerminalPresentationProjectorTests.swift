@@ -225,6 +225,57 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         }
     }
 
+    func testUITestInputReadyUsesSubmitInputContractNotStatusReady() {
+        let statusReadyWithoutFocusedSurface = Self.readinessSnapshot(
+            phase: .running,
+            transportWritable: true,
+            topLevelCount: 1,
+            focused: false
+        )
+        XCTAssertTrue(
+            TerminalReadinessProjector.isTerminalStatusReady(
+                statusReadyWithoutFocusedSurface,
+                commandFailureMessage: nil
+            )
+        )
+        XCTAssertFalse(TerminalReadinessProjector.uiTestInputReady(statusReadyWithoutFocusedSurface))
+
+        let notTransportWritable = Self.readinessSnapshot(
+            phase: .running,
+            transportWritable: false,
+            topLevelCount: 1,
+            focused: true
+        )
+        XCTAssertFalse(TerminalReadinessProjector.uiTestInputReady(notTransportWritable))
+
+        let inputReady = Self.readinessSnapshot(
+            phase: .running,
+            transportWritable: true,
+            topLevelCount: 1,
+            focused: true
+        )
+        XCTAssertTrue(TerminalReadinessProjector.uiTestInputReady(inputReady))
+
+        XCTAssertFalse(
+            TerminalReadinessProjector.uiTestInputReady(
+                Self.readinessSnapshot(phase: .starting, transportWritable: true, focused: true)
+            )
+        )
+        XCTAssertFalse(
+            TerminalReadinessProjector.uiTestInputReady(
+                Self.readinessSnapshot(
+                    phase: .failed(message: "failed", reason: nil),
+                    transportWritable: true,
+                    focused: true
+                )
+            )
+        )
+        XCTAssertEqual(
+            TerminalReadinessProjector.uiTestInputReady(inputReady),
+            TerminalReadinessProjector.canSubmitInput(inputReady)
+        )
+    }
+
     func testReadinessProjectionPreservesStatusAndTraceConditions() {
         XCTAssertTrue(
             TerminalReadinessProjector.isWaitingForPanes(
