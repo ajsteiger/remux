@@ -94,8 +94,31 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     ) -> GhosttyPanePreviewSession {
         GhosttyPanePreviewSession(
             leafIDs: leafIDs,
-            registry: surfaceRegistry,
-            previewSizing: previewSizing
+            previewSizing: previewSizing,
+            previewRequestClient: panePreviewRequestClient()
+        )
+    }
+
+    private func panePreviewRequestClient() -> GhosttyPanePreviewSession.PreviewRequestClient {
+        let registry = surfaceRegistry
+        return GhosttyPanePreviewSession.PreviewRequestClient(
+            start: { [weak registry] paneID, options, userdata, callback in
+                guard let managed = registry?.managedSurface(for: paneID) else {
+                    return .surfaceUnavailable
+                }
+
+                guard let request = managed.controlSurface.renderPreviewImageAsync(
+                    options: options,
+                    userdata: userdata,
+                    callback: callback
+                ) else {
+                    return .rejected
+                }
+
+                return .started(request)
+            },
+            cancel: { GhosttyKitControlSurface.cancelPreviewRequest($0) },
+            release: { GhosttyKitControlSurface.releasePreviewRequest($0) }
         )
     }
 

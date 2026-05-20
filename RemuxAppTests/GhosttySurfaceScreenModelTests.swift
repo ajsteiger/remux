@@ -3209,6 +3209,27 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.paneSheetDetentPaneCount(topLevelID: UUID()), 0)
     }
 
+    func testPanePreviewSessionFromModelReportsMissingManagedSurfaceUnavailable() {
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in NoopTmuxControlTransport() },
+        )
+        let paneID = UUID()
+
+        let session = model.makePanePreviewSession(
+            leafIDs: [paneID],
+            previewSizing: .paneGrid(availableWidth: 120)
+        )
+
+        guard case .failed(let status)? = session.imagesByPaneID[paneID] else {
+            XCTFail("expected preview request to fail for missing managed surface")
+            session.cancelAll()
+            return
+        }
+        XCTAssertEqual(status, GHOSTTY_SURFACE_PREVIEW_STATUS_SURFACE_CLOSED)
+        session.cancelAll()
+    }
+
     func testPaneSelectionSheetTopologyProjectionTracksMissingTopLevel() throws {
         let model = Self.screenModel(
             target: Self.target(),

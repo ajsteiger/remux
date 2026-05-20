@@ -84,28 +84,13 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
     @Published private(set) var imagesByPaneID: [UUID: PreviewState] = [:]
 
-    private weak var registry: GhosttyRuntimeSurfaceRegistry?
     private let displayScale: CGFloat
     private let previewSizing: PreviewSizing
-    private let previewRequestClient: PreviewRequestClient?
+    private let previewRequestClient: PreviewRequestClient
     private let retryDelay: Duration
     private var pendingRequests: [UUID: PreviewRequestLease] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
     private var generation: UInt64 = 0
-
-    init(
-        leafIDs: [UUID],
-        registry: GhosttyRuntimeSurfaceRegistry,
-        scale: CGFloat = PanePreviewLayout.currentScale(),
-        previewSizing: PreviewSizing? = nil
-    ) {
-        self.registry = registry
-        self.displayScale = scale
-        self.previewSizing = previewSizing ?? .paneGridForCurrentScreen
-        self.previewRequestClient = nil
-        self.retryDelay = Self.transientRetryDelay
-        startInitialRequests(leafIDs: leafIDs)
-    }
 
     init(
         leafIDs: [UUID],
@@ -114,7 +99,6 @@ final class GhosttyPanePreviewSession: ObservableObject {
         retryDelay: Duration? = nil,
         previewRequestClient: PreviewRequestClient
     ) {
-        self.registry = nil
         self.displayScale = scale
         self.previewSizing = previewSizing ?? .paneGridForCurrentScreen
         self.previewRequestClient = previewRequestClient
@@ -362,23 +346,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
         options: ghostty_surface_preview_image_options_s,
         userdata: UnsafeMutableRawPointer?
     ) -> PreviewStartResult {
-        if let previewRequestClient {
-            return previewRequestClient.start(paneID, options, userdata, previewImageCallback)
-        }
-
-        guard let managed = registry?.managedSurface(for: paneID) else {
-            return .surfaceUnavailable
-        }
-
-        guard let request = managed.controlSurface.renderPreviewImageAsync(
-            options: options,
-            userdata: userdata,
-            callback: previewImageCallback
-        ) else {
-            return .rejected
-        }
-
-        return .started(request)
+        previewRequestClient.start(paneID, options, userdata, previewImageCallback)
     }
 }
 
@@ -403,14 +371,9 @@ private struct PreviewRequestActions {
     let cancel: @MainActor (ghostty_surface_preview_request_t) -> Void
     let release: @MainActor (ghostty_surface_preview_request_t) -> Void
 
-    init(client: GhosttyPanePreviewSession.PreviewRequestClient?) {
-        if let client {
-            self.cancel = client.cancel
-            self.release = client.release
-        } else {
-            self.cancel = { GhosttyKitControlSurface.cancelPreviewRequest($0) }
-            self.release = { GhosttyKitControlSurface.releasePreviewRequest($0) }
-        }
+    init(client: GhosttyPanePreviewSession.PreviewRequestClient) {
+        self.cancel = client.cancel
+        self.release = client.release
     }
 }
 
