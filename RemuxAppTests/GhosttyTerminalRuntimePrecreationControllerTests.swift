@@ -178,7 +178,7 @@ private final class TestSurfaceDelegate: GhosttyKitRuntimeSurfaceDelegate {
 
     func runtimeCreateSurfaceTree(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_tree_s,
+        request: GhosttyRuntimeSurfaceTreeCreationRequest,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         false

@@ -66,6 +66,42 @@ final class GhosttyRuntimeSurfaceTreeRequestDecoderTests: XCTestCase {
         }
     }
 
+    func testCreationRequestCapturesNativeTraceFields() {
+        let parent = UnsafeMutableRawPointer(bitPattern: 0x7101)!
+        var configs = [Self.config(context: GHOSTTY_SURFACE_CONTEXT_TAB)]
+
+        Self.withConfigPointers(&configs) { configPointers in
+            var nodes = [
+                Self.leaf(config: configPointers[0]),
+            ]
+            var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 1)
+
+            nodes.withUnsafeBufferPointer { nodeBuffer in
+                leafSurfaces.withUnsafeMutableBufferPointer { leafBuffer in
+                    let request = GhosttyRuntimeSurfaceTreeCreationRequest(
+                        native: ghostty_runtime_create_surface_tree_s(
+                            parent: parent,
+                            nodes: nodeBuffer.baseAddress,
+                            nodes_len: nodeBuffer.count,
+                            root_index: 0,
+                            leaf_surfaces: leafBuffer.baseAddress,
+                            leaf_surfaces_len: leafBuffer.count,
+                            focused_leaf_index: 0,
+                            focused_leaf_index_valid: true
+                        )
+                    )
+
+                    XCTAssertEqual(request.parentHandle, parent)
+                    XCTAssertEqual(request.nodeCount, 1)
+                    XCTAssertEqual(request.rootIndex, 0)
+                    XCTAssertEqual(request.leafSurfaceCount, 1)
+                    XCTAssertEqual(request.focusedLeafIndex, 0)
+                    XCTAssertTrue(request.focusedLeafIndexIsValid)
+                }
+            }
+        }
+    }
+
     func testMissingNodesFails() {
         var leafSurfaces = [ghostty_surface_t?](repeating: nil, count: 1)
 
@@ -313,7 +349,7 @@ final class GhosttyRuntimeSurfaceTreeRequestDecoderTests: XCTestCase {
             rootIndex: rootIndex,
             focusedLeafIndex: focusedLeafIndex
         ) { request in
-            switch GhosttyRuntimeSurfaceTreeRequestDecoder.decode(request) {
+            switch GhosttyRuntimeSurfaceTreeCreationRequest(native: request).decoded {
             case .success(let decoded):
                 return decoded
             case .failure(let error):
@@ -342,7 +378,7 @@ final class GhosttyRuntimeSurfaceTreeRequestDecoderTests: XCTestCase {
     private static func decodeFailure(
         _ request: ghostty_runtime_create_surface_tree_s
     ) -> GhosttyRuntimeSurfaceTreeRequestDecodeError {
-        switch GhosttyRuntimeSurfaceTreeRequestDecoder.decode(request) {
+        switch GhosttyRuntimeSurfaceTreeCreationRequest(native: request).decoded {
         case .success:
             XCTFail("Expected decode failure")
             fatalError("unreachable")

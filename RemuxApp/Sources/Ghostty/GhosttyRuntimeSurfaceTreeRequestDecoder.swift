@@ -1,5 +1,25 @@
 import GhosttyKit
 
+struct GhosttyRuntimeSurfaceTreeCreationRequest {
+    let parentHandle: ghostty_surface_t?
+    let nodeCount: Int
+    let rootIndex: Int
+    let leafSurfaceCount: Int
+    let focusedLeafIndex: Int
+    let focusedLeafIndexIsValid: Bool
+    let decoded: Result<GhosttyRuntimeSurfaceTreeDecodedRequest, GhosttyRuntimeSurfaceTreeRequestDecodeError>
+
+    init(native request: ghostty_runtime_create_surface_tree_s) {
+        parentHandle = request.parent
+        nodeCount = request.nodes_len
+        rootIndex = request.root_index
+        leafSurfaceCount = request.leaf_surfaces_len
+        focusedLeafIndex = request.focused_leaf_index
+        focusedLeafIndexIsValid = request.focused_leaf_index_valid
+        decoded = GhosttyRuntimeSurfaceTreeRequestDecoder.decode(request)
+    }
+}
+
 struct GhosttyRuntimeSurfaceTreeDecodedRequest {
     let parent: ghostty_surface_t?
     let nodes: [GhosttySurfaceTree.RuntimeNodeDescriptor]

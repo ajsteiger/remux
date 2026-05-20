@@ -417,14 +417,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
     }
 
     private static func createSurfaceTreeTraceFields(
-        request: ghostty_runtime_create_surface_tree_s,
+        request: GhosttyRuntimeSurfaceTreeCreationRequest,
         route: String
     ) -> [String: String] {
         [
-            "focusedIndex": "\(request.focused_leaf_index)",
-            "focusedValid": "\(request.focused_leaf_index_valid)",
-            "leaves": "\(request.leaf_surfaces_len)",
-            "nodes": "\(request.nodes_len)",
+            "focusedIndex": "\(request.focusedLeafIndex)",
+            "focusedValid": "\(request.focusedLeafIndexIsValid)",
+            "leaves": "\(request.leafSurfaceCount)",
+            "nodes": "\(request.nodeCount)",
             "route": route,
             "thread": callbackThreadField(),
         ]
@@ -789,7 +789,11 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
             return false
         }
         let appBox = UnsafeSendable(app)
-        let requestBox = UnsafeSendable(request)
+        let requestBox = UnsafeSendable(
+            GhosttyRuntimeTrace.perfMeasure("runtime.createSurfaceTree.decode") {
+                GhosttyRuntimeSurfaceTreeCreationRequest(native: request)
+            }
+        )
         let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.createSurfaceTree route=main")

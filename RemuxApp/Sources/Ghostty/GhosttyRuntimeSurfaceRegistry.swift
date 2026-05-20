@@ -1304,7 +1304,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
     func runtimeCreateSurfaceTree(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_tree_s,
+        request: GhosttyRuntimeSurfaceTreeCreationRequest,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         guard acceptsRuntimeCallback(lease) else { return false }
@@ -1315,7 +1315,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
     private func runtimeCreateSurfaceTreeInTransaction(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_tree_s,
+        request: GhosttyRuntimeSurfaceTreeCreationRequest,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         let start = GhosttyRuntimeTrace.nowNanos()
@@ -1332,56 +1332,56 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
             phaseStartedAt = now
         }
         GhosttyRuntimeTrace.tmuxViewport(
-            "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index) parent=\(String(describing: request.parent))"
+            "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodeCount) leaves=\(request.leafSurfaceCount) focusedValid=\(request.focusedLeafIndexIsValid) focusedIndex=\(request.focusedLeafIndex) parent=\(String(describing: request.parentHandle))"
         )
         GhosttyRuntimeTrace.latency(
-            "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len) focusedValid=\(request.focused_leaf_index_valid) focusedIndex=\(request.focused_leaf_index)"
+            "registry.runtimeCreateSurfaceTree begin nodes=\(request.nodeCount) leaves=\(request.leafSurfaceCount) focusedValid=\(request.focusedLeafIndexIsValid) focusedIndex=\(request.focusedLeafIndex)"
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "tmux.newWindow",
             event: "registry.createSurfaceTree.begin",
             fields: [
-                "focusedIndex": "\(request.focused_leaf_index)",
-                "focusedValid": "\(request.focused_leaf_index_valid)",
-                "leaves": "\(request.leaf_surfaces_len)",
-                "nodes": "\(request.nodes_len)",
+                "focusedIndex": "\(request.focusedLeafIndex)",
+                "focusedValid": "\(request.focusedLeafIndexIsValid)",
+                "leaves": "\(request.leafSurfaceCount)",
+                "nodes": "\(request.nodeCount)",
             ]
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "tmux.splitPane",
             event: "registry.createSurfaceTree.begin",
             fields: [
-                "focusedIndex": "\(request.focused_leaf_index)",
-                "focusedValid": "\(request.focused_leaf_index_valid)",
-                "leaves": "\(request.leaf_surfaces_len)",
-                "nodes": "\(request.nodes_len)",
+                "focusedIndex": "\(request.focusedLeafIndex)",
+                "focusedValid": "\(request.focusedLeafIndexIsValid)",
+                "leaves": "\(request.leafSurfaceCount)",
+                "nodes": "\(request.nodeCount)",
             ]
         )
         createSurfaceTreeCount += 1
         if GhosttyRuntimeTrace.isEnabled {
             NSLog(
                 "Remux create_surface_tree nodes=%d root=%d leaves=%d parent=%@",
-                request.nodes_len,
-                request.root_index,
-                request.leaf_surfaces_len,
-                String(describing: request.parent)
+                request.nodeCount,
+                request.rootIndex,
+                request.leafSurfaceCount,
+                String(describing: request.parentHandle)
             )
         }
-        updateDebugSummary("create_surface_tree nodes=\(request.nodes_len) leaves=\(request.leaf_surfaces_len)")
+        updateDebugSummary("create_surface_tree nodes=\(request.nodeCount) leaves=\(request.leafSurfaceCount)")
 
         let decodedRequest: GhosttyRuntimeSurfaceTreeDecodedRequest
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-            event: "registry.createSurfaceTree.decode.begin",
+            event: "registry.createSurfaceTree.decodeResult.begin",
             fields: [
-                "leaves": "\(request.leaf_surfaces_len)",
-                "nodes": "\(request.nodes_len)",
+                "leaves": "\(request.leafSurfaceCount)",
+                "nodes": "\(request.nodeCount)",
             ]
         )
-        switch GhosttyRuntimeSurfaceTreeRequestDecoder.decode(request) {
+        switch request.decoded {
         case .success(let decoded):
             decodedRequest = decoded
             GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                event: "registry.createSurfaceTree.decode.end",
+                event: "registry.createSurfaceTree.decodeResult.end",
                 fields: [
                     "decodedLeaves": "\(decoded.leafConfigs.count)",
                     "decodedNodes": "\(decoded.nodes.count)",
@@ -1390,7 +1390,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
             )
         case .failure(let error):
             GhosttyTmuxActionTrace.traceActiveTopologyFlows(
-                event: "registry.createSurfaceTree.decode.end",
+                event: "registry.createSurfaceTree.decodeResult.end",
                 fields: [
                     "error": error.description,
                     "success": "false",
@@ -1401,14 +1401,14 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
                 "decode_failed",
                 fields: [
                     "error": error.description,
-                    "leaves": "\(request.leaf_surfaces_len)",
-                    "nodes": "\(request.nodes_len)",
+                    "leaves": "\(request.leafSurfaceCount)",
+                    "nodes": "\(request.nodeCount)",
                 ]
             )
             return false
         }
         traceCreateSurfaceTreePhase(
-            "decode",
+            "decode_result",
             fields: [
                 "leaves": "\(decodedRequest.leafConfigs.count)",
                 "nodes": "\(decodedRequest.nodes.count)",
@@ -1749,7 +1749,11 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         request: ghostty_runtime_create_surface_tree_s
     ) -> Bool {
         guard let lease = runtimeCallbackLeaseStore.currentLease() else { return false }
-        return runtimeCreateSurfaceTree(app: app, request: request, lease: lease)
+        return runtimeCreateSurfaceTree(
+            app: app,
+            request: GhosttyRuntimeSurfaceTreeCreationRequest(native: request),
+            lease: lease
+        )
     }
 
     func runtimeCloseSurface(id: UUID, processAlive: Bool) {

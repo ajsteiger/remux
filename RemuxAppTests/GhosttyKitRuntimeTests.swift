@@ -781,7 +781,7 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         ) { request in
             registry.runtimeCreateSurfaceTree(
                 app: currentRuntime.appHandleForTesting,
-                request: request,
+                request: GhosttyRuntimeSurfaceTreeCreationRequest(native: request),
                 lease: staleLease
             )
         }
