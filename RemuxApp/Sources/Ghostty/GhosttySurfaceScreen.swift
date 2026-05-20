@@ -1554,7 +1554,6 @@ private struct GhosttySurfaceStatusOverlay: View {
 
     var body: some View {
         let projection = GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-            state: model.state,
             readiness: readiness,
             commandFailureMessage: model.commandFailureMessage,
             debugStatus: model.debugStatus,

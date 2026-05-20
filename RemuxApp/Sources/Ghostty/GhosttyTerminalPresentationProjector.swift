@@ -281,16 +281,15 @@ struct GhosttyPaneSelectionSheetRenderProjection: Equatable, Sendable {
 @MainActor
 enum GhosttyTerminalPresentationProjector {
     static func terminalStatusOverlayProjection(
-        state: GhosttySurfaceScreenModel.State,
         readiness: TerminalReadinessSnapshot,
         commandFailureMessage: String?,
         debugStatus: String,
         registryDebugSummary: String
     ) -> GhosttyTerminalStatusOverlayProjection {
-        switch state {
+        switch readiness.phase {
         case .idle, .starting:
             return .starting
-        case .failed(let message):
+        case .failed(let message, _):
             return .failed(message)
         case .running:
             if let commandFailureMessage {

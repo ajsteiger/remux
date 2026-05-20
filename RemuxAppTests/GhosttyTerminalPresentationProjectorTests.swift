@@ -339,7 +339,6 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
     func testStatusOverlayProjectionPreservesStatePrecedence() {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-                state: .idle,
                 readiness: Self.readinessSnapshot(phase: .idle, topLevelCount: 0, focused: false),
                 commandFailureMessage: "ignored",
                 debugStatus: "idle debug",
@@ -349,7 +348,6 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-                state: .starting,
                 readiness: Self.readinessSnapshot(phase: .starting, topLevelCount: 0, focused: false),
                 commandFailureMessage: nil,
                 debugStatus: "starting debug",
@@ -359,7 +357,6 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-                state: .failed("transport lost"),
                 readiness: Self.readinessSnapshot(
                     phase: .failed(message: "transport lost", reason: nil),
                     topLevelCount: 1,
@@ -376,7 +373,6 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
     func testStatusOverlayProjectionPreservesRunningPrecedence() {
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-                state: .running,
                 readiness: Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: false),
                 commandFailureMessage: "No space for another pane.",
                 debugStatus: "running debug",
@@ -386,7 +382,6 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-                state: .running,
                 readiness: Self.readinessSnapshot(phase: .running, topLevelCount: 0, focused: false),
                 commandFailureMessage: nil,
                 debugStatus: "transport started",
@@ -399,7 +394,6 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
         XCTAssertEqual(
             GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-                state: .running,
                 readiness: Self.readinessSnapshot(phase: .running, topLevelCount: 1, focused: false),
                 commandFailureMessage: nil,
                 debugStatus: "transport started",
