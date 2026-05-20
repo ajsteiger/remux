@@ -1709,22 +1709,22 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
     func runtimeTmuxCommandFailure(
         app: ghostty_app_t?,
-        failure: ghostty_tmux_command_failure_s,
+        failure: TmuxControlCommandFailure,
         lease: GhosttyRuntimeCallbackLease
     ) {
         guard acceptsRuntimeCallback(lease) else { return }
         _ = app
-        deliverTmuxCommandFailure(TmuxControlCommandFailure(native: failure))
+        deliverTmuxCommandFailure(failure)
     }
 
     func runtimeTmuxProtocolError(
         app: ghostty_app_t?,
-        error: ghostty_tmux_protocol_error_s,
+        error: TmuxControlProtocolError,
         lease: GhosttyRuntimeCallbackLease
     ) {
         guard acceptsRuntimeCallback(lease) else { return }
         _ = app
-        deliverTmuxProtocolError(TmuxControlProtocolError(native: error))
+        deliverTmuxProtocolError(error)
     }
 
 #if DEBUG
@@ -1774,7 +1774,11 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         error: ghostty_tmux_protocol_error_s
     ) {
         guard let lease = runtimeCallbackLeaseStore.currentLease() else { return }
-        runtimeTmuxProtocolError(app: app, error: error, lease: lease)
+        runtimeTmuxProtocolError(
+            app: app,
+            error: TmuxControlProtocolError(native: error),
+            lease: lease
+        )
     }
 
     func registerManagedSurfaceForTesting(_ managed: GhosttyManagedSurface) {

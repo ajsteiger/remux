@@ -884,14 +884,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
             return
         }
         let appBox = UnsafeSendable(app)
-        let failureBox = UnsafeSendable(failure)
+        let typedFailure = TmuxControlCommandFailure(native: failure)
         let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.tmuxCommandFailure route=main")
             MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
                     app: appBox.value,
-                    failure: failureBox.value,
+                    failure: typedFailure,
                     lease: leaseBox.value
                 )
             }
@@ -901,7 +901,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     MainActor.assumeIsolated {
                         callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
                             app: appBox.value,
-                            failure: failureBox.value,
+                            failure: typedFailure,
                             lease: leaseBox.value
                         )
                     }
@@ -921,14 +921,14 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
             return
         }
         let appBox = UnsafeSendable(app)
-        let errorBox = UnsafeSendable(error)
+        let typedError = TmuxControlProtocolError(native: error)
         let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.tmuxProtocolError route=main")
             MainActor.assumeIsolated {
                 callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
                     app: appBox.value,
-                    error: errorBox.value,
+                    error: typedError,
                     lease: leaseBox.value
                 )
             }
@@ -938,7 +938,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
                     MainActor.assumeIsolated {
                         callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
                             app: appBox.value,
-                            error: errorBox.value,
+                            error: typedError,
                             lease: leaseBox.value
                         )
                     }

@@ -704,28 +704,18 @@ final class GhosttyKitRuntimeTests: XCTestCase {
             delivered = failure
         }
 
-        "split failed".withCString { message in
-            let failure = ghostty_tmux_command_failure_s(
-                surface: nil,
-                kind: GHOSTTY_TMUX_COMMAND_FAILURE_KIND_SPLIT_PANE,
-                reason: GHOSTTY_TMUX_COMMAND_FAILURE_REASON_TMUX_ERROR,
-                message: message,
-                message_len: strlen(message)
-            )
+        registry.runtimeTmuxCommandFailure(
+            app: nil,
+            failure: expected,
+            lease: staleLease
+        )
+        XCTAssertNil(delivered)
 
-            registry.runtimeTmuxCommandFailure(
-                app: nil,
-                failure: failure,
-                lease: staleLease
-            )
-            XCTAssertNil(delivered)
-
-            registry.runtimeTmuxCommandFailure(
-                app: nil,
-                failure: failure,
-                lease: currentLease
-            )
-        }
+        registry.runtimeTmuxCommandFailure(
+            app: nil,
+            failure: expected,
+            lease: currentLease
+        )
 
         XCTAssertEqual(delivered, expected)
     }

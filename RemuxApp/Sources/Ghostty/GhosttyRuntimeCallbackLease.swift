@@ -95,14 +95,14 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     @MainActor
     func runtimeTmuxCommandFailure(
         app: ghostty_app_t?,
-        failure: ghostty_tmux_command_failure_s,
+        failure: TmuxControlCommandFailure,
         lease: GhosttyRuntimeCallbackLease
     )
 
     @MainActor
     func runtimeTmuxProtocolError(
         app: ghostty_app_t?,
-        error: ghostty_tmux_protocol_error_s,
+        error: TmuxControlProtocolError,
         lease: GhosttyRuntimeCallbackLease
     )
 }
