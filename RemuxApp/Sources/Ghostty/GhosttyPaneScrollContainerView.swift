@@ -5,9 +5,22 @@ import UIKit
 struct GhosttyPaneScrollPosition: Equatable {
     let row: UInt64
     let cellOffset: Double
+
+    func approximatelyEquals(_ other: GhosttyPaneScrollPosition?) -> Bool {
+        guard let other else { return false }
+        return row == other.row && abs(cellOffset - other.cellOffset) < 0.000_001
+    }
 }
 
 enum GhosttyPaneScrollGeometry {
+    static func position(for state: GhosttySurfaceScrollState) -> GhosttyPaneScrollPosition {
+        let row = min(state.offset, state.maxRow)
+        let cellOffset = row == state.maxRow
+            ? 0
+            : min(max(state.cellOffset, 0), 0.999_999_999)
+        return GhosttyPaneScrollPosition(row: row, cellOffset: cellOffset)
+    }
+
     static func displayViewportSize(for bounds: CGRect) -> CGSize? {
         guard bounds.width.isFinite, bounds.height.isFinite else { return nil }
         guard bounds.width > 0, bounds.height > 0 else { return nil }
@@ -78,6 +91,8 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var pendingContentOffset: CGPoint?
     private var isApplyingProgrammaticUpdate = false
     private var lastAppliedScrollRoute: GhosttySurfaceScrollRoute?
+    private var isUserViewportScrolling = false
+    private var lastSentViewportScrollPosition: GhosttyPaneScrollPosition?
     private var routeForwardingGesture = GhosttyRouteForwardingScrollGesture()
     private var submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
 
@@ -121,6 +136,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
                 "scroll.update attach old=\(ghosttyDiagnosticShortID(self.surface?.id)) new=\(ghosttyDiagnosticShortID(surface.id)) bounds=\(ghosttyDiagnosticRect(bounds)) surface={\(surface.diagnosticSummary())}"
             )
             self.surface?.onScrollStateChange = nil
+            resetViewportScrollInteractionState()
             self.surface = surface
 
             if surface.view.superview !== contentView {
@@ -158,6 +174,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         self.surface = nil
         submitRouteForwardedMouseScroll = nil
         lastAppliedScrollRoute = nil
+        resetViewportScrollInteractionState()
         surface.view.isHidden = true
         surface.view.removeFromSuperview()
     }
@@ -174,8 +191,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         self.surface = nil
         submitRouteForwardedMouseScroll = nil
         lastAppliedScrollRoute = nil
-        pendingContentOffset = nil
-        invalidateDisplayLink()
+        resetViewportScrollInteractionState()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -185,6 +201,22 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
 
         pendingContentOffset = scrollView.contentOffset
         ensureDisplayLink()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        guard surface?.scrollRoute == .viewport else { return }
+        isUserViewportScrolling = true
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard surface?.scrollRoute == .viewport else { return }
+        guard !decelerate else { return }
+        finishUserViewportScroll()
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard surface?.scrollRoute == .viewport else { return }
+        finishUserViewportScroll()
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -242,6 +274,8 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         routeForwardingPanRecognizer.isEnabled = !usesNativeViewportScroll
         if usesNativeViewportScroll {
             routeForwardingGesture.reset()
+        } else if didChangeRoute {
+            resetViewportScrollInteractionState()
         }
         return didChangeRoute
     }
@@ -250,27 +284,31 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         guard let surface else { return }
         synchronizeRoute()
 
+        let viewportHeight = max(bounds.height, 1)
+        let cellHeight = cellHeight(for: surface)
+        let contentHeight = GhosttyPaneScrollGeometry.documentHeight(
+            viewportHeight: viewportHeight,
+            cellHeight: cellHeight,
+            state: surface.scrollState
+        )
+        let contentSize = CGSize(width: max(bounds.width, 1), height: contentHeight)
+        let maxOffsetY = max(0, contentHeight - viewportHeight)
+
+        if isActiveViewportScrollInteraction {
+            synchronizeContentSize(contentSize)
+            pinSurfaceToVisibleBounds()
+            return
+        }
+
         withProgrammaticScrollSynchronization {
-            let viewportHeight = max(bounds.height, 1)
-            let contentHeight = GhosttyPaneScrollGeometry.documentHeight(
-                viewportHeight: viewportHeight,
-                cellHeight: cellHeight(for: surface),
-                state: surface.scrollState
-            )
-
-            let contentSize = CGSize(width: max(bounds.width, 1), height: contentHeight)
-            if scrollView.contentSize != contentSize {
-                scrollView.contentSize = contentSize
-                contentView.frame = CGRect(origin: .zero, size: contentSize)
-            }
-
-            let maxOffsetY = max(0, contentHeight - viewportHeight)
+            synchronizeContentSize(contentSize)
             let offsetY = GhosttyPaneScrollGeometry.contentOffsetY(
                 for: surface.scrollState,
-                cellHeight: cellHeight(for: surface),
+                cellHeight: cellHeight,
                 maxContentOffsetY: maxOffsetY
             )
             applyProgrammaticContentOffset(CGPoint(x: 0, y: offsetY))
+            lastSentViewportScrollPosition = GhosttyPaneScrollGeometry.position(for: surface.scrollState)
             pinSurfaceToVisibleBounds()
         }
     }
@@ -325,6 +363,12 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         scrollView.setContentOffset(offset, animated: false)
     }
 
+    private func synchronizeContentSize(_ contentSize: CGSize) {
+        guard scrollView.contentSize != contentSize else { return }
+        scrollView.contentSize = contentSize
+        contentView.frame = CGRect(origin: .zero, size: contentSize)
+    }
+
     private func withProgrammaticScrollSynchronization(_ body: () -> Void) {
         pendingContentOffset = nil
         invalidateDisplayLink()
@@ -359,15 +403,41 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         displayLink = nil
     }
 
+    private func resetViewportScrollInteractionState() {
+        isUserViewportScrolling = false
+        lastSentViewportScrollPosition = nil
+        pendingContentOffset = nil
+        invalidateDisplayLink()
+    }
+
+    private var isActiveViewportScrollInteraction: Bool {
+        guard surface?.scrollRoute == .viewport else { return false }
+        return isUserViewportScrolling ||
+            scrollView.isTracking ||
+            scrollView.isDragging ||
+            scrollView.isDecelerating
+    }
+
+    private func finishUserViewportScroll() {
+        flushPendingViewportScrollOffset()
+        isUserViewportScrolling = false
+        synchronizeFromSurface()
+    }
+
     @objc
     private func displayLinkTick() {
-        guard let offset = pendingContentOffset else {
+        guard flushPendingViewportScrollOffset() else {
             invalidateDisplayLink()
             return
         }
+    }
+
+    @discardableResult
+    private func flushPendingViewportScrollOffset() -> Bool {
+        guard let offset = pendingContentOffset else { return false }
         pendingContentOffset = nil
 
-        guard let surface, surface.scrollRoute == .viewport else { return }
+        guard let surface, surface.scrollRoute == .viewport else { return false }
         let viewportHeight = max(bounds.height, 1)
         let maxOffsetY = max(0, scrollView.contentSize.height - viewportHeight)
         guard let position = GhosttyPaneScrollGeometry.position(
@@ -376,13 +446,17 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
             state: surface.scrollState,
             maxContentOffsetY: maxOffsetY
         ) else {
-            return
+            return false
         }
+
+        guard !position.approximatelyEquals(lastSentViewportScrollPosition) else { return false }
+        lastSentViewportScrollPosition = position
 
         surface.scrollToPosition(
             row: position.row,
             cellOffset: position.cellOffset
         )
+        return true
     }
 
     @objc

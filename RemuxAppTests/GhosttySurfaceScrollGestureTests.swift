@@ -285,6 +285,42 @@ final class GhosttySurfaceScrollGestureTests: XCTestCase {
         )
     }
 
+    func testPaneScrollGeometryMapsScrollbarStateToScrollPosition() {
+        let state = GhosttySurfaceScrollState(
+            total: 100,
+            offset: 12,
+            len: 20,
+            cellOffset: 0.5
+        )
+
+        XCTAssertEqual(
+            GhosttyPaneScrollGeometry.position(for: state),
+            GhosttyPaneScrollPosition(row: 12, cellOffset: 0.5)
+        )
+    }
+
+    func testPaneScrollGeometryClampsMaxRowPositionToCellBoundary() {
+        let state = GhosttySurfaceScrollState(
+            total: 100,
+            offset: 90,
+            len: 20,
+            cellOffset: 0.5
+        )
+
+        XCTAssertEqual(
+            GhosttyPaneScrollGeometry.position(for: state),
+            GhosttyPaneScrollPosition(row: 80, cellOffset: 0)
+        )
+    }
+
+    func testPaneScrollPositionUsesToleranceForDuplicateScrollSubmissions() {
+        let position = GhosttyPaneScrollPosition(row: 12, cellOffset: 0.5)
+
+        XCTAssertTrue(position.approximatelyEquals(GhosttyPaneScrollPosition(row: 12, cellOffset: 0.500_000_5)))
+        XCTAssertFalse(position.approximatelyEquals(GhosttyPaneScrollPosition(row: 12, cellOffset: 0.500_002)))
+        XCTAssertFalse(position.approximatelyEquals(GhosttyPaneScrollPosition(row: 13, cellOffset: 0.5)))
+    }
+
     func testPaneScrollGeometryMapsUIKitOffsetToFractionalPosition() {
         let state = GhosttySurfaceScrollState(
             total: 100,
