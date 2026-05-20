@@ -67,6 +67,13 @@ struct GhosttySurfaceScreen: View {
             )
             let readiness = model.terminalReadinessSnapshot
             let interactionProjection = model.terminalInteractionProjection
+            let statusOverlayProjection =
+                GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                    readiness: readiness,
+                    commandFailureMessage: model.commandFailureMessage,
+                    debugStatus: model.debugStatus,
+                    registryDebugSummary: registry.debugSummary
+                )
 
             ZStack {
                 presentation.terminalTheme.terminalSurfaceBackground
@@ -190,9 +197,7 @@ struct GhosttySurfaceScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .overlay(alignment: .topLeading) {
                         GhosttySurfaceStatusOverlay(
-                            model: model,
-                            readiness: readiness,
-                            registry: registry,
+                            projection: statusOverlayProjection,
                             onReconnect: onReconnect
                         )
                         .id(model.surfaceRegistryRevision)
@@ -1528,19 +1533,10 @@ struct GhosttySoftwareKeyboardVisibility {
 }
 
 private struct GhosttySurfaceStatusOverlay: View {
-    @ObservedObject var model: GhosttySurfaceScreenModel
-    let readiness: TerminalReadinessSnapshot
-    @ObservedObject var registry: GhosttyRuntimeSurfaceRegistry
+    let projection: GhosttyTerminalStatusOverlayProjection
     let onReconnect: () -> Void
 
     var body: some View {
-        let projection = GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-            readiness: readiness,
-            commandFailureMessage: model.commandFailureMessage,
-            debugStatus: model.debugStatus,
-            registryDebugSummary: registry.debugSummary
-        )
-
         switch projection {
         case .starting:
             Text("starting Ghostty")
