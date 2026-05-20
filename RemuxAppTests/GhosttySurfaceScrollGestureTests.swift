@@ -59,6 +59,24 @@ final class GhosttySurfaceScrollGestureTests: XCTestCase {
         XCTAssertFalse(GhosttySurfacePanGesture.verticalScrollShouldBegin(forVelocity: .zero))
     }
 
+    func testRouteForwardingPanUsesTranslationForSlowVerticalDrag() {
+        XCTAssertTrue(
+            GhosttySurfacePanGesture.routeForwardingScrollShouldBegin(
+                forVelocity: .zero,
+                translation: CGPoint(x: 2, y: 12)
+            )
+        )
+    }
+
+    func testRouteForwardingPanRejectsResolvedHorizontalTranslation() {
+        XCTAssertFalse(
+            GhosttySurfacePanGesture.routeForwardingScrollShouldBegin(
+                forVelocity: CGPoint(x: 0, y: 120),
+                translation: CGPoint(x: 12, y: 2)
+            )
+        )
+    }
+
     func testSmallTranslationDoesNotResolveGestureAxis() {
         XCTAssertNil(
             GhosttySurfacePanGesture.axis(

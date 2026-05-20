@@ -223,8 +223,9 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         guard gestureRecognizer === routeForwardingPanRecognizer else { return true }
         guard surface?.scrollRoute != .viewport else { return false }
 
-        return GhosttySurfacePanGesture.verticalScrollShouldBegin(
-            forVelocity: routeForwardingPanRecognizer.velocity(in: self)
+        return GhosttySurfacePanGesture.routeForwardingScrollShouldBegin(
+            forVelocity: routeForwardingPanRecognizer.velocity(in: self),
+            translation: routeForwardingPanRecognizer.translation(in: self)
         )
     }
 

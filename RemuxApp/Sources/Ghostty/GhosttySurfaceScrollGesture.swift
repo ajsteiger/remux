@@ -53,6 +53,17 @@ struct GhosttySurfacePanGesture {
         dominantAxis(forVelocity: velocity) == .vertical
     }
 
+    static func routeForwardingScrollShouldBegin(
+        forVelocity velocity: CGPoint,
+        translation: CGPoint
+    ) -> Bool {
+        if let translationAxis = axis(forTranslation: translation) {
+            return translationAxis == .vertical
+        }
+
+        return verticalScrollShouldBegin(forVelocity: velocity)
+    }
+
     static func axis(
         forTranslation translation: CGPoint,
         currentAxis: Axis? = nil
