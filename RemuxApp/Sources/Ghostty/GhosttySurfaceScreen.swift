@@ -959,8 +959,15 @@ struct GhosttySurfaceScreen: View {
                 ]
             )
         }
-        if shouldCompleteKeyboardViewportTransitionFromLiveSize(normalizedSize, previousSize: previousSize) {
-            completeKeyboardViewportTransitionFromLiveSize(normalizedSize)
+        if let completion = keyboardViewportTransitionCoordinator.completeTransitionFromLiveSize(
+            normalizedSize,
+            previousSize: previousSize,
+            viewportCoordinator: &terminalViewportCoordinator
+        ) {
+            GhosttyRuntimeTrace.perf(
+                "kbd.transition liveSizeComplete target=\(completion.target.traceLabel) live=\(normalizedSize.traceLabel)"
+            )
+            traceKeyboardViewportTransitionCompletion(completion)
         }
         guard didApplyLiveSize else { return }
 
@@ -991,24 +998,29 @@ struct GhosttySurfaceScreen: View {
     private func beginKeyboardViewportTransition(
         _ request: GhosttyKeyboardViewportTransitionRequest
     ) -> Bool {
-        let didStart = terminalViewportCoordinator.beginKeyboardTransition(
-            target: request.target,
-            allowsTargetOverride: request.allowsTargetOverride,
-            allowsLiveSizeCompletion: request.allowsLiveSizeCompletion,
+        let result = keyboardViewportTransitionCoordinator.beginTransition(
+            request,
+            viewportCoordinator: &terminalViewportCoordinator,
             liveSize: terminalViewportCoordinator.latestLiveSize
         )
-        if !didStart {
+        if !result.didStart {
             GhosttyRuntimeTrace.perf(
                 "kbd.transition alreadyActive target=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel) liveSizeCompletion=\(terminalViewportCoordinator.keyboardTransitionAllowsLiveSizeCompletion) fallback_ms=\(String(format: "%.3f", request.fallbackDelay * 1000)) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel)"
             )
-            scheduleKeyboardViewportTransitionFallback(after: request.fallbackDelay)
+            scheduleKeyboardViewportTransitionFallback(
+                token: result.fallbackToken,
+                after: result.fallbackDelay
+            )
             return false
         }
 
         GhosttyRuntimeTrace.perf(
             "kbd.transition begin target=\(request.target.traceLabel) live=\(terminalViewportCoordinator.latestLiveSize.traceLabel) liveSizeCompletion=\(request.allowsLiveSizeCompletion) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel)"
         )
-        scheduleKeyboardViewportTransitionFallback(after: request.fallbackDelay)
+        scheduleKeyboardViewportTransitionFallback(
+            token: result.fallbackToken,
+            after: result.fallbackDelay
+        )
         return true
     }
 
@@ -1064,57 +1076,33 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func completeKeyboardViewportTransition() {
-        guard terminalViewportCoordinator.isKeyboardTransitionActive else {
+        guard let completion = keyboardViewportTransitionCoordinator.completeTransition(
+            viewportCoordinator: &terminalViewportCoordinator,
+            liveSize: terminalViewportCoordinator.latestLiveSize
+        ) else {
             traceViewportFreezeHoldIfNeeded()
             return
         }
 
-        keyboardViewportTransitionCoordinator.completeActiveTransition()
-        let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(
-            liveSize: terminalViewportCoordinator.latestLiveSize
-        )
-        terminalViewportCoordinator.completeKeyboardTransition(
-            liveSize: terminalViewportCoordinator.latestLiveSize
-        )
-        GhosttyRuntimeTrace.perf(
-            "kbd.transition complete live=\(terminalViewportCoordinator.latestLiveSize.traceLabel) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel)"
-        )
-        traceViewportFreezeRelease(
-            previousEffectiveSize: previousEffectiveSize,
-            releaseKind: "keyboardTransition"
-        )
-    }
-
-    private func shouldCompleteKeyboardViewportTransitionFromLiveSize(
-        _ normalizedSize: CGSize,
-        previousSize: CGSize
-    ) -> Bool {
-        keyboardViewportTransitionCoordinator.shouldCompleteFromLiveSize(
-            normalizedSize,
-            previousSize: previousSize,
-            viewportCoordinator: terminalViewportCoordinator
-        )
-    }
-
-    private func completeKeyboardViewportTransitionFromLiveSize(_ liveSize: CGSize) {
-        GhosttyRuntimeTrace.perf(
-            "kbd.transition liveSizeComplete target=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel) live=\(liveSize.traceLabel)"
-        )
-        completeKeyboardViewportTransition()
+        traceKeyboardViewportTransitionCompletion(completion)
     }
 
     private func completeKeyboardViewportTransitionFromFallback(token: UInt64) {
-        guard keyboardViewportTransitionCoordinator.acceptsFallbackToken(token) else { return }
-        guard terminalViewportCoordinator.isKeyboardTransitionActive else { return }
+        guard let completion = keyboardViewportTransitionCoordinator.completeTransitionFromFallback(
+            token: token,
+            viewportCoordinator: &terminalViewportCoordinator,
+            liveSize: terminalViewportCoordinator.latestLiveSize
+        ) else {
+            return
+        }
 
         GhosttyRuntimeTrace.perf(
-            "kbd.transition fallbackComplete target=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel)"
+            "kbd.transition fallbackComplete target=\(completion.target.traceLabel)"
         )
-        completeKeyboardViewportTransition()
+        traceKeyboardViewportTransitionCompletion(completion)
     }
 
-    private func scheduleKeyboardViewportTransitionFallback(after delay: TimeInterval) {
-        let token = keyboardViewportTransitionCoordinator.issueFallbackToken()
+    private func scheduleKeyboardViewportTransitionFallback(token: UInt64, after delay: TimeInterval) {
         let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
         GhosttyRuntimeTrace.perf(
             "kbd.transition scheduleFallback token=\(token) delay_ms=\(String(format: "%.3f", max(0, delay) * 1000))"
@@ -1124,6 +1112,18 @@ struct GhosttySurfaceScreen: View {
             try? await Task.sleep(nanoseconds: nanoseconds)
             completeKeyboardViewportTransitionFromFallback(token: token)
         }
+    }
+
+    private func traceKeyboardViewportTransitionCompletion(
+        _ completion: GhosttyKeyboardViewportTransitionCompletionResult
+    ) {
+        GhosttyRuntimeTrace.perf(
+            "kbd.transition complete live=\(terminalViewportCoordinator.latestLiveSize.traceLabel) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel)"
+        )
+        traceViewportFreezeRelease(
+            previousEffectiveSize: completion.previousEffectiveSize,
+            releaseKind: "keyboardTransition"
+        )
     }
 
     private func keyboardViewportCompletionProjection(

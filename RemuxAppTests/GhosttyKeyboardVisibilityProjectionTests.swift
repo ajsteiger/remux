@@ -233,15 +233,125 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         XCTAssertFalse(coordinator.isAwaitingSystemKeyboardPresentation)
     }
 
-    func testTransitionCoordinatorCompletionInvalidatesFallbackToken() {
+    func testTransitionCoordinatorBeginFreezesViewportAndIssuesFallbackToken() {
         var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        var viewport = GhosttyTerminalViewportCoordinator()
+        let liveSize = CGSize(width: 402, height: 726)
 
-        let token = coordinator.issueFallbackToken()
-        XCTAssertTrue(coordinator.acceptsFallbackToken(token))
+        XCTAssertTrue(viewport.observeLiveSize(liveSize))
+        let result = coordinator.beginTransition(
+            GhosttyKeyboardViewportTransitionRequest(
+                target: .hidden,
+                fallbackDelay: 0.42
+            ),
+            viewportCoordinator: &viewport,
+            liveSize: liveSize
+        )
 
-        coordinator.completeActiveTransition()
+        XCTAssertTrue(result.didStart)
+        XCTAssertEqual(result.fallbackToken, 1)
+        XCTAssertEqual(result.fallbackDelay, 0.42, accuracy: 0.0001)
+        XCTAssertTrue(viewport.isKeyboardTransitionActive)
+        XCTAssertEqual(viewport.keyboardTransitionTarget, .hidden)
+    }
 
-        XCTAssertFalse(coordinator.acceptsFallbackToken(token))
+    func testTransitionCoordinatorAlreadyActiveBeginReschedulesFallbackAndUpdatesOverride() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        var viewport = GhosttyTerminalViewportCoordinator()
+        let liveSize = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(viewport.observeLiveSize(liveSize))
+        let first = coordinator.beginTransition(
+            GhosttyKeyboardViewportTransitionRequest(
+                target: .shown,
+                fallbackDelay: 0.25
+            ),
+            viewportCoordinator: &viewport,
+            liveSize: liveSize
+        )
+        let second = coordinator.beginTransition(
+            GhosttyKeyboardViewportTransitionRequest(
+                target: .hidden,
+                allowsTargetOverride: true,
+                allowsLiveSizeCompletion: true,
+                fallbackDelay: 0.5
+            ),
+            viewportCoordinator: &viewport,
+            liveSize: liveSize
+        )
+
+        XCTAssertTrue(first.didStart)
+        XCTAssertFalse(second.didStart)
+        XCTAssertEqual(first.fallbackToken, 1)
+        XCTAssertEqual(second.fallbackToken, 2)
+        XCTAssertEqual(viewport.keyboardTransitionTarget, .hidden)
+        XCTAssertTrue(viewport.keyboardTransitionAllowsLiveSizeCompletion)
+    }
+
+    func testTransitionCoordinatorCompletionInvalidatesFallbackTokenAndReleasesViewport() throws {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        var viewport = GhosttyTerminalViewportCoordinator()
+        let keyboardSize = CGSize(width: 402, height: 452)
+        let fullSize = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(viewport.observeLiveSize(keyboardSize))
+        _ = coordinator.beginTransition(
+            GhosttyKeyboardViewportTransitionRequest(target: .hidden),
+            viewportCoordinator: &viewport,
+            liveSize: keyboardSize
+        )
+        XCTAssertFalse(viewport.observeLiveSize(fullSize))
+
+        let completion = try XCTUnwrap(
+            coordinator.completeTransition(
+                viewportCoordinator: &viewport,
+                liveSize: fullSize
+            )
+        )
+
+        XCTAssertEqual(completion.target, .hidden)
+        XCTAssertEqual(completion.previousEffectiveSize, keyboardSize)
+        XCTAssertFalse(viewport.isKeyboardTransitionActive)
+        XCTAssertEqual(viewport.effectiveSize(liveSize: fullSize), fullSize)
+    }
+
+    func testTransitionCoordinatorFallbackCompletionRejectsStaleTokenAndCompletesCurrentActive() throws {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        var viewport = GhosttyTerminalViewportCoordinator()
+        let keyboardSize = CGSize(width: 402, height: 452)
+        let fullSize = CGSize(width: 402, height: 726)
+
+        XCTAssertTrue(viewport.observeLiveSize(keyboardSize))
+        let first = coordinator.beginTransition(
+            GhosttyKeyboardViewportTransitionRequest(target: .hidden),
+            viewportCoordinator: &viewport,
+            liveSize: keyboardSize
+        )
+        let second = coordinator.beginTransition(
+            GhosttyKeyboardViewportTransitionRequest(target: .hidden),
+            viewportCoordinator: &viewport,
+            liveSize: keyboardSize
+        )
+
+        XCTAssertNil(
+            coordinator.completeTransitionFromFallback(
+                token: first.fallbackToken,
+                viewportCoordinator: &viewport,
+                liveSize: fullSize
+            )
+        )
+        XCTAssertTrue(viewport.isKeyboardTransitionActive)
+
+        let completion = try XCTUnwrap(
+            coordinator.completeTransitionFromFallback(
+                token: second.fallbackToken,
+                viewportCoordinator: &viewport,
+                liveSize: fullSize
+            )
+        )
+
+        XCTAssertEqual(completion.target, .hidden)
+        XCTAssertFalse(viewport.isKeyboardTransitionActive)
     }
 
     func testTransitionCoordinatorLiveSizeCompletionRequiresActiveAllowedUsableChange() {
@@ -300,6 +410,37 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
                 viewportCoordinator: viewport
             )
         )
+    }
+
+    func testTransitionCoordinatorLiveSizeCompletionCompletesAllowedTransition() throws {
+        let previousSize = CGSize(width: 402, height: 726)
+        let nextSize = CGSize(width: 402, height: 452)
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        var viewport = GhosttyTerminalViewportCoordinator()
+
+        XCTAssertTrue(viewport.observeLiveSize(previousSize))
+        _ = coordinator.beginTransition(
+            GhosttyKeyboardViewportTransitionRequest(
+                target: .shown,
+                allowsLiveSizeCompletion: true
+            ),
+            viewportCoordinator: &viewport,
+            liveSize: previousSize
+        )
+        XCTAssertFalse(viewport.observeLiveSize(nextSize))
+
+        let completion = try XCTUnwrap(
+            coordinator.completeTransitionFromLiveSize(
+                nextSize,
+                previousSize: previousSize,
+                viewportCoordinator: &viewport
+            )
+        )
+
+        XCTAssertEqual(completion.target, .shown)
+        XCTAssertEqual(completion.previousEffectiveSize, previousSize)
+        XCTAssertFalse(viewport.isKeyboardTransitionActive)
+        XCTAssertEqual(viewport.effectiveSize(liveSize: nextSize), nextSize)
     }
 
     func testTransitionCoordinatorUnexpectedHideRecoveryRequestsShownTransition() {
