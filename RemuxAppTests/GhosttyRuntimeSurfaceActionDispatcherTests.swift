@@ -11,7 +11,7 @@ final class GhosttyRuntimeSurfaceActionDispatcherTests: XCTestCase {
         action.tag = GHOSTTY_ACTION_RENDER
 
         let result = GhosttyRuntimeSurfaceActionDispatcher.dispatch(
-            action: action,
+            action: GhosttyRuntimeSurfaceAction(native: action),
             to: surface
         )
 
@@ -35,7 +35,7 @@ final class GhosttyRuntimeSurfaceActionDispatcherTests: XCTestCase {
         action.action.scrollbar = scrollbar
 
         let result = GhosttyRuntimeSurfaceActionDispatcher.dispatch(
-            action: action,
+            action: GhosttyRuntimeSurfaceAction(native: action),
             to: surface
         )
 
@@ -62,7 +62,7 @@ final class GhosttyRuntimeSurfaceActionDispatcherTests: XCTestCase {
         action.action.scroll_route = GHOSTTY_SURFACE_SCROLL_ROUTE_MOUSE_REPORT
 
         let result = GhosttyRuntimeSurfaceActionDispatcher.dispatch(
-            action: action,
+            action: GhosttyRuntimeSurfaceAction(native: action),
             to: surface
         )
 
@@ -77,7 +77,7 @@ final class GhosttyRuntimeSurfaceActionDispatcherTests: XCTestCase {
         action.tag = GHOSTTY_ACTION_RING_BELL
 
         let result = GhosttyRuntimeSurfaceActionDispatcher.dispatch(
-            action: action,
+            action: GhosttyRuntimeSurfaceAction(native: action),
             to: surface
         )
 

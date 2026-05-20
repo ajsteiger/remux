@@ -1,5 +1,25 @@
 import GhosttyKit
 
+enum GhosttyRuntimeSurfaceAction: Equatable {
+    case render
+    case scrollbar(GhosttySurfaceScrollState)
+    case scrollRoute(GhosttySurfaceScrollRoute)
+    case ignored
+
+    init(native action: ghostty_action_s) {
+        switch action.tag {
+        case GHOSTTY_ACTION_RENDER:
+            self = .render
+        case GHOSTTY_ACTION_SCROLLBAR:
+            self = .scrollbar(GhosttySurfaceScrollState(cValue: action.action.scrollbar))
+        case GHOSTTY_ACTION_SCROLL_ROUTE:
+            self = .scrollRoute(GhosttySurfaceScrollRoute(cValue: action.action.scroll_route))
+        default:
+            self = .ignored
+        }
+    }
+}
+
 enum GhosttyRuntimeSurfaceActionDispatchResult: Equatable, Sendable {
     case handled
     case runtimePresentationReady(reason: String)
@@ -13,24 +33,22 @@ enum GhosttyRuntimeSurfaceActionDispatchResult: Equatable, Sendable {
 enum GhosttyRuntimeSurfaceActionDispatcher {
     @MainActor
     static func dispatch(
-        action: ghostty_action_s,
+        action: GhosttyRuntimeSurfaceAction,
         to surface: GhosttyManagedSurface
     ) -> GhosttyRuntimeSurfaceActionDispatchResult {
-        switch action.tag {
-        case GHOSTTY_ACTION_RENDER:
+        switch action {
+        case .render:
             return .runtimePresentationReady(reason: "runtime.render")
 
-        case GHOSTTY_ACTION_SCROLLBAR:
-            let state = GhosttySurfaceScrollState(cValue: action.action.scrollbar)
+        case .scrollbar(let state):
             surface.updateScrollState(state)
             return .runtimePresentationReady(reason: "runtime.scrollbar")
 
-        case GHOSTTY_ACTION_SCROLL_ROUTE:
-            let route = GhosttySurfaceScrollRoute(cValue: action.action.scroll_route)
+        case .scrollRoute(let route):
             surface.updateScrollRoute(route)
             return .handled
 
-        default:
+        case .ignored:
             return .handled
         }
     }

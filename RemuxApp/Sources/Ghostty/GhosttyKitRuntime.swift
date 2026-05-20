@@ -567,7 +567,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         }
         let appBox = UnsafeSendable(app)
         let targetBox = UnsafeSendable(target)
-        let actionBox = UnsafeSendable(action)
+        let actionBox = UnsafeSendable(GhosttyRuntimeSurfaceAction(native: action))
         let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.action route=main")

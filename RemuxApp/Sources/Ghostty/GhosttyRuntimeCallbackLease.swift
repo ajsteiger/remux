@@ -88,7 +88,7 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     func runtimeAction(
         app: ghostty_app_t?,
         target: ghostty_target_s,
-        action: ghostty_action_s,
+        action: GhosttyRuntimeSurfaceAction,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool
 

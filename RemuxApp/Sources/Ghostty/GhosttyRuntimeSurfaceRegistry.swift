@@ -1682,7 +1682,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
     func runtimeAction(
         app: ghostty_app_t?,
         target: ghostty_target_s,
-        action: ghostty_action_s,
+        action: GhosttyRuntimeSurfaceAction,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
         guard acceptsRuntimeCallback(lease) else { return true }
@@ -1692,7 +1692,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
     private func applyRuntimeAction(
         app: ghostty_app_t?,
         target: ghostty_target_s,
-        action: ghostty_action_s
+        action: GhosttyRuntimeSurfaceAction
     ) -> Bool {
         _ = app
         guard target.tag == GHOSTTY_TARGET_SURFACE else { return true }
@@ -1757,7 +1757,25 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         target: ghostty_target_s,
         action: ghostty_action_s
     ) -> Bool {
-        applyRuntimeAction(app: app, target: target, action: action)
+        applyRuntimeAction(
+            app: app,
+            target: target,
+            action: GhosttyRuntimeSurfaceAction(native: action)
+        )
+    }
+
+    func runtimeAction(
+        app: ghostty_app_t?,
+        target: ghostty_target_s,
+        action: ghostty_action_s,
+        lease: GhosttyRuntimeCallbackLease
+    ) -> Bool {
+        runtimeAction(
+            app: app,
+            target: target,
+            action: GhosttyRuntimeSurfaceAction(native: action),
+            lease: lease
+        )
     }
 
     func runtimeSelectSurface(
