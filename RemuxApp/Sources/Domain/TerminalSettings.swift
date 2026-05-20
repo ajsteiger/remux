@@ -21,7 +21,10 @@ enum TerminalTheme: String, CaseIterable, Codable, Identifiable, Sendable {
     var ghosttyConfigLines: [String] {
         switch self {
         case .ghosttyDefault:
-            []
+            [
+                "background = #282C34",
+                "foreground = #FFFFFF",
+            ]
         case .remuxDark:
             [
                 "background = #121826",
@@ -37,9 +40,7 @@ enum TerminalTheme: String, CaseIterable, Codable, Identifiable, Sendable {
 
     /// Background color the terminal renders against, mirrored by Ghostty UI
     /// chrome so surfaces can blend into the terminal area during keyboard
-    /// transitions. Values must stay in sync with `ghosttyConfigLines` and with
-    /// Ghostty's own default for `.ghosttyDefault`, sourced from
-    /// `src/config/Config.zig`.
+    /// transitions. Values must stay in sync with `ghosttyConfigLines`.
     var terminalBackgroundHex: UInt32 {
         switch self {
         case .ghosttyDefault:

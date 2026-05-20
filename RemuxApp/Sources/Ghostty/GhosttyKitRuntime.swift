@@ -137,11 +137,27 @@ final class GhosttyKitSurfaceView: UIView {
         }
     }
 
+    func applyTerminalTheme(_ theme: TerminalTheme) {
+        backgroundColor = theme.terminalBackgroundUIColor
+    }
+
     private func configure() {
-        backgroundColor = .black
+        applyTerminalTheme(.ghosttyDefault)
         clipsToBounds = true
         isOpaque = true
         contentScaleFactor = max(UIScreen.main.scale, 1)
+    }
+}
+
+extension TerminalTheme {
+    var terminalBackgroundUIColor: UIColor {
+        let hex = terminalBackgroundHex
+        return UIColor(
+            red: CGFloat((hex >> 16) & 0xFF) / 255.0,
+            green: CGFloat((hex >> 8) & 0xFF) / 255.0,
+            blue: CGFloat(hex & 0xFF) / 255.0,
+            alpha: 1.0
+        )
     }
 }
 

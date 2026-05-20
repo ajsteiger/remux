@@ -54,6 +54,7 @@ struct GhosttyRuntimeManagedSurfaceFactory {
                 size: Self.initialViewSize(from: config, scale: scale)
             )
         )
+        view.applyTerminalTheme(terminalSettings.theme)
         traceFactoryPhase(
             "view.allocate.end",
             fields: [

@@ -100,6 +100,7 @@ struct GhosttySurfaceScreen: View {
                         GhosttyHostSurfaceView(
                             model: model,
                             size: terminalViewportSize,
+                            terminalTheme: presentation.terminalTheme,
                             onMount: {
                                 onMount(.hostSurface)
                             },
@@ -118,6 +119,7 @@ struct GhosttySurfaceScreen: View {
                         GhosttyRuntimePaneTreeView(
                             materializationContext: model.terminalSurfaceMaterializationContext,
                             projection: screenProjection.tree,
+                            terminalTheme: presentation.terminalTheme,
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,
                             onCopySelection: { surfaceID in
@@ -1616,6 +1618,7 @@ final class GhosttyHostAttachmentScheduler {
 private struct GhosttyHostSurfaceView: UIViewRepresentable {
     @ObservedObject var model: GhosttySurfaceScreenModel
     let size: CGSize
+    let terminalTheme: TerminalTheme
     let onMount: () -> Void
     let onDismantle: () -> Void
 
@@ -1669,7 +1672,7 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
             height: max(size.height, 1)
         )
         let view = GhosttyKitSurfaceView(frame: CGRect(origin: .zero, size: initialSize))
-        view.backgroundColor = GhosttyPhoneChromePalette.uiBackground
+        view.applyTerminalTheme(terminalTheme)
         view.isOpaque = true
         view.isHidden = true
         context.coordinator.onMount()
@@ -1679,6 +1682,7 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
     func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
         context.coordinator.onMount = onMount
         context.coordinator.onDismantle = onDismantle
+        uiView.applyTerminalTheme(terminalTheme)
         uiView.isHidden = true
         context.coordinator.scheduleAttach(model: model, view: uiView, size: size)
     }
@@ -1690,12 +1694,7 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 
 private extension TerminalTheme {
     var terminalSurfaceBackground: Color {
-        let hex = terminalBackgroundHex
-        return Color(
-            red: Double((hex >> 16) & 0xFF) / 255.0,
-            green: Double((hex >> 8) & 0xFF) / 255.0,
-            blue: Double(hex & 0xFF) / 255.0
-        )
+        Color(uiColor: terminalBackgroundUIColor)
     }
 }
 

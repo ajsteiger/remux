@@ -8,6 +8,7 @@ private func diagnosticRect(_ rect: CGRect) -> String {
 struct GhosttyRuntimePaneTreeView: View {
     let materializationContext: GhosttyRuntimeSurfaceMaterializationContext
     let projection: GhosttyTerminalTreePresentationProjection
+    let terminalTheme: TerminalTheme
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: ((UUID) -> Bool)?
@@ -25,6 +26,7 @@ struct GhosttyRuntimePaneTreeView: View {
         GhosttySurfaceTreeContainerRepresentable(
             materializationContext: materializationContext,
             projection: projection,
+            terminalTheme: terminalTheme,
             onSurfaceTap: onSurfaceTap,
             onWindowSwipe: onWindowSwipe,
             onCopySelection: onCopySelection,
@@ -45,6 +47,7 @@ struct GhosttyRuntimePaneTreeView: View {
 private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     let materializationContext: GhosttyRuntimeSurfaceMaterializationContext
     let projection: GhosttyTerminalTreePresentationProjection
+    let terminalTheme: TerminalTheme
     let onSurfaceTap: ((UUID) -> Void)?
     let onWindowSwipe: ((GhosttyRuntimeSelectionDirection) -> Void)?
     let onCopySelection: ((UUID) -> Bool)?
@@ -60,7 +63,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> GhosttySurfaceTreeContainerUIView {
         let view = GhosttySurfaceTreeContainerUIView()
-        view.backgroundColor = GhosttyPhoneChromePalette.uiBackground
+        view.terminalTheme = terminalTheme
+        view.backgroundColor = terminalTheme.terminalBackgroundUIColor
         view.clipsToBounds = true
         view.onDismantle = onDismantle
         onMount()
@@ -68,6 +72,8 @@ private struct GhosttySurfaceTreeContainerRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: GhosttySurfaceTreeContainerUIView, context: Context) {
+        uiView.terminalTheme = terminalTheme
+        uiView.backgroundColor = terminalTheme.terminalBackgroundUIColor
         uiView.onDismantle = onDismantle
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "ui.updateUIView.begin",
@@ -136,6 +142,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
     private var presentationOverlayHeldSurfaceIDs: Set<UUID> = []
     private var presentationOverlayHeldInteractionStates: [UUID: Bool] = [:]
     private var selectionCopyMenuSourcePoint = CGPoint.zero
+    var terminalTheme: TerminalTheme = .ghosttyDefault
     var onDismantle: (() -> Void)?
     private lazy var panRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleSurfacePan(_:)))
@@ -340,7 +347,7 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             ? moveCurrentVisibleSurfaceContainers(to: overlay)
             : []
         if heldSurfaceIDs.isEmpty {
-            overlay.backgroundColor = GhosttyPhoneChromePalette.uiBackground
+            overlay.backgroundColor = terminalTheme.terminalBackgroundUIColor
         } else {
             overlay.backgroundColor = .clear
         }
