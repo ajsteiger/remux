@@ -238,7 +238,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         var viewport = GhosttyTerminalViewportCoordinator()
         let liveSize = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(viewport.observeLiveSize(liveSize))
+        XCTAssertEqual(viewport.observeLiveSize(liveSize).outcome, .appliedStableSize)
         let result = coordinator.beginTransition(
             GhosttyKeyboardViewportTransitionRequest(
                 target: .hidden,
@@ -260,7 +260,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         var viewport = GhosttyTerminalViewportCoordinator()
         let liveSize = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(viewport.observeLiveSize(liveSize))
+        XCTAssertEqual(viewport.observeLiveSize(liveSize).outcome, .appliedStableSize)
         let first = coordinator.beginTransition(
             GhosttyKeyboardViewportTransitionRequest(
                 target: .shown,
@@ -294,13 +294,13 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         let keyboardSize = CGSize(width: 402, height: 452)
         let fullSize = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(viewport.observeLiveSize(keyboardSize))
+        XCTAssertEqual(viewport.observeLiveSize(keyboardSize).outcome, .appliedStableSize)
         _ = coordinator.beginTransition(
             GhosttyKeyboardViewportTransitionRequest(target: .hidden),
             viewportCoordinator: &viewport,
             liveSize: keyboardSize
         )
-        XCTAssertFalse(viewport.observeLiveSize(fullSize))
+        XCTAssertFalse(viewport.observeLiveSize(fullSize).didApplyStableSize)
 
         let completion = try XCTUnwrap(
             coordinator.completeTransition(
@@ -321,7 +321,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         let keyboardSize = CGSize(width: 402, height: 452)
         let fullSize = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(viewport.observeLiveSize(keyboardSize))
+        XCTAssertEqual(viewport.observeLiveSize(keyboardSize).outcome, .appliedStableSize)
         let first = coordinator.beginTransition(
             GhosttyKeyboardViewportTransitionRequest(target: .hidden),
             viewportCoordinator: &viewport,
@@ -368,7 +368,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(viewport.observeLiveSize(previousSize))
+        XCTAssertEqual(viewport.observeLiveSize(previousSize).outcome, .appliedStableSize)
         viewport.beginKeyboardTransition(
             target: .shown,
             allowsTargetOverride: true,
@@ -418,7 +418,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
         var viewport = GhosttyTerminalViewportCoordinator()
 
-        XCTAssertTrue(viewport.observeLiveSize(previousSize))
+        XCTAssertEqual(viewport.observeLiveSize(previousSize).outcome, .appliedStableSize)
         _ = coordinator.beginTransition(
             GhosttyKeyboardViewportTransitionRequest(
                 target: .shown,
@@ -427,7 +427,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
             viewportCoordinator: &viewport,
             liveSize: previousSize
         )
-        XCTAssertFalse(viewport.observeLiveSize(nextSize))
+        XCTAssertFalse(viewport.observeLiveSize(nextSize).didApplyStableSize)
 
         let completion = try XCTUnwrap(
             coordinator.completeTransitionFromLiveSize(

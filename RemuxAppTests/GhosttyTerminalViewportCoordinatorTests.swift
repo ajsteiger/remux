@@ -3,19 +3,73 @@ import XCTest
 @testable import Remux
 
 final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
+    func testLiveSizeObservationReportsAppliedStableSizeTransaction() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let full = CGSize(width: 402, height: 726)
+
+        let observation = coordinator.observeLiveSize(full)
+
+        XCTAssertEqual(observation.previousLiveSize, CGSize(width: 1, height: 1))
+        XCTAssertEqual(observation.liveSize, full)
+        XCTAssertEqual(observation.previousEffectiveSize, CGSize(width: 1, height: 1))
+        XCTAssertEqual(observation.effectiveSize, full)
+        XCTAssertFalse(observation.wasFrozen)
+        XCTAssertTrue(observation.didChangeLiveSize)
+        XCTAssertTrue(observation.didApplyStableSize)
+        XCTAssertEqual(observation.outcome, .appliedStableSize)
+    }
+
+    func testLiveSizeObservationReportsHeldStableSizeTransaction() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let keyboard = CGSize(width: 402, height: 452)
+        let full = CGSize(width: 402, height: 726)
+
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
+        coordinator.setSheetPresented(true, liveSize: keyboard)
+
+        let observation = coordinator.observeLiveSize(full)
+
+        XCTAssertEqual(observation.previousLiveSize, keyboard)
+        XCTAssertEqual(observation.liveSize, full)
+        XCTAssertEqual(observation.previousEffectiveSize, keyboard)
+        XCTAssertEqual(observation.effectiveSize, keyboard)
+        XCTAssertTrue(observation.wasFrozen)
+        XCTAssertTrue(observation.didChangeLiveSize)
+        XCTAssertFalse(observation.didApplyStableSize)
+        XCTAssertEqual(observation.outcome, .observedWithoutStableUpdate)
+    }
+
+    func testLiveSizeObservationReportsUnchangedTransaction() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let full = CGSize(width: 402, height: 726)
+
+        XCTAssertEqual(coordinator.observeLiveSize(full).outcome, .appliedStableSize)
+
+        let observation = coordinator.observeLiveSize(full)
+
+        XCTAssertEqual(observation.previousLiveSize, full)
+        XCTAssertEqual(observation.liveSize, full)
+        XCTAssertEqual(observation.previousEffectiveSize, full)
+        XCTAssertEqual(observation.effectiveSize, full)
+        XCTAssertFalse(observation.wasFrozen)
+        XCTAssertFalse(observation.didChangeLiveSize)
+        XCTAssertFalse(observation.didApplyStableSize)
+        XCTAssertEqual(observation.outcome, .unchanged)
+    }
+
     func testTopologyRefocusPreservesPreviousStableViewportThroughKeyboardChurn() {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let full = CGSize(width: 402, height: 726)
         let keyboard = CGSize(width: 402, height: 452)
         let partial = CGSize(width: 402, height: 527)
 
-        XCTAssertTrue(coordinator.observeLiveSize(full))
+        XCTAssertEqual(coordinator.observeLiveSize(full).outcome, .appliedStableSize)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
-        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), keyboard)
 
         coordinator.setSheetPresented(true, liveSize: keyboard)
-        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
 
         coordinator.requestTopologyRefocus(liveSize: full)
@@ -28,7 +82,7 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         coordinator.setSheetPresented(false, liveSize: full)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
 
-        XCTAssertFalse(coordinator.observeLiveSize(keyboard))
+        XCTAssertFalse(coordinator.observeLiveSize(keyboard).didApplyStableSize)
         coordinator.completeKeyboardTransition(liveSize: keyboard)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), keyboard)
 
@@ -38,11 +92,11 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
             allowsLiveSizeCompletion: false,
             liveSize: keyboard
         )
-        XCTAssertFalse(coordinator.observeLiveSize(partial))
+        XCTAssertFalse(coordinator.observeLiveSize(partial).didApplyStableSize)
         coordinator.completeKeyboardTransition(liveSize: partial)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: partial), keyboard)
 
-        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
         XCTAssertEqual(
             coordinator.completeTopologyRefocus(
                 liveSize: full,
@@ -60,14 +114,14 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
             allowsLiveSizeCompletion: false,
             liveSize: keyboard
         )
-        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
         coordinator.completeKeyboardTransition(liveSize: full)
 
         XCTAssertFalse(coordinator.isFrozen)
@@ -79,7 +133,7 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let full = CGSize(width: 402, height: 726)
         let keyboard = CGSize(width: 402, height: 452)
 
-        XCTAssertTrue(coordinator.observeLiveSize(full))
+        XCTAssertEqual(coordinator.observeLiveSize(full).outcome, .appliedStableSize)
         coordinator.beginKeyboardTransition(
             target: .shown,
             allowsTargetOverride: true,
@@ -87,7 +141,7 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
             liveSize: full
         )
 
-        XCTAssertFalse(coordinator.observeLiveSize(keyboard))
+        XCTAssertFalse(coordinator.observeLiveSize(keyboard).didApplyStableSize)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), full)
         XCTAssertEqual(coordinator.lastStableSize, full)
 
@@ -102,12 +156,12 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
         XCTAssertEqual(
             coordinator.setSheetPresented(true, liveSize: keyboard),
             .hold(effectiveSize: keyboard)
         )
-        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
@@ -132,13 +186,13 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
         XCTAssertEqual(
             coordinator.setSheetPresented(true, liveSize: keyboard),
             .hold(effectiveSize: keyboard)
         )
 
-        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
         XCTAssertEqual(
             coordinator.setSheetPresented(true, liveSize: full),
             .hold(effectiveSize: keyboard)
@@ -151,7 +205,7 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
 
         XCTAssertEqual(
             coordinator.requestTopologyRefocus(liveSize: full),
@@ -166,12 +220,12 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
         XCTAssertEqual(
             coordinator.requestTopologyRefocus(liveSize: keyboard),
             .hold(effectiveSize: keyboard)
         )
-        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
 
         XCTAssertEqual(
             coordinator.cancelTopologyRefocus(liveSize: full),
@@ -185,7 +239,7 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let full = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(coordinator.observeLiveSize(full))
+        XCTAssertEqual(coordinator.observeLiveSize(full).outcome, .appliedStableSize)
 
         XCTAssertEqual(coordinator.cancelTopologyRefocus(liveSize: full), .inactive)
         XCTAssertFalse(coordinator.isFrozen)
@@ -197,12 +251,12 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboard))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
         XCTAssertEqual(
             coordinator.requestTopologyRefocus(liveSize: keyboard),
             .hold(effectiveSize: keyboard)
         )
-        XCTAssertFalse(coordinator.observeLiveSize(full))
+        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
 
         XCTAssertEqual(
             coordinator.completeTopologyRefocus(

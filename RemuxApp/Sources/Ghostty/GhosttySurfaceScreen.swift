@@ -936,40 +936,35 @@ struct GhosttySurfaceScreen: View {
         _ size: CGSize,
         context: GhosttyTerminalViewportTraceLayoutContext
     ) {
-        let normalizedSize = GhosttyTerminalViewportCoordinator.normalized(size)
-        let previousSize = terminalViewportCoordinator.latestLiveSize
-        let wasFrozen = isTerminalViewportFrozen
-        let previousEffectiveSize = terminalViewportCoordinator.effectiveSize(liveSize: previousSize)
-        let didApplyLiveSize = terminalViewportCoordinator.observeLiveSize(normalizedSize)
-        let incomingEffectiveSize = terminalViewportCoordinator.effectiveSize(liveSize: normalizedSize)
-        if previousSize != normalizedSize {
+        let observation = terminalViewportCoordinator.observeLiveSize(size)
+        if observation.didChangeLiveSize {
             GhosttyRuntimeTrace.perf(
-                "viewport.live size=\(normalizedSize.traceLabel) previous=\(previousSize.traceLabel) frozen=\(wasFrozen) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel) transitionActive=\(terminalViewportCoordinator.isKeyboardTransitionActive) transitionTarget=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
+                "viewport.live size=\(observation.liveSize.traceLabel) previous=\(observation.previousLiveSize.traceLabel) frozen=\(observation.wasFrozen) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel) transitionActive=\(terminalViewportCoordinator.isKeyboardTransitionActive) transitionTarget=\(terminalViewportCoordinator.keyboardTransitionTarget.traceLabel) awaitingSystem=\(isAwaitingSystemKeyboardPresentation)"
             )
             traceTerminalViewportSnapshot(
                 event: "viewport.live",
-                liveSize: normalizedSize,
-                effectiveSize: incomingEffectiveSize,
+                liveSize: observation.liveSize,
+                effectiveSize: observation.effectiveSize,
                 context: context,
                 extra: [
-                    "previousLive": previousSize.traceLabel,
-                    "previousEffective": previousEffectiveSize.traceLabel,
+                    "previousLive": observation.previousLiveSize.traceLabel,
+                    "previousEffective": observation.previousEffectiveSize.traceLabel,
                 ]
             )
         }
         if let completion = keyboardViewportTransitionCoordinator.completeTransitionFromLiveSize(
-            normalizedSize,
-            previousSize: previousSize,
+            observation.liveSize,
+            previousSize: observation.previousLiveSize,
             viewportCoordinator: &terminalViewportCoordinator
         ) {
             GhosttyRuntimeTrace.perf(
-                "kbd.transition liveSizeComplete target=\(completion.target.traceLabel) live=\(normalizedSize.traceLabel)"
+                "kbd.transition liveSizeComplete target=\(completion.target.traceLabel) live=\(observation.liveSize.traceLabel)"
             )
             traceKeyboardViewportTransitionCompletion(completion)
         }
-        guard didApplyLiveSize else { return }
+        guard observation.didApplyStableSize else { return }
 
-        GhosttyRuntimeTrace.perf("viewport.live applied size=\(normalizedSize.traceLabel)")
+        GhosttyRuntimeTrace.perf("viewport.live applied size=\(observation.liveSize.traceLabel)")
     }
 
     private func traceTerminalViewportSnapshot(

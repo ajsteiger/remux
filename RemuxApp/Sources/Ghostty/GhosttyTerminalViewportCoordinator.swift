@@ -32,6 +32,29 @@ enum GhosttyTerminalViewportTopologyRefocusEffect: Equatable {
     case inactive
 }
 
+struct GhosttyTerminalViewportLiveSizeObservation: Equatable {
+    enum Outcome: Equatable {
+        case unchanged
+        case observedWithoutStableUpdate
+        case appliedStableSize
+    }
+
+    let previousLiveSize: CGSize
+    let liveSize: CGSize
+    let previousEffectiveSize: CGSize
+    let effectiveSize: CGSize
+    let wasFrozen: Bool
+    let outcome: Outcome
+
+    var didChangeLiveSize: Bool {
+        previousLiveSize != liveSize
+    }
+
+    var didApplyStableSize: Bool {
+        outcome == .appliedStableSize
+    }
+}
+
 struct GhosttyTerminalViewportCoordinator: Equatable {
     enum ReleasePolicy: Equatable {
         case adoptLatestLive
@@ -83,24 +106,42 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
     }
 
     @discardableResult
-    mutating func observeLiveSize(_ size: CGSize) -> Bool {
+    mutating func observeLiveSize(_ size: CGSize) -> GhosttyTerminalViewportLiveSizeObservation {
         let normalizedSize = Self.normalized(size)
+        let previousLiveSize = lastLiveSize
+        let previousEffectiveSize = effectiveSize(liveSize: previousLiveSize)
+        let wasFrozen = isFrozen
         let didChangeLiveSize = lastLiveSize != normalizedSize
         lastLiveSize = normalizedSize
 
-        guard didChangeLiveSize else { return false }
+        func observation(
+            outcome: GhosttyTerminalViewportLiveSizeObservation.Outcome
+        ) -> GhosttyTerminalViewportLiveSizeObservation {
+            GhosttyTerminalViewportLiveSizeObservation(
+                previousLiveSize: previousLiveSize,
+                liveSize: normalizedSize,
+                previousEffectiveSize: previousEffectiveSize,
+                effectiveSize: effectiveSize(liveSize: normalizedSize),
+                wasFrozen: wasFrozen,
+                outcome: outcome
+            )
+        }
+
+        guard didChangeLiveSize else { return observation(outcome: .unchanged) }
         guard Self.isUsable(normalizedSize) else {
             holdReasons.insert(.unsizedInitialLayout)
             freeze(using: normalizedSize)
-            return false
+            return observation(outcome: .observedWithoutStableUpdate)
         }
 
         holdReasons.remove(.unsizedInitialLayout)
-        guard !isFrozen else { return false }
-        guard lastStableSize != normalizedSize else { return false }
+        guard !isFrozen else { return observation(outcome: .observedWithoutStableUpdate) }
+        guard lastStableSize != normalizedSize else {
+            return observation(outcome: .observedWithoutStableUpdate)
+        }
 
         lastStableSize = normalizedSize
-        return true
+        return observation(outcome: .appliedStableSize)
     }
 
     @discardableResult

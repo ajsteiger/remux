@@ -61,9 +61,9 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let keyboardSize = CGSize(width: 402, height: 673)
         let sheetTransientSize = CGSize(width: 402, height: 727)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboardSize))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboardSize).outcome, .appliedStableSize)
         coordinator.setSheetPresented(true, liveSize: keyboardSize)
-        XCTAssertFalse(coordinator.observeLiveSize(sheetTransientSize))
+        XCTAssertFalse(coordinator.observeLiveSize(sheetTransientSize).didApplyStableSize)
 
         XCTAssertEqual(coordinator.effectiveSize(liveSize: sheetTransientSize), keyboardSize)
         XCTAssertEqual(coordinator.lastStableSize, keyboardSize)
@@ -74,7 +74,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let keyboardSize = CGSize(width: 402, height: 673)
         let restoredSize = CGSize(width: 402, height: 727)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboardSize))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboardSize).outcome, .appliedStableSize)
         coordinator.setSheetPresented(true, liveSize: keyboardSize)
         coordinator.setSheetPresented(false, liveSize: restoredSize)
 
@@ -89,7 +89,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let sheetDismissedSize = CGSize(width: 402, height: 673)
         let finalKeyboardSize = CGSize(width: 402, height: 399)
 
-        XCTAssertTrue(coordinator.observeLiveSize(keyboardSize))
+        XCTAssertEqual(coordinator.observeLiveSize(keyboardSize).outcome, .appliedStableSize)
         coordinator.setSheetPresented(true, liveSize: keyboardSize)
         coordinator.beginKeyboardTransition(
             target: .shown,
@@ -115,14 +115,14 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let stableSize = CGSize(width: 402, height: 399)
         let transientSize = CGSize(width: 402, height: 91)
 
-        XCTAssertTrue(coordinator.observeLiveSize(stableSize))
+        XCTAssertEqual(coordinator.observeLiveSize(stableSize).outcome, .appliedStableSize)
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
             allowsLiveSizeCompletion: false,
             liveSize: stableSize
         )
-        XCTAssertFalse(coordinator.observeLiveSize(transientSize))
+        XCTAssertFalse(coordinator.observeLiveSize(transientSize).didApplyStableSize)
 
         XCTAssertEqual(coordinator.effectiveSize(liveSize: transientSize), stableSize)
         XCTAssertEqual(coordinator.lastStableSize, stableSize)
@@ -134,14 +134,14 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         let transientSize = CGSize(width: 402, height: 91)
         let finalSize = CGSize(width: 402, height: 674)
 
-        XCTAssertTrue(coordinator.observeLiveSize(stableSize))
+        XCTAssertEqual(coordinator.observeLiveSize(stableSize).outcome, .appliedStableSize)
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
             allowsLiveSizeCompletion: false,
             liveSize: stableSize
         )
-        XCTAssertFalse(coordinator.observeLiveSize(transientSize))
+        XCTAssertFalse(coordinator.observeLiveSize(transientSize).didApplyStableSize)
         coordinator.completeKeyboardTransition(liveSize: finalSize)
 
         XCTAssertEqual(coordinator.effectiveSize(liveSize: finalSize), finalSize)
@@ -153,7 +153,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let stableSize = CGSize(width: 402, height: 674)
 
-        XCTAssertTrue(coordinator.observeLiveSize(stableSize))
+        XCTAssertEqual(coordinator.observeLiveSize(stableSize).outcome, .appliedStableSize)
 
         XCTAssertEqual(
             coordinator.effectiveSize(liveSize: CGSize(width: 0, height: 0)),
