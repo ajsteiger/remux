@@ -61,6 +61,29 @@ final class GhosttyRuntimeSurfaceTopologySnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.selectedActiveLeafID, firstPaneID)
     }
 
+    func testDuplicateSelectionPreservesFirstTopLevelMatch() {
+        let topLevelID = UUID()
+        let firstPaneID = UUID()
+        let secondPaneID = UUID()
+        let firstTopLevel = GhosttyTopLevelSurface(
+            id: topLevelID,
+            tree: GhosttySurfaceTree(root: .leaf(firstPaneID))
+        )
+        let secondTopLevel = GhosttyTopLevelSurface(
+            id: topLevelID,
+            tree: GhosttySurfaceTree(root: .leaf(secondPaneID))
+        )
+        let snapshot = GhosttyRuntimeSurfaceTopologySnapshot(
+            topLevels: [firstTopLevel, secondTopLevel],
+            selectedTopLevelID: topLevelID,
+            pendingPhonePresentationSurfaceID: nil
+        )
+
+        XCTAssertEqual(snapshot.selectedTopLevel, firstTopLevel)
+        XCTAssertEqual(snapshot.selectedTopLevelIndex, 0)
+        XCTAssertEqual(snapshot.selectedActiveLeafID, firstPaneID)
+    }
+
     func testPendingPhonePresentationIsPointInTimeValue() {
         let topLevel = Self.topLevel(leafID: UUID())
         let stalePendingID = UUID()
