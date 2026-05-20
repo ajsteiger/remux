@@ -303,24 +303,75 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.isActive)
     }
 
+    func testTopologyRefocusCoordinatorPerformAppliesEffectsAroundQueuedAction() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+        var events: [String] = []
+
+        let outcome = coordinator.perform(
+            actionEffect: .refocusAndDismissOnQueued,
+            activeLeafID: UUID(),
+            keyboardMode: .system,
+            apply: { effect in
+                switch effect {
+                case .requestRefocus:
+                    events.append("requestRefocus")
+                    return .refocusKeyboardTransitionStarted
+                case .dismissSelectionSheet:
+                    events.append("dismissSelectionSheet")
+                    return .none
+                case .cancelRefocus, .completeRefocus:
+                    events.append("unexpected")
+                    return .none
+                }
+            },
+            action: {
+                events.append("action")
+                return .queued
+            }
+        )
+
+        XCTAssertEqual(outcome, .queued)
+        XCTAssertEqual(events, ["requestRefocus", "action", "dismissSelectionSheet"])
+        XCTAssertTrue(coordinator.isActive)
+    }
+
     func testTopologyRefocusCoordinatorRejectedActionCancelsOwnedKeyboardTransition() {
         var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
-        XCTAssertEqual(
-            coordinator.prepare(
-                actionEffect: .refocusOnly,
-                activeLeafID: UUID(),
-                keyboardMode: .system
-            ),
-            .requestRefocus
-        )
-        coordinator.markKeyboardTransitionOwned()
+        var effects: [GhosttyTopologyActionInputRefocusCoordinator.Effect] = []
 
-        let effect = coordinator.complete(
+        let outcome = coordinator.perform(
             actionEffect: .refocusOnly,
-            outcome: .rejected(.queueFailed)
+            activeLeafID: UUID(),
+            keyboardMode: .system,
+            apply: { effect in
+                effects.append(effect)
+                return effect == .requestRefocus ? .refocusKeyboardTransitionStarted : .none
+            },
+            action: { .rejected(.queueFailed) }
         )
 
-        XCTAssertEqual(effect, .cancelRefocus(ownsKeyboardTransition: true))
+        XCTAssertEqual(outcome, .rejected(.queueFailed))
+        XCTAssertEqual(effects, [.requestRefocus, .cancelRefocus(ownsKeyboardTransition: true)])
+        XCTAssertFalse(coordinator.isActive)
+    }
+
+    func testTopologyRefocusCoordinatorRejectedActionCancelsUnownedKeyboardTransition() {
+        var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
+        var effects: [GhosttyTopologyActionInputRefocusCoordinator.Effect] = []
+
+        let outcome = coordinator.perform(
+            actionEffect: .refocusOnly,
+            activeLeafID: UUID(),
+            keyboardMode: .system,
+            apply: { effect in
+                effects.append(effect)
+                return .none
+            },
+            action: { .rejected(.queueFailed) }
+        )
+
+        XCTAssertEqual(outcome, .rejected(.queueFailed))
+        XCTAssertEqual(effects, [.requestRefocus, .cancelRefocus(ownsKeyboardTransition: false)])
         XCTAssertFalse(coordinator.isActive)
     }
 
@@ -386,14 +437,17 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
     func testTopologyRefocusCoordinatorCommandFailureCancelsPendingRequest() {
         var coordinator = GhosttyTopologyActionInputRefocusCoordinator()
         XCTAssertEqual(
-            coordinator.prepare(
+            coordinator.perform(
                 actionEffect: .refocusOnly,
                 activeLeafID: UUID(),
-                keyboardMode: .system
+                keyboardMode: .system,
+                apply: { effect in
+                    effect == .requestRefocus ? .refocusKeyboardTransitionStarted : .none
+                },
+                action: { .queued }
             ),
-            .requestRefocus
+            .queued
         )
-        coordinator.markKeyboardTransitionOwned()
 
         let effect = coordinator.cancelForCommandFailure()
 

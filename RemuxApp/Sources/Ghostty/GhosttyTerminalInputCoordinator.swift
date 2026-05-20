@@ -181,6 +181,11 @@ struct GhosttyTopologyActionInputRefocusCoordinator: Equatable {
         case completeRefocus
     }
 
+    enum EffectApplicationFeedback: Equatable {
+        case none
+        case refocusKeyboardTransitionStarted
+    }
+
     private var pendingRefocus = GhosttyPendingTopologyInputRefocus()
 
     var isActive: Bool {
@@ -197,10 +202,6 @@ struct GhosttyTopologyActionInputRefocusCoordinator: Equatable {
             return nil
         }
         return .requestRefocus
-    }
-
-    mutating func markKeyboardTransitionOwned() {
-        pendingRefocus.markKeyboardTransitionOwned()
     }
 
     mutating func complete(
@@ -233,5 +234,41 @@ struct GhosttyTopologyActionInputRefocusCoordinator: Equatable {
         let ownsKeyboardTransition = pendingRefocus.ownsKeyboardTransition
         pendingRefocus.cancel()
         return .cancelRefocus(ownsKeyboardTransition: ownsKeyboardTransition)
+    }
+
+    @discardableResult
+    mutating func perform(
+        actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
+        activeLeafID: UUID?,
+        keyboardMode: GhosttyKeyboardChromeMode,
+        apply: (Effect) -> EffectApplicationFeedback,
+        action: () -> GhosttyTmuxModelActionOutcome
+    ) -> GhosttyTmuxModelActionOutcome {
+        if let effect = prepare(
+            actionEffect: actionEffect,
+            activeLeafID: activeLeafID,
+            keyboardMode: keyboardMode
+        ) {
+            applyEffect(effect, using: apply)
+        }
+
+        let outcome = action()
+
+        if let effect = complete(actionEffect: actionEffect, outcome: outcome) {
+            applyEffect(effect, using: apply)
+        }
+
+        return outcome
+    }
+
+    private mutating func applyEffect(
+        _ effect: Effect,
+        using apply: (Effect) -> EffectApplicationFeedback
+    ) {
+        let feedback = apply(effect)
+        guard case .requestRefocus = effect else { return }
+        guard feedback == .refocusKeyboardTransitionStarted else { return }
+
+        pendingRefocus.markKeyboardTransitionOwned()
     }
 }

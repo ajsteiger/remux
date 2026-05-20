@@ -493,7 +493,7 @@ struct GhosttySurfaceScreen: View {
 
     private func applyTopologyInputRefocusEffect(
         _ effect: GhosttyTopologyActionInputRefocusCoordinator.Effect
-    ) {
+    ) -> GhosttyTopologyActionInputRefocusCoordinator.EffectApplicationFeedback {
         switch effect {
         case .requestRefocus:
             _ = terminalViewportCoordinator.requestTopologyRefocus(
@@ -506,46 +506,22 @@ struct GhosttySurfaceScreen: View {
                 )
             )
             if didStartKeyboardTransition {
-                topologyActionInputRefocusCoordinator.markKeyboardTransitionOwned()
+                return .refocusKeyboardTransitionStarted
             }
+            return .none
 
         case .dismissSelectionSheet:
             dismissSelectionSheet()
+            return .none
 
         case .cancelRefocus(let ownsKeyboardTransition):
             cancelTopologyInputRefocus(ownsKeyboardTransition: ownsKeyboardTransition)
+            return .none
 
         case .completeRefocus:
             completeTopologyInputRefocus()
+            return .none
         }
-    }
-
-    private func prepareTopologyActionInteraction(
-        _ actionEffect: GhosttyTmuxTopologyActionInteractionEffect
-    ) {
-        guard let effect = topologyActionInputRefocusCoordinator.prepare(
-            actionEffect: actionEffect,
-            activeLeafID: model.terminalInteractionProjection.selectedActiveLeafID,
-            keyboardMode: inputCoordinator.keyboardMode
-        ) else {
-            return
-        }
-
-        applyTopologyInputRefocusEffect(effect)
-    }
-
-    private func completeTopologyActionInteraction(
-        _ actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
-        outcome: GhosttyTmuxModelActionOutcome
-    ) {
-        guard let effect = topologyActionInputRefocusCoordinator.complete(
-            actionEffect: actionEffect,
-            outcome: outcome
-        ) else {
-            return
-        }
-
-        applyTopologyInputRefocusEffect(effect)
     }
 
     private func cancelTopologyInputRefocus(ownsKeyboardTransition: Bool) {
@@ -563,13 +539,18 @@ struct GhosttySurfaceScreen: View {
         }
     }
 
+    @discardableResult
     private func performTopologyActionInteraction(
         _ actionEffect: GhosttyTmuxTopologyActionInteractionEffect,
         action: () -> GhosttyTmuxModelActionOutcome
-    ) {
-        prepareTopologyActionInteraction(actionEffect)
-        let outcome = action()
-        completeTopologyActionInteraction(actionEffect, outcome: outcome)
+    ) -> GhosttyTmuxModelActionOutcome {
+        topologyActionInputRefocusCoordinator.perform(
+            actionEffect: actionEffect,
+            activeLeafID: model.terminalInteractionProjection.selectedActiveLeafID,
+            keyboardMode: inputCoordinator.keyboardMode,
+            apply: applyTopologyInputRefocusEffect,
+            action: action
+        )
     }
 
     private func handleActiveLeafChange(_ activeLeafID: UUID?) {
@@ -577,7 +558,7 @@ struct GhosttySurfaceScreen: View {
             return
         }
 
-        applyTopologyInputRefocusEffect(effect)
+        _ = applyTopologyInputRefocusEffect(effect)
     }
 
     private func completeTopologyInputRefocus() {
@@ -605,7 +586,7 @@ struct GhosttySurfaceScreen: View {
         GhosttyRuntimeTrace.perf(
             "topology.refocus cancel reason=tmuxCommandFailure token=\(event.token) failureReason=\(event.reason.traceLabel)"
         )
-        applyTopologyInputRefocusEffect(effect)
+        _ = applyTopologyInputRefocusEffect(effect)
     }
 
     @ViewBuilder
