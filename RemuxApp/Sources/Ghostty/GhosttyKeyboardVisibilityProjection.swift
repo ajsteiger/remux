@@ -209,6 +209,23 @@ struct GhosttyKeyboardViewportTransitionCoordinator: Equatable {
         return request
     }
 
+    mutating func performKeyboardToggleTransition(
+        projection: GhosttyKeyboardToggleProjection,
+        beginTransition: (GhosttyKeyboardViewportTransitionRequest) -> Void,
+        applyKeyboardToggle: () -> GhosttyKeyboardChromeMode,
+        completeTransition: () -> Void
+    ) {
+        if let request = transitionRequest(forToggle: projection) {
+            beginTransition(request)
+        }
+
+        let resultingMode = applyKeyboardToggle()
+        if projection.startsSystemKeyboardTransition,
+           resultingMode != projection.expectedMode {
+            completeTransition()
+        }
+    }
+
     mutating func observeKeyboardVisibility(isVisible: Bool) {
         guard isVisible else { return }
         isAwaitingSystemKeyboardPresentation = false

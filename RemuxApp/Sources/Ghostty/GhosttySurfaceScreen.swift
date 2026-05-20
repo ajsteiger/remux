@@ -439,33 +439,36 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func toggleKeyboardChrome() {
+        let isInputAvailable = isTerminalInputAvailable
         GhosttyRuntimeTrace.flowBegin(
             "terminal.input",
             event: "ui.tap.keyboardToggle",
             fields: [
-                "inputAvailable": "\(isTerminalInputAvailable)",
+                "inputAvailable": "\(isInputAvailable)",
                 "mode": "\(inputCoordinator.keyboardMode)",
                 "workspaceID": presentation.workspaceID.uuidString,
             ]
         )
         let projection = GhosttyKeyboardToggleProjection(
             keyboardMode: inputCoordinator.keyboardMode,
-            isInputAvailable: isTerminalInputAvailable
+            isInputAvailable: isInputAvailable
         )
         GhosttyRuntimeTrace.perf(
             "kbd.toggleKeyboard from=\(projection.previousMode.traceLabel) to=\(projection.expectedMode.traceLabel) inputAvailable=\(projection.isInputAvailable) startsSystemTransition=\(projection.startsSystemKeyboardTransition)"
         )
 
         performKeyboardChromeStateChange {
-            if let request = keyboardViewportTransitionCoordinator.transitionRequest(forToggle: projection) {
-                beginKeyboardViewportTransition(request)
-            }
-
-            inputCoordinator.toggleKeyboard(isInputAvailable: isTerminalInputAvailable)
-            if projection.startsSystemKeyboardTransition,
-               inputCoordinator.keyboardMode != projection.expectedMode {
-                completeKeyboardViewportTransition()
-            }
+            keyboardViewportTransitionCoordinator.performKeyboardToggleTransition(
+                projection: projection,
+                beginTransition: { request in
+                    _ = beginKeyboardViewportTransition(request)
+                },
+                applyKeyboardToggle: {
+                    inputCoordinator.toggleKeyboard(isInputAvailable: projection.isInputAvailable)
+                    return inputCoordinator.keyboardMode
+                },
+                completeTransition: completeKeyboardViewportTransition
+            )
         }
     }
 

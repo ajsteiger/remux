@@ -5,6 +5,28 @@ import XCTest
 final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
     private let screenBounds = CGRect(x: 0, y: 0, width: 390, height: 844)
 
+    private func performKeyboardToggleTransaction(
+        _ projection: GhosttyKeyboardToggleProjection,
+        resultingMode: GhosttyKeyboardChromeMode,
+        coordinator: inout GhosttyKeyboardViewportTransitionCoordinator
+    ) -> [String] {
+        var calls: [String] = []
+        coordinator.performKeyboardToggleTransition(
+            projection: projection,
+            beginTransition: {
+                calls.append("begin:\($0.target.traceLabel)")
+            },
+            applyKeyboardToggle: {
+                calls.append("toggle")
+                return resultingMode
+            },
+            completeTransition: {
+                calls.append("complete")
+            }
+        )
+        return calls
+    }
+
     func testVisibleOverlappingKeyboardBeginsShownTransitionInSystemMode() {
         let projection = GhosttyKeyboardVisibilityProjection(
             frameEnd: CGRect(x: 0, y: 544.4, width: 390, height: 299.6),
@@ -220,6 +242,75 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
             )
         )
         XCTAssertFalse(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
+    func testTransitionCoordinatorToggleTransactionBeginsShownTransitionBeforeApplyingInputMode() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .hidden,
+            isInputAvailable: true
+        )
+
+        let calls = performKeyboardToggleTransaction(
+            projection,
+            resultingMode: .system,
+            coordinator: &coordinator
+        )
+
+        XCTAssertEqual(calls, ["begin:shown", "toggle"])
+        XCTAssertTrue(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
+    func testTransitionCoordinatorToggleTransactionBeginsHiddenTransitionBeforeApplyingInputMode() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        _ = coordinator.prepareUnexpectedHideRecovery()
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .system,
+            isInputAvailable: true
+        )
+
+        let calls = performKeyboardToggleTransaction(
+            projection,
+            resultingMode: .hidden,
+            coordinator: &coordinator
+        )
+
+        XCTAssertEqual(calls, ["begin:hidden", "toggle"])
+        XCTAssertFalse(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
+    func testTransitionCoordinatorToggleTransactionSkipsTransitionWhenInputIsUnavailable() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .hidden,
+            isInputAvailable: false
+        )
+
+        let calls = performKeyboardToggleTransaction(
+            projection,
+            resultingMode: .hidden,
+            coordinator: &coordinator
+        )
+
+        XCTAssertEqual(calls, ["toggle"])
+        XCTAssertFalse(coordinator.isAwaitingSystemKeyboardPresentation)
+    }
+
+    func testTransitionCoordinatorToggleTransactionCompletesWhenInputModeMissesExpectedState() {
+        var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
+        let projection = GhosttyKeyboardToggleProjection(
+            keyboardMode: .hidden,
+            isInputAvailable: true
+        )
+
+        let calls = performKeyboardToggleTransaction(
+            projection,
+            resultingMode: .hidden,
+            coordinator: &coordinator
+        )
+
+        XCTAssertEqual(calls, ["begin:shown", "toggle", "complete"])
+        XCTAssertTrue(coordinator.isAwaitingSystemKeyboardPresentation)
     }
 
     func testTransitionCoordinatorVisibleKeyboardClearsAwaitingPresentation() {
