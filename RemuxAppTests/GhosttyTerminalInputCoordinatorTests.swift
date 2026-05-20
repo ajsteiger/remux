@@ -551,6 +551,117 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertNil(controller.flushPendingTmuxPrefixInput(matching: 1))
     }
 
+    func testInputControllerPerformTextInputSubmitsNormalText() {
+        var controller = GhosttyTerminalInputController()
+        var submitted: [String] = []
+        var scheduledTokens: [UInt64] = []
+        var copyModeAttempts = 0
+
+        let accepted = controller.performTextInput(
+            "ls\r",
+            submit: {
+                submitted.append($0)
+                return true
+            },
+            schedulePrefixFlush: { scheduledTokens.append($0) },
+            enterCopyMode: {
+                copyModeAttempts += 1
+                return true
+            }
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(submitted, ["ls\r"])
+        XCTAssertTrue(scheduledTokens.isEmpty)
+        XCTAssertEqual(copyModeAttempts, 0)
+    }
+
+    func testInputControllerPerformTextInputSchedulesPrefixFlushWithoutSubmit() {
+        var controller = GhosttyTerminalInputController()
+        var submitted: [String] = []
+        var scheduledTokens: [UInt64] = []
+
+        let accepted = controller.performTextInput(
+            GhosttyTmuxPrefixInputBuffer.defaultPrefixInput,
+            submit: {
+                submitted.append($0)
+                return false
+            },
+            schedulePrefixFlush: { scheduledTokens.append($0) },
+            enterCopyMode: { true }
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertTrue(submitted.isEmpty)
+        XCTAssertEqual(scheduledTokens, [1])
+    }
+
+    func testInputControllerPerformTextInputQueuesCopyModeWithoutFallbackSubmit() {
+        var controller = GhosttyTerminalInputController()
+        var submitted: [String] = []
+        var copyModeAttempts = 0
+
+        _ = controller.performTextInput(
+            GhosttyTmuxPrefixInputBuffer.defaultPrefixInput,
+            submit: {
+                submitted.append($0)
+                return true
+            },
+            schedulePrefixFlush: { _ in },
+            enterCopyMode: { true }
+        )
+
+        let accepted = controller.performTextInput(
+            "[",
+            submit: {
+                submitted.append($0)
+                return true
+            },
+            schedulePrefixFlush: { _ in },
+            enterCopyMode: {
+                copyModeAttempts += 1
+                return true
+            }
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertTrue(submitted.isEmpty)
+        XCTAssertEqual(copyModeAttempts, 1)
+    }
+
+    func testInputControllerPerformTextInputSubmitsCopyModeFallbackWhenNotQueued() {
+        var controller = GhosttyTerminalInputController()
+        var submitted: [String] = []
+        var copyModeAttempts = 0
+
+        _ = controller.performTextInput(
+            GhosttyTmuxPrefixInputBuffer.defaultPrefixInput,
+            submit: {
+                submitted.append($0)
+                return true
+            },
+            schedulePrefixFlush: { _ in },
+            enterCopyMode: { true }
+        )
+
+        let accepted = controller.performTextInput(
+            "[",
+            submit: {
+                submitted.append($0)
+                return false
+            },
+            schedulePrefixFlush: { _ in },
+            enterCopyMode: {
+                copyModeAttempts += 1
+                return false
+            }
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(submitted, ["\u{2}["])
+        XCTAssertEqual(copyModeAttempts, 1)
+    }
+
     func testInputControllerPasteFlushesPendingPrefixBeforePasteWithoutClearingControl() {
         var controller = GhosttyTerminalInputController()
         XCTAssertEqual(

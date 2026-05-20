@@ -763,26 +763,22 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func sendTerminalText(_ text: String) -> Bool {
-        switch terminalInputController.receiveText(text) {
-        case .submit(let input):
-            return submitTerminalText(input)
-
-        case .schedulePrefixFlush(let token):
-            scheduleTmuxPrefixInputFlush(token: token)
-            return true
-
-        case .enterCopyMode(let fallbackInput):
-            let outcome = model.enterFocusedTmuxCopyMode()
-            if outcome.isQueued {
-                GhosttyRuntimeTrace.flowEventIfActive(
-                    "terminal.input",
-                    event: "ui.tmuxPrefix.copyMode.queued"
-                )
-                return true
+        terminalInputController.performTextInput(
+            text,
+            submit: submitTerminalText(_:),
+            schedulePrefixFlush: scheduleTmuxPrefixInputFlush(token:),
+            enterCopyMode: {
+                let outcome = model.enterFocusedTmuxCopyMode()
+                if outcome.isQueued {
+                    GhosttyRuntimeTrace.flowEventIfActive(
+                        "terminal.input",
+                        event: "ui.tmuxPrefix.copyMode.queued"
+                    )
+                    return true
+                }
+                return false
             }
-
-            return submitTerminalText(fallbackInput)
-        }
+        )
     }
 
     private func submitTerminalText(_ outbound: String) -> Bool {

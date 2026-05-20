@@ -110,6 +110,26 @@ struct GhosttyTerminalInputController: Equatable {
         }
     }
 
+    mutating func performTextInput(
+        _ text: String,
+        submit: (String) -> Bool,
+        schedulePrefixFlush: (UInt64) -> Void,
+        enterCopyMode: () -> Bool
+    ) -> Bool {
+        switch receiveText(text) {
+        case .submit(let input):
+            return submit(input)
+        case .schedulePrefixFlush(let token):
+            schedulePrefixFlush(token)
+            return true
+        case .enterCopyMode(let fallbackInput):
+            guard enterCopyMode() else {
+                return submit(fallbackInput)
+            }
+            return true
+        }
+    }
+
     mutating func receivePaste(_ text: String) -> PasteAction {
         PasteAction(
             pendingPrefixInput: tmuxPrefixInputBuffer.flushPendingInput(),
