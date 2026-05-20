@@ -30,7 +30,7 @@ struct ActiveTerminalSession: Identifiable, Equatable, Sendable {
 
     mutating func applyRuntimeState(_ state: TerminalRuntimeState) {
         runtimeState = state
-        if state.isConnected {
+        if TerminalRuntimeStateProjection.isRootVisibleConnected(state) {
             automaticReconnectAttemptedSources.removeAll()
         }
     }

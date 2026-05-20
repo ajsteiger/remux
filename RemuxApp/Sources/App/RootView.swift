@@ -530,7 +530,8 @@ private struct ConnectionLibraryView: View {
 
     private func connectedSessionCount(for serverID: SavedServer.ID) -> Int {
         activeSessions.filter {
-            $0.target.server.id == serverID && $0.runtimeState.isConnected
+            $0.target.server.id == serverID
+                && TerminalRuntimeStateProjection.isRootVisibleConnected($0.runtimeState)
         }.count
     }
 
@@ -569,7 +570,9 @@ private struct ServerDetailView: View {
                     Text(
                         serverSummary(
                             sessionCount: workspaces.count,
-                            connectedSessionCount: activeSessions.filter { $0.runtimeState.isConnected }.count,
+                            connectedSessionCount: activeSessions.filter {
+                                TerminalRuntimeStateProjection.isRootVisibleConnected($0.runtimeState)
+                            }.count,
                             latestWorkspace: nil
                         )
                     )

@@ -120,22 +120,25 @@ enum TerminalReconnectSource: Equatable, Hashable, Sendable {
     }
 }
 
-// Root-visible terminal readiness. `connected` means the terminal can accept input,
-// not merely that the underlying SSH/tmux transport is alive.
+// Root-visible terminal state for library display and reconnect policy.
+// `.connected` is produced from the current runtime/readiness contract:
+// running plus a focused surface. It is not the input-ready gate and does not
+// require writable transport.
 enum TerminalRuntimeState: Equatable, Sendable {
     case connecting
     case reconnecting(TerminalReconnectSource)
     case connected
     case disconnected(TerminalDisconnectReason)
 
-    var isConnected: Bool {
-        if case .connected = self { return true }
-        return false
-    }
-
     var disconnectedReason: TerminalDisconnectReason? {
         if case .disconnected(let reason) = self { return reason }
         return nil
+    }
+}
+
+enum TerminalRuntimeStateProjection {
+    static func isRootVisibleConnected(_ state: TerminalRuntimeState) -> Bool {
+        state == .connected
     }
 }
 

@@ -2,6 +2,17 @@ import XCTest
 @testable import Remux
 
 final class RemuxActiveSessionRuntimeReducerTests: XCTestCase {
+    func testRootVisibleConnectedProjectionPreservesCurrentRuntimeStateContract() {
+        XCTAssertFalse(TerminalRuntimeStateProjection.isRootVisibleConnected(.connecting))
+        XCTAssertFalse(TerminalRuntimeStateProjection.isRootVisibleConnected(.reconnecting(.foreground)))
+        XCTAssertTrue(TerminalRuntimeStateProjection.isRootVisibleConnected(.connected))
+        XCTAssertFalse(
+            TerminalRuntimeStateProjection.isRootVisibleConnected(
+                .disconnected(transportDisconnectReason())
+            )
+        )
+    }
+
     func testMissingSessionReportsMissingWithoutMutation() {
         var sessions: [ActiveTerminalSession] = []
         let update = TerminalRuntimeStateUpdate(
@@ -62,6 +73,17 @@ final class RemuxActiveSessionRuntimeReducerTests: XCTestCase {
         XCTAssertEqual(outcome, .applied(.connected))
         XCTAssertEqual(sessions.first?.runtimeState, .connected)
         XCTAssertEqual(sessions.first?.automaticReconnectAttemptedSources, [])
+    }
+
+    func testNonConnectedStateDoesNotClearAutomaticReconnectAttempts() {
+        var session = makeSession(runtimeState: .reconnecting(.transportLoss))
+        XCTAssertTrue(session.markAutomaticReconnectAttempted(source: .transportLoss))
+
+        session.applyRuntimeState(.connecting)
+        XCTAssertEqual(session.automaticReconnectAttemptedSources, [.transportLoss])
+
+        session.applyRuntimeState(.disconnected(transportDisconnectReason()))
+        XCTAssertEqual(session.automaticReconnectAttemptedSources, [.transportLoss])
     }
 
     func testConnectingStateDoesNotOverwriteReconnectingState() {
