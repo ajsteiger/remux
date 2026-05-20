@@ -192,7 +192,7 @@ private final class TestSurfaceDelegate: GhosttyKitRuntimeSurfaceDelegate {
 
     func runtimeAction(
         app: ghostty_app_t?,
-        target: ghostty_target_s,
+        target: GhosttyRuntimeSurfaceActionTarget,
         action: GhosttyRuntimeSurfaceAction,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {

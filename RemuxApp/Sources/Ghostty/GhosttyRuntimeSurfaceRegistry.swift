@@ -1681,7 +1681,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
     func runtimeAction(
         app: ghostty_app_t?,
-        target: ghostty_target_s,
+        target: GhosttyRuntimeSurfaceActionTarget,
         action: GhosttyRuntimeSurfaceAction,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool {
@@ -1691,12 +1691,12 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
     private func applyRuntimeAction(
         app: ghostty_app_t?,
-        target: ghostty_target_s,
+        target: GhosttyRuntimeSurfaceActionTarget,
         action: GhosttyRuntimeSurfaceAction
     ) -> Bool {
         _ = app
-        guard target.tag == GHOSTTY_TARGET_SURFACE else { return true }
-        guard let id = managedSurfaceStore.id(forHandle: target.target.surface),
+        guard case .surface(let handle?) = target else { return true }
+        guard let id = managedSurfaceStore.id(forHandle: handle),
               let surface = managedSurfaceStore.managedSurface(for: id) else { return true }
 
         let result = GhosttyRuntimeSurfaceActionDispatcher.dispatch(action: action, to: surface)
@@ -1759,7 +1759,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
     ) -> Bool {
         applyRuntimeAction(
             app: app,
-            target: target,
+            target: GhosttyRuntimeSurfaceActionTarget(native: target),
             action: GhosttyRuntimeSurfaceAction(native: action)
         )
     }
@@ -1772,7 +1772,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
     ) -> Bool {
         runtimeAction(
             app: app,
-            target: target,
+            target: GhosttyRuntimeSurfaceActionTarget(native: target),
             action: GhosttyRuntimeSurfaceAction(native: action),
             lease: lease
         )

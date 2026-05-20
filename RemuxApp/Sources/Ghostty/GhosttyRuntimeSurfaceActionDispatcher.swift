@@ -20,6 +20,20 @@ enum GhosttyRuntimeSurfaceAction: Equatable {
     }
 }
 
+enum GhosttyRuntimeSurfaceActionTarget: Equatable {
+    case surface(ghostty_surface_t?)
+    case ignored
+
+    init(native target: ghostty_target_s) {
+        switch target.tag {
+        case GHOSTTY_TARGET_SURFACE:
+            self = .surface(target.target.surface)
+        default:
+            self = .ignored
+        }
+    }
+}
+
 enum GhosttyRuntimeSurfaceActionDispatchResult: Equatable, Sendable {
     case handled
     case runtimePresentationReady(reason: String)

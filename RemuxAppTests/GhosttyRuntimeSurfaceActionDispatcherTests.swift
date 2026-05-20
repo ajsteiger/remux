@@ -5,6 +5,28 @@ import XCTest
 
 @MainActor
 final class GhosttyRuntimeSurfaceActionDispatcherTests: XCTestCase {
+    func testActionTargetMapsNativeSurfaceHandle() {
+        let handle = UnsafeMutableRawPointer(bitPattern: 0x6001)!
+        var target = ghostty_target_s()
+        target.tag = GHOSTTY_TARGET_SURFACE
+        target.target.surface = handle
+
+        XCTAssertEqual(
+            GhosttyRuntimeSurfaceActionTarget(native: target),
+            .surface(handle)
+        )
+    }
+
+    func testActionTargetIgnoresNonSurfaceTarget() {
+        var target = ghostty_target_s()
+        target.tag = GHOSTTY_TARGET_APP
+
+        XCTAssertEqual(
+            GhosttyRuntimeSurfaceActionTarget(native: target),
+            .ignored
+        )
+    }
+
     func testRenderActionRequestsRuntimePresentationReadiness() {
         let surface = Self.managedSurface()
         var action = ghostty_action_s()
