@@ -200,7 +200,6 @@ struct GhosttySurfaceScreen: View {
                             projection: statusOverlayProjection,
                             onReconnect: onReconnect
                         )
-                        .id(model.surfaceRegistryRevision)
                     }
                     .overlay(alignment: .topTrailing) {
                         GhosttyKeyboardCursorTrackpadHUD(state: trackpadHUDState)

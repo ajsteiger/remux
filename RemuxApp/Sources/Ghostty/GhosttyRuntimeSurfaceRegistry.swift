@@ -43,14 +43,14 @@ func ghosttyDiagnosticSurfaceSize(_ size: ghostty_surface_size_s) -> String {
 }
 
 @MainActor
-final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSurfaceDelegate {
+final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
     private static let phonePresentationRefreshRetryDelay: Duration = .milliseconds(16)
     private static let phonePresentationRefreshMaxAttempts = 16
     private static let windowSwipeFlow = "tmux.windowSwipe"
 
     nonisolated private let runtimeCallbackLeaseStore = GhosttyRuntimeCallbackLeaseStore()
 
-    @Published private(set) var debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
+    private(set) var debugSummary = GhosttyRuntimeSurfaceDebugSummary.initial
     var lastTmuxProtocolError: TmuxControlProtocolError? {
         tmuxErrorChannel.lastProtocolError
     }
@@ -89,11 +89,7 @@ final class GhosttyRuntimeSurfaceRegistry: ObservableObject, GhosttyKitRuntimeSu
     private var pendingPhonePresentationTrace: PendingPhonePresentationTrace?
     private var notificationTransactionDepth = 0
     private var pendingTransactionNotificationDelivery: GhosttyRuntimeSurfaceChangeNotificationDelivery?
-    private lazy var changeNotifier = GhosttyRuntimeSurfaceChangeNotifier(
-        sendObjectWillChange: { [weak self] in
-            self?.objectWillChange.send()
-        }
-    )
+    private lazy var changeNotifier = GhosttyRuntimeSurfaceChangeNotifier()
 
     private var selectedTopLevel: GhosttyTopLevelSurface? {
         topologySelection.selectedTopLevel

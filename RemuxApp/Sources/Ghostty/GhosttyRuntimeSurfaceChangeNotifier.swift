@@ -18,12 +18,7 @@ enum GhosttyRuntimeSurfaceChangeNotificationDelivery: Equatable, Sendable {
 final class GhosttyRuntimeSurfaceChangeNotifier {
     var onChange: (() -> Void)?
 
-    private let sendObjectWillChange: () -> Void
     private var deferredChangeNotificationTask: Task<Void, Never>?
-
-    init(sendObjectWillChange: @escaping () -> Void) {
-        self.sendObjectWillChange = sendObjectWillChange
-    }
 
     func notifyChanged(delivery: GhosttyRuntimeSurfaceChangeNotificationDelivery = .immediate) {
         switch delivery {
@@ -43,7 +38,6 @@ final class GhosttyRuntimeSurfaceChangeNotifier {
     }
 
     private func sendChangeNotification() {
-        sendObjectWillChange()
         onChange?()
     }
 }

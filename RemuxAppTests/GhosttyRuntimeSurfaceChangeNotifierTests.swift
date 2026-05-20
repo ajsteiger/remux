@@ -3,18 +3,16 @@ import XCTest
 
 @MainActor
 final class GhosttyRuntimeSurfaceChangeNotifierTests: XCTestCase {
-    func testImmediateNotificationSendsObjectChangeThenOnChange() {
+    func testImmediateNotificationSendsOnChange() {
         var events: [String] = []
-        let notifier = GhosttyRuntimeSurfaceChangeNotifier {
-            events.append("objectWillChange")
-        }
+        let notifier = GhosttyRuntimeSurfaceChangeNotifier()
         notifier.onChange = {
             events.append("onChange")
         }
 
         notifier.notifyChanged()
 
-        XCTAssertEqual(events, ["objectWillChange", "onChange"])
+        XCTAssertEqual(events, ["onChange"])
     }
 
     func testNotificationDeliveryMergingPreservesImmediateDelivery() {
@@ -34,9 +32,7 @@ final class GhosttyRuntimeSurfaceChangeNotifierTests: XCTestCase {
 
     func testDeferredNotificationsCoalesce() async {
         var events: [String] = []
-        let notifier = GhosttyRuntimeSurfaceChangeNotifier {
-            events.append("objectWillChange")
-        }
+        let notifier = GhosttyRuntimeSurfaceChangeNotifier()
         notifier.onChange = {
             events.append("onChange")
         }
@@ -44,18 +40,14 @@ final class GhosttyRuntimeSurfaceChangeNotifierTests: XCTestCase {
         notifier.notifyChanged(delivery: .deferred)
         notifier.notifyChanged(delivery: .deferred)
 
-        let didNotify = await waitUntil {
-            events == ["objectWillChange", "onChange"]
-        }
+        let didNotify = await waitUntil { events == ["onChange"] }
         XCTAssertTrue(didNotify)
-        XCTAssertEqual(events, ["objectWillChange", "onChange"])
+        XCTAssertEqual(events, ["onChange"])
     }
 
     func testImmediateNotificationCancelsPendingDeferredNotification() async {
         var events: [String] = []
-        let notifier = GhosttyRuntimeSurfaceChangeNotifier {
-            events.append("objectWillChange")
-        }
+        let notifier = GhosttyRuntimeSurfaceChangeNotifier()
         notifier.onChange = {
             events.append("onChange")
         }
@@ -64,14 +56,12 @@ final class GhosttyRuntimeSurfaceChangeNotifierTests: XCTestCase {
         notifier.notifyChanged(delivery: .immediate)
         try? await Task.sleep(nanoseconds: 50_000_000)
 
-        XCTAssertEqual(events, ["objectWillChange", "onChange"])
+        XCTAssertEqual(events, ["onChange"])
     }
 
     func testReplacingOnChangeAffectsLaterNotifications() {
         var events: [String] = []
-        let notifier = GhosttyRuntimeSurfaceChangeNotifier {
-            events.append("objectWillChange")
-        }
+        let notifier = GhosttyRuntimeSurfaceChangeNotifier()
 
         notifier.onChange = {
             events.append("old")
@@ -83,15 +73,12 @@ final class GhosttyRuntimeSurfaceChangeNotifierTests: XCTestCase {
         }
         notifier.notifyChanged()
 
-        XCTAssertEqual(events, ["objectWillChange", "old", "objectWillChange", "new"])
+        XCTAssertEqual(events, ["old", "new"])
     }
 
     func testDeferredNotificationClearsBeforeSend() async {
-        var objectChangeCount = 0
         var onChangeCount = 0
-        let notifier = GhosttyRuntimeSurfaceChangeNotifier {
-            objectChangeCount += 1
-        }
+        let notifier = GhosttyRuntimeSurfaceChangeNotifier()
         weak var weakNotifier: GhosttyRuntimeSurfaceChangeNotifier? = notifier
         notifier.onChange = {
             onChangeCount += 1
@@ -103,10 +90,9 @@ final class GhosttyRuntimeSurfaceChangeNotifierTests: XCTestCase {
         notifier.notifyChanged(delivery: .deferred)
 
         let didNotifyTwice = await waitUntil {
-            objectChangeCount == 2 && onChangeCount == 2
+            onChangeCount == 2
         }
         XCTAssertTrue(didNotifyTwice)
-        XCTAssertEqual(objectChangeCount, 2)
         XCTAssertEqual(onChangeCount, 2)
     }
 
