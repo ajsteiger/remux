@@ -844,11 +844,11 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func sendTerminalPaste(_ text: String) -> Bool {
-        let action = terminalInputController.receivePaste(text)
-        if let pendingPrefixInput = action.pendingPrefixInput {
-            _ = submitTerminalText(pendingPrefixInput)
-        }
-        return model.sendPasteToFocusedSurface(action.text).isAccepted
+        terminalInputController.performPaste(
+            text,
+            submitPendingPrefix: submitTerminalText(_:),
+            sendPaste: { model.sendPasteToFocusedSurface($0).isAccepted }
+        )
     }
 
     private func copyTerminalSelection(from surfaceID: UUID) -> Bool {
@@ -861,16 +861,18 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func sendTerminalKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
-        let action = terminalInputController.receiveKeyEvent(event)
-        if let pendingPrefixInput = action.pendingPrefixInput {
-            _ = submitTerminalText(pendingPrefixInput)
-        }
-        let start = GhosttyRuntimeTrace.nowNanos()
-        let result = model.sendKeyEventToFocusedSurface(action.event)
-        GhosttyRuntimeTrace.perf(
-            "input.sendKey result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        terminalInputController.performKeyEvent(
+            event,
+            submitPendingPrefix: submitTerminalText(_:),
+            sendKey: { event in
+                let start = GhosttyRuntimeTrace.nowNanos()
+                let result = model.sendKeyEventToFocusedSurface(event)
+                GhosttyRuntimeTrace.perf(
+                    "input.sendKey result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result.isAccepted
+            }
         )
-        return result.isAccepted
     }
 
     private func updateKeyboardVisibility(with notification: Notification) {

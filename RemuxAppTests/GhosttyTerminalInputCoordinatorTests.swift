@@ -677,6 +677,58 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertTrue(controller.isControlArmed)
     }
 
+    func testInputControllerPerformPasteFlushesPendingPrefixBeforePasteAndIgnoresPrefixResult() {
+        var controller = GhosttyTerminalInputController()
+        var calls: [String] = []
+
+        _ = controller.performTextInput(
+            GhosttyTmuxPrefixInputBuffer.defaultPrefixInput,
+            submit: { _ in
+                XCTFail("prefix arm should not submit immediately")
+                return false
+            },
+            schedulePrefixFlush: { _ in },
+            enterCopyMode: { true }
+        )
+
+        let accepted = controller.performPaste(
+            "paste",
+            submitPendingPrefix: {
+                calls.append("prefix:\($0)")
+                return false
+            },
+            sendPaste: {
+                calls.append("paste:\($0)")
+                return true
+            }
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(calls, ["prefix:\u{2}", "paste:paste"])
+    }
+
+    func testInputControllerPerformPasteWithoutPendingPrefixReturnsPasteResult() {
+        var controller = GhosttyTerminalInputController()
+        var submittedPrefix: [String] = []
+        var pasted: [String] = []
+
+        let accepted = controller.performPaste(
+            "paste",
+            submitPendingPrefix: {
+                submittedPrefix.append($0)
+                return true
+            },
+            sendPaste: {
+                pasted.append($0)
+                return false
+            }
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertTrue(submittedPrefix.isEmpty)
+        XCTAssertEqual(pasted, ["paste"])
+    }
+
     func testInputControllerKeyFlushesPendingPrefixBeforeSendingModifiedKey() {
         var controller = GhosttyTerminalInputController()
         XCTAssertEqual(
@@ -690,5 +742,62 @@ final class GhosttyTerminalInputCoordinatorTests: XCTestCase {
         XCTAssertEqual(action.pendingPrefixInput, GhosttyTmuxPrefixInputBuffer.defaultPrefixInput)
         XCTAssertEqual(action.event, GhosttySurfaceKeyEvent(keyCode: .arrowUp, mods: [.ctrl]))
         XCTAssertFalse(controller.isControlArmed)
+    }
+
+    func testInputControllerPerformKeyFlushesPendingPrefixBeforeModifiedKeyAndIgnoresPrefixResult() {
+        var controller = GhosttyTerminalInputController()
+        var calls: [String] = []
+        var sentEvents: [GhosttySurfaceKeyEvent] = []
+
+        _ = controller.performTextInput(
+            GhosttyTmuxPrefixInputBuffer.defaultPrefixInput,
+            submit: { _ in
+                XCTFail("prefix arm should not submit immediately")
+                return false
+            },
+            schedulePrefixFlush: { _ in },
+            enterCopyMode: { true }
+        )
+        controller.toggleControl()
+
+        let accepted = controller.performKeyEvent(
+            GhosttySurfaceKeyEvent(keyCode: .arrowUp),
+            submitPendingPrefix: {
+                calls.append("prefix:\($0)")
+                return false
+            },
+            sendKey: {
+                calls.append("key")
+                sentEvents.append($0)
+                return true
+            }
+        )
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(calls, ["prefix:\u{2}", "key"])
+        XCTAssertEqual(sentEvents, [GhosttySurfaceKeyEvent(keyCode: .arrowUp, mods: [.ctrl])])
+        XCTAssertFalse(controller.isControlArmed)
+    }
+
+    func testInputControllerPerformKeyWithoutPendingPrefixReturnsKeyResult() {
+        var controller = GhosttyTerminalInputController()
+        var submittedPrefix: [String] = []
+        var sentEvents: [GhosttySurfaceKeyEvent] = []
+
+        let accepted = controller.performKeyEvent(
+            GhosttySurfaceKeyEvent(keyCode: .arrowDown),
+            submitPendingPrefix: {
+                submittedPrefix.append($0)
+                return true
+            },
+            sendKey: {
+                sentEvents.append($0)
+                return false
+            }
+        )
+
+        XCTAssertFalse(accepted)
+        XCTAssertTrue(submittedPrefix.isEmpty)
+        XCTAssertEqual(sentEvents, [GhosttySurfaceKeyEvent(keyCode: .arrowDown)])
     }
 }

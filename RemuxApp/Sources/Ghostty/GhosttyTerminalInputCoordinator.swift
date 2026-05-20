@@ -137,11 +137,35 @@ struct GhosttyTerminalInputController: Equatable {
         )
     }
 
+    mutating func performPaste(
+        _ text: String,
+        submitPendingPrefix: (String) -> Bool,
+        sendPaste: (String) -> Bool
+    ) -> Bool {
+        let action = receivePaste(text)
+        if let pendingPrefixInput = action.pendingPrefixInput {
+            _ = submitPendingPrefix(pendingPrefixInput)
+        }
+        return sendPaste(action.text)
+    }
+
     mutating func receiveKeyEvent(_ event: GhosttySurfaceKeyEvent) -> KeyEventAction {
         KeyEventAction(
             pendingPrefixInput: tmuxPrefixInputBuffer.flushPendingInput(),
             event: modifierState.apply(to: event)
         )
+    }
+
+    mutating func performKeyEvent(
+        _ event: GhosttySurfaceKeyEvent,
+        submitPendingPrefix: (String) -> Bool,
+        sendKey: (GhosttySurfaceKeyEvent) -> Bool
+    ) -> Bool {
+        let action = receiveKeyEvent(event)
+        if let pendingPrefixInput = action.pendingPrefixInput {
+            _ = submitPendingPrefix(pendingPrefixInput)
+        }
+        return sendKey(action.event)
     }
 
     mutating func flushPendingTmuxPrefixInput() -> String? {
