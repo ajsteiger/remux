@@ -49,6 +49,22 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     let surfaceRegistry: GhosttyRuntimeSurfaceRegistry
 
+    var terminalScreenPresentationProjection: GhosttyTerminalScreenPresentationProjection {
+        let topology = surfaceRegistry.topologySnapshot
+        return GhosttyTerminalPresentationProjector.terminalScreenPresentationProjection(
+            phase: terminalRuntimePhase,
+            transportWritable: hostSessionSlot.isWriteAvailable,
+            commandFailureMessage: commandFailureMessage,
+            debugStatus: debugStatus,
+            registryDebugSummary: surfaceRegistry.debugSummary,
+            snapshot: topology
+        )
+    }
+
+    var terminalSurfaceMaterializationContext: GhosttyRuntimeSurfaceMaterializationContext {
+        surfaceRegistry.materializationContext
+    }
+
     var terminalInteractionProjection: GhosttyTerminalInteractionProjection {
         GhosttyTerminalPresentationProjector.terminalInteractionProjection(
             phase: terminalRuntimePhase,
@@ -69,6 +85,17 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             transportWritable: hostSessionSlot.isWriteAvailable,
             topLevelCount: topology.topLevels.count,
             selectedActiveLeafID: topology.selectedActiveLeafID
+        )
+    }
+
+    func makePanePreviewSession(
+        leafIDs: [UUID],
+        previewSizing: GhosttyPanePreviewSession.PreviewSizing
+    ) -> GhosttyPanePreviewSession {
+        GhosttyPanePreviewSession(
+            leafIDs: leafIDs,
+            registry: surfaceRegistry,
+            previewSizing: previewSizing
         )
     }
 

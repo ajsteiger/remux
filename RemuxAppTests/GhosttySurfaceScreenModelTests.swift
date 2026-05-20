@@ -474,7 +474,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
 
         model.stopForRemoval()
 
-        let materializationContext = model.surfaceRegistry.materializationContext
+        let materializationContext = model.terminalSurfaceMaterializationContext
         XCTAssertEqual(releaseCount, 0)
         XCTAssertEqual(transferCount, 1)
         XCTAssertTrue(transferSawViewStillAttached)
@@ -2715,6 +2715,43 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             model.terminalInteractionProjection.isWaitingForPanes
         )
         XCTAssertFalse(TerminalReadinessProjector.canSubmitInput(model.terminalReadinessSnapshot))
+    }
+
+    func testTerminalScreenPresentationProjectionReportsWaitingAndReadyStatusFromModelBoundary() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        let model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+
+        let waitingProjection = model.terminalScreenPresentationProjection
+
+        XCTAssertEqual(waitingProjection.readiness, model.terminalReadinessSnapshot)
+        XCTAssertEqual(waitingProjection.interaction, model.terminalInteractionProjection)
+        XCTAssertEqual(waitingProjection.tree, model.terminalTreePresentationProjection)
+        XCTAssertEqual(
+            waitingProjection.statusOverlay,
+            .waitingForPanes(
+                debugStatus: model.debugStatus,
+                registryDebugSummary: model.surfaceRegistry.debugSummary
+            )
+        )
+
+        let managed = Self.managedSurface()
+        model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
+
+        XCTAssertEqual(model.terminalScreenPresentationProjection.statusOverlay, .ready)
     }
 
     func testTerminalInteractionProjectionMatchesReadinessWhenRuntimeFailed() {

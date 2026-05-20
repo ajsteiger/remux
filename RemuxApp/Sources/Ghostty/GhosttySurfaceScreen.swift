@@ -65,15 +65,9 @@ struct GhosttySurfaceScreen: View {
             let chrome = GhosttyPhoneChromeLayout(
                 screenSize: screenProxy.size
             )
-            let readiness = model.terminalReadinessSnapshot
-            let interactionProjection = model.terminalInteractionProjection
-            let statusOverlayProjection =
-                GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
-                    readiness: readiness,
-                    commandFailureMessage: model.commandFailureMessage,
-                    debugStatus: model.debugStatus,
-                    registryDebugSummary: registry.debugSummary
-                )
+            let screenProjection = model.terminalScreenPresentationProjection
+            let readiness = screenProjection.readiness
+            let interactionProjection = screenProjection.interaction
 
             ZStack {
                 presentation.terminalTheme.terminalSurfaceBackground
@@ -119,8 +113,8 @@ struct GhosttySurfaceScreen: View {
                             .allowsHitTesting(false)
 
                         GhosttyRuntimePaneTreeView(
-                            materializationContext: registry.materializationContext,
-                            projection: model.terminalTreePresentationProjection,
+                            materializationContext: model.terminalSurfaceMaterializationContext,
+                            projection: screenProjection.tree,
                             onSurfaceTap: handleSurfaceTap,
                             onWindowSwipe: handleWindowSwipe,
                             onCopySelection: { surfaceID in
@@ -197,7 +191,7 @@ struct GhosttySurfaceScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .overlay(alignment: .topLeading) {
                         GhosttySurfaceStatusOverlay(
-                            projection: statusOverlayProjection,
+                            projection: screenProjection.statusOverlay,
                             onReconnect: onReconnect
                         )
                     }
@@ -378,10 +372,6 @@ struct GhosttySurfaceScreen: View {
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
         }
-    }
-
-    private var registry: GhosttyRuntimeSurfaceRegistry {
-        model.surfaceRegistry
     }
 
     private var shouldHandleTerminalKeyboardNotification: Bool {
@@ -671,9 +661,8 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func makeWindowPreviewSession(leafIDs: [UUID]) -> GhosttyPanePreviewSession {
-        GhosttyPanePreviewSession(
+        model.makePanePreviewSession(
             leafIDs: leafIDs,
-            registry: registry,
             previewSizing: .windowGridForCurrentScreen
         )
     }
@@ -749,9 +738,8 @@ struct GhosttySurfaceScreen: View {
         applySelectionSheetPresentation(
             .panes(
                 topLevelID: projection.topLevelID,
-                previews: GhosttyPanePreviewSession(
+                previews: model.makePanePreviewSession(
                     leafIDs: projection.previewLeafIDs,
-                    registry: registry,
                     previewSizing: .paneGridForCurrentScreen
                 )
             )

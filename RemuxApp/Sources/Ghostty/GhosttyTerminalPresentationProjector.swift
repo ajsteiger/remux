@@ -190,6 +190,13 @@ enum GhosttyTerminalStatusOverlayProjection: Equatable, Sendable {
     case failed(String)
 }
 
+struct GhosttyTerminalScreenPresentationProjection: Equatable {
+    let readiness: TerminalReadinessSnapshot
+    let interaction: GhosttyTerminalInteractionProjection
+    let tree: GhosttyTerminalTreePresentationProjection
+    let statusOverlay: GhosttyTerminalStatusOverlayProjection
+}
+
 struct GhosttyTerminalTreeTopLevelPresentation: Equatable {
     let id: UUID
     let phonePresentedLeafIDs: [UUID]
@@ -280,6 +287,37 @@ struct GhosttyPaneSelectionSheetRenderProjection: Equatable, Sendable {
 
 @MainActor
 enum GhosttyTerminalPresentationProjector {
+    static func terminalScreenPresentationProjection(
+        phase: GhosttyTerminalRuntimePhase,
+        transportWritable: Bool,
+        commandFailureMessage: String?,
+        debugStatus: String,
+        registryDebugSummary: String,
+        snapshot: GhosttyRuntimeSurfaceTopologySnapshot
+    ) -> GhosttyTerminalScreenPresentationProjection {
+        let readiness = TerminalReadinessProjector.snapshot(
+            phase: phase,
+            transportWritable: transportWritable,
+            topLevelCount: snapshot.topLevels.count,
+            selectedActiveLeafID: snapshot.selectedActiveLeafID
+        )
+
+        return GhosttyTerminalScreenPresentationProjection(
+            readiness: readiness,
+            interaction: terminalInteractionProjection(
+                phase: phase,
+                snapshot: snapshot
+            ),
+            tree: terminalTreePresentationProjection(snapshot: snapshot),
+            statusOverlay: terminalStatusOverlayProjection(
+                readiness: readiness,
+                commandFailureMessage: commandFailureMessage,
+                debugStatus: debugStatus,
+                registryDebugSummary: registryDebugSummary
+            )
+        )
+    }
+
     static func terminalStatusOverlayProjection(
         readiness: TerminalReadinessSnapshot,
         commandFailureMessage: String?,
