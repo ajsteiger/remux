@@ -690,6 +690,46 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         XCTAssertNil(delivered)
     }
 
+    func testStaleRuntimeTmuxCommandFailureCallbackCannotMutateRegistry() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let staleLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let currentLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
+        let expected = TmuxControlCommandFailure(
+            kind: .splitPane,
+            reason: .tmuxError("split failed"),
+            message: "split failed"
+        )
+        var delivered: TmuxControlCommandFailure?
+        registry.onTmuxCommandFailure = { failure in
+            delivered = failure
+        }
+
+        "split failed".withCString { message in
+            let failure = ghostty_tmux_command_failure_s(
+                surface: nil,
+                kind: GHOSTTY_TMUX_COMMAND_FAILURE_KIND_SPLIT_PANE,
+                reason: GHOSTTY_TMUX_COMMAND_FAILURE_REASON_TMUX_ERROR,
+                message: message,
+                message_len: strlen(message)
+            )
+
+            registry.runtimeTmuxCommandFailure(
+                app: nil,
+                failure: failure,
+                lease: staleLease
+            )
+            XCTAssertNil(delivered)
+
+            registry.runtimeTmuxCommandFailure(
+                app: nil,
+                failure: failure,
+                lease: currentLease
+            )
+        }
+
+        XCTAssertEqual(delivered, expected)
+    }
+
     func testStaleRuntimeCreateSurfaceTreeCallbackIsRejectedBeforeMutation() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let staleRuntime = try GhosttyKitRuntime(surfaceDelegate: registry)
