@@ -1173,7 +1173,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
     func runtimeCreateSurface(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_s,
+        request: GhosttyRuntimeSurfaceCreationRequest,
         lease: GhosttyRuntimeCallbackLease
     ) -> ghostty_surface_t? {
         guard acceptsRuntimeCallback(lease) else { return nil }
@@ -1184,7 +1184,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
     private func runtimeCreateSurfaceInTransaction(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_s,
+        request: GhosttyRuntimeSurfaceCreationRequest,
         lease: GhosttyRuntimeCallbackLease
     ) -> ghostty_surface_t? {
         // This callback materializes a surface that Ghostty already decided is
@@ -1192,15 +1192,15 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         // session, layout, and projection truth.
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(
-            "registry.runtimeCreateSurface begin context=\(String(describing: request.config?.pointee.context))"
+            "registry.runtimeCreateSurface begin context=\(String(describing: request.context))"
         )
         createSurfaceCount += 1
-        updateDebugSummary("create_surface context=\(String(describing: request.config?.pointee.context))")
+        updateDebugSummary("create_surface context=\(String(describing: request.context))")
 
-        guard let configPtr = request.config else { return nil }
+        guard let baseConfig = request.baseConfig else { return nil }
         let contextTraceName: String
         let actionFlow: String?
-        switch configPtr.pointee.context {
+        switch baseConfig.context {
         case GHOSTTY_SURFACE_CONTEXT_WINDOW:
             contextTraceName = "window"
             actionFlow = "tmux.newWindow"
@@ -1212,7 +1212,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
             actionFlow = "tmux.splitPane"
 
         default:
-            updateDebugSummary("create_surface unsupported context=\(String(describing: configPtr.pointee.context))")
+            updateDebugSummary("create_surface unsupported context=\(String(describing: baseConfig.context))")
             return nil
         }
         if let actionFlow {
@@ -1229,7 +1229,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
             event: "registry.managedSurface.create.begin",
             fields: ["context": contextTraceName]
         )
-        let managedSurface = createManagedSurface(app: app, baseConfig: configPtr.pointee, lease: lease)
+        let managedSurface = createManagedSurface(app: app, baseConfig: baseConfig, lease: lease)
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(
             event: "registry.managedSurface.create.end",
             fields: [
@@ -1243,7 +1243,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         }
         let previousPresentation = currentPhonePresentationTarget()
 
-        switch configPtr.pointee.context {
+        switch baseConfig.context {
         case GHOSTTY_SURFACE_CONTEXT_WINDOW, GHOSTTY_SURFACE_CONTEXT_TAB:
             var selection = topologySelection
             let appendResult = selection.appendTopLevel(leafID: managed.id)
@@ -1272,8 +1272,8 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         case GHOSTTY_SURFACE_CONTEXT_SPLIT:
             guard insertSplitSurface(
                 managed,
-                parentHandle: request.parent,
-                direction: request.split_direction
+                parentHandle: request.parentHandle,
+                direction: request.splitDirection
             ) else {
                 managed.releaseBeforePermanentRemoval()
                 updateDebugSummary("create_surface split insert failed")
@@ -1297,7 +1297,7 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
 
         default:
             managed.releaseBeforePermanentRemoval()
-            updateDebugSummary("create_surface unsupported context=\(String(describing: configPtr.pointee.context))")
+            updateDebugSummary("create_surface unsupported context=\(String(describing: baseConfig.context))")
             return nil
         }
     }
@@ -1737,7 +1737,11 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         request: ghostty_runtime_create_surface_s
     ) -> ghostty_surface_t? {
         guard let lease = runtimeCallbackLeaseStore.currentLease() else { return nil }
-        return runtimeCreateSurface(app: app, request: request, lease: lease)
+        return runtimeCreateSurface(
+            app: app,
+            request: GhosttyRuntimeSurfaceCreationRequest(native: request),
+            lease: lease
+        )
     }
 
     func runtimeCreateSurfaceTree(

@@ -406,11 +406,11 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
     }
 
     private static func createSurfaceTraceFields(
-        request: ghostty_runtime_create_surface_s,
+        request: GhosttyRuntimeSurfaceCreationRequest,
         route: String
     ) -> [String: String] {
         [
-            "context": request.config.map { String(describing: $0.pointee.context) } ?? "nil",
+            "context": request.context.map { String(describing: $0) } ?? "nil",
             "route": route,
             "thread": callbackThreadField(),
         ]
@@ -731,7 +731,7 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
             return nil
         }
         let appBox = UnsafeSendable(app)
-        let requestBox = UnsafeSendable(request)
+        let requestBox = UnsafeSendable(GhosttyRuntimeSurfaceCreationRequest(native: request))
         let leaseBox = UnsafeSendable(lease)
         if Thread.isMainThread {
             GhosttyRuntimeTrace.perf("runtime.createSurface route=main")

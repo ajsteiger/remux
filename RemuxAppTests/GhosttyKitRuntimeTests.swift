@@ -72,6 +72,44 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         XCTAssertEqual(config.tmux_history_capture_limit, 1000)
     }
 
+    func testRuntimeSurfaceCreationRequestCopiesNativeConfig() {
+        let parent = UnsafeMutableRawPointer(bitPattern: 0x7001)!
+        let manualUserdata = UnsafeMutableRawPointer(bitPattern: 0x7002)!
+        var config = Self.manualRuntimeTreeConfig(
+            context: GHOSTTY_SURFACE_CONTEXT_WINDOW,
+            manualUserdata: manualUserdata
+        )
+
+        let request = withUnsafePointer(to: &config) { configPtr in
+            GhosttyRuntimeSurfaceCreationRequest(
+                native: ghostty_runtime_create_surface_s(
+                    parent: parent,
+                    split_direction: GHOSTTY_SPLIT_DIRECTION_DOWN,
+                    config: configPtr
+                )
+            )
+        }
+        config.context = GHOSTTY_SURFACE_CONTEXT_SPLIT
+
+        XCTAssertEqual(request.parentHandle, parent)
+        XCTAssertEqual(request.splitDirection, GHOSTTY_SPLIT_DIRECTION_DOWN)
+        XCTAssertEqual(request.context, GHOSTTY_SURFACE_CONTEXT_WINDOW)
+        XCTAssertEqual(request.baseConfig?.manual_userdata, manualUserdata)
+    }
+
+    func testRuntimeSurfaceCreationRequestPreservesMissingConfig() {
+        let request = GhosttyRuntimeSurfaceCreationRequest(
+            native: ghostty_runtime_create_surface_s(
+                parent: nil,
+                split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
+                config: nil
+            )
+        )
+
+        XCTAssertNil(request.baseConfig)
+        XCTAssertNil(request.context)
+    }
+
     func testRuntimeCreatesManualHostSurfaceThatAcceptsOutput() throws {
         let runtime = try GhosttyKitRuntime()
         let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
@@ -768,10 +806,12 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         let surface = withUnsafePointer(to: &config) { configPtr in
             registry.runtimeCreateSurface(
                 app: currentRuntime.appHandleForTesting,
-                request: ghostty_runtime_create_surface_s(
-                    parent: nil,
-                    split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
-                    config: configPtr
+                request: GhosttyRuntimeSurfaceCreationRequest(
+                    native: ghostty_runtime_create_surface_s(
+                        parent: nil,
+                        split_direction: GHOSTTY_SPLIT_DIRECTION_RIGHT,
+                        config: configPtr
+                    )
                 ),
                 lease: staleLease
             )

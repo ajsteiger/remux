@@ -170,7 +170,7 @@ private enum RuntimeFailure: Error {
 private final class TestSurfaceDelegate: GhosttyKitRuntimeSurfaceDelegate {
     func runtimeCreateSurface(
         app: ghostty_app_t?,
-        request: ghostty_runtime_create_surface_s,
+        request: GhosttyRuntimeSurfaceCreationRequest,
         lease: GhosttyRuntimeCallbackLease
     ) -> ghostty_surface_t? {
         nil
