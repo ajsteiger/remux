@@ -100,15 +100,13 @@ private struct RemuxWorkspaceShell: View {
                     },
                     onMount: { component in
                         model.terminalScreenViewDidMount(
-                            workspaceID: entry.id,
-                            instanceID: entry.instanceID,
+                            runtimeAttemptKey: entry.runtimeAttemptKey,
                             component: component
                         )
                     },
                     onDismantle: { component in
                         model.terminalScreenViewDidDismantle(
-                            workspaceID: entry.id,
-                            instanceID: entry.instanceID,
+                            runtimeAttemptKey: entry.runtimeAttemptKey,
                             component: component
                         )
                     }

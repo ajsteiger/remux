@@ -809,6 +809,7 @@ final class RemuxRootModelTests: XCTestCase {
             let key = TerminalRuntimeAttemptKey(session: session)
             let recordedModel = try XCTUnwrap(modelFactory.createdModels[key])
 
+            XCTAssertEqual(entry.runtimeAttemptKey, key)
             XCTAssertTrue(entry.model === recordedModel)
             XCTAssertEqual(entry.presentation.workspaceID, session.target.workspace.id)
             XCTAssertEqual(entry.presentation.sessionName, session.target.workspace.sessionName)
@@ -868,21 +869,19 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.load()
         await harness.model.connect(to: workspace.id)
         let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let key = TerminalRuntimeAttemptKey(session: session)
         let terminalModel = harness.model.terminalScreenModel(for: session)
         await attachAndWaitForRunning(terminalModel)
         harness.model.terminalScreenViewDidMount(
-            workspaceID: workspace.id,
-            instanceID: session.instanceID,
+            runtimeAttemptKey: key,
             component: .hostSurface
         )
         harness.model.terminalScreenViewDidMount(
-            workspaceID: workspace.id,
-            instanceID: session.instanceID,
+            runtimeAttemptKey: key,
             component: .hostSurface
         )
         harness.model.terminalScreenViewDidMount(
-            workspaceID: workspace.id,
-            instanceID: session.instanceID,
+            runtimeAttemptKey: key,
             component: .surfaceTree
         )
 
@@ -893,20 +892,17 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertFalse(terminalModel.surfaceRegistry.materializationContext.isAvailable)
         XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
         harness.model.terminalScreenViewDidDismantle(
-            workspaceID: workspace.id,
-            instanceID: session.instanceID,
+            runtimeAttemptKey: key,
             component: .hostSurface
         )
         XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
         harness.model.terminalScreenViewDidDismantle(
-            workspaceID: workspace.id,
-            instanceID: session.instanceID,
+            runtimeAttemptKey: key,
             component: .surfaceTree
         )
         XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
         harness.model.terminalScreenViewDidDismantle(
-            workspaceID: workspace.id,
-            instanceID: session.instanceID,
+            runtimeAttemptKey: key,
             component: .hostSurface
         )
         XCTAssertFalse(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
@@ -1090,19 +1086,18 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.load()
         await harness.model.connect(to: workspace.id)
         let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let oldKey = TerminalRuntimeAttemptKey(session: oldSession)
         let oldModel = harness.model.terminalScreenModel(for: oldSession)
         oldModel.attach(
             view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
             size: CGSize(width: 120, height: 80)
         )
         harness.model.terminalScreenViewDidMount(
-            workspaceID: workspace.id,
-            instanceID: oldSession.instanceID,
+            runtimeAttemptKey: oldKey,
             component: .hostSurface
         )
         harness.model.terminalScreenViewDidMount(
-            workspaceID: workspace.id,
-            instanceID: oldSession.instanceID,
+            runtimeAttemptKey: oldKey,
             component: .surfaceTree
         )
 
@@ -1114,13 +1109,11 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
         XCTAssertTrue(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)
         harness.model.terminalScreenViewDidDismantle(
-            workspaceID: workspace.id,
-            instanceID: oldSession.instanceID,
+            runtimeAttemptKey: oldKey,
             component: .hostSurface
         )
         harness.model.terminalScreenViewDidDismantle(
-            workspaceID: workspace.id,
-            instanceID: oldSession.instanceID,
+            runtimeAttemptKey: oldKey,
             component: .surfaceTree
         )
         XCTAssertFalse(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)

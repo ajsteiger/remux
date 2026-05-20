@@ -63,12 +63,14 @@ enum GhosttyTerminalScreenViewComponent: Hashable, Sendable {
 struct ActiveTerminalScreenEntry: Identifiable {
     let id: SavedWorkspace.ID
     let instanceID: UUID
+    let runtimeAttemptKey: TerminalRuntimeAttemptKey
     let presentation: GhosttySurfaceScreenPresentation
     let model: GhosttySurfaceScreenModel
 
     init(session: ActiveTerminalSession, model: GhosttySurfaceScreenModel) {
         self.id = session.id
         self.instanceID = session.instanceID
+        self.runtimeAttemptKey = TerminalRuntimeAttemptKey(session: session)
         self.presentation = GhosttySurfaceScreenPresentation(
             workspaceID: session.target.workspace.id,
             sessionName: session.target.workspace.sessionName,
@@ -679,37 +681,30 @@ final class RemuxRootModel: ObservableObject {
     }
 
     func terminalScreenViewDidMount(
-        workspaceID: SavedWorkspace.ID,
-        instanceID: UUID,
+        runtimeAttemptKey: TerminalRuntimeAttemptKey,
         component: GhosttyTerminalScreenViewComponent
     ) {
-        let key = TerminalRuntimeAttemptKey(
-            workspaceID: workspaceID,
-            instanceID: instanceID
-        )
-        mountedTerminalScreenViewComponentCounts[key, default: [:]][component, default: 0] += 1
+        mountedTerminalScreenViewComponentCounts[
+            runtimeAttemptKey,
+            default: [:]
+        ][component, default: 0] += 1
     }
 
     func terminalScreenViewDidDismantle(
-        workspaceID: SavedWorkspace.ID,
-        instanceID: UUID,
+        runtimeAttemptKey: TerminalRuntimeAttemptKey,
         component: GhosttyTerminalScreenViewComponent
     ) {
-        let key = TerminalRuntimeAttemptKey(
-            workspaceID: workspaceID,
-            instanceID: instanceID
-        )
-        decrementMountedTerminalScreenViewComponent(key: key, component: component)
-        guard var retired = retiredTerminalScreenModels[key] else { return }
+        decrementMountedTerminalScreenViewComponent(key: runtimeAttemptKey, component: component)
+        guard var retired = retiredTerminalScreenModels[runtimeAttemptKey] else { return }
 
         retired.recordDismantle(component: component)
         guard retired.isReadyToRelease else {
-            retiredTerminalScreenModels[key] = retired
+            retiredTerminalScreenModels[runtimeAttemptKey] = retired
             return
         }
 
         retired.model.releaseStoppedRuntimeAfterViewDismantle()
-        retiredTerminalScreenModels[key] = nil
+        retiredTerminalScreenModels[runtimeAttemptKey] = nil
     }
 
     private func decrementMountedTerminalScreenViewComponent(
