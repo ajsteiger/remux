@@ -21,6 +21,15 @@ enum GhosttySurfaceSelectionSheet: Identifiable {
             return .panes
         }
     }
+
+    var paneTopLevelIDForTopologyValidation: UUID? {
+        switch self {
+        case .windows(_):
+            nil
+        case .panes(let topLevelID, _):
+            topLevelID
+        }
+    }
 }
 
 enum GhosttySelectionSheetPresentationKind: Equatable, Sendable {

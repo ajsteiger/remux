@@ -768,6 +768,47 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
         )
     }
 
+    func testPaneSelectionSheetTopologyProjectionIgnoresNonPaneSheets() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.paneSelectionSheetTopologyProjection(
+                topLevelID: nil,
+                snapshot: registry.topologySnapshot
+            ),
+            GhosttyPaneSelectionSheetTopologyProjection(
+                topLevelID: nil,
+                shouldDismissPaneSheet: false
+            )
+        )
+    }
+
+    func testPaneSelectionSheetTopologyProjectionTracksFrozenTopLevelValidity() throws {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        let managed = Self.managedSurface()
+
+        registry.registerManagedSurfaceForTesting(managed)
+        let topLevelID = try XCTUnwrap(registry.topologySnapshot.selectedTopLevel?.id)
+
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.paneSelectionSheetTopologyProjection(
+                topLevelID: topLevelID,
+                snapshot: registry.topologySnapshot
+            ),
+            GhosttyPaneSelectionSheetTopologyProjection(
+                topLevelID: topLevelID,
+                shouldDismissPaneSheet: false
+            )
+        )
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.paneSelectionSheetTopologyProjection(
+                topLevelID: UUID(),
+                snapshot: registry.topologySnapshot
+            ).shouldDismissPaneSheet,
+            true
+        )
+    }
+
     func testPaneSelectionRenderProjectionDescribesFrozenTopLevelRows() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let first = Self.managedSurface()

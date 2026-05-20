@@ -254,6 +254,11 @@ struct GhosttyPaneSheetPresentationProjection: Equatable, Sendable {
     let paneCount: Int
 }
 
+struct GhosttyPaneSelectionSheetTopologyProjection: Equatable, Sendable {
+    let topLevelID: UUID?
+    let shouldDismissPaneSheet: Bool
+}
+
 struct GhosttyWindowSelectionSheetRenderProjection: Equatable, Sendable {
     struct Window: Identifiable, Equatable, Sendable {
         let id: UUID
@@ -468,11 +473,22 @@ enum GhosttyTerminalPresentationProjector {
         snapshot.topLevels.count
     }
 
-    static func containsTopLevel(
-        _ topLevelID: UUID,
+    static func paneSelectionSheetTopologyProjection(
+        topLevelID: UUID?,
         snapshot: GhosttyRuntimeSurfaceTopologySnapshot
-    ) -> Bool {
-        snapshot.topLevels.contains(where: { $0.id == topLevelID })
+    ) -> GhosttyPaneSelectionSheetTopologyProjection {
+        guard let topLevelID else {
+            return GhosttyPaneSelectionSheetTopologyProjection(
+                topLevelID: nil,
+                shouldDismissPaneSheet: false
+            )
+        }
+
+        let topLevelExists = snapshot.topLevels.contains { $0.id == topLevelID }
+        return GhosttyPaneSelectionSheetTopologyProjection(
+            topLevelID: topLevelID,
+            shouldDismissPaneSheet: !topLevelExists
+        )
     }
 
     static func windowSelectionSheetRenderProjection(

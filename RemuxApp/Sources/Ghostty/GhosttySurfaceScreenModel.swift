@@ -541,9 +541,18 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
     }
 
-    func containsTopLevel(_ topLevelID: UUID) -> Bool {
-        GhosttyTerminalPresentationProjector.containsTopLevel(
-            topLevelID,
+    func paneSelectionSheetTopologyProjection(
+        topLevelID: UUID?
+    ) -> GhosttyPaneSelectionSheetTopologyProjection {
+        guard let topLevelID else {
+            return GhosttyPaneSelectionSheetTopologyProjection(
+                topLevelID: nil,
+                shouldDismissPaneSheet: false
+            )
+        }
+
+        return GhosttyTerminalPresentationProjector.paneSelectionSheetTopologyProjection(
+            topLevelID: topLevelID,
             snapshot: surfaceRegistry.topologySnapshot
         )
     }

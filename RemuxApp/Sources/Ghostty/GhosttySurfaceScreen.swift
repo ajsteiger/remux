@@ -68,6 +68,9 @@ struct GhosttySurfaceScreen: View {
             let screenProjection = model.terminalScreenPresentationProjection
             let readiness = screenProjection.readiness
             let interactionProjection = screenProjection.interaction
+            let paneSelectionSheetTopologyProjection = model.paneSelectionSheetTopologyProjection(
+                topLevelID: selectionSheet?.paneTopLevelIDForTopologyValidation
+            )
 
             ZStack {
                 presentation.terminalTheme.terminalSurfaceBackground
@@ -327,13 +330,8 @@ struct GhosttySurfaceScreen: View {
                 .presentationCornerRadius(28)
                 .ghosttyTerminalChromePresentation()
             }
-            .onChange(of: model.surfaceRegistryRevision) { _, _ in
-                guard case .panes(let topLevelID, _) = selectionSheet else {
-                    return
-                }
-                guard !model.containsTopLevel(topLevelID) else {
-                    return
-                }
+            .onChange(of: paneSelectionSheetTopologyProjection) { _, projection in
+                guard projection.shouldDismissPaneSheet else { return }
                 dismissSelectionSheet()
             }
             .onChange(of: interactionProjection.selectedActiveLeafID) { _, activeLeafID in

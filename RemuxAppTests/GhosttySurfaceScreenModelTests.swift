@@ -3209,7 +3209,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.paneSheetDetentPaneCount(topLevelID: UUID()), 0)
     }
 
-    func testSheetTopologyHelpersTrackMissingTopLevel() throws {
+    func testPaneSelectionSheetTopologyProjectionTracksMissingTopLevel() throws {
         let model = Self.screenModel(
             target: Self.target(),
             transportFactory: { _ in NoopTmuxControlTransport() },
@@ -3219,12 +3219,25 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
         let topLevelID = try XCTUnwrap(model.surfaceRegistry.topologySnapshot.selectedTopLevel?.id)
 
-        XCTAssertTrue(model.containsTopLevel(topLevelID))
-        XCTAssertFalse(model.containsTopLevel(UUID()))
+        XCTAssertEqual(
+            model.paneSelectionSheetTopologyProjection(topLevelID: nil),
+            GhosttyPaneSelectionSheetTopologyProjection(
+                topLevelID: nil,
+                shouldDismissPaneSheet: false
+            )
+        )
+        XCTAssertEqual(
+            model.paneSelectionSheetTopologyProjection(topLevelID: topLevelID),
+            GhosttyPaneSelectionSheetTopologyProjection(
+                topLevelID: topLevelID,
+                shouldDismissPaneSheet: false
+            )
+        )
+        XCTAssertTrue(model.paneSelectionSheetTopologyProjection(topLevelID: UUID()).shouldDismissPaneSheet)
 
         model.surfaceRegistry.runtimeCloseSurface(id: managed.id, processAlive: false)
 
-        XCTAssertFalse(model.containsTopLevel(topLevelID))
+        XCTAssertTrue(model.paneSelectionSheetTopologyProjection(topLevelID: topLevelID).shouldDismissPaneSheet)
         XCTAssertEqual(model.paneSheetDetentPaneCount(topLevelID: topLevelID), 0)
     }
 
