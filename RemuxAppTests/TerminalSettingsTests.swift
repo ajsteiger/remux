@@ -2,11 +2,8 @@ import XCTest
 @testable import Remux
 
 final class TerminalSettingsTests: XCTestCase {
-    func testDefaultSettingsPinGhosttyRendererColors() {
-        XCTAssertEqual(
-            TerminalSettings.default.ghosttyConfigContents,
-            "background = #282C34\nforeground = #FFFFFF\n"
-        )
+    func testDefaultSettingsProduceNoGhosttyConfig() {
+        XCTAssertNil(TerminalSettings.default.ghosttyConfigContents)
     }
 
     func testSettingsNormalizeExplicitFontSize() {
