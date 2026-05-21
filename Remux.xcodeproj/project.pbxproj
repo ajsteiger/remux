@@ -720,6 +720,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					7125659F6728FEF22F3FDFB5 = {
+						DevelopmentTeam = T37P2TW58H;
+						ProvisioningStyle = Automatic;
+					};
 					AB8207F2544D6BF9946D8F01 = {
 						TestTargetID = 7125659F6728FEF22F3FDFB5;
 					};
@@ -1168,6 +1172,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = T37P2TW58H;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"../ghostty-remux-option-c/macos\"",
@@ -1208,6 +1214,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = T37P2TW58H;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\"../ghostty-remux-option-c/macos\"",
