@@ -66,7 +66,6 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
     private(set) var frozenSize: CGSize?
     private(set) var holdReasons: Set<GhosttyTerminalViewportHoldReason> = []
     private(set) var keyboardTransitionTarget: GhosttyKeyboardViewportTransitionTarget?
-    private(set) var keyboardTransitionAllowsLiveSizeCompletion = false
     private var deferredReleasePolicy: ReleasePolicy?
 
     var latestLiveSize: CGSize {
@@ -179,7 +178,6 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
     mutating func beginKeyboardTransition(
         target: GhosttyKeyboardViewportTransitionTarget?,
         allowsTargetOverride: Bool,
-        allowsLiveSizeCompletion: Bool,
         liveSize: CGSize
     ) -> Bool {
         let wasActive = isKeyboardTransitionActive
@@ -188,15 +186,12 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
         if keyboardTransitionTarget == nil || allowsTargetOverride {
             keyboardTransitionTarget = target
         }
-        keyboardTransitionAllowsLiveSizeCompletion =
-            keyboardTransitionAllowsLiveSizeCompletion || allowsLiveSizeCompletion
 
         return !wasActive
     }
 
     mutating func completeKeyboardTransition(liveSize: CGSize) {
         keyboardTransitionTarget = nil
-        keyboardTransitionAllowsLiveSizeCompletion = false
         removeHold(.keyboardTransition, liveSize: liveSize, releasePolicy: .adoptLatestLive)
     }
 

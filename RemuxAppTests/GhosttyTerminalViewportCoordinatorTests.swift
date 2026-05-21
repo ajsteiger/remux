@@ -76,7 +76,6 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .shown,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: full
         )
         coordinator.setSheetPresented(false, liveSize: full)
@@ -89,7 +88,6 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .shown,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: keyboard
         )
         XCTAssertFalse(coordinator.observeLiveSize(partial).didApplyStableSize)
@@ -118,7 +116,6 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: keyboard
         )
         XCTAssertTrue(coordinator.observeLiveSize(full).didApplyStableSize)
@@ -140,7 +137,6 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .shown,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: full
         )
 
@@ -171,7 +167,6 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: full
         )
 

@@ -93,7 +93,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .shown,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: sheetDismissedSize
         )
         coordinator.setSheetPresented(false, liveSize: sheetDismissedSize)
@@ -121,7 +120,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: stableSize
         )
         XCTAssertTrue(coordinator.observeLiveSize(transientSize).didApplyStableSize)
@@ -142,7 +140,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         coordinator.beginKeyboardTransition(
             target: .hidden,
             allowsTargetOverride: true,
-            allowsLiveSizeCompletion: false,
             liveSize: stableSize
         )
         XCTAssertTrue(coordinator.observeLiveSize(transientSize).didApplyStableSize)

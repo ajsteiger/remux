@@ -29,18 +29,15 @@ extension Optional where Wrapped == GhosttyKeyboardViewportTransitionTarget {
 struct GhosttyKeyboardViewportTransitionRequest: Equatable {
     let target: GhosttyKeyboardViewportTransitionTarget?
     let allowsTargetOverride: Bool
-    let allowsLiveSizeCompletion: Bool
     let fallbackDelay: TimeInterval
 
     init(
         target: GhosttyKeyboardViewportTransitionTarget?,
         allowsTargetOverride: Bool = false,
-        allowsLiveSizeCompletion: Bool = false,
         fallbackDelay: TimeInterval = GhosttyKeyboardViewportTransitionTiming.defaultFallbackDelay
     ) {
         self.target = target
         self.allowsTargetOverride = allowsTargetOverride
-        self.allowsLiveSizeCompletion = allowsLiveSizeCompletion
         self.fallbackDelay = fallbackDelay
     }
 }
@@ -53,7 +50,6 @@ struct GhosttyKeyboardViewportTransitionBeginResult: Equatable {
 
 struct GhosttyKeyboardViewportTransitionCompletionResult: Equatable {
     let target: GhosttyKeyboardViewportTransitionTarget?
-    let previousEffectiveSize: CGSize
 }
 
 struct GhosttyKeyboardVisibilityProjection: Equatable {
@@ -252,7 +248,6 @@ struct GhosttyKeyboardViewportTransitionCoordinator: Equatable {
         let didStart = viewportCoordinator.beginKeyboardTransition(
             target: request.target,
             allowsTargetOverride: request.allowsTargetOverride,
-            allowsLiveSizeCompletion: request.allowsLiveSizeCompletion,
             liveSize: liveSize
         )
         return GhosttyKeyboardViewportTransitionBeginResult(
@@ -271,30 +266,8 @@ struct GhosttyKeyboardViewportTransitionCoordinator: Equatable {
         fallbackGate.invalidate()
         isAwaitingSystemKeyboardPresentation = false
         let target = viewportCoordinator.keyboardTransitionTarget
-        let previousEffectiveSize = viewportCoordinator.effectiveSize(liveSize: liveSize)
         viewportCoordinator.completeKeyboardTransition(liveSize: liveSize)
-        return GhosttyKeyboardViewportTransitionCompletionResult(
-            target: target,
-            previousEffectiveSize: previousEffectiveSize
-        )
-    }
-
-    mutating func completeTransitionFromLiveSize(
-        _ normalizedSize: CGSize,
-        previousSize: CGSize,
-        viewportCoordinator: inout GhosttyTerminalViewportCoordinator
-    ) -> GhosttyKeyboardViewportTransitionCompletionResult? {
-        guard shouldCompleteFromLiveSize(
-            normalizedSize,
-            previousSize: previousSize,
-            viewportCoordinator: viewportCoordinator
-        ) else {
-            return nil
-        }
-        return completeTransition(
-            viewportCoordinator: &viewportCoordinator,
-            liveSize: normalizedSize
-        )
+        return GhosttyKeyboardViewportTransitionCompletionResult(target: target)
     }
 
     mutating func completeTransitionFromFallback(
@@ -308,18 +281,6 @@ struct GhosttyKeyboardViewportTransitionCoordinator: Equatable {
             viewportCoordinator: &viewportCoordinator,
             liveSize: liveSize
         )
-    }
-
-    func shouldCompleteFromLiveSize(
-        _ normalizedSize: CGSize,
-        previousSize: CGSize,
-        viewportCoordinator: GhosttyTerminalViewportCoordinator
-    ) -> Bool {
-        guard viewportCoordinator.isKeyboardTransitionActive else { return false }
-        guard viewportCoordinator.keyboardTransitionAllowsLiveSizeCompletion else { return false }
-        guard normalizedSize != previousSize else { return false }
-        guard normalizedSize.width > 1, normalizedSize.height > 1 else { return false }
-        return true
     }
 }
 
