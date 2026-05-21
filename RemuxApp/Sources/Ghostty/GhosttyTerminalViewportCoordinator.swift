@@ -73,8 +73,12 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
         lastLiveSize
     }
 
+    var isGeometryFrozen: Bool {
+        holdReasons.contains { Self.isGeometryHold($0) }
+    }
+
     var isFrozen: Bool {
-        !holdReasons.isEmpty
+        isGeometryFrozen
     }
 
     var isKeyboardTransitionActive: Bool {
@@ -94,7 +98,7 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
     }
 
     func effectiveSize(liveSize: CGSize) -> CGSize {
-        if let frozenSize {
+        if isGeometryFrozen, let frozenSize {
             return frozenSize
         }
         if Self.isUsable(lastStableSize) {
@@ -110,7 +114,7 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
         let normalizedSize = Self.normalized(size)
         let previousLiveSize = lastLiveSize
         let previousEffectiveSize = effectiveSize(liveSize: previousLiveSize)
-        let wasFrozen = isFrozen
+        let wasFrozen = isGeometryFrozen
         let didChangeLiveSize = lastLiveSize != normalizedSize
         lastLiveSize = normalizedSize
 
@@ -134,10 +138,21 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
             return observation(outcome: .observedWithoutStableUpdate)
         }
 
-        holdReasons.remove(.unsizedInitialLayout)
-        guard !isFrozen else { return observation(outcome: .observedWithoutStableUpdate) }
+        let didReleaseUnsizedInitialLayout = holdReasons.contains(.unsizedInitialLayout)
+        if didReleaseUnsizedInitialLayout {
+            removeHold(
+                .unsizedInitialLayout,
+                liveSize: normalizedSize,
+                releasePolicy: .adoptLatestLive
+            )
+        }
+        guard !isGeometryFrozen else { return observation(outcome: .observedWithoutStableUpdate) }
         guard lastStableSize != normalizedSize else {
-            return observation(outcome: .observedWithoutStableUpdate)
+            return observation(
+                outcome: didReleaseUnsizedInitialLayout
+                    ? .appliedStableSize
+                    : .observedWithoutStableUpdate
+            )
         }
 
         lastStableSize = normalizedSize
@@ -169,7 +184,6 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
     ) -> Bool {
         let wasActive = isKeyboardTransitionActive
         holdReasons.insert(.keyboardTransition)
-        freeze(using: liveSize)
 
         if keyboardTransitionTarget == nil || allowsTargetOverride {
             keyboardTransitionTarget = target
@@ -227,6 +241,15 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
         size.width > 1 && size.height > 1
     }
 
+    private static func isGeometryHold(_ reason: GhosttyTerminalViewportHoldReason) -> Bool {
+        switch reason {
+        case .sheet, .topologyRefocus, .unsizedInitialLayout:
+            return true
+        case .keyboardTransition:
+            return false
+        }
+    }
+
     private mutating func freeze(using liveSize: CGSize) {
         guard frozenSize == nil else { return }
         if Self.isUsable(lastStableSize) {
@@ -246,7 +269,9 @@ struct GhosttyTerminalViewportCoordinator: Equatable {
         releasePolicy: ReleasePolicy
     ) {
         holdReasons.remove(reason)
-        if !holdReasons.isEmpty {
+        guard Self.isGeometryHold(reason) else { return }
+
+        if isGeometryFrozen {
             rememberDeferredReleasePolicy(releasePolicy)
             return
         }

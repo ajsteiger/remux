@@ -379,7 +379,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         XCTAssertTrue(viewport.keyboardTransitionAllowsLiveSizeCompletion)
     }
 
-    func testTransitionCoordinatorCompletionInvalidatesFallbackTokenAndReleasesViewport() throws {
+    func testTransitionCoordinatorCompletionInvalidatesFallbackTokenAfterGeometryUpdate() throws {
         var coordinator = GhosttyKeyboardViewportTransitionCoordinator()
         var viewport = GhosttyTerminalViewportCoordinator()
         let keyboardSize = CGSize(width: 402, height: 452)
@@ -391,7 +391,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
             viewportCoordinator: &viewport,
             liveSize: keyboardSize
         )
-        XCTAssertFalse(viewport.observeLiveSize(fullSize).didApplyStableSize)
+        XCTAssertTrue(viewport.observeLiveSize(fullSize).didApplyStableSize)
 
         let completion = try XCTUnwrap(
             coordinator.completeTransition(
@@ -401,7 +401,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         )
 
         XCTAssertEqual(completion.target, .hidden)
-        XCTAssertEqual(completion.previousEffectiveSize, keyboardSize)
+        XCTAssertEqual(completion.previousEffectiveSize, fullSize)
         XCTAssertFalse(viewport.isKeyboardTransitionActive)
         XCTAssertEqual(viewport.effectiveSize(liveSize: fullSize), fullSize)
     }
@@ -518,7 +518,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
             viewportCoordinator: &viewport,
             liveSize: previousSize
         )
-        XCTAssertFalse(viewport.observeLiveSize(nextSize).didApplyStableSize)
+        XCTAssertTrue(viewport.observeLiveSize(nextSize).didApplyStableSize)
 
         let completion = try XCTUnwrap(
             coordinator.completeTransitionFromLiveSize(
@@ -529,7 +529,7 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
         )
 
         XCTAssertEqual(completion.target, .shown)
-        XCTAssertEqual(completion.previousEffectiveSize, previousSize)
+        XCTAssertEqual(completion.previousEffectiveSize, nextSize)
         XCTAssertFalse(viewport.isKeyboardTransitionActive)
         XCTAssertEqual(viewport.effectiveSize(liveSize: nextSize), nextSize)
     }

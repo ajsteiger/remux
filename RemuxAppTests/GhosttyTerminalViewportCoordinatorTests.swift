@@ -109,7 +109,7 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
     }
 
-    func testGenericKeyboardTransitionAdoptsLatestLiveViewportWithoutTopologyHold() {
+    func testGenericKeyboardTransitionTracksUsableLiveViewportWithoutTopologyHold() {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
@@ -121,14 +121,17 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
             allowsLiveSizeCompletion: false,
             liveSize: keyboard
         )
-        XCTAssertFalse(coordinator.observeLiveSize(full).didApplyStableSize)
+        XCTAssertTrue(coordinator.observeLiveSize(full).didApplyStableSize)
+        XCTAssertTrue(coordinator.isKeyboardTransitionActive)
+        XCTAssertFalse(coordinator.isFrozen)
         coordinator.completeKeyboardTransition(liveSize: full)
 
         XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertFalse(coordinator.isKeyboardTransitionActive)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
     }
 
-    func testSystemKeyboardShowKeepsPreviousViewportUntilPresentationCompletes() {
+    func testSystemKeyboardShowTracksUsableLiveViewportBeforePresentationCompletes() {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let full = CGSize(width: 402, height: 726)
         let keyboard = CGSize(width: 402, height: 452)
@@ -141,17 +144,20 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
             liveSize: full
         )
 
-        XCTAssertFalse(coordinator.observeLiveSize(keyboard).didApplyStableSize)
-        XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), full)
-        XCTAssertEqual(coordinator.lastStableSize, full)
+        XCTAssertTrue(coordinator.observeLiveSize(keyboard).didApplyStableSize)
+        XCTAssertTrue(coordinator.isKeyboardTransitionActive)
+        XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), keyboard)
+        XCTAssertEqual(coordinator.lastStableSize, keyboard)
 
         coordinator.completeKeyboardTransition(liveSize: keyboard)
 
         XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertFalse(coordinator.isKeyboardTransitionActive)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), keyboard)
     }
 
-    func testSheetDismissalDefersReleaseWhileKeyboardTransitionStillHoldsViewport() {
+    func testSheetDismissalReleasesGeometryWhileKeyboardTransitionRemainsActive() {
         var coordinator = GhosttyTerminalViewportCoordinator()
         let keyboard = CGSize(width: 402, height: 452)
         let full = CGSize(width: 402, height: 726)
@@ -173,12 +179,34 @@ final class GhosttyTerminalViewportCoordinatorTests: XCTestCase {
             coordinator.setSheetPresented(false, liveSize: full),
             .release(previousEffectiveSize: keyboard)
         )
-        XCTAssertTrue(coordinator.isFrozen)
-        XCTAssertEqual(coordinator.effectiveSize(liveSize: full), keyboard)
+        XCTAssertTrue(coordinator.isKeyboardTransitionActive)
+        XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
 
         coordinator.completeKeyboardTransition(liveSize: full)
         XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertFalse(coordinator.isKeyboardTransitionActive)
         XCTAssertEqual(coordinator.effectiveSize(liveSize: full), full)
+    }
+
+    func testUsableLiveSizeReleasesUnsizedInitialLayoutFreeze() {
+        var coordinator = GhosttyTerminalViewportCoordinator()
+        let full = CGSize(width: 402, height: 726)
+        let keyboard = CGSize(width: 402, height: 452)
+
+        XCTAssertEqual(coordinator.observeLiveSize(full).outcome, .appliedStableSize)
+        XCTAssertEqual(
+            coordinator.observeLiveSize(CGSize(width: 0, height: 0)).outcome,
+            .observedWithoutStableUpdate
+        )
+        XCTAssertTrue(coordinator.isFrozen)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: CGSize(width: 0, height: 0)), full)
+
+        XCTAssertEqual(coordinator.observeLiveSize(keyboard).outcome, .appliedStableSize)
+        XCTAssertFalse(coordinator.isFrozen)
+        XCTAssertNil(coordinator.frozenSize)
+        XCTAssertEqual(coordinator.lastStableSize, keyboard)
+        XCTAssertEqual(coordinator.effectiveSize(liveSize: keyboard), keyboard)
     }
 
     func testSheetPresentationReportsCurrentEffectiveHoldForReplacement() {

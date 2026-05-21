@@ -1118,10 +1118,7 @@ struct GhosttySurfaceScreen: View {
         GhosttyRuntimeTrace.perf(
             "kbd.transition complete live=\(terminalViewportCoordinator.latestLiveSize.traceLabel) holdReasons=\(terminalViewportCoordinator.holdReasonTraceLabel)"
         )
-        traceViewportFreezeRelease(
-            previousEffectiveSize: completion.previousEffectiveSize,
-            releaseKind: "keyboardTransition"
-        )
+        traceViewportFreezeHoldIfNeeded()
     }
 
     private func keyboardViewportCompletionProjection(
