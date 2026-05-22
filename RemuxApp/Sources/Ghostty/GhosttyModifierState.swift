@@ -3,13 +3,6 @@ import Foundation
 struct GhosttyModifierState: Equatable {
     private(set) var controlArmed = false
 
-    static let supportedControlInputs: [String] = {
-        let letters = (UnicodeScalar("a").value ... UnicodeScalar("z").value)
-            .compactMap(UnicodeScalar.init)
-            .map(String.init)
-        return letters + [" ", "@", "[", "\\", "]", "^", "-", "_"]
-    }()
-
     var isControlArmed: Bool {
         controlArmed
     }

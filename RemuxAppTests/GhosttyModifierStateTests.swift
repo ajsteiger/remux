@@ -46,10 +46,4 @@ final class GhosttyModifierStateTests: XCTestCase {
         XCTAssertFalse(state.isControlArmed)
     }
 
-    func testSupportedControlInputsIncludeTerminalControlCharacters() {
-        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains("a"))
-        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains(" "))
-        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains("["))
-        XCTAssertTrue(GhosttyModifierState.supportedControlInputs.contains("_"))
-    }
 }

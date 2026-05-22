@@ -188,36 +188,6 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         XCTAssertTrue(pastedText.isEmpty)
     }
 
-    func testHardwareCommandMappingResolvesArrowUpToKeyEvent() {
-        XCTAssertEqual(
-            GhosttyTerminalHardwareCommandMapping.resolve(
-                input: UIKeyCommand.inputUpArrow,
-                modifiers: []
-            ),
-            .keyEvent(.init(keyCode: .arrowUp))
-        )
-    }
-
-    func testHardwareCommandMappingResolvesEscapeToKeyEvent() {
-        XCTAssertEqual(
-            GhosttyTerminalHardwareCommandMapping.resolve(
-                input: UIKeyCommand.inputEscape,
-                modifiers: []
-            ),
-            .keyEvent(.init(keyCode: .escape))
-        )
-    }
-
-    func testHardwareCommandMappingResolvesInputDeleteToBackspace() {
-        XCTAssertEqual(
-            GhosttyTerminalHardwareCommandMapping.resolve(
-                input: UIKeyCommand.inputDelete,
-                modifiers: []
-            ),
-            .keyEvent(.init(keyCode: .backspace))
-        )
-    }
-
     func testHardwareCommandMappingResolvesBackspaceHIDUsage() {
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
@@ -262,10 +232,45 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardUpArrow,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .arrowUp))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
                 keyCode: .keyboardRightArrow,
                 modifiers: []
             ),
             .keyEvent(.init(keyCode: .arrowRight))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardHome,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .home))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardEnd,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .end))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardPageUp,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .pageUp))
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
+                keyCode: .keyboardPageDown,
+                modifiers: []
+            ),
+            .keyEvent(.init(keyCode: .pageDown))
         )
     }
 
@@ -357,36 +362,6 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
         )
     }
 
-    func testHardwareCommandMappingResolvesCtrlAToText() {
-        XCTAssertEqual(
-            GhosttyTerminalHardwareCommandMapping.resolve(
-                input: "a",
-                modifiers: .control
-            ),
-            .text("\u{01}")
-        )
-    }
-
-    func testHardwareCommandMappingResolvesCtrlLeftBracketToEscapeText() {
-        XCTAssertEqual(
-            GhosttyTerminalHardwareCommandMapping.resolve(
-                input: "[",
-                modifiers: .control
-            ),
-            .text("\u{1B}")
-        )
-    }
-
-    func testHardwareCommandMappingResolvesCtrlSpaceToNulText() {
-        XCTAssertEqual(
-            GhosttyTerminalHardwareCommandMapping.resolve(
-                input: " ",
-                modifiers: .control
-            ),
-            .text("\u{00}")
-        )
-    }
-
     func testHardwareCommandMappingResolvesCtrlHardwareLetterToText() {
         XCTAssertEqual(
             GhosttyTerminalHardwareCommandMapping.resolveHardwareKey(
@@ -395,6 +370,36 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
                 charactersIgnoringModifiers: "a"
             ),
             .text("\u{01}")
+        )
+    }
+
+    func testHardwarePressResolutionResolvesControlPunctuationToText() {
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardOpenBracket,
+                modifiers: .control,
+                characters: "[",
+                charactersIgnoringModifiers: "["
+            ),
+            .text("\u{1B}")
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardSpacebar,
+                modifiers: .control,
+                characters: " ",
+                charactersIgnoringModifiers: " "
+            ),
+            .text("\u{00}")
+        )
+        XCTAssertEqual(
+            GhosttyTerminalHardwareCommandMapping.resolveHardwarePress(
+                keyCode: .keyboardHyphen,
+                modifiers: .control,
+                characters: "-",
+                charactersIgnoringModifiers: "-"
+            ),
+            .text("\u{1F}")
         )
     }
 
@@ -471,15 +476,6 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
             GhosttyTerminalHardwareCommandMapping.resolveHardwareText(
                 characters: "c",
                 modifiers: .control
-            )
-        )
-    }
-
-    func testHardwareCommandMappingRejectsUnknownBindingWithoutControlModifiers() {
-        XCTAssertNil(
-            GhosttyTerminalHardwareCommandMapping.resolve(
-                input: "x",
-                modifiers: []
             )
         )
     }
