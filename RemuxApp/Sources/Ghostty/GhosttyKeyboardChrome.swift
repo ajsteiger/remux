@@ -31,9 +31,9 @@ enum GhosttyKeyboardChromeMode: Equatable {
 }
 
 enum GhosttyKeyboardChromeSizing {
-    static let dockButtonHeight: CGFloat = 36
-    static let dockButtonWidth: CGFloat = 34
-    static let dockButtonCornerRadius: CGFloat = 14
+    static let dockButtonHeight: CGFloat = 38
+    static let dockButtonWidth: CGFloat = 38
+    static let dockButtonCornerRadius: CGFloat = 17
 
     static func keyboardReplacementHeight(
         keyboardOverlapHeight: CGFloat,
@@ -77,7 +77,7 @@ struct GhosttyKeyboardChrome: View {
     }
 
     private var selectorRow: some View {
-        HStack(spacing: isCompact ? 6 : 8) {
+        HStack(spacing: isCompact ? 8 : 10) {
             terminalKeyControls
             navigationControls
             inputControls
@@ -87,7 +87,7 @@ struct GhosttyKeyboardChrome: View {
 
     private var navigationControls: some View {
         controlGroup {
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 GhosttyKeyboardChromeDockButton(
                     systemName: "house",
                     badge: nil,
@@ -126,7 +126,7 @@ struct GhosttyKeyboardChrome: View {
 
     private var terminalKeyControls: some View {
         controlGroup {
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 accessoryKey(
                     title: "ctrl",
                     accessibilityIdentifier: "terminal.ctrl",
@@ -148,7 +148,7 @@ struct GhosttyKeyboardChrome: View {
 
     private var inputControls: some View {
         controlGroup {
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 GhosttyKeyboardChromeDockButton(
                     systemName: "keyboard",
                     badge: nil,
@@ -157,7 +157,6 @@ struct GhosttyKeyboardChrome: View {
                     accessibilityIdentifier: "terminal.keyboard",
                     isActive: keyboardMode != .hidden,
                     isEnabled: isEnabled,
-                    inactiveBackground: GhosttyPhoneChromePalette.keySurface,
                     action: onToggleKeyboard
                 )
             }
@@ -166,14 +165,9 @@ struct GhosttyKeyboardChrome: View {
 
     private func controlGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(4)
-            .background(GhosttyPhoneChromePalette.groupSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            }
-            .shadow(color: Color.black.opacity(0.14), radius: 8, y: 4)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .ghosttyToolbarGroupSurface()
     }
 
     private func accessoryKey(
@@ -237,7 +231,6 @@ private struct GhosttyKeyboardChromeDockButton: View {
     let accessibilityIdentifier: String
     let isActive: Bool
     let isEnabled: Bool
-    var inactiveBackground = Color.white.opacity(0.065)
     let action: () -> Void
 
     var body: some View {
@@ -255,7 +248,6 @@ private struct GhosttyKeyboardChromeDockButton: View {
         .buttonStyle(GhosttyChromeDockButtonStyle(
             isActive: isActive,
             isEnabled: isEnabled,
-            inactiveBackground: inactiveBackground,
             width: GhosttyKeyboardChromeSizing.dockButtonWidth,
             height: GhosttyKeyboardChromeSizing.dockButtonHeight
         ))
@@ -270,21 +262,15 @@ private struct GhosttyKeyboardChromeDockButton: View {
             .font(.system(size: 9.5, weight: .bold).monospacedDigit())
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .foregroundStyle(isActive ? Color.black.opacity(0.78) : GhosttyPhoneChromePalette.accent)
+            .foregroundStyle(GhosttyPhoneChromePalette.accent)
             .frame(minWidth: 14, minHeight: 14)
             .padding(.horizontal, 3)
-            .background(
-                (isActive ? Color.black.opacity(0.12) : GhosttyPhoneChromePalette.dock.opacity(0.92)),
-                in: Capsule()
-            )
+            .background(Color.black.opacity(0.46), in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(
-                        isActive ? Color.black.opacity(0.14) : GhosttyPhoneChromePalette.accent.opacity(0.34),
-                        lineWidth: 1
-                    )
+                    .stroke(GhosttyPhoneChromePalette.accent.opacity(0.24), lineWidth: 1)
             }
-            .shadow(color: Color.black.opacity(0.18), radius: 2, y: 1)
+            .shadow(color: Color.black.opacity(0.20), radius: 2, y: 1)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .padding(.top, 3)
             .padding(.trailing, 4)
@@ -310,23 +296,12 @@ private struct GhosttyKeyboardKeyButton: View {
             .font(.system(size: fontSize, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.88))
+            .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.88))
             .frame(width: width, height: height)
-            .background(keyBackground)
-            .overlay {
-                if isActive, isPressed, isEnabled {
-                    RoundedRectangle(
-                        cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
-                        style: .continuous
-                    )
-                    .fill(GhosttyPhoneChromePalette.keySurfaceActivePressedOverlay)
-                }
-            }
-            .clipShape(
-                RoundedRectangle(
-                    cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
-                    style: .continuous
-                )
+            .ghosttyToolbarButtonSurface(
+                isActive: isActive,
+                isPressed: isPressed,
+                isEnabled: isEnabled
             )
             .scaleEffect(isPressed && isEnabled ? 0.96 : 1)
             .opacity(isEnabled ? 1 : 0.42)
@@ -366,12 +341,6 @@ private struct GhosttyKeyboardKeyButton: View {
                 }
             )
     }
-
-    private var keyBackground: Color {
-        if isActive { return GhosttyPhoneChromePalette.accent }
-        if isPressed, isEnabled { return GhosttyPhoneChromePalette.keySurfacePressed }
-        return GhosttyPhoneChromePalette.keySurface
-    }
 }
 
 /// Shared press primitive for dock buttons. Owns the press scale,
@@ -399,7 +368,6 @@ private struct GhosttyChromePressBody<Content: View>: View {
 private struct GhosttyChromeDockButtonStyle: ButtonStyle {
     let isActive: Bool
     let isEnabled: Bool
-    let inactiveBackground: Color
     let width: CGFloat
     let height: CGFloat
 
@@ -410,36 +378,63 @@ private struct GhosttyChromeDockButtonStyle: ButtonStyle {
             onPressDown: { Haptic.chromeControlPress() }
         ) {
             configuration.label
-                .foregroundStyle(isActive ? Color.black : Color.white.opacity(0.86))
+                .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.86))
                 .frame(width: width, height: height)
-                .background(isActive ? GhosttyPhoneChromePalette.accent : inactiveBackground)
-                .overlay {
-                    if configuration.isPressed, isEnabled {
-                        RoundedRectangle(
-                            cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
-                            style: .continuous
-                        )
-                        .fill(
-                            isActive
-                                ? GhosttyPhoneChromePalette.keySurfaceActivePressedOverlay
-                                : GhosttyPhoneChromePalette.chromeControlPressedOverlay
-                        )
-                    }
-                }
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
-                        style: .continuous
-                    )
+                .ghosttyToolbarButtonSurface(
+                    isActive: isActive,
+                    isPressed: configuration.isPressed,
+                    isEnabled: isEnabled
+                )
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func ghosttyToolbarGroupSurface() -> some View {
+        if #available(iOS 26.0, *) {
+            self
+                .background(Color.black.opacity(0.34), in: Capsule())
+                .glassEffect(
+                    .regular
+                        .tint(Color.black.opacity(0.28))
+                        .interactive(),
+                    in: Capsule()
                 )
                 .overlay {
-                    RoundedRectangle(
-                        cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
-                        style: .continuous
-                    )
-                    .stroke(Color.white.opacity(isActive ? 0 : 0.08), lineWidth: 1)
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
                 }
+                .shadow(color: Color.black.opacity(0.22), radius: 10, y: 5)
+        } else {
+            self
+                .background(GhosttyPhoneChromePalette.groupSurface.opacity(0.92), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                }
+                .shadow(color: Color.black.opacity(0.18), radius: 8, y: 4)
         }
+    }
+
+    func ghosttyToolbarButtonSurface(
+        isActive: Bool,
+        isPressed: Bool,
+        isEnabled: Bool
+    ) -> some View {
+        let shape = RoundedRectangle(
+            cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
+            style: .continuous
+        )
+        let activeFill = Color.white.opacity(isActive ? 0.06 : 0)
+        let pressedFill = Color.white.opacity(isPressed && isEnabled ? 0.10 : 0)
+
+        return self
+            .background(activeFill, in: shape)
+            .overlay {
+                shape.fill(pressedFill)
+            }
+            .contentShape(shape)
     }
 }
 
