@@ -269,17 +269,19 @@ private struct GhosttyKeyboardChromeDockButton: View {
     }
 
     private func dockBadge(_ value: String) -> some View {
-        Text(value)
-            .font(.system(size: 8.5, weight: .semibold).monospacedDigit())
+        let horizontalPadding: CGFloat = value.count > 1 ? 3 : 0
+
+        return Text(value)
+            .font(.system(size: 8, weight: .semibold).monospacedDigit())
             .lineLimit(1)
             .minimumScaleFactor(0.75)
-            .foregroundStyle(Color.black.opacity(0.76))
-            .frame(minWidth: 13, minHeight: 13)
-            .padding(.horizontal, 2.5)
-            .background(GhosttyPhoneChromePalette.accent.opacity(0.92), in: Capsule())
+            .foregroundStyle(Color.black.opacity(0.72))
+            .frame(minWidth: 12.5, minHeight: 12.5)
+            .padding(.horizontal, horizontalPadding)
+            .background(GhosttyPhoneChromePalette.accent.opacity(0.88), in: Capsule())
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .padding(.top, 2.5)
-            .padding(.trailing, 2.5)
+            .padding(.top, 4)
+            .padding(.trailing, 4)
     }
 }
 
