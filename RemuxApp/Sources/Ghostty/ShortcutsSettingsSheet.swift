@@ -14,9 +14,10 @@ private enum ShortcutEditorPalette {
     static let sectionFill = Color.white.opacity(0.055)
     static let sectionStroke = Color.white.opacity(0.075)
     static let separator = Color.white.opacity(0.065)
-    static let modeRailFill = Color.white.opacity(0.035)
-    static let modeRailStroke = Color.white.opacity(0.055)
-    static let modeSelectedFill = Color.white.opacity(0.085)
+    static let controlAccent = GhosttyPhoneChromePalette.accent
+    static let modeRailFill = Color.white.opacity(0.028)
+    static let modeRailStroke = Color.white.opacity(0.045)
+    static let modeSelectedFill = Color.white.opacity(0.072)
     static let sectionCornerRadius: CGFloat = 22
 }
 
@@ -932,6 +933,7 @@ private struct ShortcutEditorTextFieldRow: View {
         TextField(title, text: text, axis: axis)
             .font(.system(size: 17, weight: .regular))
             .foregroundStyle(GhosttySheetPalette.primary)
+            .tint(ShortcutEditorPalette.controlAccent)
             .textFieldStyle(.plain)
             .padding(.horizontal, 18)
             .frame(minHeight: 56, alignment: .center)
@@ -1006,6 +1008,7 @@ private struct ShortcutEditorToggleRow: View {
         Toggle(title, isOn: isOn)
             .font(.system(size: 17, weight: .regular))
             .foregroundStyle(GhosttySheetPalette.primary)
+            .tint(ShortcutEditorPalette.controlAccent)
             .padding(.horizontal, 18)
             .frame(minHeight: 56, alignment: .center)
     }
