@@ -105,7 +105,10 @@ struct ShortcutsSettingsSheet: View {
             ShortcutCollectionEditorSheet(request: request) { collection in
                 store.update { $0.upsertCollection(collection) }
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.regularMaterial)
+            .presentationCornerRadius(28)
             .ghosttyTerminalChromePresentation()
         }
         .sheet(item: $editorRequest) { request in
@@ -118,6 +121,9 @@ struct ShortcutsSettingsSheet: View {
                 }
             }
             .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(.regularMaterial)
+            .presentationCornerRadius(28)
             .ghosttyTerminalChromePresentation()
         }
         .confirmationDialog(
@@ -472,84 +478,72 @@ struct ShortcutCollectionEditorSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Collection") {
-                    TextField("Name", text: $title)
-                }
-
-                Section {
-                    HStack(spacing: 14) {
-                        ShortcutCollectionIconView(icon: resolvedIcon)
-                            .foregroundStyle(.primary)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                ShortcutsSettingsSheetPalette.iconSurface,
-                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            )
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(resolvedIcon.displayTitle)
-                                .font(.body.weight(.semibold))
-                            Text(iconDetailText)
-                                .font(.footnote)
-                                .foregroundStyle(isResolvedIconValid ? Color.secondary : Color.red)
-                        }
-
-                        Spacer(minLength: 0)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    ShortcutEditorSection("Collection") {
+                        ShortcutEditorTextFieldRow("Name", text: $title)
                     }
 
-                    TextField("iOS icon name", text: $symbolName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(ShortcutCollectionIcon.suggestedIcons) { icon in
-                                Button {
-                                    selectIcon(icon)
-                                } label: {
-                                    ShortcutCollectionIconView(icon: icon)
-                                        .foregroundStyle(
-                                            isIconSelected(icon) ? ShortcutsSettingsSheetPalette.accent : .primary
-                                        )
-                                        .frame(width: 34, height: 34)
-                                        .background(
-                                            isIconSelected(icon)
-                                                ? ShortcutsSettingsSheetPalette.accentSurface
-                                                : ShortcutsSettingsSheetPalette.iconSurface,
-                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(icon.displayTitle)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                } header: {
-                    Text("Icon")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Enter an SF Symbol name, like terminal or server.rack, or tap a suggestion. Names are checked on this device as you type.")
+                    ShortcutEditorSection("Icon") {
+                        ShortcutCollectionEditorIconSummaryRow(
+                            icon: resolvedIcon,
+                            detailText: iconDetailText,
+                            isValid: isResolvedIconValid
+                        )
+                        ShortcutEditorDivider()
+                        ShortcutEditorTextFieldRow("SF Symbol", text: $symbolName)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        ShortcutEditorDivider()
+                        iconSuggestions
                     }
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
+                .padding(.bottom, 28)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .background(ShortcutsSettingsSheetPalette.background.ignoresSafeArea())
             .navigationTitle(request.collection == nil ? "New Collection" : "Edit Collection")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Text("Cancel")
+                            .foregroundStyle(GhosttySheetPalette.primary)
                     }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button {
                         save()
+                    } label: {
+                        Text("Save")
+                            .foregroundStyle(canSave ? GhosttySheetPalette.primary : GhosttySheetPalette.tertiary)
                     }
                     .disabled(!canSave)
                 }
             }
+        }
+    }
+
+    private var iconSuggestions: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ShortcutCollectionIcon.suggestedIcons) { icon in
+                    ShortcutCollectionIconSuggestionButton(
+                        icon: icon,
+                        isSelected: isIconSelected(icon),
+                        action: {
+                            selectIcon(icon)
+                        }
+                    )
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
         }
     }
 
@@ -608,6 +602,70 @@ struct ShortcutCollectionEditorSheet: View {
         )
         onSave(collection)
         dismiss()
+    }
+}
+
+private struct ShortcutCollectionEditorIconSummaryRow: View {
+    let icon: ShortcutCollectionIcon
+    let detailText: String
+    let isValid: Bool
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ShortcutCollectionIconView(icon: icon)
+                .foregroundStyle(GhosttySheetPalette.primary)
+                .frame(width: 44, height: 44)
+                .background(
+                    ShortcutsSettingsSheetPalette.iconSurface,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(icon.displayTitle)
+                    .font(GhosttyShortcutTypography.collectionTitle)
+                    .foregroundStyle(GhosttySheetPalette.primary)
+                    .lineLimit(1)
+
+                Text(detailText)
+                    .font(GhosttyShortcutTypography.secondaryText)
+                    .foregroundStyle(isValid ? GhosttySheetPalette.secondary : Color(uiColor: .systemRed))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .frame(minHeight: 62, alignment: .center)
+    }
+}
+
+private struct ShortcutCollectionIconSuggestionButton: View {
+    let icon: ShortcutCollectionIcon
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptic.selection()
+            action()
+        } label: {
+            ShortcutCollectionIconView(icon: icon)
+                .foregroundStyle(isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.secondary)
+                .frame(width: 32, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(ShortcutCollectionIconSuggestionButtonStyle())
+        .accessibilityLabel(icon.displayTitle)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct ShortcutCollectionIconSuggestionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
