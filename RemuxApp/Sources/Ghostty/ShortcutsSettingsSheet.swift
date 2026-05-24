@@ -207,7 +207,6 @@ private struct ShortcutCollectionDetailView: View {
                 ForEach(store.snapshot.shortcuts(in: collectionID)) { shortcut in
                     ShortcutSettingsEditableRow(
                         shortcut: shortcut,
-                        collectionTitle: store.snapshot.collectionTitle(shortcut.collection),
                         isFavorite: store.snapshot.isFavorite(shortcut.id),
                         editShortcut: {
                             editShortcut(shortcut)
@@ -248,8 +247,20 @@ private struct ShortcutCollectionDetailView: View {
                     Button {
                         restoreStarters()
                     } label: {
-                        Label("Restore Default Shortcuts", systemImage: "arrow.counterclockwise")
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 19, weight: .medium))
+                                .frame(width: 24, height: 24)
+
+                            Text("Restore Default Shortcuts")
+                                .font(GhosttyShortcutTypography.rowText)
+
+                            Spacer(minLength: 0)
+                        }
+                        .foregroundStyle(GhosttySheetPalette.primary)
+                        .padding(.vertical, 4)
                     }
+                    .buttonStyle(.plain)
                     .shortcutSettingsListRowSurface()
                 }
             }
@@ -296,7 +307,6 @@ private struct ShortcutSettingsEditableRow: View {
     @Environment(\.editMode) private var editMode
 
     let shortcut: Shortcut
-    let collectionTitle: String
     let isFavorite: Bool
     let editShortcut: () -> Void
     let toggleFavorite: () -> Void
@@ -306,7 +316,6 @@ private struct ShortcutSettingsEditableRow: View {
     var body: some View {
         ShortcutSettingsRow(
             shortcut: shortcut,
-            collectionTitle: collectionTitle,
             isFavorite: isFavorite
         )
         .contentShape(Rectangle())
@@ -350,7 +359,6 @@ private struct ShortcutSettingsEditableRow: View {
 
 private struct ShortcutSettingsRow: View {
     let shortcut: Shortcut
-    let collectionTitle: String
     let isFavorite: Bool
 
     var body: some View {
@@ -360,21 +368,15 @@ private struct ShortcutSettingsRow: View {
                 .foregroundStyle(shortcut.isHidden ? GhosttySheetPalette.secondary : GhosttySheetPalette.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
-                .frame(minWidth: 72, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 3) {
-                if let hint = shortcut.hint, !hint.isEmpty {
-                    Text(hint)
-                        .font(GhosttyShortcutTypography.secondaryText)
-                        .foregroundStyle(GhosttySheetPalette.secondary)
-                } else {
-                    Text(collectionTitle)
-                        .font(GhosttyShortcutTypography.secondaryText)
-                        .foregroundStyle(GhosttySheetPalette.secondary)
-                }
+            if let hint = shortcut.hint, !hint.isEmpty {
+                Text(hint)
+                    .font(GhosttyShortcutTypography.secondaryText)
+                    .foregroundStyle(GhosttySheetPalette.secondary)
+                    .lineLimit(1)
             }
 
-            Spacer()
+            Spacer(minLength: 12)
 
             if isFavorite {
                 Image(systemName: "star.fill")
