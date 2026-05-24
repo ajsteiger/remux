@@ -5,22 +5,22 @@ import UIKit
 
 private enum ShortcutsSettingsSheetPalette {
     static let background = GhosttyPhoneChromePalette.dock
-    static let listRowFill = Color.white.opacity(0.055)
-    static let listSeparator = Color.white.opacity(0.065)
+    static let listRowFill = GhosttyShortcutSurfacePalette.contentFill
+    static let listSeparator = GhosttyShortcutSurfacePalette.separator
     static let iconSurface = GhosttyPhoneChromePalette.keySurface.opacity(0.72)
     static let accent = GhosttyPhoneChromePalette.accent
     static let accentSurface = GhosttyPhoneChromePalette.accent.opacity(0.14)
 }
 
 private enum ShortcutEditorPalette {
-    static let sectionFill = Color.white.opacity(0.055)
-    static let sectionStroke = Color.white.opacity(0.075)
-    static let separator = Color.white.opacity(0.065)
+    static let sectionFill = GhosttyShortcutSurfacePalette.contentFill
+    static let sectionStroke = GhosttyShortcutSurfacePalette.contentStroke
+    static let separator = GhosttyShortcutSurfacePalette.separator
     static let controlAccent = GhosttyPhoneChromePalette.accent
     static let modeRailFill = Color.white.opacity(0.028)
     static let modeRailStroke = Color.white.opacity(0.045)
-    static let modeSelectedFill = Color.white.opacity(0.072)
-    static let sectionCornerRadius: CGFloat = 22
+    static let modeSelectedFill = GhosttyShortcutSurfacePalette.embeddedSelectedFill
+    static let sectionCornerRadius = GhosttyShortcutSurfacePalette.cornerRadiusLarge
 }
 
 struct ShortcutsSettingsSheet: View {

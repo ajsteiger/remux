@@ -357,9 +357,9 @@ private enum ShortcutPaletteStyle {
     static let fallbackControlStroke = Color.white.opacity(0.10)
     static let fallbackShadow = Color.black.opacity(0.24)
     static let panelGlassTint = GhosttyPhoneChromePalette.groupSurface.opacity(0.68)
-    static let embeddedFill = Color.white.opacity(0.045)
-    static let embeddedPressedFill = Color.white.opacity(0.085)
-    static let embeddedStroke = Color.white.opacity(0.075)
+    static let embeddedFill = GhosttyShortcutSurfacePalette.embeddedFill
+    static let embeddedPressedFill = GhosttyShortcutSurfacePalette.embeddedPressedFill
+    static let embeddedStroke = GhosttyShortcutSurfacePalette.contentStroke
 }
 
 private extension View {
