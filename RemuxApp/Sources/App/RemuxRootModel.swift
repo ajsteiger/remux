@@ -658,6 +658,11 @@ final class RemuxRootModel: ObservableObject {
             var updated = terminalSettings
             mutation(&updated)
             terminalSettings = updated
+            RemuxActiveSessionCollection.refreshTerminalSettings(updated, in: &activeSessions)
+            for session in activeSessions {
+                try terminalScreenModels[TerminalRuntimeAttemptKey(session: session)]?
+                    .applyTerminalSettings(updated)
+            }
             try await dependencies.settingsRepository.saveSettings(updated)
         } catch {
             transitionToFailed(error)

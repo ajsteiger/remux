@@ -151,4 +151,19 @@ enum RemuxActiveSessionCollection {
             terminalSettings: target.terminalSettings
         )
     }
+
+    static func refreshTerminalSettings(
+        _ settings: TerminalSettings,
+        in activeSessions: inout [ActiveTerminalSession]
+    ) {
+        for index in activeSessions.indices {
+            let target = activeSessions[index].target
+            activeSessions[index].target = TmuxConnectionTarget(
+                server: target.server,
+                workspace: target.workspace,
+                password: target.password,
+                terminalSettings: settings
+            )
+        }
+    }
 }
