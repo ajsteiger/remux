@@ -706,8 +706,10 @@ struct ShortcutEditorSheet: View {
                         actionFields
                     }
 
-                    ShortcutEditorSection("Preview") {
-                        ShortcutEditorPreviewRow(text: previewText)
+                    if hasPreview {
+                        ShortcutEditorSection("Preview") {
+                            ShortcutEditorPreviewRow(text: previewText)
+                        }
                     }
                 }
                 .padding(.horizontal, 18)
@@ -796,6 +798,10 @@ struct ShortcutEditorSheet: View {
 
     private var canSave: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && sequence != nil
+    }
+
+    private var hasPreview: Bool {
+        sequence != nil
     }
 
     private var sequence: ShortcutSequence? {
