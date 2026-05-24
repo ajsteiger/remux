@@ -262,10 +262,12 @@ private struct ShortcutCollectionDetailView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 EditButton()
+                    .tint(GhosttySheetPalette.primary)
 
                 Button(action: addShortcut) {
                     Image(systemName: "plus")
                 }
+                .tint(GhosttySheetPalette.primary)
                 .accessibilityLabel("Add Shortcut")
 
                 Menu {
@@ -275,6 +277,7 @@ private struct ShortcutCollectionDetailView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .tint(GhosttySheetPalette.primary)
                 .accessibilityLabel("Collection Actions")
             }
         }
