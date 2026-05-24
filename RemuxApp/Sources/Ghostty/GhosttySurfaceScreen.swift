@@ -306,7 +306,7 @@ struct GhosttySurfaceScreen: View {
                     .presentationDetents(selectionSheetDetents(for: sheet))
                     .presentationContentInteraction(.scrolls)
                     .presentationDragIndicator(.visible)
-                    .presentationBackground(.regularMaterial)
+                    .ghosttySelectionSheetPresentationBackground()
                     .ghosttyTerminalChromePresentation()
             }
             .sheet(isPresented: $isShortcutsSettingsPresented) {
@@ -1680,6 +1680,17 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 private extension TerminalTheme {
     var terminalSurfaceBackground: Color {
         Color(uiColor: terminalBackgroundUIColor)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func ghosttySelectionSheetPresentationBackground() -> some View {
+        if #available(iOS 26.0, *) {
+            self
+        } else {
+            self.presentationBackground(.regularMaterial)
+        }
     }
 }
 
