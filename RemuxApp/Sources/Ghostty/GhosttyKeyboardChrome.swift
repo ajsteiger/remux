@@ -76,7 +76,18 @@ struct GhosttyKeyboardChrome: View {
             }
     }
 
+    @ViewBuilder
     private var selectorRow: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: isCompact ? 8 : 10) {
+                selectorRowContent
+            }
+        } else {
+            selectorRowContent
+        }
+    }
+
+    private var selectorRowContent: some View {
         HStack(spacing: isCompact ? 8 : 10) {
             terminalKeyControls
             navigationControls
@@ -165,8 +176,8 @@ struct GhosttyKeyboardChrome: View {
 
     private func controlGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 4)
             .ghosttyToolbarGroupSurface()
     }
 
@@ -394,18 +405,7 @@ private extension View {
     func ghosttyToolbarGroupSurface() -> some View {
         if #available(iOS 26.0, *) {
             self
-                .background(Color.black.opacity(0.34), in: Capsule())
-                .glassEffect(
-                    .regular
-                        .tint(Color.black.opacity(0.28))
-                        .interactive(),
-                    in: Capsule()
-                )
-                .overlay {
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-                }
-                .shadow(color: Color.black.opacity(0.22), radius: 10, y: 5)
+                .glassEffect(.clear.interactive(), in: Capsule())
         } else {
             self
                 .background(GhosttyPhoneChromePalette.groupSurface.opacity(0.92), in: Capsule())
@@ -417,6 +417,7 @@ private extension View {
         }
     }
 
+    @ViewBuilder
     func ghosttyToolbarButtonSurface(
         isActive: Bool,
         isPressed: Bool,
@@ -426,15 +427,24 @@ private extension View {
             cornerRadius: GhosttyKeyboardChromeSizing.dockButtonCornerRadius,
             style: .continuous
         )
-        let activeFill = Color.white.opacity(isActive ? 0.06 : 0)
-        let pressedFill = Color.white.opacity(isPressed && isEnabled ? 0.10 : 0)
 
-        return self
-            .background(activeFill, in: shape)
-            .overlay {
-                shape.fill(pressedFill)
-            }
-            .contentShape(shape)
+        if #available(iOS 26.0, *) {
+            self
+                .overlay {
+                    shape.fill(Color.white.opacity(isPressed && isEnabled ? 0.08 : 0))
+                }
+                .contentShape(shape)
+        } else {
+            let activeFill = Color.white.opacity(isActive ? 0.06 : 0)
+            let pressedFill = Color.white.opacity(isPressed && isEnabled ? 0.10 : 0)
+
+            self
+                .background(activeFill, in: shape)
+                .overlay {
+                    shape.fill(pressedFill)
+                }
+                .contentShape(shape)
+        }
     }
 }
 
