@@ -77,7 +77,7 @@ struct GhosttySelectionSheetPresentationState: Equatable {
     }
 }
 
-private enum GhosttySheetPalette {
+enum GhosttySheetPalette {
     static let row = Color.white.opacity(0.075)
     static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.10)
     static let stroke = Color.white.opacity(0.10)

@@ -690,69 +690,112 @@ struct ShortcutEditorSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Display") {
-                    TextField("Tile", text: $title)
-                    TextField("Hint", text: $hint)
-                    Picker("Collection", selection: $collection) {
-                        ForEach(request.collections) { collection in
-                            Text(collection.title).tag(collection.id)
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    ShortcutEditorSection("Display") {
+                        ShortcutEditorTextFieldRow("Title", text: $title)
+                        ShortcutEditorDivider()
+                        ShortcutEditorTextFieldRow("Hint", text: $hint)
+                        ShortcutEditorDivider()
+                        collectionRow
+                    }
+
+                    ShortcutEditorSection("Action") {
+                        modePicker
+                        ShortcutEditorDivider()
+                        actionFields
+                    }
+
+                    ShortcutEditorSection("Preview") {
+                        ShortcutEditorPreviewRow(text: previewText)
                     }
                 }
-
-                Section("Action") {
-                    Picker("Type", selection: $mode) {
-                        ForEach(ShortcutEditorMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    switch mode {
-                    case .text:
-                        TextField("Text", text: $textValue, axis: .vertical)
-                            .lineLimit(1 ... 4)
-                        Toggle("Auto-send Enter", isOn: $submitText)
-
-                    case .control:
-                        TextField("Control key", text: $controlValue)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-
-                    case .key:
-                        Picker("Key", selection: $keyValue) {
-                            ForEach(ShortcutKey.allCases) { key in
-                                Text(key.displayTitle).tag(key)
-                            }
-                        }
-                        Toggle("Ctrl", isOn: modifierBinding(.control))
-                        Toggle("Opt", isOn: modifierBinding(.option))
-                        Toggle("Shift", isOn: modifierBinding(.shift))
-                    }
-                }
-
-                Section("Preview") {
-                    Text(previewText)
-                        .font(.system(.body, design: .monospaced))
-                }
+                .padding(.horizontal, 18)
+                .padding(.top, 18)
+                .padding(.bottom, 28)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .background(ShortcutsSettingsSheetPalette.background.ignoresSafeArea())
             .navigationTitle(request.shortcut == nil ? "New Shortcut" : "Edit Shortcut")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Text("Cancel")
+                            .foregroundStyle(GhosttySheetPalette.primary)
                     }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button {
                         save()
+                    } label: {
+                        Text("Save")
+                            .foregroundStyle(canSave ? GhosttySheetPalette.primary : GhosttySheetPalette.tertiary)
                     }
                     .disabled(!canSave)
                 }
             }
+        }
+    }
+
+    private var collectionRow: some View {
+        ShortcutEditorValueRow(title: "Collection") {
+            Picker("Collection", selection: $collection) {
+                ForEach(request.collections) { collection in
+                    Text(collection.title).tag(collection.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(GhosttySheetPalette.secondary)
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("Type", selection: $mode) {
+            ForEach(ShortcutEditorMode.allCases) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var actionFields: some View {
+        switch mode {
+        case .text:
+            ShortcutEditorTextFieldRow("Text", text: $textValue, axis: .vertical)
+                .lineLimit(1 ... 4)
+            ShortcutEditorDivider()
+            ShortcutEditorToggleRow("Auto-send Enter", isOn: $submitText)
+
+        case .control:
+            ShortcutEditorTextFieldRow("Control key", text: $controlValue)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+        case .key:
+            ShortcutEditorValueRow(title: "Key") {
+                Picker("Key", selection: $keyValue) {
+                    ForEach(ShortcutKey.allCases) { key in
+                        Text(key.displayTitle).tag(key)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .tint(GhosttySheetPalette.secondary)
+            }
+            ShortcutEditorDivider()
+            ShortcutEditorToggleRow("Ctrl", isOn: modifierBinding(.control))
+            ShortcutEditorDivider()
+            ShortcutEditorToggleRow("Opt", isOn: modifierBinding(.option))
+            ShortcutEditorDivider()
+            ShortcutEditorToggleRow("Shift", isOn: modifierBinding(.shift))
         }
     }
 
@@ -831,6 +874,122 @@ struct ShortcutEditorSheet: View {
                 }
             }
         )
+    }
+}
+
+private struct ShortcutEditorSection<Content: View>: View {
+    private let title: String
+    private let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(GhosttySheetPalette.secondary)
+                .padding(.horizontal, 18)
+
+            VStack(spacing: 0) {
+                content
+            }
+            .background(GhosttySheetPalette.row)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
+            }
+        }
+    }
+}
+
+private struct ShortcutEditorTextFieldRow: View {
+    private let title: String
+    private let text: Binding<String>
+    private let axis: Axis
+
+    init(_ title: String, text: Binding<String>, axis: Axis = .horizontal) {
+        self.title = title
+        self.text = text
+        self.axis = axis
+    }
+
+    var body: some View {
+        TextField(title, text: text, axis: axis)
+            .font(.system(size: 17, weight: .regular))
+            .foregroundStyle(GhosttySheetPalette.primary)
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 18)
+            .frame(minHeight: 56, alignment: .center)
+    }
+}
+
+private struct ShortcutEditorValueRow<Accessory: View>: View {
+    let title: String
+    let accessory: Accessory
+
+    init(title: String, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .foregroundStyle(GhosttySheetPalette.primary)
+
+            Spacer(minLength: 12)
+
+            accessory
+                .foregroundStyle(GhosttySheetPalette.secondary)
+        }
+        .font(.system(size: 17, weight: .regular))
+        .padding(.horizontal, 18)
+        .frame(minHeight: 56, alignment: .center)
+    }
+}
+
+private struct ShortcutEditorToggleRow: View {
+    let title: String
+    let isOn: Binding<Bool>
+
+    init(_ title: String, isOn: Binding<Bool>) {
+        self.title = title
+        self.isOn = isOn
+    }
+
+    var body: some View {
+        Toggle(title, isOn: isOn)
+            .font(.system(size: 17, weight: .regular))
+            .foregroundStyle(GhosttySheetPalette.primary)
+            .padding(.horizontal, 18)
+            .frame(minHeight: 56, alignment: .center)
+    }
+}
+
+private struct ShortcutEditorPreviewRow: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 17, weight: .semibold, design: .monospaced))
+            .foregroundStyle(GhosttySheetPalette.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+    }
+}
+
+private struct ShortcutEditorDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(GhosttySheetPalette.stroke)
+            .frame(height: 1)
+            .padding(.horizontal, 18)
     }
 }
 
