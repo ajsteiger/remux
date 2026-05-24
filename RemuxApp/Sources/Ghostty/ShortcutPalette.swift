@@ -84,7 +84,7 @@ struct ShortcutPalette: View {
                 onOpenSettings()
             } label: {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 15.5, weight: .semibold))
+                    .font(GhosttyShortcutTypography.chromeIcon)
                     .frame(width: 42, height: 42)
                     .shortcutPaletteCircleSurface(isPressed: false)
             }
@@ -203,7 +203,7 @@ private struct AddShortcutTile: View {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .semibold))
                 Text(isEmpty ? "Add Shortcut" : "Add")
-                    .font(.system(size: isEmpty ? 14 : 12.5, weight: .semibold))
+                    .font(GhosttyShortcutTypography.addShortcutTileTitle(isEmpty: isEmpty))
             }
             .frame(height: ShortcutPaletteLayout.shortcutTileHeight)
             .frame(maxWidth: .infinity)
@@ -248,7 +248,7 @@ private struct EmptyFavoritesView: View {
 
             Button(action: addShortcut) {
                 Label("Add Shortcut", systemImage: "plus")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(GhosttyShortcutTypography.compactControl)
                     .labelStyle(.titleAndIcon)
                     .frame(width: 176, height: 46)
             }
@@ -274,13 +274,13 @@ private struct ShortcutTile: View {
         Button(action: execute) {
             VStack(spacing: 5) {
                 Text(shortcut.title)
-                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    .font(GhosttyShortcutTypography.shortcutCommandCompact)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
 
                 if let hint = shortcut.hint, !hint.isEmpty {
                     Text(hint)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(GhosttyShortcutTypography.shortcutHintCompact)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .foregroundStyle(Color.white.opacity(0.52))

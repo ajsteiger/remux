@@ -34,7 +34,7 @@ struct ShortcutsSettingsSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Collections") {
+                Section {
                     ForEach(store.snapshot.orderedCollections) { collection in
                         collectionRow(collection)
                             .shortcutSettingsListRowSurface()
@@ -51,6 +51,10 @@ struct ShortcutsSettingsSheet: View {
                     .onMove { source, destination in
                         store.update { $0.moveCollections(from: source, to: destination) }
                     }
+                } header: {
+                    Text("Collections")
+                        .font(GhosttyShortcutTypography.sectionLabel)
+                        .foregroundStyle(GhosttySheetPalette.secondary)
                 }
 
                 if store.snapshot.hasMissingStarterCollections {
@@ -343,8 +347,8 @@ private struct ShortcutSettingsRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(shortcut.title)
-                .font(.system(.body, design: .monospaced).weight(.semibold))
-                .foregroundStyle(shortcut.isHidden ? .secondary : .primary)
+                .font(GhosttyShortcutTypography.shortcutCommandFull)
+                .foregroundStyle(shortcut.isHidden ? GhosttySheetPalette.secondary : GhosttySheetPalette.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .frame(minWidth: 72, alignment: .leading)
@@ -352,12 +356,12 @@ private struct ShortcutSettingsRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 if let hint = shortcut.hint, !hint.isEmpty {
                     Text(hint)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .font(GhosttyShortcutTypography.secondaryText)
+                        .foregroundStyle(GhosttySheetPalette.secondary)
                 } else {
                     Text(collectionTitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .font(GhosttyShortcutTypography.secondaryText)
+                        .foregroundStyle(GhosttySheetPalette.secondary)
                 }
             }
 
@@ -371,7 +375,7 @@ private struct ShortcutSettingsRow: View {
 
             if shortcut.isHidden {
                 Image(systemName: "eye.slash")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(GhosttySheetPalette.secondary)
                     .accessibilityLabel("Hidden")
             }
         }
@@ -387,7 +391,7 @@ private struct ShortcutCollectionSettingsRow: View {
     var body: some View {
         HStack(spacing: 13) {
             ShortcutCollectionIconView(icon: collection.icon)
-                .foregroundStyle(.primary)
+                .foregroundStyle(GhosttySheetPalette.primary)
                 .frame(width: 34, height: 34)
                 .background(
                     ShortcutsSettingsSheetPalette.iconSurface,
@@ -396,18 +400,19 @@ private struct ShortcutCollectionSettingsRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(collection.title)
-                    .font(.body.weight(.semibold))
+                    .font(GhosttyShortcutTypography.collectionTitle)
+                    .foregroundStyle(GhosttySheetPalette.primary)
                 Text(summary)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(GhosttyShortcutTypography.secondaryText)
+                    .foregroundStyle(GhosttySheetPalette.secondary)
             }
 
             Spacer()
 
             if favoriteCount > 0 {
                 Label("\(favoriteCount)", systemImage: "star.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .font(GhosttyShortcutTypography.badge)
+                    .foregroundStyle(GhosttySheetPalette.secondary)
                     .labelStyle(.titleAndIcon)
             }
         }
@@ -914,7 +919,7 @@ private struct ShortcutEditorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(GhosttyShortcutTypography.sectionLabel)
                 .foregroundStyle(GhosttySheetPalette.secondary)
                 .padding(.horizontal, 18)
 
@@ -944,7 +949,7 @@ private struct ShortcutEditorTextFieldRow: View {
 
     var body: some View {
         TextField(title, text: text, axis: axis)
-            .font(.system(size: 17, weight: .regular))
+            .font(GhosttyShortcutTypography.rowText)
             .foregroundStyle(GhosttySheetPalette.primary)
             .tint(ShortcutEditorPalette.controlAccent)
             .textFieldStyle(.plain)
@@ -972,7 +977,7 @@ private struct ShortcutEditorValueRow<Accessory: View>: View {
             accessory
                 .foregroundStyle(GhosttySheetPalette.secondary)
         }
-        .font(.system(size: 17, weight: .regular))
+        .font(GhosttyShortcutTypography.rowText)
         .padding(.horizontal, 18)
         .frame(minHeight: 56, alignment: .center)
     }
@@ -988,7 +993,7 @@ private struct ShortcutEditorModePicker: View {
                     selection = mode
                 } label: {
                     Text(mode.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(GhosttyShortcutTypography.compactControl)
                         .foregroundStyle(selection == mode ? GhosttySheetPalette.primary : GhosttySheetPalette.secondary)
                         .frame(maxWidth: .infinity, minHeight: 32)
                         .background(selection == mode ? ShortcutEditorPalette.modeSelectedFill : Color.clear, in: Capsule())
@@ -1019,7 +1024,7 @@ private struct ShortcutEditorToggleRow: View {
 
     var body: some View {
         Toggle(title, isOn: isOn)
-            .font(.system(size: 17, weight: .regular))
+            .font(GhosttyShortcutTypography.rowText)
             .foregroundStyle(GhosttySheetPalette.primary)
             .tint(ShortcutEditorPalette.controlAccent)
             .padding(.horizontal, 18)
@@ -1032,7 +1037,7 @@ private struct ShortcutEditorPreviewRow: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 17, weight: .semibold, design: .monospaced))
+            .font(GhosttyShortcutTypography.shortcutCommandFull)
             .foregroundStyle(GhosttySheetPalette.primary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
