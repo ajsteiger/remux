@@ -48,6 +48,7 @@ enum GhosttyKeyboardChromeSizing {
 }
 
 struct GhosttyKeyboardChrome: View {
+    let terminalTheme: TerminalTheme
     let keyboardMode: GhosttyKeyboardChromeMode
     let isEnabled: Bool
     let isCompact: Bool
@@ -63,6 +64,10 @@ struct GhosttyKeyboardChrome: View {
     let onToggleControl: () -> Void
     let onShowShortcuts: () -> Void
     let sendKey: (GhosttySurfaceKeyEvent) -> Bool
+
+    private var tone: GhosttyKeyboardChromeTone {
+        GhosttyKeyboardChromeTone(theme: terminalTheme)
+    }
 
     var body: some View {
         selectorRow
@@ -107,6 +112,7 @@ struct GhosttyKeyboardChrome: View {
                     accessibilityIdentifier: "terminal.home",
                     isActive: false,
                     isEnabled: true,
+                    tone: tone,
                     action: onShowHome
                 )
 
@@ -118,6 +124,7 @@ struct GhosttyKeyboardChrome: View {
                     accessibilityIdentifier: "terminal.windows",
                     isActive: false,
                     isEnabled: isEnabled && windowCount > 0,
+                    tone: tone,
                     action: onShowWindows
                 )
 
@@ -129,6 +136,7 @@ struct GhosttyKeyboardChrome: View {
                     accessibilityIdentifier: "terminal.panes",
                     isActive: false,
                     isEnabled: isEnabled && paneCount > 0,
+                    tone: tone,
                     action: onShowPanes
                 )
             }
@@ -168,6 +176,7 @@ struct GhosttyKeyboardChrome: View {
                     accessibilityIdentifier: "terminal.keyboard",
                     isActive: keyboardMode != .hidden,
                     isEnabled: isEnabled,
+                    tone: tone,
                     action: onToggleKeyboard
                 )
             }
@@ -178,7 +187,7 @@ struct GhosttyKeyboardChrome: View {
         content()
             .padding(.horizontal, 5)
             .padding(.vertical, 4)
-            .ghosttyToolbarGroupSurface()
+            .ghosttyToolbarGroupSurface(tone: tone)
     }
 
     private func accessoryKey(
@@ -196,6 +205,7 @@ struct GhosttyKeyboardChrome: View {
             height: GhosttyKeyboardChromeSizing.dockButtonHeight,
             isActive: isActive,
             isEnabled: isEnabled,
+            tone: tone,
             onLongPress: onLongPress,
             action: action
         )
@@ -242,6 +252,7 @@ private struct GhosttyKeyboardChromeDockButton: View {
     let accessibilityIdentifier: String
     let isActive: Bool
     let isEnabled: Bool
+    let tone: GhosttyKeyboardChromeTone
     let action: () -> Void
 
     var body: some View {
@@ -260,7 +271,8 @@ private struct GhosttyKeyboardChromeDockButton: View {
             isActive: isActive,
             isEnabled: isEnabled,
             width: GhosttyKeyboardChromeSizing.dockButtonWidth,
-            height: GhosttyKeyboardChromeSizing.dockButtonHeight
+            height: GhosttyKeyboardChromeSizing.dockButtonHeight,
+            tone: tone
         ))
         .disabled(!isEnabled)
         .accessibilityLabel(accessibilityLabel)
@@ -275,7 +287,7 @@ private struct GhosttyKeyboardChromeDockButton: View {
             .font(.system(size: 8, weight: .semibold).monospacedDigit())
             .lineLimit(1)
             .minimumScaleFactor(0.75)
-            .foregroundStyle(Color.black.opacity(0.72))
+            .foregroundStyle(tone.badgeForeground)
             .frame(minWidth: 12.5, minHeight: 12.5)
             .padding(.horizontal, horizontalPadding)
             .background(GhosttyPhoneChromePalette.accent.opacity(0.88), in: Capsule())
@@ -293,6 +305,7 @@ private struct GhosttyKeyboardKeyButton: View {
     var height: CGFloat = GhosttyKeyboardChromeSizing.dockButtonHeight
     var isActive = false
     let isEnabled: Bool
+    let tone: GhosttyKeyboardChromeTone
     var onLongPress: (() -> Void)?
     let action: () -> Bool
 
@@ -304,9 +317,10 @@ private struct GhosttyKeyboardKeyButton: View {
             .font(.system(size: fontSize, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.88))
+            .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : tone.primaryForeground)
             .frame(width: width, height: height)
             .ghosttyToolbarButtonSurface(
+                tone: tone,
                 isActive: isActive,
                 isPressed: isPressed,
                 isEnabled: isEnabled
@@ -378,6 +392,7 @@ private struct GhosttyChromeDockButtonStyle: ButtonStyle {
     let isEnabled: Bool
     let width: CGFloat
     let height: CGFloat
+    let tone: GhosttyKeyboardChromeTone
 
     func makeBody(configuration: Configuration) -> some View {
         GhosttyChromePressBody(
@@ -386,9 +401,10 @@ private struct GhosttyChromeDockButtonStyle: ButtonStyle {
             onPressDown: { Haptic.chromeControlPress() }
         ) {
             configuration.label
-                .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.86))
+                .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : tone.primaryForeground)
                 .frame(width: width, height: height)
                 .ghosttyToolbarButtonSurface(
+                    tone: tone,
                     isActive: isActive,
                     isPressed: configuration.isPressed,
                     isEnabled: isEnabled
@@ -397,25 +413,71 @@ private struct GhosttyChromeDockButtonStyle: ButtonStyle {
     }
 }
 
+struct GhosttyKeyboardChromeTone {
+    let isLightTerminalSurface: Bool
+
+    init(theme: TerminalTheme) {
+        isLightTerminalSurface = theme.appAppearance == .light
+    }
+
+    var primaryForeground: Color {
+        isLightTerminalSurface ? Color.black.opacity(0.72) : Color.white.opacity(0.86)
+    }
+
+    var badgeForeground: Color {
+        Color.black.opacity(0.72)
+    }
+
+    var groupFallbackFill: Color {
+        isLightTerminalSurface ? Color.black.opacity(0.075) : GhosttyPhoneChromePalette.groupSurface.opacity(0.92)
+    }
+
+    var groupStroke: Color {
+        isLightTerminalSurface ? Color.black.opacity(0.14) : Color.white.opacity(0.10)
+    }
+
+    var groupShadow: Color {
+        isLightTerminalSurface ? Color.black.opacity(0.12) : Color.black.opacity(0.18)
+    }
+
+    var buttonActiveFill: Color {
+        isLightTerminalSurface ? Color.black.opacity(0.075) : Color.white.opacity(0.06)
+    }
+
+    func buttonPressedFill(isEnabled: Bool, isPressed: Bool) -> Color {
+        guard isEnabled, isPressed else { return Color.clear }
+        return isLightTerminalSurface ? Color.black.opacity(0.10) : Color.white.opacity(0.10)
+    }
+}
+
 private extension View {
     @ViewBuilder
-    func ghosttyToolbarGroupSurface() -> some View {
+    func ghosttyToolbarGroupSurface(tone: GhosttyKeyboardChromeTone) -> some View {
         if #available(iOS 26.0, *) {
-            self
-                .glassEffect(.clear.interactive(), in: Capsule())
+            if tone.isLightTerminalSurface {
+                self
+                    .glassEffect(
+                        .regular.tint(Color.black.opacity(0.075)).interactive(),
+                        in: Capsule()
+                    )
+            } else {
+                self
+                    .glassEffect(.clear.interactive(), in: Capsule())
+            }
         } else {
             self
-                .background(GhosttyPhoneChromePalette.groupSurface.opacity(0.92), in: Capsule())
+                .background(tone.groupFallbackFill, in: Capsule())
                 .overlay {
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                        .strokeBorder(tone.groupStroke, lineWidth: 1)
                 }
-                .shadow(color: Color.black.opacity(0.18), radius: 8, y: 4)
+                .shadow(color: tone.groupShadow, radius: 8, y: 4)
         }
     }
 
     @ViewBuilder
     func ghosttyToolbarButtonSurface(
+        tone: GhosttyKeyboardChromeTone,
         isActive: Bool,
         isPressed: Bool,
         isEnabled: Bool
@@ -428,12 +490,15 @@ private extension View {
         if #available(iOS 26.0, *) {
             self
                 .overlay {
-                    shape.fill(Color.white.opacity(isPressed && isEnabled ? 0.08 : 0))
+                    shape.fill(isActive ? tone.buttonActiveFill : Color.clear)
+                }
+                .overlay {
+                    shape.fill(tone.buttonPressedFill(isEnabled: isEnabled, isPressed: isPressed))
                 }
                 .contentShape(shape)
         } else {
-            let activeFill = Color.white.opacity(isActive ? 0.06 : 0)
-            let pressedFill = Color.white.opacity(isPressed && isEnabled ? 0.10 : 0)
+            let activeFill = isActive ? tone.buttonActiveFill : Color.clear
+            let pressedFill = tone.buttonPressedFill(isEnabled: isEnabled, isPressed: isPressed)
 
             self
                 .background(activeFill, in: shape)
