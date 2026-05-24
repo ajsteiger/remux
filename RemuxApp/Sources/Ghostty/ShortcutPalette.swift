@@ -10,10 +10,6 @@ struct ShortcutPalette: View {
 
     @State private var pendingDelete: Shortcut?
 
-    private let paletteWidth: CGFloat = 420
-    private let contentHeight: CGFloat = 124
-    private let emptyContentHeight: CGFloat = 74
-
     var body: some View {
         VStack(spacing: 10) {
             tabRail
@@ -23,7 +19,7 @@ struct ShortcutPalette: View {
         .padding(.top, 10)
         .padding(.horizontal, 10)
         .padding(.bottom, 11)
-        .frame(maxWidth: paletteWidth)
+        .frame(maxWidth: ShortcutPaletteLayout.paletteWidth)
         .shortcutPalettePanelSurface()
         .confirmationDialog(
             "Delete Shortcut",
@@ -51,7 +47,9 @@ struct ShortcutPalette: View {
     }
 
     private var currentContentHeight: CGFloat {
-        selectedTab == .favorites && selectedShortcuts.isEmpty ? emptyContentHeight : contentHeight
+        selectedTab == .favorites && selectedShortcuts.isEmpty
+            ? ShortcutPaletteLayout.emptyContentHeight
+            : ShortcutPaletteLayout.populatedContentHeight
     }
 
     private var selectedTab: ShortcutPaletteTabID {
@@ -133,6 +131,17 @@ struct ShortcutPalette: View {
     }
 }
 
+private enum ShortcutPaletteLayout {
+    static let paletteWidth: CGFloat = 420
+    static let shortcutTileHeight: CGFloat = 52
+    static let shortcutTileCornerRadius: CGFloat = 14
+    static let shortcutGridSpacing: CGFloat = 10
+    static let shortcutGridVerticalBreathingRoom: CGFloat = 10
+    static let populatedContentHeight: CGFloat =
+        shortcutTileHeight * 2 + shortcutGridSpacing + shortcutGridVerticalBreathingRoom
+    static let emptyContentHeight: CGFloat = 74
+}
+
 private struct ShortcutGridView: View {
     let shortcuts: [Shortcut]
     let allowsAdd: Bool
@@ -144,7 +153,7 @@ private struct ShortcutGridView: View {
     let addShortcut: () -> Void
 
     private let columns = [
-        GridItem(.adaptive(minimum: 94, maximum: 122), spacing: 10),
+        GridItem(.adaptive(minimum: 94, maximum: 122), spacing: ShortcutPaletteLayout.shortcutGridSpacing),
     ]
 
     var body: some View {
@@ -165,7 +174,7 @@ private struct ShortcutGridView: View {
     }
 
     private var shortcutGrid: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
+        LazyVGrid(columns: columns, spacing: ShortcutPaletteLayout.shortcutGridSpacing) {
             ForEach(shortcuts) { shortcut in
                 ShortcutTile(
                     shortcut: shortcut,
@@ -196,7 +205,7 @@ private struct AddShortcutTile: View {
                 Text(isEmpty ? "Add Shortcut" : "Add")
                     .font(.system(size: isEmpty ? 14 : 12.5, weight: .semibold))
             }
-            .frame(height: 52)
+            .frame(height: ShortcutPaletteLayout.shortcutTileHeight)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(ShortcutTileButtonStyle())
@@ -277,7 +286,7 @@ private struct ShortcutTile: View {
                         .foregroundStyle(Color.white.opacity(0.52))
                 }
             }
-            .frame(height: 52)
+            .frame(height: ShortcutPaletteLayout.shortcutTileHeight)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(ShortcutTileButtonStyle())
@@ -308,7 +317,7 @@ private struct ShortcutTile: View {
 }
 
 private struct ShortcutTileButtonStyle: ButtonStyle {
-    var cornerRadius: CGFloat = 14
+    var cornerRadius: CGFloat = ShortcutPaletteLayout.shortcutTileCornerRadius
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
