@@ -34,10 +34,16 @@ struct ShortcutsSettingsSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                let collections = store.snapshot.orderedCollections
+
                 Section("Collections") {
-                    ForEach(store.snapshot.orderedCollections) { collection in
-                        collectionRow(collection)
-                            .shortcutSettingsListRowSurface()
+                    ForEach(collections.indices, id: \.self) { index in
+                        let collection = collections[index]
+                        collectionRow(
+                            collection,
+                            position: ShortcutSettingsListRowPosition(index: index, count: collections.count)
+                        )
+                        .shortcutSettingsListRowChrome()
                     }
                     .onDelete { indexSet in
                         let collections = store.snapshot.orderedCollections
@@ -63,9 +69,11 @@ struct ShortcutsSettingsSheet: View {
                                 )
                             }
                         } label: {
-                            Label("Restore Default Collections", systemImage: "arrow.counterclockwise")
+                            ShortcutSettingsListRowContainer(position: .single) {
+                                Label("Restore Default Collections", systemImage: "arrow.counterclockwise")
+                            }
                         }
-                        .shortcutSettingsListRowSurface()
+                        .shortcutSettingsListRowChrome()
                     }
                 }
             }
@@ -147,7 +155,10 @@ struct ShortcutsSettingsSheet: View {
         store.snapshot.shortcuts(in: collection).filter { store.snapshot.isFavorite($0.id) }.count
     }
 
-    private func collectionRow(_ collection: ShortcutCollection) -> some View {
+    private func collectionRow(
+        _ collection: ShortcutCollection,
+        position: ShortcutSettingsListRowPosition
+    ) -> some View {
         NavigationLink {
             ShortcutCollectionDetailView(
                 store: store,
@@ -168,7 +179,9 @@ struct ShortcutsSettingsSheet: View {
                 }
             )
         } label: {
-            collectionRowLabel(collection)
+            ShortcutSettingsListRowContainer(position: position) {
+                collectionRowLabel(collection)
+            }
         }
     }
 
@@ -194,11 +207,15 @@ private struct ShortcutCollectionDetailView: View {
     var body: some View {
         List {
             Section {
-                ForEach(store.snapshot.shortcuts(in: collectionID)) { shortcut in
+                let shortcuts = store.snapshot.shortcuts(in: collectionID)
+
+                ForEach(shortcuts.indices, id: \.self) { index in
+                    let shortcut = shortcuts[index]
                     ShortcutSettingsEditableRow(
                         shortcut: shortcut,
                         collectionTitle: store.snapshot.collectionTitle(shortcut.collection),
                         isFavorite: store.snapshot.isFavorite(shortcut.id),
+                        position: ShortcutSettingsListRowPosition(index: index, count: shortcuts.count),
                         editShortcut: {
                             editShortcut(shortcut)
                         },
@@ -214,7 +231,7 @@ private struct ShortcutCollectionDetailView: View {
                             store.update { $0.setHidden(!shortcut.isHidden, shortcutID: shortcut.id) }
                         }
                     )
-                    .shortcutSettingsListRowSurface()
+                    .shortcutSettingsListRowChrome()
                 }
                 .onDelete { indexSet in
                     let shortcuts = store.snapshot.shortcuts(in: collectionID)
@@ -238,9 +255,11 @@ private struct ShortcutCollectionDetailView: View {
                     Button {
                         restoreStarters()
                     } label: {
-                        Label("Restore Default Shortcuts", systemImage: "arrow.counterclockwise")
+                        ShortcutSettingsListRowContainer(position: .single) {
+                            Label("Restore Default Shortcuts", systemImage: "arrow.counterclockwise")
+                        }
                     }
-                    .shortcutSettingsListRowSurface()
+                    .shortcutSettingsListRowChrome()
                 }
             }
         }
@@ -273,9 +292,96 @@ private struct ShortcutCollectionDetailView: View {
 }
 
 private extension View {
-    func shortcutSettingsListRowSurface() -> some View {
-        listRowBackground(ShortcutsSettingsSheetPalette.listRowFill)
-            .listRowSeparatorTint(ShortcutsSettingsSheetPalette.listSeparator)
+    func shortcutSettingsListRowChrome() -> some View {
+        listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
+private enum ShortcutSettingsListRowPosition {
+    case single
+    case first
+    case middle
+    case last
+
+    init(index: Int, count: Int) {
+        if count <= 1 {
+            self = .single
+        } else if index == 0 {
+            self = .first
+        } else if index == count - 1 {
+            self = .last
+        } else {
+            self = .middle
+        }
+    }
+
+    var isFirst: Bool {
+        switch self {
+        case .single, .first:
+            true
+        case .middle, .last:
+            false
+        }
+    }
+
+    var isLast: Bool {
+        switch self {
+        case .single, .last:
+            true
+        case .first, .middle:
+            false
+        }
+    }
+
+    var showsSeparator: Bool {
+        !isLast
+    }
+}
+
+private struct ShortcutSettingsListRowContainer<Content: View>: View {
+    let position: ShortcutSettingsListRowPosition
+    let content: Content
+
+    init(
+        position: ShortcutSettingsListRowPosition,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.position = position
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(.horizontal, 18)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                rowShape.fill(ShortcutsSettingsSheetPalette.listRowFill)
+            }
+            .overlay {
+                rowShape.strokeBorder(ShortcutEditorPalette.sectionStroke, lineWidth: 1)
+            }
+            .overlay(alignment: .bottom) {
+                if position.showsSeparator {
+                    Rectangle()
+                        .fill(ShortcutsSettingsSheetPalette.listSeparator)
+                        .frame(height: 1)
+                        .padding(.leading, 84)
+                        .padding(.trailing, 18)
+                }
+            }
+    }
+
+    private var rowShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: position.isFirst ? ShortcutEditorPalette.sectionCornerRadius : 0,
+            bottomLeadingRadius: position.isLast ? ShortcutEditorPalette.sectionCornerRadius : 0,
+            bottomTrailingRadius: position.isLast ? ShortcutEditorPalette.sectionCornerRadius : 0,
+            topTrailingRadius: position.isFirst ? ShortcutEditorPalette.sectionCornerRadius : 0,
+            style: .continuous
+        )
     }
 }
 
@@ -285,17 +391,20 @@ private struct ShortcutSettingsEditableRow: View {
     let shortcut: Shortcut
     let collectionTitle: String
     let isFavorite: Bool
+    let position: ShortcutSettingsListRowPosition
     let editShortcut: () -> Void
     let toggleFavorite: () -> Void
     let deleteShortcut: () -> Void
     let toggleHidden: () -> Void
 
     var body: some View {
-        ShortcutSettingsRow(
-            shortcut: shortcut,
-            collectionTitle: collectionTitle,
-            isFavorite: isFavorite
-        )
+        ShortcutSettingsListRowContainer(position: position) {
+            ShortcutSettingsRow(
+                shortcut: shortcut,
+                collectionTitle: collectionTitle,
+                isFavorite: isFavorite
+            )
+        }
         .contentShape(Rectangle())
         .onTapGesture {
             if !isEditing {
