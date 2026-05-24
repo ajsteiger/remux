@@ -217,12 +217,12 @@ private struct ShortcutPaletteTabButton: View {
         .buttonStyle(.plain)
         .frame(width: 38, height: 34)
         .contentShape(Capsule())
-        .foregroundStyle(isSelected ? Color.white.opacity(0.96) : Color.white.opacity(0.58))
-        .background(isSelected ? Color.white.opacity(0.16) : Color.clear, in: Capsule())
+        .foregroundStyle(isSelected ? Color.white.opacity(0.92) : Color.white.opacity(0.58))
+        .background(isSelected ? ShortcutPaletteStyle.embeddedFill : Color.clear, in: Capsule())
         .overlay {
             if isSelected {
                 Capsule()
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    .stroke(ShortcutPaletteStyle.embeddedStroke, lineWidth: 1)
             }
         }
         .accessibilityLabel(snapshot.displayTitle(for: tab))
@@ -362,8 +362,7 @@ private extension View {
             self
                 .glassEffect(
                     .clear
-                        .tint(ShortcutPaletteStyle.panelGlassTint)
-                        .interactive(),
+                        .tint(ShortcutPaletteStyle.panelGlassTint),
                     in: shape
                 )
                 .contentShape(shape)
