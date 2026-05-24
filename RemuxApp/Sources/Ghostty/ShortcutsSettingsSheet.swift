@@ -14,6 +14,9 @@ private enum ShortcutEditorPalette {
     static let sectionFill = Color.white.opacity(0.055)
     static let sectionStroke = Color.white.opacity(0.075)
     static let separator = Color.white.opacity(0.065)
+    static let modeRailFill = Color.white.opacity(0.035)
+    static let modeRailStroke = Color.white.opacity(0.055)
+    static let modeSelectedFill = Color.white.opacity(0.085)
     static let sectionCornerRadius: CGFloat = 22
 }
 
@@ -964,7 +967,7 @@ private struct ShortcutEditorModePicker: View {
     @Binding var selection: ShortcutEditorMode
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(ShortcutEditorMode.allCases) { mode in
                 Button {
                     selection = mode
@@ -972,25 +975,19 @@ private struct ShortcutEditorModePicker: View {
                     Text(mode.title)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(selection == mode ? GhosttySheetPalette.primary : GhosttySheetPalette.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 34)
-                        .background(selection == mode ? Color.white.opacity(0.075) : Color.clear, in: Capsule())
-                        .overlay {
-                            if selection == mode {
-                                Capsule()
-                                    .strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
-                            }
-                        }
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                        .background(selection == mode ? ShortcutEditorPalette.modeSelectedFill : Color.clear, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .contentShape(Capsule())
                 .accessibilityAddTraits(selection == mode ? .isSelected : [])
             }
         }
-        .padding(4)
-        .background(Color.white.opacity(0.045), in: Capsule())
+        .padding(3)
+        .background(ShortcutEditorPalette.modeRailFill, in: Capsule())
         .overlay {
             Capsule()
-                .strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
+                .strokeBorder(ShortcutEditorPalette.modeRailStroke, lineWidth: 1)
         }
         .animation(.easeOut(duration: 0.14), value: selection)
     }
