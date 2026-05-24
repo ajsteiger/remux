@@ -5,6 +5,8 @@ import UIKit
 
 private enum ShortcutsSettingsSheetPalette {
     static let background = GhosttyPhoneChromePalette.dock
+    static let listRowFill = Color.white.opacity(0.055)
+    static let listSeparator = Color.white.opacity(0.065)
     static let iconSurface = GhosttyPhoneChromePalette.keySurface.opacity(0.72)
     static let accent = GhosttyPhoneChromePalette.accent
     static let accentSurface = GhosttyPhoneChromePalette.accent.opacity(0.14)
@@ -35,6 +37,7 @@ struct ShortcutsSettingsSheet: View {
                 Section("Collections") {
                     ForEach(store.snapshot.orderedCollections) { collection in
                         collectionRow(collection)
+                            .shortcutSettingsListRowSurface()
                     }
                     .onDelete { indexSet in
                         let collections = store.snapshot.orderedCollections
@@ -62,6 +65,7 @@ struct ShortcutsSettingsSheet: View {
                         } label: {
                             Label("Restore Default Collections", systemImage: "arrow.counterclockwise")
                         }
+                        .shortcutSettingsListRowSurface()
                     }
                 }
             }
@@ -210,6 +214,7 @@ private struct ShortcutCollectionDetailView: View {
                             store.update { $0.setHidden(!shortcut.isHidden, shortcutID: shortcut.id) }
                         }
                     )
+                    .shortcutSettingsListRowSurface()
                 }
                 .onDelete { indexSet in
                     let shortcuts = store.snapshot.shortcuts(in: collectionID)
@@ -235,6 +240,7 @@ private struct ShortcutCollectionDetailView: View {
                     } label: {
                         Label("Restore Default Shortcuts", systemImage: "arrow.counterclockwise")
                     }
+                    .shortcutSettingsListRowSurface()
                 }
             }
         }
@@ -263,6 +269,13 @@ private struct ShortcutCollectionDetailView: View {
             }
         }
         .environment(\.editMode, $editMode)
+    }
+}
+
+private extension View {
+    func shortcutSettingsListRowSurface() -> some View {
+        listRowBackground(ShortcutsSettingsSheetPalette.listRowFill)
+            .listRowSeparatorTint(ShortcutsSettingsSheetPalette.listSeparator)
     }
 }
 
