@@ -25,7 +25,6 @@ struct ShortcutPalette: View {
         .padding(.bottom, 11)
         .frame(maxWidth: paletteWidth)
         .shortcutPalettePanelSurface()
-        .shortcutPaletteGlassContainer()
         .confirmationDialog(
             "Delete Shortcut",
             isPresented: Binding(
@@ -244,7 +243,7 @@ private struct EmptyFavoritesView: View {
                     .labelStyle(.titleAndIcon)
                     .frame(width: 176, height: 46)
             }
-            .buttonStyle(ShortcutCapsuleButtonStyle())
+            .buttonStyle(ShortcutEmptyActionButtonStyle())
             .accessibilityLabel("Add Shortcut")
             .accessibilityIdentifier("terminal.shortcuts.add")
 
@@ -331,6 +330,16 @@ private struct ShortcutCapsuleButtonStyle: ButtonStyle {
     }
 }
 
+private struct ShortcutEmptyActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(Color.white.opacity(0.88))
+            .shortcutPaletteEmptyActionSurface(isPressed: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
 private enum ShortcutPaletteStyle {
     static let fallbackPanelFill = GhosttyPhoneChromePalette.groupSurface.opacity(0.74)
     static let fallbackPanelStroke = Color.white.opacity(0.08)
@@ -338,28 +347,25 @@ private enum ShortcutPaletteStyle {
     static let fallbackControlPressedFill = Color.white.opacity(0.17)
     static let fallbackControlStroke = Color.white.opacity(0.10)
     static let fallbackShadow = Color.black.opacity(0.24)
-    static let pressedGlassTint = Color.white.opacity(0.08)
+    static let panelGlassTint = GhosttyPhoneChromePalette.groupSurface.opacity(0.68)
+    static let embeddedFill = Color.white.opacity(0.045)
+    static let embeddedPressedFill = Color.white.opacity(0.085)
+    static let embeddedStroke = Color.white.opacity(0.075)
 }
 
 private extension View {
-    @ViewBuilder
-    func shortcutPaletteGlassContainer() -> some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: 10) {
-                self
-            }
-        } else {
-            self
-        }
-    }
-
     @ViewBuilder
     func shortcutPalettePanelSurface() -> some View {
         let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
 
         if #available(iOS 26.0, *) {
             self
-                .glassEffect(.regular.interactive(), in: shape)
+                .glassEffect(
+                    .clear
+                        .tint(ShortcutPaletteStyle.panelGlassTint)
+                        .interactive(),
+                    in: shape
+                )
                 .contentShape(shape)
         } else {
             self
@@ -378,60 +384,36 @@ private extension View {
     func shortcutPaletteTileSurface(cornerRadius: CGFloat, isPressed: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        if #available(iOS 26.0, *) {
-            self
-                .background(isPressed ? ShortcutPaletteStyle.pressedGlassTint : Color.clear, in: shape)
-                .glassEffect(.clear.interactive(), in: shape)
-                .contentShape(shape)
-        } else {
-            self
-                .background(
-                    isPressed ? ShortcutPaletteStyle.fallbackControlPressedFill : ShortcutPaletteStyle.fallbackControlFill,
-                    in: shape
-                )
-                .overlay {
-                    shape.strokeBorder(ShortcutPaletteStyle.fallbackControlStroke, lineWidth: 1)
-                }
-        }
+        shortcutPaletteEmbeddedSurface(isPressed: isPressed, in: shape)
     }
 
     @ViewBuilder
     func shortcutPaletteCapsuleSurface(isPressed: Bool) -> some View {
-        if #available(iOS 26.0, *) {
-            self
-                .background(isPressed ? ShortcutPaletteStyle.pressedGlassTint : Color.clear, in: Capsule())
-                .glassEffect(.clear.interactive(), in: Capsule())
-                .contentShape(Capsule())
-        } else {
-            self
-                .background(
-                    isPressed ? ShortcutPaletteStyle.fallbackControlPressedFill : ShortcutPaletteStyle.fallbackControlFill,
-                    in: Capsule()
-                )
-                .overlay {
-                    Capsule()
-                        .strokeBorder(ShortcutPaletteStyle.fallbackControlStroke, lineWidth: 1)
-                }
-        }
+        shortcutPaletteEmbeddedSurface(isPressed: isPressed, in: Capsule())
     }
 
     @ViewBuilder
     func shortcutPaletteCircleSurface(isPressed: Bool) -> some View {
-        if #available(iOS 26.0, *) {
-            self
-                .background(isPressed ? ShortcutPaletteStyle.pressedGlassTint : Color.clear, in: Circle())
-                .glassEffect(.clear.interactive(), in: Circle())
-                .contentShape(Circle())
-        } else {
-            self
-                .background(
-                    isPressed ? ShortcutPaletteStyle.fallbackControlPressedFill : ShortcutPaletteStyle.fallbackControlFill,
-                    in: Circle()
-                )
-                .overlay {
-                    Circle()
-                        .strokeBorder(ShortcutPaletteStyle.fallbackControlStroke, lineWidth: 1)
-                }
-        }
+        shortcutPaletteEmbeddedSurface(isPressed: isPressed, in: Circle())
+    }
+
+    func shortcutPaletteEmptyActionSurface(isPressed: Bool) -> some View {
+        shortcutPaletteEmbeddedSurface(isPressed: isPressed, in: Capsule())
+    }
+
+    func shortcutPaletteEmbeddedSurface<S: InsettableShape>(
+        isPressed: Bool,
+        in shape: S
+    ) -> some View {
+        self
+            .background(
+                isPressed ? ShortcutPaletteStyle.embeddedPressedFill : ShortcutPaletteStyle.embeddedFill,
+                in: shape
+            )
+            .overlay {
+                shape
+                    .strokeBorder(ShortcutPaletteStyle.embeddedStroke, lineWidth: 1)
+            }
+            .contentShape(shape)
     }
 }
