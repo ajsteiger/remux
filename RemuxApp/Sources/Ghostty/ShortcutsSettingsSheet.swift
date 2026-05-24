@@ -755,14 +755,9 @@ struct ShortcutEditorSheet: View {
     }
 
     private var modePicker: some View {
-        Picker("Type", selection: $mode) {
-            ForEach(ShortcutEditorMode.allCases) { mode in
-                Text(mode.title).tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        ShortcutEditorModePicker(selection: $mode)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -949,6 +944,42 @@ private struct ShortcutEditorValueRow<Accessory: View>: View {
         .font(.system(size: 17, weight: .regular))
         .padding(.horizontal, 18)
         .frame(minHeight: 56, alignment: .center)
+    }
+}
+
+private struct ShortcutEditorModePicker: View {
+    @Binding var selection: ShortcutEditorMode
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(ShortcutEditorMode.allCases) { mode in
+                Button {
+                    selection = mode
+                } label: {
+                    Text(mode.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(selection == mode ? GhosttySheetPalette.primary : GhosttySheetPalette.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .background(selection == mode ? Color.white.opacity(0.075) : Color.clear, in: Capsule())
+                        .overlay {
+                            if selection == mode {
+                                Capsule()
+                                    .strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .contentShape(Capsule())
+                .accessibilityAddTraits(selection == mode ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(Color.white.opacity(0.045), in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
+        }
+        .animation(.easeOut(duration: 0.14), value: selection)
     }
 }
 
