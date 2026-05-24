@@ -10,6 +10,13 @@ private enum ShortcutsSettingsSheetPalette {
     static let accentSurface = GhosttyPhoneChromePalette.accent.opacity(0.14)
 }
 
+private enum ShortcutEditorPalette {
+    static let sectionFill = Color.white.opacity(0.055)
+    static let sectionStroke = Color.white.opacity(0.075)
+    static let separator = Color.white.opacity(0.065)
+    static let sectionCornerRadius: CGFloat = 22
+}
+
 struct ShortcutsSettingsSheet: View {
     @ObservedObject var store: ShortcutStore
     @Environment(\.dismiss) private var dismiss
@@ -897,11 +904,11 @@ private struct ShortcutEditorSection<Content: View>: View {
             VStack(spacing: 0) {
                 content
             }
-            .background(GhosttySheetPalette.row)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .background(ShortcutEditorPalette.sectionFill)
+            .clipShape(RoundedRectangle(cornerRadius: ShortcutEditorPalette.sectionCornerRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
+                RoundedRectangle(cornerRadius: ShortcutEditorPalette.sectionCornerRadius, style: .continuous)
+                    .strokeBorder(ShortcutEditorPalette.sectionStroke, lineWidth: 1)
             }
         }
     }
@@ -1024,7 +1031,7 @@ private struct ShortcutEditorPreviewRow: View {
 private struct ShortcutEditorDivider: View {
     var body: some View {
         Rectangle()
-            .fill(GhosttySheetPalette.stroke)
+            .fill(ShortcutEditorPalette.separator)
             .frame(height: 1)
             .padding(.horizontal, 18)
     }
