@@ -101,6 +101,7 @@ struct GhosttyKeyboardChrome: View {
             HStack(spacing: 2) {
                 GhosttyKeyboardChromeDockButton(
                     systemName: "house",
+                    badge: nil,
                     accessibilityLabel: "Home",
                     accessibilityHint: "Return to the Remux session library.",
                     accessibilityIdentifier: "terminal.home",
@@ -111,6 +112,7 @@ struct GhosttyKeyboardChrome: View {
 
                 GhosttyKeyboardChromeDockButton(
                     systemName: "rectangle.on.rectangle",
+                    badge: windowBadge,
                     accessibilityLabel: windowAccessibilityLabel,
                     accessibilityHint: windowDetail,
                     accessibilityIdentifier: "terminal.windows",
@@ -121,6 +123,7 @@ struct GhosttyKeyboardChrome: View {
 
                 GhosttyKeyboardChromeDockButton(
                     systemName: "square.split.2x1",
+                    badge: paneBadge,
                     accessibilityLabel: paneAccessibilityLabel,
                     accessibilityHint: paneDetail,
                     accessibilityIdentifier: "terminal.panes",
@@ -159,6 +162,7 @@ struct GhosttyKeyboardChrome: View {
             HStack(spacing: 2) {
                 GhosttyKeyboardChromeDockButton(
                     systemName: "keyboard",
+                    badge: nil,
                     accessibilityLabel: keyboardMode == .hidden ? "Show keyboard controls" : "Hide keyboard controls",
                     accessibilityHint: nil,
                     accessibilityIdentifier: "terminal.keyboard",
@@ -206,6 +210,11 @@ struct GhosttyKeyboardChrome: View {
         return "Window \(displayIndex(selectedWindowIndex, count: windowCount)) of \(windowCount)"
     }
 
+    private var windowBadge: String? {
+        guard windowCount > 1 else { return nil }
+        return "\(displayIndex(selectedWindowIndex, count: windowCount))"
+    }
+
     private var paneDetail: String? {
         paneCount > 1 ? "switch or split" : "split or stack"
     }
@@ -215,6 +224,11 @@ struct GhosttyKeyboardChrome: View {
         return "Pane \(displayIndex(selectedPaneIndex, count: paneCount)) of \(paneCount)"
     }
 
+    private var paneBadge: String? {
+        guard paneCount > 1 else { return nil }
+        return "\(displayIndex(selectedPaneIndex, count: paneCount))"
+    }
+
     private func displayIndex(_ index: Int?, count: Int) -> Int {
         min(max((index ?? 0) + 1, 1), max(count, 1))
     }
@@ -222,6 +236,7 @@ struct GhosttyKeyboardChrome: View {
 
 private struct GhosttyKeyboardChromeDockButton: View {
     let systemName: String
+    let badge: String?
     let accessibilityLabel: String
     let accessibilityHint: String?
     let accessibilityIdentifier: String
@@ -231,9 +246,15 @@ private struct GhosttyKeyboardChromeDockButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 16.5, weight: .semibold))
-                .symbolRenderingMode(.monochrome)
+            ZStack {
+                Image(systemName: systemName)
+                    .font(.system(size: 16.5, weight: .semibold))
+                    .symbolRenderingMode(.monochrome)
+
+                if let badge {
+                    dockBadge(badge)
+                }
+            }
         }
         .buttonStyle(GhosttyChromeDockButtonStyle(
             isActive: isActive,
@@ -245,6 +266,25 @@ private struct GhosttyKeyboardChromeDockButton: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint(accessibilityHint ?? "")
         .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private func dockBadge(_ value: String) -> some View {
+        Text(value)
+            .font(.system(size: 9.5, weight: .bold).monospacedDigit())
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .foregroundStyle(GhosttyPhoneChromePalette.accent)
+            .frame(minWidth: 14, minHeight: 14)
+            .padding(.horizontal, 3)
+            .background(Color.black.opacity(0.46), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(GhosttyPhoneChromePalette.accent.opacity(0.24), lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(0.20), radius: 2, y: 1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 3)
+            .padding(.trailing, 4)
     }
 }
 
