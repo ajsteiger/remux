@@ -270,6 +270,83 @@ private struct ActiveTerminalSessionView: View {
     }
 }
 
+private struct RemuxLibraryPalette {
+    let colorScheme: ColorScheme
+    let background: Color
+    let rowFill: Color
+    let iconFill: Color
+    let primary: Color
+    let secondary: Color
+    let tertiary: Color
+    let separator: Color
+    let accent: Color
+    let accentSurface: Color
+    let warning: Color
+    let destructive: Color
+
+    init(appearance: RemuxAppAppearance) {
+        switch appearance {
+        case .dark:
+            colorScheme = .dark
+            background = GhosttyPhoneChromePalette.screenBackground
+            rowFill = GhosttyShortcutSurfacePalette.contentFill
+            iconFill = GhosttyPhoneChromePalette.keySurface.opacity(0.72)
+            primary = Color.white.opacity(0.92)
+            secondary = Color.white.opacity(0.55)
+            tertiary = Color.white.opacity(0.38)
+            separator = GhosttyShortcutSurfacePalette.separator
+            accent = GhosttyPhoneChromePalette.accent
+            accentSurface = GhosttyPhoneChromePalette.accent.opacity(0.14)
+            warning = Color(red: 1.0, green: 0.70, blue: 0.34)
+            destructive = Color(red: 1.0, green: 0.46, blue: 0.48)
+
+        case .light:
+            colorScheme = .light
+            background = Color(red: 0.95, green: 0.96, blue: 0.98)
+            rowFill = Color.white.opacity(0.92)
+            iconFill = Color.black.opacity(0.055)
+            primary = Color(red: 0.08, green: 0.09, blue: 0.12)
+            secondary = Color(red: 0.42, green: 0.44, blue: 0.50)
+            tertiary = Color(red: 0.62, green: 0.64, blue: 0.70)
+            separator = Color.black.opacity(0.065)
+            accent = Color(red: 0.12, green: 0.66, blue: 0.43)
+            accentSurface = Color(red: 0.12, green: 0.66, blue: 0.43).opacity(0.12)
+            warning = Color(red: 0.82, green: 0.46, blue: 0.08)
+            destructive = Color(red: 0.86, green: 0.16, blue: 0.20)
+        }
+    }
+
+    func stateColor(_ state: TerminalRuntimeState) -> Color {
+        switch state {
+        case .connecting:
+            secondary
+        case .reconnecting:
+            warning
+        case .connected:
+            accent
+        case .disconnected:
+            destructive
+        }
+    }
+}
+
+private struct LibrarySectionHeader: View {
+    let title: String
+    let palette: RemuxLibraryPalette
+
+    init(_ title: String, palette: RemuxLibraryPalette) {
+        self.title = title
+        self.palette = palette
+    }
+
+    var body: some View {
+        Text(title)
+            .font(GhosttyShortcutTypography.sectionLabel)
+            .foregroundStyle(palette.secondary)
+            .textCase(nil)
+    }
+}
+
 private struct ConnectionLibraryView: View {
     private static let collapsedConnectedSessionCount = 3
     private static let collapsedRecentSessionCount = 5
@@ -291,11 +368,15 @@ private struct ConnectionLibraryView: View {
     @State private var showsAllConnectedSessions = false
     @State private var showsAllRecentSessions = false
 
+    private var palette: RemuxLibraryPalette {
+        RemuxLibraryPalette(appearance: terminalSettings.theme.appAppearance)
+    }
+
     var body: some View {
         List {
             if snapshot.servers.isEmpty {
                 Section {
-                    LibraryEmptyState(onAddServer: onAddServer)
+                    LibraryEmptyState(onAddServer: onAddServer, palette: palette)
                         .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -306,12 +387,16 @@ private struct ConnectionLibraryView: View {
                 recentSessionsSection
             }
         }
-        .listStyle(.plain)
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
+        .background(palette.background.ignoresSafeArea())
+        .environment(\.colorScheme, palette.colorScheme)
+        .tint(palette.primary)
         .accessibilityIdentifier("library.list")
         .navigationTitle("Remux")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(palette.background, for: .navigationBar)
+        .toolbarColorScheme(palette.colorScheme, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 NavigationLink {
@@ -338,15 +423,17 @@ private struct ConnectionLibraryView: View {
     @ViewBuilder
     private var activeSessionsSection: some View {
         if !sortedActiveSessions.isEmpty {
-            Section("Active Sessions") {
+            Section {
                 ForEach(visibleConnectedSessions) { session in
                     Button {
                         onShowActiveSession(session.id)
                     } label: {
-                        ActiveSessionLibraryRow(session: session)
+                        ActiveSessionLibraryRow(session: session, palette: palette)
                             .accessibilityIdentifier("library.active-session.show")
                     }
                     .buttonStyle(.plain)
+                    .listRowBackground(palette.rowFill)
+                    .listRowSeparatorTint(palette.separator)
                     .swipeActions(edge: .trailing) {
                         Button("Close") {
                             closeActiveSession(session.id)
@@ -363,11 +450,16 @@ private struct ConnectionLibraryView: View {
                     } label: {
                         DisclosureRowLabel(
                             title: showsAllConnectedSessions ? "Show fewer" : "View all \(sortedActiveSessions.count)",
-                            systemImage: showsAllConnectedSessions ? "chevron.up" : "chevron.down"
+                            systemImage: showsAllConnectedSessions ? "chevron.up" : "chevron.down",
+                            palette: palette
                         )
                     }
                     .accessibilityIdentifier("library.connected-sessions.toggle")
+                    .listRowBackground(palette.rowFill)
+                    .listRowSeparatorTint(palette.separator)
                 }
+            } header: {
+                LibrarySectionHeader("Active Sessions", palette: palette)
             }
         }
     }
@@ -375,7 +467,7 @@ private struct ConnectionLibraryView: View {
     @ViewBuilder
     private var recentSessionsSection: some View {
         if !recentWorkspaces.isEmpty {
-            Section("Recent Sessions") {
+            Section {
                 ForEach(visibleRecentWorkspaces) { workspace in
                     if let server = snapshot.server(id: workspace.serverID) {
                         Button {
@@ -385,11 +477,14 @@ private struct ConnectionLibraryView: View {
                                 server: server,
                                 workspace: workspace,
                                 runtimeState: nil,
-                                subtitleMode: .serverAndLastOpened
+                                subtitleMode: .serverAndLastOpened,
+                                palette: palette
                             )
                             .accessibilityIdentifier("library.session.resume")
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(palette.rowFill)
+                        .listRowSeparatorTint(palette.separator)
                         .swipeActions(edge: .trailing) {
                             Button("Edit") {
                                 onEditWorkspace(server.id, workspace.id)
@@ -409,17 +504,22 @@ private struct ConnectionLibraryView: View {
                     } label: {
                         DisclosureRowLabel(
                             title: showsAllRecentSessions ? "Show fewer" : "View all \(recentWorkspaces.count)",
-                            systemImage: showsAllRecentSessions ? "chevron.up" : "chevron.down"
+                            systemImage: showsAllRecentSessions ? "chevron.up" : "chevron.down",
+                            palette: palette
                         )
                     }
                     .accessibilityIdentifier("library.recent-sessions.toggle")
+                    .listRowBackground(palette.rowFill)
+                    .listRowSeparatorTint(palette.separator)
                 }
+            } header: {
+                LibrarySectionHeader("Recent Sessions", palette: palette)
             }
         }
     }
 
     private var serversSection: some View {
-        Section("Servers") {
+        Section {
             ForEach(snapshot.servers) { server in
                 let workspaces = snapshot.workspaces(for: server.id)
                 let latest = workspaces.first
@@ -440,11 +540,14 @@ private struct ConnectionLibraryView: View {
                         server: server,
                         sessionCount: workspaces.count,
                         connectedSessionCount: connectedSessionCount(for: server.id),
-                        latestWorkspace: latest
+                        latestWorkspace: latest,
+                        palette: palette
                     )
                     .padding(.vertical, 4)
                 }
                 .accessibilityIdentifier("library.server.row")
+                .listRowBackground(palette.rowFill)
+                .listRowSeparatorTint(palette.separator)
                 .contextMenu {
                     Button {
                         onAddWorkspace(server.id)
@@ -491,6 +594,8 @@ private struct ConnectionLibraryView: View {
                     .tint(.blue)
                 }
             }
+        } header: {
+            LibrarySectionHeader("Servers", palette: palette)
         }
     }
 
@@ -651,33 +756,36 @@ private struct ServerDetailView: View {
 private struct DisclosureRowLabel: View {
     let title: String
     let systemImage: String
+    let palette: RemuxLibraryPalette
 
     var body: some View {
         Label(title, systemImage: systemImage)
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(palette.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct LibraryEmptyState: View {
     let onAddServer: () -> Void
+    let palette: RemuxLibraryPalette
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: "server.rack")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(palette.primary)
                     .frame(width: 38, height: 38)
-                    .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background(palette.iconFill, in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("No servers")
                         .font(.headline)
+                        .foregroundStyle(palette.primary)
                     Text("Add an SSH server, then create one or more tmux sessions from it.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -692,38 +800,40 @@ private struct LibraryEmptyState: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .background(palette.rowFill, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
 private struct ActiveSessionLibraryRow: View {
     let session: ActiveTerminalSession
+    let palette: RemuxLibraryPalette
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.green)
+                .foregroundStyle(palette.accent)
                 .frame(width: 30, height: 30)
-                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .background(palette.accentSurface, in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.target.workspace.sessionName)
                     .font(.headline)
+                    .foregroundStyle(palette.primary)
                     .lineLimit(1)
                 Text(session.target.server.displayName)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondary)
                     .lineLimit(1)
             }
 
             Spacer()
 
-            RuntimeStateIndicator(state: session.runtimeState)
+            RuntimeStateIndicator(state: session.runtimeState, palette: palette)
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(palette.tertiary)
         }
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -742,18 +852,34 @@ private struct SessionLibraryRow: View {
     let workspace: SavedWorkspace
     let runtimeState: TerminalRuntimeState?
     let subtitleMode: SubtitleMode
+    let palette: RemuxLibraryPalette?
+
+    init(
+        server: SavedServer,
+        workspace: SavedWorkspace,
+        runtimeState: TerminalRuntimeState?,
+        subtitleMode: SubtitleMode,
+        palette: RemuxLibraryPalette? = nil
+    ) {
+        self.server = server
+        self.workspace = workspace
+        self.runtimeState = runtimeState
+        self.subtitleMode = subtitleMode
+        self.palette = palette
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "terminal")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.green)
+                .foregroundStyle(iconForeground)
                 .frame(width: 30, height: 30)
-                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .background(iconFill, in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(workspace.sessionName)
                     .font(.headline)
+                    .foregroundStyle(primaryText)
                     .lineLimit(1)
 
                 subtitle
@@ -762,12 +888,12 @@ private struct SessionLibraryRow: View {
             Spacer()
 
             if let runtimeState {
-                RuntimeStateIndicator(state: runtimeState)
+                RuntimeStateIndicator(state: runtimeState, palette: palette)
             }
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(tertiaryText)
         }
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -784,15 +910,35 @@ private struct SessionLibraryRow: View {
                 Text("opened \(workspace.lastOpenedAt, style: .relative)")
             }
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(secondaryText)
             .lineLimit(1)
 
         case .lastOpenedOnly:
             Text("opened \(workspace.lastOpenedAt, style: .relative)")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryText)
                 .lineLimit(1)
         }
+    }
+
+    private var iconForeground: Color {
+        palette?.accent ?? .green
+    }
+
+    private var iconFill: Color {
+        palette?.accentSurface ?? Color.green.opacity(0.12)
+    }
+
+    private var primaryText: Color {
+        palette?.primary ?? .primary
+    }
+
+    private var secondaryText: Color {
+        palette?.secondary ?? .secondary
+    }
+
+    private var tertiaryText: Color {
+        palette?.tertiary ?? Color(uiColor: .tertiaryLabel)
     }
 }
 
@@ -801,23 +947,25 @@ private struct ServerLibraryRow: View {
     let sessionCount: Int
     let connectedSessionCount: Int
     let latestWorkspace: SavedWorkspace?
+    let palette: RemuxLibraryPalette
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "server.rack")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(palette.primary)
                 .frame(width: 30, height: 30)
-                .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .background(palette.iconFill, in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(server.displayName)
                     .font(.headline)
+                    .foregroundStyle(palette.primary)
                     .lineLimit(1)
 
                 Text(serverAddress(server))
                     .font(.footnote.monospaced())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondary)
                     .lineLimit(1)
                     .textSelection(.enabled)
 
@@ -829,7 +977,7 @@ private struct ServerLibraryRow: View {
                     )
                 )
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondary)
                 .lineLimit(1)
             }
 
@@ -842,6 +990,12 @@ private struct ServerLibraryRow: View {
 
 private struct RuntimeStateIndicator: View {
     let state: TerminalRuntimeState
+    let palette: RemuxLibraryPalette?
+
+    init(state: TerminalRuntimeState, palette: RemuxLibraryPalette? = nil) {
+        self.state = state
+        self.palette = palette
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -869,15 +1023,19 @@ private struct RuntimeStateIndicator: View {
     }
 
     private var color: Color {
+        if let palette {
+            return palette.stateColor(state)
+        }
+
         switch state {
         case .connecting:
-            .blue
+            return .blue
         case .reconnecting:
-            .orange
+            return .orange
         case .connected:
-            .green
+            return .green
         case .disconnected:
-            .red
+            return .red
         }
     }
 }
