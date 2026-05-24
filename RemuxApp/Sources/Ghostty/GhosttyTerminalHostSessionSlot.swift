@@ -98,6 +98,10 @@ final class GhosttyTerminalHostSessionSlot {
         )
     }
 
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        try current?.applyTerminalSettings(settings)
+    }
+
     @discardableResult
     func submitHostTmuxNewWindow() -> TmuxActionSubmissionResult? {
         current?.submitHostTmuxNewWindow()

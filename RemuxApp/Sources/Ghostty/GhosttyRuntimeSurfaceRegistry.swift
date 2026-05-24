@@ -348,6 +348,19 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         managedSurfaceStore.allSurfaces()
     }
 
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        terminalSettings = settings
+        let config = try GhosttyTerminalConfigBuilder.makeFinalizedConfig(for: settings)
+        defer {
+            ghostty_config_free(config)
+        }
+
+        let colorScheme = settings.theme.ghosttyColorScheme
+        for surface in managedSurfaceStore.allSurfaces() {
+            surface.applyTerminalConfig(config, theme: settings.theme, colorScheme: colorScheme)
+        }
+    }
+
     func surfacePendingPermanentRemoval(for id: UUID) -> GhosttyManagedSurface? {
         managedSurfaceStore.surfacePendingPermanentRemoval(for: id)
     }
@@ -2353,6 +2366,7 @@ final class GhosttyManagedSurface {
     private let sendMousePressureHandler: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)?
     private let isMouseCapturedHandler: (@MainActor () -> Bool)?
     private let setFocusedHandler: (@MainActor (Bool) -> Void)?
+    private let applyTerminalConfigHandler: (@MainActor (ghostty_config_t, ghostty_color_scheme_e) -> Void)?
     private let updateDisplayHandler: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)?
     private let scrollToPositionHandler: (@MainActor (UInt64, Double) -> GhosttySurfaceScrollState)?
     private let tmuxFocusHandler: (@MainActor () -> TmuxActionSubmissionResult)?
@@ -2382,6 +2396,7 @@ final class GhosttyManagedSurface {
         sendMousePressure: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         setFocused: (@MainActor (Bool) -> Void)? = nil,
+        applyTerminalConfig: (@MainActor (ghostty_config_t, ghostty_color_scheme_e) -> Void)? = nil,
         updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
         scrollToPosition: (@MainActor (UInt64, Double) -> GhosttySurfaceScrollState)? = nil,
         tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
@@ -2409,6 +2424,7 @@ final class GhosttyManagedSurface {
         self.sendMousePressureHandler = sendMousePressure
         self.isMouseCapturedHandler = isMouseCaptured
         self.setFocusedHandler = setFocused
+        self.applyTerminalConfigHandler = applyTerminalConfig
         self.updateDisplayHandler = updateDisplay
         self.scrollToPositionHandler = scrollToPosition
         self.tmuxFocusHandler = tmuxFocus
@@ -2436,6 +2452,20 @@ final class GhosttyManagedSurface {
         guard visible != isVisible else { return }
         isVisible = visible
         controlSurface.setVisible(visible)
+    }
+
+    @MainActor
+    func applyTerminalConfig(
+        _ config: ghostty_config_t,
+        theme: TerminalTheme,
+        colorScheme: ghostty_color_scheme_e
+    ) {
+        view.applyTerminalTheme(theme)
+        if let applyTerminalConfigHandler {
+            applyTerminalConfigHandler(config, colorScheme)
+        } else {
+            controlSurface.applyTerminalConfig(config, colorScheme: colorScheme)
+        }
     }
 
     @MainActor
