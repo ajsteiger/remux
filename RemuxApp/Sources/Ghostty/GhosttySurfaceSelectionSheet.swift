@@ -78,9 +78,12 @@ struct GhosttySelectionSheetPresentationState: Equatable {
 }
 
 private enum GhosttySheetPalette {
-    static let row = Color(red: 0.23, green: 0.25, blue: 0.30)
-    static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.14)
-    static let stroke = Color.white.opacity(0.08)
+    static let row = Color.white.opacity(0.075)
+    static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.10)
+    static let stroke = Color.white.opacity(0.10)
+    static let selectedStroke = GhosttyPhoneChromePalette.accent.opacity(0.76)
+    static let controlFill = Color.white.opacity(0.10)
+    static let destructiveControlFill = Color(red: 0.42, green: 0.16, blue: 0.18).opacity(0.74)
     static let primary = Color.white.opacity(0.92)
     static let secondary = Color.white.opacity(0.52)
     static let tertiary = Color.white.opacity(0.38)
@@ -389,15 +392,8 @@ private struct GhosttySheetBottomActionBar<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(GhosttySheetPalette.stroke)
-                .frame(height: 1)
-                .padding(.bottom, 12)
-
-            content
-        }
-        .padding(.top, 4)
+        content
+            .padding(.top, 6)
     }
 }
 
@@ -423,27 +419,28 @@ private struct GhosttySheetActionButton: View {
                     .foregroundStyle(foreground)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
+            .frame(height: 44)
             .padding(.horizontal, 14)
-            .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(GhosttySheetPalette.stroke, lineWidth: 1)
-            }
+            .ghosttySheetActionSurface(isDestructive: isDestructive)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GhosttySheetActionButtonStyle(isEnabled: action != nil))
         .accessibilityIdentifier(accessibilityIdentifier)
         .disabled(action == nil)
-        .opacity(action == nil ? 0.5 : 1.0)
     }
 
     private var foreground: Color {
         isDestructive ? Color(red: 1.0, green: 0.55, blue: 0.55) : GhosttySheetPalette.primary
     }
+}
 
-    private var background: Color {
-        isDestructive ? Color(red: 0.36, green: 0.18, blue: 0.20) : GhosttySheetPalette.row
+private struct GhosttySheetActionButtonStyle: ButtonStyle {
+    let isEnabled: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.985 : 1)
+            .opacity(isEnabled ? 1 : 0.45)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -467,12 +464,12 @@ private struct GhosttyWindowSelectionTile: View {
             alignment: .topLeading
         )
         .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.stroke,
-                    lineWidth: isSelected ? 1.5 : 1
+                    isSelected ? GhosttySheetPalette.selectedStroke : GhosttySheetPalette.stroke,
+                    lineWidth: isSelected ? 1.25 : 1
                 )
         }
         .accessibilityElement(children: .ignore)
@@ -568,12 +565,12 @@ private struct GhosttyPaneSelectionTile: View {
             alignment: .topLeading
         )
         .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.stroke,
-                    lineWidth: isSelected ? 1.5 : 1
+                    isSelected ? GhosttySheetPalette.selectedStroke : GhosttySheetPalette.stroke,
+                    lineWidth: isSelected ? 1.25 : 1
                 )
         }
         .accessibilityElement(children: .ignore)
@@ -639,5 +636,35 @@ private struct GhosttyPaneSelectionTile: View {
             }
         }
         .padding(.horizontal, 2)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func ghosttySheetActionSurface(isDestructive: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+
+        if #available(iOS 26.0, *) {
+            self
+                .background {
+                    shape.fill(
+                        isDestructive
+                            ? GhosttySheetPalette.destructiveControlFill
+                            : GhosttySheetPalette.controlFill
+                    )
+                }
+                .glassEffect(.clear.interactive(), in: shape)
+        } else {
+            self
+                .background(
+                    isDestructive
+                        ? GhosttySheetPalette.destructiveControlFill
+                        : GhosttySheetPalette.controlFill,
+                    in: shape
+                )
+                .overlay {
+                    shape.strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
+                }
+        }
     }
 }
