@@ -11,7 +11,7 @@ struct ShortcutPalette: View {
     @State private var pendingDelete: Shortcut?
 
     private let paletteWidth: CGFloat = 420
-    private let contentHeight: CGFloat = 132
+    private let contentHeight: CGFloat = 124
     private let emptyContentHeight: CGFloat = 74
 
     var body: some View {
@@ -196,7 +196,7 @@ private struct AddShortcutTile: View {
                 Text(isEmpty ? "Add Shortcut" : "Add")
                     .font(.system(size: isEmpty ? 14 : 12.5, weight: .semibold))
             }
-            .frame(height: 56)
+            .frame(height: 52)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(ShortcutTileButtonStyle())
@@ -277,7 +277,7 @@ private struct ShortcutTile: View {
                         .foregroundStyle(Color.white.opacity(0.52))
                 }
             }
-            .frame(height: 56)
+            .frame(height: 52)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(ShortcutTileButtonStyle())
@@ -308,7 +308,7 @@ private struct ShortcutTile: View {
 }
 
 private struct ShortcutTileButtonStyle: ButtonStyle {
-    var cornerRadius: CGFloat = 15
+    var cornerRadius: CGFloat = 14
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
