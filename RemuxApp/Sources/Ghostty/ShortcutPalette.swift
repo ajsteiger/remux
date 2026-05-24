@@ -11,40 +11,20 @@ struct ShortcutPalette: View {
     @State private var pendingDelete: Shortcut?
 
     private let paletteWidth: CGFloat = 420
-    private let contentHeight: CGFloat = 122
+    private let contentHeight: CGFloat = 132
+    private let emptyContentHeight: CGFloat = 74
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             tabRail
             paletteContent
-                .frame(height: contentHeight, alignment: .center)
+                .frame(height: currentContentHeight, alignment: .center)
         }
-        .padding(.top, 9)
-        .padding(.horizontal, 11)
-        .padding(.bottom, 12)
+        .padding(.top, 10)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 11)
         .frame(maxWidth: paletteWidth)
-        .background {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.black.opacity(0.92))
-
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.060),
-                            Color.white.opacity(0.018),
-                            Color.clear,
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-        }
-        .overlay(alignment: .top) {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.075), lineWidth: 1)
-        }
-        .shadow(color: Color.black.opacity(0.42), radius: 24, y: 14)
+        .shortcutPalettePanelSurface()
         .confirmationDialog(
             "Delete Shortcut",
             isPresented: Binding(
@@ -68,6 +48,10 @@ struct ShortcutPalette: View {
                 Text("This removes \(shortcut.title) from the palette and Favorites.")
             }
         }
+    }
+
+    private var currentContentHeight: CGFloat {
+        selectedTab == .favorites && selectedShortcuts.isEmpty ? emptyContentHeight : contentHeight
     }
 
     private var selectedTab: ShortcutPaletteTabID {
@@ -95,25 +79,16 @@ struct ShortcutPalette: View {
                 .padding(4)
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(GhosttyPhoneChromePalette.groupSurface)
-            .clipShape(Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(Color.white.opacity(0.075), lineWidth: 1)
-            }
+            .frame(maxWidth: .infinity, minHeight: 42, maxHeight: 42, alignment: .leading)
+            .shortcutPaletteCapsuleSurface(isPressed: false)
 
             Button {
                 onOpenSettings()
             } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 15.5, weight: .semibold))
-                    .frame(width: 38, height: 34)
-                    .background(GhosttyPhoneChromePalette.groupSurface, in: Circle())
-                    .overlay {
-                        Circle()
-                            .stroke(Color.white.opacity(0.075), lineWidth: 1)
-                    }
+                    .frame(width: 42, height: 42)
+                    .shortcutPaletteCircleSurface(isPressed: false)
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.white.opacity(0.76))
@@ -240,14 +215,14 @@ private struct ShortcutPaletteTabButton: View {
             ShortcutPaletteTabIcon(tab: tab, snapshot: snapshot)
         }
         .buttonStyle(.plain)
-        .frame(width: 36, height: 32)
+        .frame(width: 38, height: 34)
         .contentShape(Capsule())
-        .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.54))
-        .background(isSelected ? Color.white.opacity(0.115) : Color.clear, in: Capsule())
+        .foregroundStyle(isSelected ? Color.white.opacity(0.96) : Color.white.opacity(0.58))
+        .background(isSelected ? Color.white.opacity(0.16) : Color.clear, in: Capsule())
         .overlay {
             if isSelected {
                 Capsule()
-                    .stroke(Color.white.opacity(0.070), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
             }
         }
         .accessibilityLabel(snapshot.displayTitle(for: tab))
@@ -262,12 +237,12 @@ private struct EmptyFavoritesView: View {
         HStack {
             Spacer(minLength: 0)
 
-                Button(action: addShortcut) {
-                    Label("Add Shortcut", systemImage: "plus")
-                        .font(.system(size: 14, weight: .semibold))
-                        .labelStyle(.titleAndIcon)
-                        .frame(width: 168, height: 42)
-                }
+            Button(action: addShortcut) {
+                Label("Add Shortcut", systemImage: "plus")
+                    .font(.system(size: 14, weight: .semibold))
+                    .labelStyle(.titleAndIcon)
+                    .frame(width: 176, height: 46)
+            }
             .buttonStyle(ShortcutCapsuleButtonStyle())
             .accessibilityLabel("Add Shortcut")
             .accessibilityIdentifier("terminal.shortcuts.add")
@@ -339,17 +314,9 @@ private struct ShortcutTileButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(Color.white.opacity(0.90))
             .padding(.horizontal, 12)
-            .background(
-                configuration.isPressed
-                    ? GhosttyPhoneChromePalette.keySurfacePressed
-                    : GhosttyPhoneChromePalette.keySurface.opacity(0.72),
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.075), lineWidth: 1)
-            }
+            .shortcutPaletteTileSurface(cornerRadius: cornerRadius, isPressed: configuration.isPressed)
             .scaleEffect(configuration.isPressed ? 0.975 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -357,16 +324,82 @@ private struct ShortcutCapsuleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(Color.white.opacity(0.90))
+            .shortcutPaletteCapsuleSurface(isPressed: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.975 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private enum ShortcutPaletteStyle {
+    static let panelFill = GhosttyPhoneChromePalette.groupSurface.opacity(0.74)
+    static let panelStroke = Color.white.opacity(0.08)
+    static let controlFill = Color.white.opacity(0.10)
+    static let controlPressedFill = Color.white.opacity(0.17)
+    static let controlStroke = Color.white.opacity(0.10)
+    static let shadow = Color.black.opacity(0.24)
+}
+
+private extension View {
+    @ViewBuilder
+    func shortcutPalettePanelSurface() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
+
+        if #available(iOS 26.0, *) {
+            self
+                .background {
+                    shape.fill(ShortcutPaletteStyle.panelFill)
+                }
+                .glassEffect(.clear.interactive(), in: shape)
+                .overlay {
+                    shape.strokeBorder(ShortcutPaletteStyle.panelStroke, lineWidth: 1)
+                }
+                .shadow(color: ShortcutPaletteStyle.shadow, radius: 18, y: 10)
+        } else {
+            self
+                .background(.regularMaterial, in: shape)
+                .background {
+                    shape.fill(ShortcutPaletteStyle.panelFill)
+                }
+                .overlay {
+                    shape.strokeBorder(ShortcutPaletteStyle.panelStroke, lineWidth: 1)
+                }
+                .shadow(color: ShortcutPaletteStyle.shadow, radius: 18, y: 10)
+        }
+    }
+
+    func shortcutPaletteTileSurface(cornerRadius: CGFloat, isPressed: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return self
             .background(
-                configuration.isPressed
-                    ? GhosttyPhoneChromePalette.keySurfacePressed
-                    : GhosttyPhoneChromePalette.groupSurface,
+                isPressed ? ShortcutPaletteStyle.controlPressedFill : ShortcutPaletteStyle.controlFill,
+                in: shape
+            )
+            .overlay {
+                shape.strokeBorder(ShortcutPaletteStyle.controlStroke, lineWidth: 1)
+            }
+    }
+
+    func shortcutPaletteCapsuleSurface(isPressed: Bool) -> some View {
+        self
+            .background(
+                isPressed ? ShortcutPaletteStyle.controlPressedFill : ShortcutPaletteStyle.controlFill,
                 in: Capsule()
             )
             .overlay {
                 Capsule()
-                    .stroke(Color.white.opacity(0.080), lineWidth: 1)
+                    .strokeBorder(ShortcutPaletteStyle.controlStroke, lineWidth: 1)
             }
-            .scaleEffect(configuration.isPressed ? 0.975 : 1)
+    }
+
+    func shortcutPaletteCircleSurface(isPressed: Bool) -> some View {
+        self
+            .background(
+                isPressed ? ShortcutPaletteStyle.controlPressedFill : ShortcutPaletteStyle.controlFill,
+                in: Circle()
+            )
+            .overlay {
+                Circle()
+                    .strokeBorder(ShortcutPaletteStyle.controlStroke, lineWidth: 1)
+            }
     }
 }
