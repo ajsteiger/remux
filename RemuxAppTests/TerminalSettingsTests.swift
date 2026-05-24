@@ -27,6 +27,12 @@ final class TerminalSettingsTests: XCTestCase {
         )
     }
 
+    func testTerminalThemeChoosesAppAppearance() {
+        XCTAssertEqual(TerminalTheme.ghosttyDefault.appAppearance, .dark)
+        XCTAssertEqual(TerminalTheme.remuxDark.appAppearance, .dark)
+        XCTAssertEqual(TerminalTheme.remuxLight.appAppearance, .light)
+    }
+
     func testExplicitFontSizeOverridesDevicePolicy() {
         let settings = TerminalSettings(fontSize: 14, theme: .ghosttyDefault)
 
