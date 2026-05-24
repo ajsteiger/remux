@@ -9,6 +9,15 @@ final class GhosttyKitRuntimeTests: XCTestCase {
         _ = try GhosttyKitRuntime()
     }
 
+    func testApplyingTerminalSettingsUpdatesRuntimeSettings() throws {
+        let runtime = try GhosttyKitRuntime()
+        let settings = TerminalSettings(fontSize: 14, theme: .remuxLight)
+
+        try runtime.applyTerminalSettings(settings)
+
+        XCTAssertEqual(runtime.terminalSettings, settings)
+    }
+
     func testSurfaceViewDoesNotDefaultToDesktopSizedFrame() {
         let view = GhosttyKitSurfaceView(frame: .zero)
 
