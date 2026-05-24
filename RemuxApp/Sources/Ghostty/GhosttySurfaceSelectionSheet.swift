@@ -93,6 +93,7 @@ enum GhosttySheetPalette {
 struct GhosttyWindowSelectionSheet: View {
     @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyWindowRemovalRequest?
+    @State private var pendingContextAction: GhosttyWindowRemovalRequest?
 
     let projection: GhosttyWindowSelectionSheetRenderProjection
     let sessionName: String
@@ -133,6 +134,20 @@ struct GhosttyWindowSelectionSheet: View {
         }
         .onChange(of: projection.previewLeafIDs) { _, newValue in
             session.reconcile(leafIDs: newValue)
+        }
+        .overlayPreferenceValue(GhosttySelectionTileBoundsPreferenceKey.self) { bounds in
+            GhosttySelectionContextActionOverlay(
+                bounds: bounds,
+                action: pendingContextAction.map {
+                    GhosttySelectionContextActionPresentation(
+                        id: $0.id,
+                        title: "Remove Window \($0.displayIndex)",
+                        accessibilityIdentifier: "terminal.window.remove.\($0.displayIndex)"
+                    )
+                },
+                perform: confirmPendingContextAction,
+                dismiss: dismissPendingContextAction
+            )
         }
         .confirmationDialog(
             "Remove Window?",
@@ -180,18 +195,27 @@ struct GhosttyWindowSelectionSheet: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("terminal.window.tile.\(window.displayIndex)")
-                .contextMenu {
-                    Button(role: .destructive) {
-                        Haptic.warning()
-                        pendingRemoval = GhosttyWindowRemovalRequest(
-                            id: window.id,
-                            displayIndex: window.displayIndex,
-                            paneCount: window.paneCount
-                        )
-                    } label: {
-                        Label("Remove Window \(window.displayIndex)", systemImage: "trash")
-                    }
-                    .accessibilityIdentifier("terminal.window.remove.\(window.displayIndex)")
+                .anchorPreference(key: GhosttySelectionTileBoundsPreferenceKey.self, value: .bounds) {
+                    [window.id: $0]
+                }
+                .highPriorityGesture(
+                    LongPressGesture(minimumDuration: 0.42, maximumDistance: 18)
+                        .onEnded { _ in
+                            Haptic.warning()
+                            pendingContextAction = GhosttyWindowRemovalRequest(
+                                id: window.id,
+                                displayIndex: window.displayIndex,
+                                paneCount: window.paneCount
+                            )
+                        }
+                )
+                .accessibilityAction(named: Text("Remove Window \(window.displayIndex)")) {
+                    Haptic.warning()
+                    pendingRemoval = GhosttyWindowRemovalRequest(
+                        id: window.id,
+                        displayIndex: window.displayIndex,
+                        paneCount: window.paneCount
+                    )
                 }
             }
 
@@ -205,9 +229,19 @@ struct GhosttyWindowSelectionSheet: View {
             set: { isPresented in
                 if !isPresented {
                     pendingRemoval = nil
+                    pendingContextAction = nil
                 }
             }
         )
+    }
+
+    private func confirmPendingContextAction() {
+        pendingRemoval = pendingContextAction
+        pendingContextAction = nil
+    }
+
+    private func dismissPendingContextAction() {
+        pendingContextAction = nil
     }
 
     private func windowRemovalMessage(for request: GhosttyWindowRemovalRequest) -> String {
@@ -218,6 +252,7 @@ struct GhosttyWindowSelectionSheet: View {
 struct GhosttyPaneSelectionSheet: View {
     @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyPaneRemovalRequest?
+    @State private var pendingContextAction: GhosttyPaneRemovalRequest?
 
     let projection: GhosttyPaneSelectionSheetRenderProjection
     let onSplitPane: (() -> Void)?
@@ -239,7 +274,7 @@ struct GhosttyPaneSelectionSheet: View {
                     panes: projection.panes,
                     layout: layout,
                     onRemove: { pane in
-                        pendingRemoval = GhosttyPaneRemovalRequest(
+                        pendingContextAction = GhosttyPaneRemovalRequest(
                             id: pane.id,
                             displayIndex: pane.displayIndex,
                             isOnlyPane: projection.paneCount == 1
@@ -281,6 +316,20 @@ struct GhosttyPaneSelectionSheet: View {
         }
         .onChange(of: projection.previewLeafIDs) { _, newValue in
             session.reconcile(leafIDs: newValue)
+        }
+        .overlayPreferenceValue(GhosttySelectionTileBoundsPreferenceKey.self) { bounds in
+            GhosttySelectionContextActionOverlay(
+                bounds: bounds,
+                action: pendingContextAction.map {
+                    GhosttySelectionContextActionPresentation(
+                        id: $0.id,
+                        title: "Remove Pane \($0.displayIndex)",
+                        accessibilityIdentifier: "terminal.pane.remove.\($0.displayIndex)"
+                    )
+                },
+                perform: confirmPendingContextAction,
+                dismiss: dismissPendingContextAction
+            )
         }
         .confirmationDialog(
             "Remove Pane?",
@@ -327,14 +376,23 @@ struct GhosttyPaneSelectionSheet: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("terminal.pane.tile.\(pane.displayIndex)")
-                .contextMenu {
-                    Button(role: .destructive) {
-                        Haptic.warning()
-                        onRemove(pane)
-                    } label: {
-                        Label("Remove Pane \(pane.displayIndex)", systemImage: "trash")
-                    }
-                    .accessibilityIdentifier("terminal.pane.remove.\(pane.displayIndex)")
+                .anchorPreference(key: GhosttySelectionTileBoundsPreferenceKey.self, value: .bounds) {
+                    [pane.id: $0]
+                }
+                .highPriorityGesture(
+                    LongPressGesture(minimumDuration: 0.42, maximumDistance: 18)
+                        .onEnded { _ in
+                            Haptic.warning()
+                            onRemove(pane)
+                        }
+                )
+                .accessibilityAction(named: Text("Remove Pane \(pane.displayIndex)")) {
+                    Haptic.warning()
+                    pendingRemoval = GhosttyPaneRemovalRequest(
+                        id: pane.id,
+                        displayIndex: pane.displayIndex,
+                        isOnlyPane: pane.totalCount == 1
+                    )
                 }
             }
         }
@@ -347,9 +405,19 @@ struct GhosttyPaneSelectionSheet: View {
             set: { isPresented in
                 if !isPresented {
                     pendingRemoval = nil
+                    pendingContextAction = nil
                 }
             }
         )
+    }
+
+    private func confirmPendingContextAction() {
+        pendingRemoval = pendingContextAction
+        pendingContextAction = nil
+    }
+
+    private func dismissPendingContextAction() {
+        pendingContextAction = nil
     }
 
     private func paneRemovalMessage(for request: GhosttyPaneRemovalRequest) -> String {
@@ -370,6 +438,110 @@ private struct GhosttyPaneRemovalRequest: Identifiable {
     let id: UUID
     let displayIndex: Int
     let isOnlyPane: Bool
+}
+
+private struct GhosttySelectionContextActionPresentation: Identifiable, Equatable {
+    let id: UUID
+    let title: String
+    let accessibilityIdentifier: String
+}
+
+private struct GhosttySelectionTileBoundsPreferenceKey: PreferenceKey {
+    static let defaultValue: [UUID: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [UUID: Anchor<CGRect>], nextValue: () -> [UUID: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, newValue in newValue })
+    }
+}
+
+private struct GhosttySelectionContextActionOverlay: View {
+    let bounds: [UUID: Anchor<CGRect>]
+    let action: GhosttySelectionContextActionPresentation?
+    let perform: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let action, let anchor = bounds[action.id] {
+                let tileFrame = proxy[anchor]
+
+                ZStack {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: dismiss)
+
+                    GhosttySelectionContextActionButton(
+                        title: action.title,
+                        accessibilityIdentifier: action.accessibilityIdentifier,
+                        action: perform
+                    )
+                    .position(actionPosition(for: tileFrame, in: proxy.size))
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
+                }
+                .animation(.spring(response: 0.24, dampingFraction: 0.82), value: action)
+            }
+        }
+    }
+
+    private func actionPosition(for tileFrame: CGRect, in containerSize: CGSize) -> CGPoint {
+        let actionSize = GhosttySelectionContextActionButton.metrics.size
+        let edgeMargin: CGFloat = 10
+        let cornerInset: CGFloat = 18
+        let x = min(
+            max(tileFrame.maxX - cornerInset, actionSize.width / 2 + edgeMargin),
+            containerSize.width - actionSize.width / 2 - edgeMargin
+        )
+        let y = min(
+            max(tileFrame.minY + cornerInset, actionSize.height / 2 + edgeMargin),
+            containerSize.height - actionSize.height / 2 - edgeMargin
+        )
+        return CGPoint(x: x, y: y)
+    }
+}
+
+private struct GhosttySelectionContextActionButton: View {
+    struct Metrics {
+        let size = CGSize(width: 44, height: 44)
+    }
+
+    static let metrics = Metrics()
+
+    let title: String
+    let accessibilityIdentifier: String
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptic.tap()
+            action()
+        } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(GhosttySelectionContextActionPalette.destructiveText)
+                .frame(width: Self.metrics.size.width, height: Self.metrics.size.height)
+                .ghosttySelectionContextActionSurface()
+        }
+        .buttonStyle(GhosttySelectionContextActionButtonStyle())
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct GhosttySelectionContextActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.975 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private enum GhosttySelectionContextActionPalette {
+    static let tint = GhosttyPhoneChromePalette.groupSurface.opacity(0.78)
+    static let fallbackFill = GhosttyPhoneChromePalette.groupSurface.opacity(0.92)
+    static let destructiveText = Color(uiColor: .systemRed)
+    static let stroke = Color.white.opacity(0.11)
+    static let shadow = Color.black.opacity(0.24)
 }
 
 @ViewBuilder
@@ -640,6 +812,34 @@ private struct GhosttyPaneSelectionTile: View {
 }
 
 private extension View {
+    @ViewBuilder
+    func ghosttySelectionContextActionSurface() -> some View {
+        let shape = Circle()
+
+        if #available(iOS 26.0, *) {
+            self
+                .glassEffect(
+                    .clear
+                        .tint(GhosttySelectionContextActionPalette.tint),
+                    in: shape
+                )
+                .overlay {
+                    shape.strokeBorder(GhosttySelectionContextActionPalette.stroke, lineWidth: 1)
+                }
+                .shadow(color: GhosttySelectionContextActionPalette.shadow, radius: 18, y: 10)
+        } else {
+            self
+                .background(.regularMaterial, in: shape)
+                .background {
+                    shape.fill(GhosttySelectionContextActionPalette.fallbackFill)
+                }
+                .overlay {
+                    shape.strokeBorder(GhosttySelectionContextActionPalette.stroke, lineWidth: 1)
+                }
+                .shadow(color: GhosttySelectionContextActionPalette.shadow, radius: 18, y: 10)
+        }
+    }
+
     @ViewBuilder
     func ghosttySheetActionSurface(isDestructive: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
