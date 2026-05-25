@@ -27,6 +27,15 @@ final class TerminalSettingsTests: XCTestCase {
         )
     }
 
+    func testGhosttyConfigCanIncludeEffectiveDeviceFontSize() {
+        let settings = TerminalSettings(fontSize: nil, theme: .remuxLight)
+
+        XCTAssertEqual(
+            settings.ghosttyConfigContents(effectiveFontSize: 11),
+            "background = #FCFBF9\nforeground = #292E38\nfont-size = 11\n"
+        )
+    }
+
     func testExplicitFontSizeOverridesDevicePolicy() {
         let settings = TerminalSettings(fontSize: 14, theme: .ghosttyDefault)
 

@@ -70,9 +70,13 @@ struct TerminalSettings: Equatable, Codable, Sendable {
     }
 
     var ghosttyConfigContents: String? {
+        ghosttyConfigContents(effectiveFontSize: nil)
+    }
+
+    func ghosttyConfigContents(effectiveFontSize: Float32?) -> String? {
         var lines = theme.ghosttyConfigLines
-        if let fontSize {
-            lines.append("font-size = \(Self.configString(for: fontSize))")
+        if let effectiveFontSize = effectiveFontSize ?? fontSize {
+            lines.append("font-size = \(Self.configString(for: effectiveFontSize))")
         }
 
         guard !lines.isEmpty else { return nil }
