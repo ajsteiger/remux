@@ -245,6 +245,10 @@ final class GhosttyKitRuntime {
         )
     }
 
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        try state.applyTerminalSettings(settings)
+    }
+
     private static func initializeBackend() throws {
         guard !initialized else { return }
 
@@ -300,7 +304,7 @@ final class GhosttyKitRuntime {
 
 private final class GhosttyKitRuntimeState {
     let app: ghostty_app_t
-    let terminalSettings: TerminalSettings
+    private(set) var terminalSettings: TerminalSettings
 
     private let config: ghostty_config_t
     private let callbacks: GhosttyKitRuntimeCallbacks
@@ -313,7 +317,7 @@ private final class GhosttyKitRuntimeState {
         guard let config = ghostty_config_new() else {
             throw GhosttyKitRuntimeError.configCreationFailed
         }
-        try Self.loadSettings(terminalSettings, into: config)
+        try Self.loadSettings(terminalSettings, into: config, effectiveFontSize: nil)
         ghostty_config_finalize(config)
 
         let callbackLease = surfaceDelegate?.makeRuntimeCallbackLease()
@@ -358,11 +362,38 @@ private final class GhosttyKitRuntimeState {
         _ = callbacks
     }
 
+    @MainActor
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        guard settings != terminalSettings else { return }
+
+        guard let config = ghostty_config_new() else {
+            throw GhosttyKitRuntimeError.configCreationFailed
+        }
+        defer { ghostty_config_free(config) }
+
+        let appearance = GhosttyTerminalAppearancePolicy.currentDeviceAppearance(settings: settings)
+        try Self.loadSettings(
+            settings,
+            into: config,
+            effectiveFontSize: appearance.fontSize
+        )
+        ghostty_config_finalize(config)
+
+        GhosttyRuntimeTrace.diagnostics(
+            "runtime.applyTerminalSettings theme=\(settings.theme.rawValue) fontSize=\(appearance.fontSize.map(String.init(describing:)) ?? "nil")"
+        )
+        ghostty_app_update_config(app, config)
+        terminalSettings = settings
+    }
+
     private static func loadSettings(
         _ settings: TerminalSettings,
-        into config: ghostty_config_t
+        into config: ghostty_config_t,
+        effectiveFontSize: Float32?
     ) throws {
-        guard let contents = settings.ghosttyConfigContents else { return }
+        guard let contents = settings.ghosttyConfigContents(effectiveFontSize: effectiveFontSize) else {
+            return
+        }
 
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("remux-ghostty-\(UUID().uuidString).conf")

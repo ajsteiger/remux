@@ -26,6 +26,15 @@ enum GhosttySurfaceSelectionOutcome: Equatable, Sendable {
 }
 
 @MainActor
+private final class GhosttyTerminalSettingsState {
+    var settings: TerminalSettings
+
+    init(_ settings: TerminalSettings) {
+        self.settings = settings
+    }
+}
+
+@MainActor
 final class GhosttySurfaceScreenModel: ObservableObject {
     enum State: Equatable {
         case idle
@@ -131,6 +140,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     private let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
     private let runtimePrecreationController: GhosttyTerminalRuntimePrecreationController
     private let debugLatencyProbeController: GhosttyTerminalDebugLatencyProbeController
+    private let terminalSettingsState: GhosttyTerminalSettingsState
 
     private let hostSessionSlot = GhosttyTerminalHostSessionSlot()
     private lazy var hostSessionFactory = GhosttyTerminalHostSessionFactory(
@@ -173,19 +183,21 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         self.transportFactory = transportFactory
         self.onRuntimeStateChange = onRuntimeStateChange
         self.surfaceRegistry = surfaceRegistry
+        let terminalSettingsState = GhosttyTerminalSettingsState(target.terminalSettings)
+        self.terminalSettingsState = terminalSettingsState
         self.debugLatencyProbeController = GhosttyTerminalDebugLatencyProbeController(
             probe: debugLatencyProbe
         )
         let selectedRuntimeFactory: RuntimeFactory = runtimeFactory ?? { delegate in
             try GhosttyKitRuntime(
                 surfaceDelegate: delegate,
-                terminalSettings: target.terminalSettings
+                terminalSettings: terminalSettingsState.settings
             )
         }
         self.runtimePrecreationController = GhosttyTerminalRuntimePrecreationController(
             runtimeFactory: selectedRuntimeFactory
         )
-        surfaceRegistry.terminalSettings = target.terminalSettings
+        surfaceRegistry.terminalSettings = terminalSettingsState.settings
         surfaceRegistry.onChange = { [weak self] in
             GhosttyTmuxActionTrace.traceActiveTopologyFlows(
                 event: "model.registryChange.received"
@@ -209,6 +221,25 @@ final class GhosttySurfaceScreenModel: ObservableObject {
             )
         }
     }
+
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        terminalSettingsState.settings = settings
+        surfaceRegistry.applyTerminalSettings(settings)
+        try runtimePrecreationController.applyTerminalSettings(settings)
+        try hostSessionSlot.applyTerminalSettings(settings)
+        publishSurfaceRegistryRevision()
+#if DEBUG
+        terminalSettingsApplyCountForTesting += 1
+#endif
+    }
+
+#if DEBUG
+    private(set) var terminalSettingsApplyCountForTesting = 0
+
+    var terminalSettingsForTesting: TerminalSettings {
+        terminalSettingsState.settings
+    }
+#endif
 
     private func publishSurfaceRegistryRevision() {
         GhosttyTmuxActionTrace.traceActiveTopologyFlows(

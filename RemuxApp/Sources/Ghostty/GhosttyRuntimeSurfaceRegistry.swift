@@ -348,6 +348,14 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
         managedSurfaceStore.allSurfaces()
     }
 
+    func applyTerminalSettings(_ settings: TerminalSettings) {
+        terminalSettings = settings
+        for surface in managedSurfaceStore.allSurfaces() {
+            surface.applyTerminalTheme(settings.theme)
+        }
+        updateDebugSummary("terminal settings applied surfaces=\(managedSurfaceStore.count)")
+    }
+
     func surfacePendingPermanentRemoval(for id: UUID) -> GhosttyManagedSurface? {
         managedSurfaceStore.surfacePendingPermanentRemoval(for: id)
     }
@@ -2418,6 +2426,11 @@ final class GhosttyManagedSurface {
         self.tmuxCopyModeHandler = tmuxCopyMode
         self.releaseBeforePermanentRemovalHandler = releaseBeforePermanentRemoval
         self.transferRuntimeSurfaceLifetimeToAppShutdownHandler = transferRuntimeSurfaceLifetimeToAppShutdown
+    }
+
+    @MainActor
+    func applyTerminalTheme(_ theme: TerminalTheme) {
+        view.applyTerminalTheme(theme)
     }
 
     @MainActor

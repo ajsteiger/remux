@@ -98,6 +98,10 @@ final class GhosttyHostSession {
         controlSurface?.tmuxNewWindow()
     }
 
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        try runtime.applyTerminalSettings(settings)
+    }
+
     func stop(retainingControlSurfaceUntilSessionRelease: Bool = false) {
         isStopped = true
         transportStartGeneration &+= 1

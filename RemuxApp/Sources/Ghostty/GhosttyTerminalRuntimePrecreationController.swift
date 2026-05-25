@@ -64,6 +64,11 @@ final class GhosttyTerminalRuntimePrecreationController {
         }
     }
 
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        guard case .success(let runtime) = precreatedRuntime else { return }
+        try runtime.applyTerminalSettings(settings)
+    }
+
     func clear() {
         precreatedRuntime = nil
     }

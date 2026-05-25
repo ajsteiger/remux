@@ -102,4 +102,8 @@ final class GhosttyTerminalHostSessionSlot {
     func submitHostTmuxNewWindow() -> TmuxActionSubmissionResult? {
         current?.submitHostTmuxNewWindow()
     }
+
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        try current?.applyTerminalSettings(settings)
+    }
 }
