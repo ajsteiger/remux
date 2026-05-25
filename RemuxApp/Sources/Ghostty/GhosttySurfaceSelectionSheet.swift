@@ -78,15 +78,15 @@ struct GhosttySelectionSheetPresentationState: Equatable {
 }
 
 enum GhosttySheetPalette {
-    static let row = Color.white.opacity(0.075)
-    static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.10)
-    static let stroke = Color.white.opacity(0.10)
+    static let row = Color(uiColor: .secondarySystemFill)
+    static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.18)
+    static let stroke = Color.primary.opacity(0.12)
     static let selectedStroke = GhosttyPhoneChromePalette.accent.opacity(0.76)
-    static let controlFill = Color.white.opacity(0.10)
-    static let destructiveControlFill = Color(red: 0.42, green: 0.16, blue: 0.18).opacity(0.74)
-    static let primary = Color.white.opacity(0.92)
-    static let secondary = Color.white.opacity(0.52)
-    static let tertiary = Color.white.opacity(0.38)
+    static let controlFill = Color(uiColor: .secondarySystemFill)
+    static let destructiveControlFill = Color(uiColor: .systemRed).opacity(0.14)
+    static let primary = Color.primary.opacity(0.92)
+    static let secondary = Color.secondary.opacity(0.78)
+    static let tertiary = Color.secondary.opacity(0.56)
     static let accent = GhosttyPhoneChromePalette.accent
 }
 
@@ -537,11 +537,11 @@ private struct GhosttySelectionContextActionButtonStyle: ButtonStyle {
 }
 
 private enum GhosttySelectionContextActionPalette {
-    static let tint = GhosttyPhoneChromePalette.groupSurface.opacity(0.78)
-    static let fallbackFill = GhosttyPhoneChromePalette.groupSurface.opacity(0.92)
+    static let fallbackFill = Color(uiColor: .secondarySystemBackground).opacity(0.92)
+    static let glassTint = Color.primary.opacity(0.055)
     static let destructiveText = Color(uiColor: .systemRed)
-    static let stroke = Color.white.opacity(0.11)
-    static let shadow = Color.black.opacity(0.24)
+    static let stroke = Color.primary.opacity(0.11)
+    static let shadow = Color.black.opacity(0.20)
 }
 
 @ViewBuilder
@@ -601,7 +601,7 @@ private struct GhosttySheetActionButton: View {
     }
 
     private var foreground: Color {
-        isDestructive ? Color(red: 1.0, green: 0.55, blue: 0.55) : GhosttySheetPalette.primary
+        isDestructive ? Color(uiColor: .systemRed) : GhosttySheetPalette.primary
     }
 }
 
@@ -818,15 +818,11 @@ private extension View {
 
         if #available(iOS 26.0, *) {
             self
-                .glassEffect(
-                    .clear
-                        .tint(GhosttySelectionContextActionPalette.tint),
-                    in: shape
-                )
+                .glassEffect(.regular.tint(GhosttySelectionContextActionPalette.glassTint).interactive(), in: shape)
                 .overlay {
-                    shape.strokeBorder(GhosttySelectionContextActionPalette.stroke, lineWidth: 1)
+                    shape.strokeBorder(GhosttySelectionContextActionPalette.stroke, lineWidth: 0.75)
                 }
-                .shadow(color: GhosttySelectionContextActionPalette.shadow, radius: 18, y: 10)
+                .shadow(color: GhosttySelectionContextActionPalette.shadow, radius: 18, y: 9)
         } else {
             self
                 .background(.regularMaterial, in: shape)
@@ -846,14 +842,15 @@ private extension View {
 
         if #available(iOS 26.0, *) {
             self
-                .background {
-                    shape.fill(
-                        isDestructive
-                            ? GhosttySheetPalette.destructiveControlFill
-                            : GhosttySheetPalette.controlFill
-                    )
+                .background(
+                    isDestructive
+                        ? GhosttySheetPalette.destructiveControlFill
+                        : GhosttySheetPalette.controlFill,
+                    in: shape
+                )
+                .overlay {
+                    shape.strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
                 }
-                .glassEffect(.clear.interactive(), in: shape)
         } else {
             self
                 .background(

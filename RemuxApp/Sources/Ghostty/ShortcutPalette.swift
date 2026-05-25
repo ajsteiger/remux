@@ -89,7 +89,7 @@ struct ShortcutPalette: View {
                     .shortcutPaletteCircleSurface(isPressed: false)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.white.opacity(0.76))
+            .foregroundStyle(GhosttyPhoneChromePalette.chromeForeground)
             .accessibilityLabel("Shortcut Settings")
             .accessibilityIdentifier("terminal.shortcuts.settings")
         }
@@ -226,7 +226,7 @@ private struct ShortcutPaletteTabButton: View {
         .buttonStyle(.plain)
         .frame(width: 38, height: 34)
         .contentShape(Capsule())
-        .foregroundStyle(isSelected ? Color.white.opacity(0.92) : Color.white.opacity(0.58))
+        .foregroundStyle(isSelected ? Color.primary.opacity(0.88) : Color.secondary.opacity(0.78))
         .background(isSelected ? ShortcutPaletteStyle.embeddedFill : Color.clear, in: Capsule())
         .overlay {
             if isSelected {
@@ -283,7 +283,7 @@ private struct ShortcutTile: View {
                         .font(GhosttyShortcutTypography.shortcutHintCompact)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .foregroundStyle(Color.white.opacity(0.52))
+                        .foregroundStyle(Color.secondary.opacity(0.78))
                 }
             }
             .frame(height: ShortcutPaletteLayout.shortcutTileHeight)
@@ -321,7 +321,7 @@ private struct ShortcutTileButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(Color.white.opacity(0.90))
+            .foregroundStyle(Color.primary.opacity(0.90))
             .padding(.horizontal, 12)
             .shortcutPaletteTileSurface(cornerRadius: cornerRadius, isPressed: configuration.isPressed)
             .scaleEffect(configuration.isPressed ? 0.975 : 1)
@@ -332,7 +332,7 @@ private struct ShortcutTileButtonStyle: ButtonStyle {
 private struct ShortcutCapsuleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(Color.white.opacity(0.90))
+            .foregroundStyle(Color.primary.opacity(0.90))
             .shortcutPaletteCapsuleSurface(isPressed: configuration.isPressed)
             .scaleEffect(configuration.isPressed ? 0.975 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
@@ -342,7 +342,7 @@ private struct ShortcutCapsuleButtonStyle: ButtonStyle {
 private struct ShortcutEmptyActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(Color.white.opacity(0.88))
+            .foregroundStyle(Color.primary.opacity(0.88))
             .shortcutPaletteEmptyActionSurface(isPressed: configuration.isPressed)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
@@ -350,13 +350,15 @@ private struct ShortcutEmptyActionButtonStyle: ButtonStyle {
 }
 
 private enum ShortcutPaletteStyle {
-    static let fallbackPanelFill = GhosttyPhoneChromePalette.groupSurface.opacity(0.74)
-    static let fallbackPanelStroke = Color.white.opacity(0.08)
-    static let fallbackControlFill = Color.white.opacity(0.10)
-    static let fallbackControlPressedFill = Color.white.opacity(0.17)
-    static let fallbackControlStroke = Color.white.opacity(0.10)
-    static let fallbackShadow = Color.black.opacity(0.24)
-    static let panelGlassTint = GhosttyPhoneChromePalette.groupSurface.opacity(0.68)
+    static let fallbackPanelFill = Color(uiColor: .secondarySystemBackground).opacity(0.72)
+    static let fallbackPanelStroke = Color.primary.opacity(0.08)
+    static let fallbackControlFill = Color(uiColor: .tertiarySystemFill).opacity(0.70)
+    static let fallbackControlPressedFill = Color(uiColor: .quaternarySystemFill).opacity(0.90)
+    static let fallbackControlStroke = Color.primary.opacity(0.10)
+    static let fallbackShadow = Color.black.opacity(0.20)
+    static let panelGlassTint = Color.primary.opacity(0.055)
+    static let panelGlassStroke = Color.primary.opacity(0.14)
+    static let panelGlassShadow = Color.black.opacity(0.16)
     static let embeddedFill = GhosttyShortcutSurfacePalette.embeddedFill
     static let embeddedPressedFill = GhosttyShortcutSurfacePalette.embeddedPressedFill
     static let embeddedStroke = GhosttyShortcutSurfacePalette.contentStroke
@@ -369,11 +371,11 @@ private extension View {
 
         if #available(iOS 26.0, *) {
             self
-                .glassEffect(
-                    .clear
-                        .tint(ShortcutPaletteStyle.panelGlassTint),
-                    in: shape
-                )
+                .glassEffect(.regular.tint(ShortcutPaletteStyle.panelGlassTint), in: shape)
+                .overlay {
+                    shape.strokeBorder(ShortcutPaletteStyle.panelGlassStroke, lineWidth: 0.75)
+                }
+                .shadow(color: ShortcutPaletteStyle.panelGlassShadow, radius: 18, y: 10)
                 .contentShape(shape)
         } else {
             self
