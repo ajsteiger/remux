@@ -304,7 +304,7 @@ private struct GhosttyKeyboardKeyButton: View {
             .font(.system(size: fontSize, weight: .semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.88))
+            .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.chromeForeground)
             .frame(width: width, height: height)
             .ghosttyToolbarButtonSurface(
                 isActive: isActive,
@@ -386,7 +386,7 @@ private struct GhosttyChromeDockButtonStyle: ButtonStyle {
             onPressDown: { Haptic.chromeControlPress() }
         ) {
             configuration.label
-                .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : Color.white.opacity(0.86))
+                .foregroundStyle(isActive ? GhosttyPhoneChromePalette.accent : GhosttyPhoneChromePalette.chromeForeground)
                 .frame(width: width, height: height)
                 .ghosttyToolbarButtonSurface(
                     isActive: isActive,
@@ -402,15 +402,25 @@ private extension View {
     func ghosttyToolbarGroupSurface() -> some View {
         if #available(iOS 26.0, *) {
             self
-                .glassEffect(.clear.interactive(), in: Capsule())
-        } else {
-            self
-                .background(GhosttyPhoneChromePalette.groupSurface.opacity(0.92), in: Capsule())
+                .glassEffect(
+                    .regular
+                        .tint(GhosttyPhoneChromePalette.toolbarGlassTint)
+                        .interactive(),
+                    in: Capsule()
+                )
                 .overlay {
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                        .strokeBorder(GhosttyPhoneChromePalette.toolbarGlassStroke, lineWidth: 0.75)
                 }
-                .shadow(color: Color.black.opacity(0.18), radius: 8, y: 4)
+                .shadow(color: GhosttyPhoneChromePalette.toolbarGlassShadow, radius: 13, y: 7)
+        } else {
+            self
+                .background(GhosttyPhoneChromePalette.toolbarFallbackFill, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(GhosttyPhoneChromePalette.toolbarStroke, lineWidth: 1)
+                }
+                .shadow(color: GhosttyPhoneChromePalette.toolbarShadow, radius: 8, y: 4)
         }
     }
 
@@ -427,13 +437,14 @@ private extension View {
 
         if #available(iOS 26.0, *) {
             self
+                .background(isActive ? GhosttyPhoneChromePalette.toolbarButtonActiveFill : Color.clear, in: shape)
                 .overlay {
-                    shape.fill(Color.white.opacity(isPressed && isEnabled ? 0.08 : 0))
+                    shape.fill(isPressed && isEnabled ? GhosttyPhoneChromePalette.toolbarButtonPressedFill : Color.clear)
                 }
                 .contentShape(shape)
         } else {
-            let activeFill = Color.white.opacity(isActive ? 0.06 : 0)
-            let pressedFill = Color.white.opacity(isPressed && isEnabled ? 0.10 : 0)
+            let activeFill = isActive ? GhosttyPhoneChromePalette.toolbarButtonActiveFill : Color.clear
+            let pressedFill = isPressed && isEnabled ? GhosttyPhoneChromePalette.toolbarButtonPressedFill : Color.clear
 
             self
                 .background(activeFill, in: shape)
@@ -456,6 +467,16 @@ enum GhosttyPhoneChromePalette {
     static let keySurfaceActivePressedOverlay = Color.black.opacity(0.12)
     static let chromeControlPressedOverlay = Color.white.opacity(0.10)
     static let accent = Color(red: 0.43, green: 1.0, blue: 0.78)
+    static let chromeForeground = Color.primary.opacity(0.84)
+    static let chromeSecondaryForeground = Color.secondary.opacity(0.78)
+    static let toolbarGlassTint = Color.primary.opacity(0.065)
+    static let toolbarGlassStroke = Color.primary.opacity(0.16)
+    static let toolbarGlassShadow = Color.black.opacity(0.16)
+    static let toolbarFallbackFill = Color(uiColor: .secondarySystemBackground).opacity(0.88)
+    static let toolbarStroke = Color.primary.opacity(0.12)
+    static let toolbarShadow = Color.black.opacity(0.18)
+    static let toolbarButtonActiveFill = accent.opacity(0.16)
+    static let toolbarButtonPressedFill = Color.primary.opacity(0.08)
 
     static let uiBackground = UIColor(
         red: 0.18,
@@ -473,7 +494,12 @@ enum GhosttyPhoneChromePalette {
 }
 
 extension View {
-    func ghosttyTerminalChromePresentation() -> some View {
-        preferredColorScheme(.dark)
+    @ViewBuilder
+    func ghosttyTerminalChromePresentation(_ colorScheme: ColorScheme? = nil) -> some View {
+        if let colorScheme {
+            preferredColorScheme(colorScheme)
+        } else {
+            self
+        }
     }
 }

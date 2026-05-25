@@ -5,10 +5,31 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
     let isEnabled: Bool
     let wantsFirstResponder: Bool
     let activationToken: Int
+    let keyboardAppearance: UIKeyboardAppearance
     let sendText: (String) -> Bool
     let sendPaste: (String) -> Bool
     let sendKeyEvent: (GhosttySurfaceKeyEvent) -> Bool
     let onTrackpadStateChange: (GhosttyKeyboardCursorTrackpad.HUDState) -> Void
+
+    init(
+        isEnabled: Bool,
+        wantsFirstResponder: Bool,
+        activationToken: Int,
+        keyboardAppearance: UIKeyboardAppearance = .dark,
+        sendText: @escaping (String) -> Bool,
+        sendPaste: @escaping (String) -> Bool,
+        sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool,
+        onTrackpadStateChange: @escaping (GhosttyKeyboardCursorTrackpad.HUDState) -> Void
+    ) {
+        self.isEnabled = isEnabled
+        self.wantsFirstResponder = wantsFirstResponder
+        self.activationToken = activationToken
+        self.keyboardAppearance = keyboardAppearance
+        self.sendText = sendText
+        self.sendPaste = sendPaste
+        self.sendKeyEvent = sendKeyEvent
+        self.onTrackpadStateChange = onTrackpadStateChange
+    }
 
     func makeUIView(context: Context) -> GhosttyTerminalResponderUIView {
         let view = GhosttyTerminalResponderUIView()
@@ -22,6 +43,7 @@ struct GhosttyTerminalResponderRepresentable: UIViewRepresentable {
             isEnabled: isEnabled,
             wantsFirstResponder: wantsFirstResponder,
             activationToken: activationToken,
+            keyboardAppearance: keyboardAppearance,
             sendText: { sendText(GhosttyTerminalInputNormalizer.normalize($0)) },
             sendPaste: sendPaste,
             sendKeyEvent: sendKeyEvent,
@@ -77,6 +99,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         isEnabled: Bool,
         wantsFirstResponder: Bool,
         activationToken: Int,
+        keyboardAppearance: UIKeyboardAppearance = .dark,
         sendText: @escaping (String) -> Bool,
         sendPaste: @escaping (String) -> Bool,
         sendKeyEvent: @escaping (GhosttySurfaceKeyEvent) -> Bool,
@@ -85,6 +108,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         let wasInputEnabled = self.isInputEnabled
         let previouslyWantedFirstResponder = self.wantsFirstResponder
         let previousActivationToken = self.activationToken
+        let previousKeyboardAppearance = self.keyboardAppearance
         GhosttyRuntimeTrace.diagnostics(
             "responder.update enabled=\(isEnabled) wasEnabled=\(wasInputEnabled) wantsFirstResponder=\(wantsFirstResponder) previousWantsFirstResponder=\(previouslyWantedFirstResponder) token=\(activationToken) previousToken=\(previousActivationToken) firstResponder=\(isFirstResponder) hasWindow=\(window != nil)"
         )
@@ -103,10 +127,15 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         )
         self.isInputEnabled = isEnabled
         self.wantsFirstResponder = wantsFirstResponder
+        self.keyboardAppearance = keyboardAppearance
         self.sendTextHandler = sendText
         self.sendPasteHandler = sendPaste
         self.sendKeyEventHandler = sendKeyEvent
         self.trackpadStateHandler = onTrackpadStateChange
+
+        if isFirstResponder, previousKeyboardAppearance != keyboardAppearance {
+            reloadInputViews()
+        }
 
         if !isEnabled {
             cancelTrackpadGestureIfActive(reason: "disabled")

@@ -166,6 +166,7 @@ struct GhosttySurfaceScreen: View {
                                 && inputCoordinator.keyboardMode.enablesSystemKeyboard
                                 && interactionProjection.isInputAvailable,
                             activationToken: inputCoordinator.terminalActivationToken,
+                            keyboardAppearance: presentation.terminalTheme.terminalKeyboardAppearance,
                             sendText: sendTerminalText,
                             sendPaste: sendTerminalPaste,
                             sendKeyEvent: sendTerminalKeyEvent,
@@ -263,7 +264,6 @@ struct GhosttySurfaceScreen: View {
                 .padding(.top, 4)
                 .padding(.bottom, chrome.bottomPadding)
                 .frame(maxWidth: .infinity, alignment: .bottom)
-                .background(presentation.terminalTheme.terminalSurfaceBackground)
                 .background {
                     GeometryReader { chromeProxy in
                         Color.clear.preference(
@@ -307,7 +307,7 @@ struct GhosttySurfaceScreen: View {
                     .presentationContentInteraction(.scrolls)
                     .presentationDragIndicator(.visible)
                     .ghosttySelectionSheetPresentationBackground()
-                    .ghosttyTerminalChromePresentation()
+                    .ghosttyTerminalChromePresentation(presentation.terminalTheme.terminalChromeColorScheme)
             }
             .sheet(isPresented: $isShortcutsSettingsPresented) {
                 ShortcutsSettingsSheet(store: shortcutStore)
@@ -315,7 +315,7 @@ struct GhosttySurfaceScreen: View {
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(28)
-                    .ghosttyTerminalChromePresentation()
+                    .ghosttyTerminalChromePresentation(presentation.terminalTheme.terminalChromeColorScheme)
             }
             .sheet(item: $shortcutEditorRequest) { request in
                 ShortcutEditorSheet(request: request) { shortcut, favorite in
@@ -330,7 +330,7 @@ struct GhosttySurfaceScreen: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(28)
-                .ghosttyTerminalChromePresentation()
+                .ghosttyTerminalChromePresentation(presentation.terminalTheme.terminalChromeColorScheme)
             }
             .onChange(of: paneSelectionSheetTopologyProjection) { _, projection in
                 guard projection.shouldDismissPaneSheet else { return }
@@ -357,6 +357,7 @@ struct GhosttySurfaceScreen: View {
             }
 #endif
         }
+        .preferredColorScheme(presentation.terminalTheme.terminalChromeColorScheme)
         .onAppear {
             GhosttyRuntimeTrace.flowEvent(
                 sessionOpenFlowID,
@@ -1680,6 +1681,26 @@ private struct GhosttyHostSurfaceView: UIViewRepresentable {
 private extension TerminalTheme {
     var terminalSurfaceBackground: Color {
         Color(uiColor: terminalBackgroundUIColor)
+    }
+
+    var terminalChromeColorScheme: ColorScheme {
+        switch self {
+        case .remuxLight:
+            .light
+        case .ghosttyDefault, .remuxDark:
+            .dark
+        }
+    }
+
+    var terminalKeyboardAppearance: UIKeyboardAppearance {
+        switch terminalChromeColorScheme {
+        case .light:
+            .light
+        case .dark:
+            .dark
+        @unknown default:
+            .default
+        }
     }
 }
 
