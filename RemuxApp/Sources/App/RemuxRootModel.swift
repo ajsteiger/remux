@@ -658,6 +658,7 @@ final class RemuxRootModel: ObservableObject {
             var updated = terminalSettings
             mutation(&updated)
             terminalSettings = updated
+            try applyTerminalSettingsToActiveSessions(updated)
             try await dependencies.settingsRepository.saveSettings(updated)
         } catch {
             transitionToFailed(error)
@@ -666,6 +667,19 @@ final class RemuxRootModel: ObservableObject {
 
     func makeTransport(for target: TmuxConnectionTarget) -> any TmuxControlTransport {
         preparedTransportCoordinator.claimOrCreateTransport(for: target)
+    }
+
+    private func applyTerminalSettingsToActiveSessions(_ settings: TerminalSettings) throws {
+        RemuxActiveSessionCollection.refreshTerminalSettings(
+            settings,
+            in: &activeSessions
+        )
+
+        for session in activeSessions {
+            let key = TerminalRuntimeAttemptKey(session: session)
+            guard let model = terminalScreenModels[key] else { continue }
+            try model.applyTerminalSettings(settings)
+        }
     }
 
     func terminalScreenModel(for session: ActiveTerminalSession) -> GhosttySurfaceScreenModel {

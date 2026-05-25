@@ -132,6 +132,31 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
         XCTAssertEqual(sessions.first?.target.terminalSettings, target.terminalSettings)
     }
 
+    func testRefreshTerminalSettingsPreservesRuntimeIdentityAndState() {
+        let target = makeTarget(
+            password: "secret",
+            terminalSettings: TerminalSettings(fontSize: 13, theme: .remuxDark)
+        )
+        var session = ActiveTerminalSession(
+            target: target,
+            runtimeState: .connected
+        )
+        let instanceID = session.instanceID
+        XCTAssertTrue(session.markAutomaticReconnectAttempted(source: .transportLoss))
+        var sessions = [session]
+        let updated = TerminalSettings(fontSize: nil, theme: .remuxLight)
+
+        RemuxActiveSessionCollection.refreshTerminalSettings(updated, in: &sessions)
+
+        XCTAssertEqual(sessions.first?.instanceID, instanceID)
+        XCTAssertEqual(sessions.first?.runtimeState, .connected)
+        XCTAssertEqual(sessions.first?.automaticReconnectAttemptedSources, [.transportLoss])
+        XCTAssertEqual(sessions.first?.target.server, target.server)
+        XCTAssertEqual(sessions.first?.target.workspace, target.workspace)
+        XCTAssertEqual(sessions.first?.target.password, "secret")
+        XCTAssertEqual(sessions.first?.target.terminalSettings, updated)
+    }
+
     func testActiveServerQueries() {
         let firstServer = makeServer(displayName: "First")
         let secondServer = makeServer(displayName: "Second")
