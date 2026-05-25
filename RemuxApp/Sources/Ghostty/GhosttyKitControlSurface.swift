@@ -169,26 +169,6 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     }
 
     @MainActor
-    func applyTerminalSettings(_ settings: TerminalSettings) throws {
-        let config = try GhosttyTerminalConfigBuilder.makeFinalizedConfig(for: settings)
-        defer {
-            ghostty_config_free(config)
-        }
-
-        applyTerminalConfig(config, colorScheme: settings.theme.ghosttyColorScheme)
-    }
-
-    @MainActor
-    func applyTerminalConfig(
-        _ config: ghostty_config_t,
-        colorScheme: ghostty_color_scheme_e
-    ) {
-        ghostty_surface_update_config(storage.surface, config)
-        ghostty_surface_set_color_scheme(storage.surface, colorScheme)
-        ghostty_surface_refresh(storage.surface)
-    }
-
-    @MainActor
     func releaseRuntimeManagedSurface() {
         storage.releaseRuntimeManagedSurface()
     }

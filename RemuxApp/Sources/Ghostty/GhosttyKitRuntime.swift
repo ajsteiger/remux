@@ -176,10 +176,6 @@ final class GhosttyKitRuntime {
 
     private let state: GhosttyKitRuntimeState
 
-    var terminalSettings: TerminalSettings {
-        state.terminalSettings
-    }
-
     init(
         surfaceDelegate: GhosttyKitRuntimeSurfaceDelegate? = nil,
         terminalSettings: TerminalSettings = .default
@@ -249,10 +245,6 @@ final class GhosttyKitRuntime {
         )
     }
 
-    func applyTerminalSettings(_ settings: TerminalSettings) throws {
-        try state.applyTerminalSettings(settings)
-    }
-
     private static func initializeBackend() throws {
         guard !initialized else { return }
 
@@ -308,7 +300,7 @@ final class GhosttyKitRuntime {
 
 private final class GhosttyKitRuntimeState {
     let app: ghostty_app_t
-    private(set) var terminalSettings: TerminalSettings
+    let terminalSettings: TerminalSettings
 
     private let config: ghostty_config_t
     private let callbacks: GhosttyKitRuntimeCallbacks
@@ -318,7 +310,11 @@ private final class GhosttyKitRuntimeState {
         surfaceDelegate: GhosttyKitRuntimeSurfaceDelegate?,
         terminalSettings: TerminalSettings
     ) throws {
-        let config = try GhosttyTerminalConfigBuilder.makeFinalizedConfig(for: terminalSettings)
+        guard let config = ghostty_config_new() else {
+            throw GhosttyKitRuntimeError.configCreationFailed
+        }
+        try Self.loadSettings(terminalSettings, into: config)
+        ghostty_config_finalize(config)
 
         let callbackLease = surfaceDelegate?.makeRuntimeCallbackLease()
         let callbacks = GhosttyKitRuntimeCallbacks(callbackLease: callbackLease)
@@ -345,24 +341,11 @@ private final class GhosttyKitRuntimeState {
             throw GhosttyKitRuntimeError.appCreationFailed
         }
 
-        ghostty_app_set_color_scheme(app, terminalSettings.theme.ghosttyColorScheme)
-
         self.app = app
         self.config = config
         self.callbacks = callbacks
         self.terminalSettings = terminalSettings
         callbacks.app = app
-    }
-
-    func applyTerminalSettings(_ settings: TerminalSettings) throws {
-        let updatedConfig = try GhosttyTerminalConfigBuilder.makeFinalizedConfig(for: settings)
-        defer {
-            ghostty_config_free(updatedConfig)
-        }
-
-        ghostty_app_update_config(app, updatedConfig)
-        ghostty_app_set_color_scheme(app, settings.theme.ghosttyColorScheme)
-        terminalSettings = settings
     }
 
     deinit {
@@ -373,24 +356,6 @@ private final class GhosttyKitRuntimeState {
         ghostty_app_free(app)
         ghostty_config_free(config)
         _ = callbacks
-    }
-}
-
-enum GhosttyTerminalConfigBuilder {
-    static func makeFinalizedConfig(for settings: TerminalSettings) throws -> ghostty_config_t {
-        guard let config = ghostty_config_new() else {
-            throw GhosttyKitRuntimeError.configCreationFailed
-        }
-
-        do {
-            try Self.loadSettings(settings, into: config)
-        } catch {
-            ghostty_config_free(config)
-            throw error
-        }
-
-        ghostty_config_finalize(config)
-        return config
     }
 
     private static func loadSettings(
@@ -413,17 +378,6 @@ enum GhosttyTerminalConfigBuilder {
 
         fileURL.path.withCString { path in
             ghostty_config_load_file(config, path)
-        }
-    }
-}
-
-extension TerminalTheme {
-    var ghosttyColorScheme: ghostty_color_scheme_e {
-        switch self {
-        case .remuxLight:
-            GHOSTTY_COLOR_SCHEME_LIGHT
-        case .ghosttyDefault, .remuxDark:
-            GHOSTTY_COLOR_SCHEME_DARK
         }
     }
 }

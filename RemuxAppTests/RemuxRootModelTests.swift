@@ -1668,43 +1668,6 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(savedSettings, updated)
     }
 
-    func testUpdateTerminalSettingsRefreshesActivePresentationWithoutReplacingModel() async throws {
-        let server = SavedServer(
-            displayName: "Build Host",
-            host: "build.example.test",
-            username: "builder"
-        )
-        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let modelFactory = RecordingTerminalScreenModelFactory()
-        let harness = makeHarness(
-            servers: [server],
-            workspaces: [workspace],
-            settings: TerminalSettings(fontSize: 11, theme: .ghosttyDefault),
-            terminalScreenModelFactory: modelFactory.factory
-        )
-        try await harness.passwordStore.savePassword("secret", for: server.id)
-        await harness.model.load()
-        await harness.model.connect(to: workspace.id)
-
-        let sessionBeforeUpdate = try XCTUnwrap(harness.model.activeSessions.first)
-        let terminalModel = harness.model.terminalScreenModel(for: sessionBeforeUpdate)
-        let updatedSettings = TerminalSettings(fontSize: 14, theme: .remuxLight)
-
-        await harness.model.updateTerminalSettings { settings in
-            settings = updatedSettings
-        }
-
-        let sessionAfterUpdate = try XCTUnwrap(harness.model.activeSessions.first)
-        let entry = try XCTUnwrap(harness.model.activeTerminalScreenEntries.first)
-        XCTAssertEqual(harness.model.terminalSettings, updatedSettings)
-        XCTAssertEqual(sessionAfterUpdate.instanceID, sessionBeforeUpdate.instanceID)
-        XCTAssertEqual(sessionAfterUpdate.target.terminalSettings, updatedSettings)
-        XCTAssertTrue(entry.model === terminalModel)
-        XCTAssertEqual(entry.presentation.terminalTheme, .remuxLight)
-        XCTAssertEqual(terminalModel.surfaceRegistry.terminalSettings, updatedSettings)
-        XCTAssertEqual(modelFactory.createdKeys.count, 1)
-    }
-
     private func makeHarness(
         servers: [SavedServer] = [],
         workspaces: [SavedWorkspace] = [],

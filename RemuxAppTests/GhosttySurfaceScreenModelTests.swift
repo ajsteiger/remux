@@ -4534,17 +4534,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertNil(registry.managedSurface(for: managed.id))
     }
 
-    func testApplyingTerminalSettingsUpdatesManagedSurfaceViewTheme() throws {
-        let registry = GhosttyRuntimeSurfaceRegistry()
-        let managed = Self.managedSurface()
-        registry.registerManagedSurfaceForTesting(managed)
-
-        try registry.applyTerminalSettings(TerminalSettings(fontSize: 14, theme: .remuxLight))
-
-        XCTAssertEqual(registry.terminalSettings.theme, .remuxLight)
-        XCTAssertEqual(managed.view.backgroundColor, TerminalTheme.remuxLight.terminalBackgroundUIColor)
-    }
-
     func testStaleRuntimeActionReturnsHandledWithoutMutatingSurface() throws {
         let registry = GhosttyRuntimeSurfaceRegistry()
         let staleLease = try XCTUnwrap(registry.makeRuntimeCallbackLease())
@@ -4695,7 +4684,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         sendMousePressure: (@MainActor (GhosttySurfaceMousePressureEvent) -> Void)? = nil,
         isMouseCaptured: (@MainActor () -> Bool)? = nil,
         setFocused: (@MainActor (Bool) -> Void)? = nil,
-        applyTerminalConfig: (@MainActor (ghostty_config_t, ghostty_color_scheme_e) -> Void)? = { _, _ in },
         updateDisplay: (@MainActor (GhosttySurfaceDisplayMetrics) -> Void)? = nil,
         scrollToPosition: (@MainActor (UInt64, Double) -> GhosttySurfaceScrollState)? = nil,
         tmuxFocus: (@MainActor () -> TmuxActionSubmissionResult)? = nil,
@@ -4727,7 +4715,6 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             sendMousePressure: sendMousePressure,
             isMouseCaptured: isMouseCaptured,
             setFocused: setFocused,
-            applyTerminalConfig: applyTerminalConfig,
             updateDisplay: updateDisplay,
             scrollToPosition: scrollToPosition,
             tmuxFocus: tmuxFocus ?? { .noTarget },

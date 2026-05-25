@@ -243,7 +243,6 @@ struct GhosttySurfaceScreen: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 GhosttyKeyboardChrome(
-                    terminalTheme: presentation.terminalTheme,
                     keyboardMode: renderedKeyboardMode,
                     isEnabled: interactionProjection.isInputAvailable,
                     isCompact: chrome.isCompact,

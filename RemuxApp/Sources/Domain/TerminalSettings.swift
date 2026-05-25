@@ -52,22 +52,6 @@ enum TerminalTheme: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 }
 
-enum RemuxAppAppearance: Equatable, Sendable {
-    case light
-    case dark
-}
-
-extension TerminalTheme {
-    var appAppearance: RemuxAppAppearance {
-        switch self {
-        case .ghosttyDefault, .remuxDark:
-            .dark
-        case .remuxLight:
-            .light
-        }
-    }
-}
-
 struct TerminalSettings: Equatable, Codable, Sendable {
     static let minimumFontSize: Float32 = 8
     static let maximumFontSize: Float32 = 24

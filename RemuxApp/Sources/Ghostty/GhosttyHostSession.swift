@@ -79,11 +79,6 @@ final class GhosttyHostSession {
         bridge.lastError
     }
 
-    func applyTerminalSettings(_ settings: TerminalSettings) throws {
-        try runtime.applyTerminalSettings(settings)
-        try controlSurface?.applyTerminalSettings(settings)
-    }
-
     func attach(view: GhosttyKitSurfaceView, size: CGSize) throws -> GhosttyHostSessionAttachmentOutcome {
         guard let controlSurface else {
             try attachInitial(view: view, size: size)

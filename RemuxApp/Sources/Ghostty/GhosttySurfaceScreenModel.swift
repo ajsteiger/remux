@@ -176,16 +176,16 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         self.debugLatencyProbeController = GhosttyTerminalDebugLatencyProbeController(
             probe: debugLatencyProbe
         )
-        surfaceRegistry.terminalSettings = target.terminalSettings
-        let selectedRuntimeFactory: RuntimeFactory = runtimeFactory ?? { [surfaceRegistry] delegate in
+        let selectedRuntimeFactory: RuntimeFactory = runtimeFactory ?? { delegate in
             try GhosttyKitRuntime(
                 surfaceDelegate: delegate,
-                terminalSettings: surfaceRegistry.terminalSettings
+                terminalSettings: target.terminalSettings
             )
         }
         self.runtimePrecreationController = GhosttyTerminalRuntimePrecreationController(
             runtimeFactory: selectedRuntimeFactory
         )
+        surfaceRegistry.terminalSettings = target.terminalSettings
         surfaceRegistry.onChange = { [weak self] in
             GhosttyTmuxActionTrace.traceActiveTopologyFlows(
                 event: "model.registryChange.received"
@@ -208,12 +208,6 @@ final class GhosttySurfaceScreenModel: ObservableObject {
                 flowID: sessionOpenFlowID
             )
         }
-    }
-
-    func applyTerminalSettings(_ settings: TerminalSettings) throws {
-        try surfaceRegistry.applyTerminalSettings(settings)
-        try runtimePrecreationController.applyTerminalSettings(settings)
-        try hostSessionSlot.applyTerminalSettings(settings)
     }
 
     private func publishSurfaceRegistryRevision() {

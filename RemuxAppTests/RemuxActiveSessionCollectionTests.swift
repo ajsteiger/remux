@@ -132,37 +132,6 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
         XCTAssertEqual(sessions.first?.target.terminalSettings, target.terminalSettings)
     }
 
-    func testRefreshTerminalSettingsPreservesTargetsAndRuntimeIdentity() {
-        let server = makeServer(displayName: "Server")
-        let firstTarget = makeTarget(
-            server: server,
-            sessionName: "base",
-            password: "first",
-            terminalSettings: TerminalSettings(fontSize: 11, theme: .ghosttyDefault)
-        )
-        let secondTarget = makeTarget(
-            server: server,
-            sessionName: "logs",
-            password: "second",
-            terminalSettings: TerminalSettings(fontSize: 12, theme: .remuxDark)
-        )
-        var sessions = [
-            ActiveTerminalSession(target: firstTarget, runtimeState: .connected),
-            ActiveTerminalSession(target: secondTarget, runtimeState: .reconnecting(.foreground)),
-        ]
-        let instanceIDs = sessions.map(\.instanceID)
-        let updatedSettings = TerminalSettings(fontSize: 14, theme: .remuxLight)
-
-        RemuxActiveSessionCollection.refreshTerminalSettings(updatedSettings, in: &sessions)
-
-        XCTAssertEqual(sessions.map(\.instanceID), instanceIDs)
-        XCTAssertEqual(sessions.map(\.runtimeState), [.connected, .reconnecting(.foreground)])
-        XCTAssertEqual(sessions.map(\.target.server), [firstTarget.server, secondTarget.server])
-        XCTAssertEqual(sessions.map(\.target.workspace), [firstTarget.workspace, secondTarget.workspace])
-        XCTAssertEqual(sessions.map(\.target.password), ["first", "second"])
-        XCTAssertEqual(sessions.map(\.target.terminalSettings), [updatedSettings, updatedSettings])
-    }
-
     func testActiveServerQueries() {
         let firstServer = makeServer(displayName: "First")
         let secondServer = makeServer(displayName: "Second")
