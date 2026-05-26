@@ -498,7 +498,7 @@ private struct ConnectionLibraryView: View {
                     Button {
                         onEditServer(server.id)
                     } label: {
-                        Label("Edit Server", systemImage: "slider.horizontal.3")
+                        Label("Edit Server", systemImage: "pencil")
                     }
 
                     Button(role: .destructive) {
@@ -810,7 +810,7 @@ private struct ServerDetailView: View {
                 Button {
                     onEditServer(server.id)
                 } label: {
-                    Image(systemName: "slider.horizontal.3")
+                    Image(systemName: "pencil")
                 }
                 .accessibilityLabel("Edit Server")
                 .accessibilityIdentifier("library.server.edit")
