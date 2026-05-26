@@ -88,7 +88,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
     private let previewSizing: PreviewSizing
     private let previewRequestClient: PreviewRequestClient
     private let retryDelay: Duration
-    private var pendingRequests: [UUID: PreviewRequestLease] = [:]
+    private var pendingRequests: [UUID: GhosttyPreviewRequestLease] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
     private var generation: UInt64 = 0
 
@@ -188,8 +188,9 @@ final class GhosttyPanePreviewSession: ObservableObject {
             include_cursor: true
         )
 
-        let requestLease = PreviewRequestLease(
-            actions: PreviewRequestActions(client: previewRequestClient)
+        let requestLease = GhosttyPreviewRequestLease(
+            cancel: previewRequestClient.cancel,
+            release: previewRequestClient.release
         )
         let box = PreviewCallbackBox(
             session: self,
@@ -273,7 +274,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
         image: CGImage?,
         previewItemCount: Int,
         remainingRetryAttempts: Int,
-        requestLease: PreviewRequestLease
+        requestLease: GhosttyPreviewRequestLease
     ) {
         guard generation == self.generation else { return }
         guard pendingRequests[paneID] === requestLease else { return }
@@ -367,56 +368,6 @@ private func normalizedFailureStatus(
     return status
 }
 
-private struct PreviewRequestActions {
-    let cancel: @MainActor (ghostty_surface_preview_request_t) -> Void
-    let release: @MainActor (ghostty_surface_preview_request_t) -> Void
-
-    init(client: GhosttyPanePreviewSession.PreviewRequestClient) {
-        self.cancel = client.cancel
-        self.release = client.release
-    }
-}
-
-@MainActor
-private final class PreviewRequestLease {
-    private let actions: PreviewRequestActions
-    private var request: ghostty_surface_preview_request_t?
-    private var cancelWhenInstalled = false
-    private var releaseWhenInstalled = false
-
-    init(actions: PreviewRequestActions) {
-        self.actions = actions
-    }
-
-    func install(_ request: ghostty_surface_preview_request_t) {
-        guard self.request == nil else { return }
-        guard !releaseWhenInstalled else {
-            if cancelWhenInstalled {
-                actions.cancel(request)
-            }
-            actions.release(request)
-            return
-        }
-        self.request = request
-    }
-
-    func cancelAndRelease() {
-        cancelWhenInstalled = true
-        releaseWhenInstalled = true
-        guard let request else { return }
-        self.request = nil
-        actions.cancel(request)
-        actions.release(request)
-    }
-
-    func release() {
-        releaseWhenInstalled = true
-        guard let request else { return }
-        self.request = nil
-        actions.release(request)
-    }
-}
-
 // MARK: - Callback box (heap-allocated, FFI-bridged)
 
 /// Userdata payload retained across the FFI boundary. Heap-allocated on
@@ -429,22 +380,13 @@ private final class PreviewRequestLease {
 /// immutable Sendable values and the weak `session` reference is only
 /// dereferenced on the MainActor (after the hop in `previewImageCallback`).
 /// We never touch `session.someProperty` from the Ghostty preview thread.
-/// Sendable wrapper for an `UnsafeMutableRawPointer?` so we can hop a pixel
-/// buffer from the Ghostty preview thread into a `@MainActor` Task without
-/// running afoul of Swift 6 strict isolation. Safety is enforced by the
-/// callback pipeline: the buffer is allocated, populated, and sent exactly
-/// once; only the receiving MainActor closure dereferences or deallocates.
-private struct SendablePixelBuffer: @unchecked Sendable {
-    let pointer: UnsafeMutableRawPointer?
-}
-
 private final class PreviewCallbackBox: @unchecked Sendable {
     weak var session: GhosttyPanePreviewSession?
     let paneID: UUID
     let generation: UInt64
     let previewItemCount: Int
     let remainingRetryAttempts: Int
-    let requestLease: PreviewRequestLease
+    let requestLease: GhosttyPreviewRequestLease
 
     init(
         session: GhosttyPanePreviewSession,
@@ -452,7 +394,7 @@ private final class PreviewCallbackBox: @unchecked Sendable {
         generation: UInt64,
         previewItemCount: Int,
         remainingRetryAttempts: Int,
-        requestLease: PreviewRequestLease
+        requestLease: GhosttyPreviewRequestLease
     ) {
         self.session = session
         self.paneID = paneID
@@ -485,7 +427,7 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
     let width = image.width
     let height = image.height
     let stride = image.stride
-    let pixelResult = copyPreviewPixels(status: status, image: image)
+    let pixelResult = GhosttyPreviewImageDecoder.copyPixels(status: status, image: image)
     let pixelStatus = pixelResult.status
     let pixelCopy = pixelResult.pixelCopy
 
@@ -496,9 +438,9 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
 
     // Capture immutable values for the MainActor hop. `box` is Sendable
     // (declared @unchecked above); paneID/generation are primitive
-    // Sendable values; raw pointers go through a Sendable wrapper.
+    // Sendable values; pixel buffers go through a Sendable wrapper.
     let capturedBox = box
-    let capturedPixelBuffer = SendablePixelBuffer(pointer: pixelCopy)
+    let capturedPixelBuffer = pixelCopy
     let capturedPaneID = box.paneID
     let capturedGeneration = box.generation
     let capturedPreviewItemCount = box.previewItemCount
@@ -526,7 +468,7 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
             return
         }
 
-        let cgImage = makeCGImage(
+        let cgImage = GhosttyPreviewImageDecoder.makeCGImage(
             pixelCopy: &localPixelCopy,
             width: width,
             height: height,
@@ -547,107 +489,4 @@ private let previewImageCallback: ghostty_surface_preview_image_callback_f = { u
             requestLease: capturedRequestLease
         )
     }
-}
-
-private let maxPreviewImageByteCount = 64 * 1024 * 1024
-
-private func copyPreviewPixels(
-    status: ghostty_surface_preview_status_e,
-    image: ghostty_surface_preview_image_s
-) -> (
-    pixelCopy: UnsafeMutableRawPointer?,
-    status: ghostty_surface_preview_status_e
-) {
-    guard status == GHOSTTY_SURFACE_PREVIEW_STATUS_OK else {
-        return (nil, status)
-    }
-    guard let sourcePixels = image.pixels,
-          let byteCount = previewImageByteCount(
-            width: image.width,
-            height: image.height,
-            stride: image.stride
-          )
-    else {
-        return (nil, GHOSTTY_SURFACE_PREVIEW_STATUS_RENDER_FAILED)
-    }
-
-    let copy = UnsafeMutableRawPointer.allocate(byteCount: byteCount, alignment: 16)
-    copy.copyMemory(from: sourcePixels, byteCount: byteCount)
-    return (copy, status)
-}
-
-/// Build a CGImage from a Swift-owned BGRA8 sRGB pixel buffer.
-///
-/// On success: ownership of `pixelCopy` transfers to the returned CGImage's
-/// data provider, and `pixelCopy` is set to nil so the caller does not
-/// double-free. On failure: `pixelCopy` is left untouched for the caller to
-/// deallocate.
-private func makeCGImage(
-    pixelCopy: inout UnsafeMutableRawPointer?,
-    width: UInt32,
-    height: UInt32,
-    stride: UInt32
-) -> CGImage? {
-    guard let copy = pixelCopy,
-          let byteCount = previewImageByteCount(width: width, height: height, stride: stride)
-    else {
-        return nil
-    }
-
-    guard let provider = CGDataProvider(
-        dataInfo: copy,
-        data: copy,
-        size: byteCount,
-        releaseData: { _, ptr, _ in
-            UnsafeMutableRawPointer(mutating: ptr).deallocate()
-        }
-    ) else {
-        return nil
-    }
-    // Provider now owns the buffer. Whether or not CGImage construction
-    // succeeds, the provider going out of scope (or being released by a
-    // CGImage that retained it) frees the buffer via the release callback.
-    pixelCopy = nil
-
-    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
-        return nil
-    }
-
-    return CGImage(
-        width: Int(width),
-        height: Int(height),
-        bitsPerComponent: 8,
-        bitsPerPixel: 32,
-        bytesPerRow: Int(stride),
-        space: colorSpace,
-        bitmapInfo: CGBitmapInfo(rawValue:
-            CGImageAlphaInfo.noneSkipFirst.rawValue |
-            CGBitmapInfo.byteOrder32Little.rawValue
-        ),
-        provider: provider,
-        decode: nil,
-        shouldInterpolate: false,
-        intent: .defaultIntent
-    )
-}
-
-private func previewImageByteCount(
-    width: UInt32,
-    height: UInt32,
-    stride: UInt32
-) -> Int? {
-    guard width > 0, height > 0, stride > 0 else { return nil }
-
-    let widthBytes = UInt64(width) * 4
-    let rowBytes = UInt64(stride)
-    guard rowBytes >= widthBytes else { return nil }
-
-    let byteCount = rowBytes * UInt64(height)
-    guard byteCount > 0,
-          byteCount <= UInt64(maxPreviewImageByteCount),
-          byteCount <= UInt64(Int.max)
-    else {
-        return nil
-    }
-    return Int(byteCount)
 }
