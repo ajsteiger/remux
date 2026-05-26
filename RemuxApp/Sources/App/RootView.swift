@@ -307,8 +307,8 @@ private struct ConnectionLibraryView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
-        .background(LibraryHomePalette.background.ignoresSafeArea())
+        .libraryHomeGroupedScrollBackground()
+        .libraryHomeChrome(theme: terminalSettings.theme)
         .accessibilityIdentifier("library.list")
         .navigationTitle("Remux")
         .navigationBarTitleDisplayMode(.inline)
@@ -338,7 +338,7 @@ private struct ConnectionLibraryView: View {
     @ViewBuilder
     private var activeSessionsSection: some View {
         if !sortedActiveSessions.isEmpty {
-            Section("Active Sessions") {
+            Section {
                 ForEach(visibleConnectedSessions) { session in
                     Button {
                         onShowActiveSession(session.id)
@@ -370,6 +370,8 @@ private struct ConnectionLibraryView: View {
                     .accessibilityIdentifier("library.connected-sessions.toggle")
                     .libraryHomeListRowSurface()
                 }
+            } header: {
+                LibraryHomeSectionHeader("Active Sessions")
             }
         }
     }
@@ -377,7 +379,7 @@ private struct ConnectionLibraryView: View {
     @ViewBuilder
     private var recentSessionsSection: some View {
         if !recentWorkspaces.isEmpty {
-            Section("Recent Sessions") {
+            Section {
                 ForEach(visibleRecentWorkspaces) { workspace in
                     if let server = snapshot.server(id: workspace.serverID) {
                         Button {
@@ -418,12 +420,14 @@ private struct ConnectionLibraryView: View {
                     .accessibilityIdentifier("library.recent-sessions.toggle")
                     .libraryHomeListRowSurface()
                 }
+            } header: {
+                LibraryHomeSectionHeader("Recent Sessions")
             }
         }
     }
 
     private var serversSection: some View {
-        Section("Servers") {
+        Section {
             ForEach(snapshot.servers) { server in
                 let workspaces = snapshot.workspaces(for: server.id)
                 let latest = workspaces.first
@@ -496,6 +500,8 @@ private struct ConnectionLibraryView: View {
                 }
                 .libraryHomeListRowSurface()
             }
+        } header: {
+            LibraryHomeSectionHeader("Servers")
         }
     }
 
@@ -813,9 +819,9 @@ private struct LibraryEmptyState: View {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: "server.rack")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(LibraryHomePalette.rowIconForeground)
                     .frame(width: 38, height: 38)
-                    .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background(LibraryHomePalette.rowIconSurface, in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text("No servers")
@@ -837,7 +843,7 @@ private struct LibraryEmptyState: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .background(LibraryHomePalette.rowSurface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -848,9 +854,9 @@ private struct ActiveSessionLibraryRow: View {
         HStack(spacing: 12) {
             Image(systemName: "dot.radiowaves.left.and.right")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.green)
+                .foregroundStyle(LibraryHomePalette.rowIconForeground)
                 .frame(width: 30, height: 30)
-                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .background(LibraryHomePalette.rowIconSurface, in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.target.workspace.sessionName)
@@ -887,14 +893,16 @@ private struct SessionLibraryRow: View {
     let workspace: SavedWorkspace
     let runtimeState: TerminalRuntimeState?
     let subtitleMode: SubtitleMode
+    var iconForeground: Color = LibraryHomePalette.rowIconForeground
+    var iconBackground: Color = LibraryHomePalette.rowIconSurface
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "terminal")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.green)
+                .foregroundStyle(iconForeground)
                 .frame(width: 30, height: 30)
-                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .background(iconBackground, in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(workspace.sessionName)
@@ -951,9 +959,9 @@ private struct ServerLibraryRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "server.rack")
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.indigo)
+                .foregroundStyle(LibraryHomePalette.rowIconForeground)
                 .frame(width: 30, height: 30)
-                .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                .background(LibraryHomePalette.rowIconSurface, in: RoundedRectangle(cornerRadius: 7))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(server.displayName)
@@ -1020,7 +1028,7 @@ private struct RuntimeStateIndicator: View {
         case .reconnecting:
             .orange
         case .connected:
-            .green
+            LibraryHomePalette.connectedStatus
         case .disconnected:
             .red
         }
