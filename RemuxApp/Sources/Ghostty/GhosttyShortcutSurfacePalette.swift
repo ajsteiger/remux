@@ -1,9 +1,9 @@
 import SwiftUI
 
 enum GhosttyShortcutSurfacePalette {
-    static let contentFill = Color(uiColor: .secondarySystemFill)
+    static let contentFill = Color(uiColor: .secondarySystemGroupedBackground)
     static let contentStroke = Color.primary.opacity(0.10)
-    static let separator = Color.primary.opacity(0.08)
+    static let separator = Color(uiColor: .separator).opacity(0.55)
 
     static let embeddedFill = Color(uiColor: .secondarySystemFill)
     static let embeddedPressedFill = Color(uiColor: .tertiarySystemFill)

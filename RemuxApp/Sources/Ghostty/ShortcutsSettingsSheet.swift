@@ -4,18 +4,18 @@ import UIKit
 #endif
 
 private enum ShortcutsSettingsSheetPalette {
-    static let background = GhosttyPhoneChromePalette.dock
+    static let background = Color(uiColor: .systemGroupedBackground)
     static let listRowFill = GhosttyShortcutSurfacePalette.contentFill
     static let listSeparator = GhosttyShortcutSurfacePalette.separator
-    static let iconSurface = GhosttyPhoneChromePalette.keySurface.opacity(0.72)
+    static let iconSurface = Color(uiColor: .tertiarySystemFill)
 }
 
 private enum ShortcutEditorPalette {
     static let sectionFill = GhosttyShortcutSurfacePalette.contentFill
     static let sectionStroke = GhosttyShortcutSurfacePalette.contentStroke
     static let separator = GhosttyShortcutSurfacePalette.separator
-    static let modeRailFill = Color.white.opacity(0.028)
-    static let modeRailStroke = Color.white.opacity(0.045)
+    static let modeRailFill = Color(uiColor: .tertiarySystemFill)
+    static let modeRailStroke = GhosttyShortcutSurfacePalette.separator
     static let sectionCornerRadius = GhosttyShortcutSurfacePalette.cornerRadiusLarge
 }
 
