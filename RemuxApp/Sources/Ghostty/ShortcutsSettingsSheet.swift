@@ -8,18 +8,14 @@ private enum ShortcutsSettingsSheetPalette {
     static let listRowFill = GhosttyShortcutSurfacePalette.contentFill
     static let listSeparator = GhosttyShortcutSurfacePalette.separator
     static let iconSurface = GhosttyPhoneChromePalette.keySurface.opacity(0.72)
-    static let accent = GhosttyPhoneChromePalette.accent
-    static let accentSurface = GhosttyPhoneChromePalette.accent.opacity(0.14)
 }
 
 private enum ShortcutEditorPalette {
     static let sectionFill = GhosttyShortcutSurfacePalette.contentFill
     static let sectionStroke = GhosttyShortcutSurfacePalette.contentStroke
     static let separator = GhosttyShortcutSurfacePalette.separator
-    static let controlAccent = GhosttyPhoneChromePalette.accent
     static let modeRailFill = Color.white.opacity(0.028)
     static let modeRailStroke = Color.white.opacity(0.045)
-    static let modeSelectedFill = GhosttyShortcutSurfacePalette.embeddedSelectedFill
     static let sectionCornerRadius = GhosttyShortcutSurfacePalette.cornerRadiusLarge
 }
 
@@ -646,6 +642,8 @@ private struct ShortcutCollectionEditorIconSummaryRow: View {
 }
 
 private struct ShortcutCollectionIconSuggestionButton: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
+
     let icon: ShortcutCollectionIcon
     let isSelected: Bool
     let action: () -> Void
@@ -656,7 +654,7 @@ private struct ShortcutCollectionIconSuggestionButton: View {
             action()
         } label: {
             ShortcutCollectionIconView(icon: icon)
-                .foregroundStyle(isSelected ? GhosttySheetPalette.accent : GhosttySheetPalette.secondary)
+                .foregroundStyle(isSelected ? chromeStyle.accent : GhosttySheetPalette.secondary)
                 .frame(width: 32, height: 38)
                 .contentShape(Rectangle())
         }
@@ -1000,6 +998,8 @@ private struct ShortcutEditorSection<Content: View>: View {
 }
 
 private struct ShortcutEditorTextFieldRow: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
+
     private let title: String
     private let text: Binding<String>
     private let axis: Axis
@@ -1014,7 +1014,7 @@ private struct ShortcutEditorTextFieldRow: View {
         TextField(title, text: text, axis: axis)
             .font(GhosttyShortcutTypography.rowText)
             .foregroundStyle(GhosttySheetPalette.primary)
-            .tint(ShortcutEditorPalette.controlAccent)
+            .tint(chromeStyle.accent)
             .textFieldStyle(.plain)
             .padding(.horizontal, 18)
             .frame(minHeight: 56, alignment: .center)
@@ -1047,6 +1047,8 @@ private struct ShortcutEditorValueRow<Accessory: View>: View {
 }
 
 private struct ShortcutEditorModePicker: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
+
     @Binding var selection: ShortcutEditorMode
 
     var body: some View {
@@ -1059,7 +1061,12 @@ private struct ShortcutEditorModePicker: View {
                         .font(GhosttyShortcutTypography.compactControl)
                         .foregroundStyle(selection == mode ? GhosttySheetPalette.primary : GhosttySheetPalette.secondary)
                         .frame(maxWidth: .infinity, minHeight: 32)
-                        .background(selection == mode ? ShortcutEditorPalette.modeSelectedFill : Color.clear, in: Capsule())
+                        .background(
+                            selection == mode
+                                ? GhosttyShortcutSurfacePalette.embeddedSelectedFill(chromeStyle)
+                                : Color.clear,
+                            in: Capsule()
+                        )
                 }
                 .buttonStyle(.plain)
                 .contentShape(Capsule())
@@ -1077,6 +1084,8 @@ private struct ShortcutEditorModePicker: View {
 }
 
 private struct ShortcutEditorToggleRow: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
+
     let title: String
     let isOn: Binding<Bool>
 
@@ -1089,7 +1098,7 @@ private struct ShortcutEditorToggleRow: View {
         Toggle(title, isOn: isOn)
             .font(GhosttyShortcutTypography.rowText)
             .foregroundStyle(GhosttySheetPalette.primary)
-            .tint(ShortcutEditorPalette.controlAccent)
+            .tint(chromeStyle.accent)
             .padding(.horizontal, 18)
             .frame(minHeight: 56, alignment: .center)
     }

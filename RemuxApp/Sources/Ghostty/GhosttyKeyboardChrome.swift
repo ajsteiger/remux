@@ -536,8 +536,6 @@ enum GhosttyPhoneChromePalette {
     static let keySurfacePressed = Color(red: 0.30, green: 0.32, blue: 0.39)
     static let keySurfaceActivePressedOverlay = Color.black.opacity(0.12)
     static let chromeControlPressedOverlay = Color.white.opacity(0.10)
-    static let accent = Color(uiColor: .terminalChromeAccent)
-    static let accentForeground = Color(uiColor: .terminalChromeAccentForeground)
     static let chromeForeground = Color.primary.opacity(0.84)
     static let chromeSecondaryForeground = Color.secondary.opacity(0.78)
     static let toolbarGlassTint = Color.primary.opacity(0.065)
@@ -546,7 +544,6 @@ enum GhosttyPhoneChromePalette {
     static let toolbarFallbackFill = Color(uiColor: .secondarySystemBackground).opacity(0.88)
     static let toolbarStroke = Color.primary.opacity(0.12)
     static let toolbarShadow = Color.black.opacity(0.18)
-    static let toolbarButtonActiveFill = accent.opacity(0.16)
     static let toolbarButtonPressedFill = Color.primary.opacity(0.08)
 
     static let uiBackground = UIColor(
@@ -555,29 +552,9 @@ enum GhosttyPhoneChromePalette {
         blue: 0.24,
         alpha: 1.0
     )
-
-    static let uiAccent = UIColor.terminalChromeAccent
 }
 
 private extension UIColor {
-    static let terminalChromeAccent = UIColor { traits in
-        switch traits.userInterfaceStyle {
-        case .dark:
-            UIColor(red: 0.43, green: 1.0, blue: 0.78, alpha: 1.0)
-        default:
-            UIColor(red: 0.12, green: 0.40, blue: 0.96, alpha: 1.0)
-        }
-    }
-
-    static let terminalChromeAccentForeground = UIColor { traits in
-        switch traits.userInterfaceStyle {
-        case .dark:
-            UIColor.black.withAlphaComponent(0.72)
-        default:
-            UIColor.white
-        }
-    }
-
     static let ghosttyDefaultTerminalChromeAccent = UIColor(red: 0.38, green: 0.69, blue: 0.94, alpha: 1.0)
     static let catppuccinMochaTerminalChromeAccent = UIColor(red: 0.54, green: 0.71, blue: 0.98, alpha: 1.0)
     static let catppuccinLatteTerminalChromeAccent = UIColor(red: 0.12, green: 0.40, blue: 0.96, alpha: 1.0)

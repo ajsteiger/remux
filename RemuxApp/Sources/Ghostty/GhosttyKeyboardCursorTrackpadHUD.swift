@@ -7,6 +7,8 @@ import SwiftUI
 /// finger is. A perimeter ring fills with the same intensity as a secondary
 /// signal.
 struct GhosttyKeyboardCursorTrackpadHUD: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
+
     let state: GhosttyKeyboardCursorTrackpad.HUDState
 
     private let cornerRadius: CGFloat = 14
@@ -48,7 +50,7 @@ struct GhosttyKeyboardCursorTrackpadHUD: View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .trim(from: 0, to: max(0.001, state.intensity))
             .stroke(
-                GhosttyPhoneChromePalette.accent.opacity(0.45 + 0.55 * state.intensity),
+                chromeStyle.accent.opacity(0.45 + 0.55 * state.intensity),
                 style: StrokeStyle(lineWidth: 2, lineCap: .round)
             )
             .opacity(state.intensity > 0 ? 1 : 0)
@@ -66,7 +68,7 @@ struct GhosttyKeyboardCursorTrackpadHUD: View {
     private func arrowColor(active: Bool) -> Color {
         guard active else { return Color.white.opacity(0.45) }
         let baseAlpha: CGFloat = 0.55
-        return GhosttyPhoneChromePalette.accent.opacity(baseAlpha + (1 - baseAlpha) * state.intensity)
+        return chromeStyle.accent.opacity(baseAlpha + (1 - baseAlpha) * state.intensity)
     }
 
     private func symbolName(for direction: GhosttyKeyboardCursorTrackpad.Direction) -> String {

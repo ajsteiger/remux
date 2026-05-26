@@ -79,15 +79,12 @@ struct GhosttySelectionSheetPresentationState: Equatable {
 
 enum GhosttySheetPalette {
     static let row = Color(uiColor: .secondarySystemFill)
-    static let rowSelected = GhosttyPhoneChromePalette.accent.opacity(0.18)
     static let stroke = Color.primary.opacity(0.12)
-    static let selectedStroke = GhosttyPhoneChromePalette.accent.opacity(0.76)
     static let controlFill = Color(uiColor: .secondarySystemFill)
     static let destructiveControlFill = Color(uiColor: .systemRed).opacity(0.14)
     static let primary = Color.primary.opacity(0.92)
     static let secondary = Color.secondary.opacity(0.78)
     static let tertiary = Color.secondary.opacity(0.56)
-    static let accent = GhosttyPhoneChromePalette.accent
 
     static func rowSelected(_ chromeStyle: GhosttyTerminalChromeStyle) -> Color {
         chromeStyle.selectedFill
