@@ -736,13 +736,19 @@ private struct ServerDetailView: View {
     var body: some View {
         List {
             Section("Connection") {
-                LabeledContent("Address") {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Address")
+
                     Text(serverAddress(server))
                         .font(.footnote.monospaced())
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
                         .textSelection(.enabled)
                 }
+                .padding(.vertical, 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
 
                 LabeledContent("Sessions") {
                     Text(
