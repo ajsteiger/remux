@@ -18,6 +18,17 @@ enum TerminalTheme: String, CaseIterable, Codable, Identifiable, Sendable {
         }
     }
 
+    var pickerTitle: String {
+        switch self {
+        case .ghosttyDefault:
+            "Default"
+        case .remuxDark:
+            "Mocha"
+        case .remuxLight:
+            "Latte"
+        }
+    }
+
     var ghosttyConfigLines: [String] {
         switch self {
         case .ghosttyDefault:

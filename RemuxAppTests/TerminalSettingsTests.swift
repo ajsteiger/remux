@@ -86,6 +86,13 @@ final class TerminalSettingsTests: XCTestCase {
         )
     }
 
+    func testThemeDisplayNamesUseCatppuccinNames() {
+        XCTAssertEqual(TerminalTheme.remuxDark.displayName, "Catppuccin Mocha")
+        XCTAssertEqual(TerminalTheme.remuxLight.displayName, "Catppuccin Latte")
+        XCTAssertEqual(TerminalTheme.remuxDark.pickerTitle, "Mocha")
+        XCTAssertEqual(TerminalTheme.remuxLight.pickerTitle, "Latte")
+    }
+
     func testExplicitFontSizeOverridesDevicePolicy() {
         let settings = TerminalSettings(fontSize: 14, theme: .ghosttyDefault)
 

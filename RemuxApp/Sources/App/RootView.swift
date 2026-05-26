@@ -1140,11 +1140,14 @@ private struct TerminalSettingsView: View {
             Section("Theme") {
                 Picker("Terminal theme", selection: themeBinding) {
                     ForEach(TerminalTheme.allCases) { theme in
-                        Text(theme.displayName).tag(theme)
+                        Text(theme.pickerTitle).tag(theme)
                     }
                 }
-                .pickerStyle(.menu)
+                .pickerStyle(.segmented)
                 .accessibilityIdentifier("settings.theme")
+
+                TerminalThemePreviewPanel(settings: settings)
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 16, trailing: 16))
             }
             .libraryHomeListRowSurface()
         }
@@ -1183,6 +1186,96 @@ private struct TerminalSettingsView: View {
                 onChange(settings)
             }
         )
+    }
+}
+
+private struct TerminalThemePreviewPanel: View {
+    @StateObject private var renderer = TerminalThemePreviewRenderer()
+    @Environment(\.displayScale) private var displayScale
+
+    let settings: TerminalSettings
+
+    private let previewHeight: CGFloat = 132
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Preview")
+                    .font(.headline)
+
+                Spacer()
+
+                Text(settings.theme.displayName)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            GeometryReader { proxy in
+                let pointSize = CGSize(
+                    width: max(proxy.size.width, 1),
+                    height: previewHeight
+                )
+
+                TerminalThemePreviewSurface(
+                    state: renderer.state,
+                    settings: settings,
+                    displayScale: displayScale
+                )
+                .task(id: renderTaskID(pointSize: pointSize)) {
+                    renderer.render(
+                        settings: settings,
+                        pointSize: pointSize,
+                        scale: displayScale
+                    )
+                }
+            }
+            .frame(height: previewHeight)
+        }
+        .accessibilityIdentifier("settings.theme.preview")
+    }
+
+    private func renderTaskID(pointSize: CGSize) -> String {
+        [
+            settings.theme.id,
+            settings.fontSize.map { String($0) } ?? "default",
+            String(Int(pointSize.width.rounded(.down))),
+            String(Int(pointSize.height.rounded(.down))),
+            String(Int(displayScale.rounded(.toNearestOrAwayFromZero))),
+        ].joined(separator: ":")
+    }
+}
+
+private struct TerminalThemePreviewSurface: View {
+    let state: TerminalThemePreviewRenderer.State
+    let settings: TerminalSettings
+    let displayScale: CGFloat
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: settings.theme.terminalBackgroundUIColor)
+
+            switch state {
+            case .idle, .loading:
+                ProgressView()
+                    .controlSize(.small)
+
+            case .ready(let image):
+                Image(decorative: image, scale: displayScale, orientation: .up)
+                    .resizable()
+                    .interpolation(.none)
+                    .scaledToFit()
+
+            case .failed:
+                Label("Preview unavailable", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.primary.opacity(0.12), lineWidth: 1)
+        }
     }
 }
 
