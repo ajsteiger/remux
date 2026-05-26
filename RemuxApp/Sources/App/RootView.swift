@@ -549,15 +549,142 @@ private struct ConnectionLibraryView: View {
 }
 
 private enum LibraryHomePalette {
-    static let background = Color(uiColor: .systemGroupedBackground)
-    static let rowSurface = Color(uiColor: .secondarySystemGroupedBackground)
-    static let separator = Color(uiColor: .separator).opacity(0.52)
+    static let background = Color(uiColor: .libraryHomeBackground)
+    static let rowSurface = Color(uiColor: .libraryHomeRowSurface)
+    static let separator = Color(uiColor: .libraryHomeSeparator)
+    static let sectionHeader = Color(uiColor: .libraryHomeSectionHeader)
+    static let toolbarTint = Color(uiColor: .libraryHomeToolbarTint)
+    static let controlAccent = Color(uiColor: .libraryHomeControlAccent)
+    static let rowIconForeground = Color(uiColor: .libraryHomeRowIconForeground)
+    static let rowIconSurface = Color(uiColor: .libraryHomeRowIconSurface)
+    static let connectedStatus = Color(uiColor: .libraryHomeConnectedStatus)
+}
+
+private extension TerminalTheme {
+    var libraryColorScheme: ColorScheme {
+        switch self {
+        case .remuxLight:
+            .light
+        case .ghosttyDefault, .remuxDark:
+            .dark
+        }
+    }
 }
 
 private extension View {
     func libraryHomeListRowSurface() -> some View {
         listRowBackground(LibraryHomePalette.rowSurface)
             .listRowSeparatorTint(LibraryHomePalette.separator)
+    }
+
+    func libraryHomeChrome(theme: TerminalTheme) -> some View {
+        preferredColorScheme(theme.libraryColorScheme)
+            .tint(LibraryHomePalette.toolbarTint)
+            .toolbarBackground(LibraryHomePalette.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+    }
+
+    func libraryHomeGroupedScrollBackground() -> some View {
+        scrollContentBackground(.hidden)
+            .background(LibraryHomePalette.background.ignoresSafeArea())
+    }
+}
+
+private struct LibraryHomeSectionHeader: View {
+    private let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(LibraryHomePalette.sectionHeader)
+            .textCase(nil)
+    }
+}
+
+private extension UIColor {
+    static let libraryHomeBackground = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 0.15, green: 0.17, blue: 0.21, alpha: 1.0)
+        default:
+            .systemGroupedBackground
+        }
+    }
+
+    static let libraryHomeRowSurface = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 0.21, green: 0.23, blue: 0.28, alpha: 1.0)
+        default:
+            .secondarySystemGroupedBackground
+        }
+    }
+
+    static let libraryHomeSeparator = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor.white.withAlphaComponent(0.08)
+        default:
+            UIColor.separator.withAlphaComponent(0.52)
+        }
+    }
+
+    static let libraryHomeSectionHeader = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 0.72, green: 0.74, blue: 0.80, alpha: 1.0)
+        default:
+            .secondaryLabel
+        }
+    }
+
+    static let libraryHomeToolbarTint = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 0.91, green: 0.93, blue: 0.98, alpha: 1.0)
+        default:
+            .label
+        }
+    }
+
+    static let libraryHomeControlAccent = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 0.39, green: 0.64, blue: 1.0, alpha: 1.0)
+        default:
+            .systemBlue
+        }
+    }
+
+    static let libraryHomeRowIconForeground = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 0.79, green: 0.83, blue: 0.91, alpha: 1.0)
+        default:
+            .secondaryLabel
+        }
+    }
+
+    static let libraryHomeRowIconSurface = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor.white.withAlphaComponent(0.07)
+        default:
+            .tertiarySystemFill
+        }
+    }
+
+    static let libraryHomeConnectedStatus = UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 0.43, green: 0.89, blue: 0.66, alpha: 1.0)
+        default:
+            .systemGreen
+        }
     }
 }
 
