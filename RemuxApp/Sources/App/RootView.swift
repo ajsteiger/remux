@@ -306,9 +306,9 @@ private struct ConnectionLibraryView: View {
                 recentSessionsSection
             }
         }
-        .listStyle(.plain)
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
+        .background(LibraryHomePalette.background.ignoresSafeArea())
         .accessibilityIdentifier("library.list")
         .navigationTitle("Remux")
         .navigationBarTitleDisplayMode(.inline)
@@ -353,6 +353,7 @@ private struct ConnectionLibraryView: View {
                         }
                         .tint(.red)
                     }
+                    .libraryHomeListRowSurface()
                 }
 
                 if sortedActiveSessions.count > Self.collapsedConnectedSessionCount {
@@ -367,6 +368,7 @@ private struct ConnectionLibraryView: View {
                         )
                     }
                     .accessibilityIdentifier("library.connected-sessions.toggle")
+                    .libraryHomeListRowSurface()
                 }
             }
         }
@@ -398,6 +400,7 @@ private struct ConnectionLibraryView: View {
                                 onDeleteWorkspace(workspace.id)
                             }
                         }
+                        .libraryHomeListRowSurface()
                     }
                 }
 
@@ -413,6 +416,7 @@ private struct ConnectionLibraryView: View {
                         )
                     }
                     .accessibilityIdentifier("library.recent-sessions.toggle")
+                    .libraryHomeListRowSurface()
                 }
             }
         }
@@ -490,6 +494,7 @@ private struct ConnectionLibraryView: View {
                     }
                     .tint(.blue)
                 }
+                .libraryHomeListRowSurface()
             }
         }
     }
@@ -540,6 +545,19 @@ private struct ConnectionLibraryView: View {
         withTransaction(transaction) {
             onCloseActiveSession(sessionID)
         }
+    }
+}
+
+private enum LibraryHomePalette {
+    static let background = Color(uiColor: .systemGroupedBackground)
+    static let rowSurface = Color(uiColor: .secondarySystemGroupedBackground)
+    static let separator = Color(uiColor: .separator).opacity(0.52)
+}
+
+private extension View {
+    func libraryHomeListRowSurface() -> some View {
+        listRowBackground(LibraryHomePalette.rowSurface)
+            .listRowSeparatorTint(LibraryHomePalette.separator)
     }
 }
 
