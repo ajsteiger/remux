@@ -88,9 +88,18 @@ enum GhosttySheetPalette {
     static let secondary = Color.secondary.opacity(0.78)
     static let tertiary = Color.secondary.opacity(0.56)
     static let accent = GhosttyPhoneChromePalette.accent
+
+    static func rowSelected(_ chromeStyle: GhosttyTerminalChromeStyle) -> Color {
+        chromeStyle.selectedFill
+    }
+
+    static func selectedStroke(_ chromeStyle: GhosttyTerminalChromeStyle) -> Color {
+        chromeStyle.selectedStroke
+    }
 }
 
 struct GhosttyWindowSelectionSheet: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
     @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyWindowRemovalRequest?
     @State private var pendingContextAction: GhosttyWindowRemovalRequest?
@@ -190,6 +199,7 @@ struct GhosttyWindowSelectionSheet: View {
                         isSelected: window.isSelected,
                         previewState: window.focusedPreviewPaneID
                             .flatMap { session.imagesByPaneID[$0] },
+                        chromeStyle: chromeStyle,
                         layout: layout
                     )
                 }
@@ -250,6 +260,7 @@ struct GhosttyWindowSelectionSheet: View {
 }
 
 struct GhosttyPaneSelectionSheet: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
     @ObservedObject var session: GhosttyPanePreviewSession
     @State private var pendingRemoval: GhosttyPaneRemovalRequest?
     @State private var pendingContextAction: GhosttyPaneRemovalRequest?
@@ -371,6 +382,7 @@ struct GhosttyPaneSelectionSheet: View {
                         totalCount: pane.totalCount,
                         isSelected: pane.isSelected,
                         state: session.imagesByPaneID[pane.id],
+                        chromeStyle: chromeStyle,
                         layout: layout
                     )
                 }
@@ -622,6 +634,7 @@ private struct GhosttyWindowSelectionTile: View {
     let paneCount: Int
     let isSelected: Bool
     let previewState: GhosttyPanePreviewSession.PreviewState?
+    let chromeStyle: GhosttyTerminalChromeStyle
     let layout: PanePreviewLayout.Metrics
 
     var body: some View {
@@ -635,12 +648,12 @@ private struct GhosttyWindowSelectionTile: View {
             height: layout.tilePointSize.height,
             alignment: .topLeading
         )
-        .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
+        .background(isSelected ? GhosttySheetPalette.rowSelected(chromeStyle) : GhosttySheetPalette.row)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isSelected ? GhosttySheetPalette.selectedStroke : GhosttySheetPalette.stroke,
+                    isSelected ? GhosttySheetPalette.selectedStroke(chromeStyle) : GhosttySheetPalette.stroke,
                     lineWidth: isSelected ? 1.25 : 1
                 )
         }
@@ -692,12 +705,12 @@ private struct GhosttyWindowSelectionTile: View {
             if isSelected {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(GhosttySheetPalette.accent)
+                        .fill(chromeStyle.accent)
                         .frame(width: 6, height: 6)
 
                     Text("active")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(GhosttySheetPalette.accent)
+                        .foregroundStyle(chromeStyle.accent)
                 }
             }
         }
@@ -723,6 +736,7 @@ private struct GhosttyPaneSelectionTile: View {
     let totalCount: Int
     let isSelected: Bool
     let state: GhosttyPanePreviewSession.PreviewState?
+    let chromeStyle: GhosttyTerminalChromeStyle
     let layout: PanePreviewLayout.Metrics
 
     var body: some View {
@@ -736,12 +750,12 @@ private struct GhosttyPaneSelectionTile: View {
             height: layout.tilePointSize.height,
             alignment: .topLeading
         )
-        .background(isSelected ? GhosttySheetPalette.rowSelected : GhosttySheetPalette.row)
+        .background(isSelected ? GhosttySheetPalette.rowSelected(chromeStyle) : GhosttySheetPalette.row)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
-                    isSelected ? GhosttySheetPalette.selectedStroke : GhosttySheetPalette.stroke,
+                    isSelected ? GhosttySheetPalette.selectedStroke(chromeStyle) : GhosttySheetPalette.stroke,
                     lineWidth: isSelected ? 1.25 : 1
                 )
         }
@@ -798,12 +812,12 @@ private struct GhosttyPaneSelectionTile: View {
             if isSelected {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(GhosttySheetPalette.accent)
+                        .fill(chromeStyle.accent)
                         .frame(width: 6, height: 6)
 
                     Text("active")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(GhosttySheetPalette.accent)
+                        .foregroundStyle(chromeStyle.accent)
                 }
             }
         }
