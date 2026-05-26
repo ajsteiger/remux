@@ -47,6 +47,62 @@ enum GhosttyKeyboardChromeSizing {
     }
 }
 
+struct GhosttyTerminalChromeStyle {
+    let accent: Color
+    let accentForeground: Color
+
+    var toolbarButtonActiveFill: Color {
+        accent.opacity(0.16)
+    }
+
+    var selectedFill: Color {
+        accent.opacity(0.18)
+    }
+
+    var selectedStroke: Color {
+        accent.opacity(0.76)
+    }
+
+    static let ghosttyDefault = GhosttyTerminalChromeStyle(
+        accent: Color(uiColor: .ghosttyDefaultTerminalChromeAccent),
+        accentForeground: Color(uiColor: .terminalChromeAccentForegroundForDarkAccent)
+    )
+
+    static let catppuccinMocha = GhosttyTerminalChromeStyle(
+        accent: Color(uiColor: .catppuccinMochaTerminalChromeAccent),
+        accentForeground: Color(uiColor: .terminalChromeAccentForegroundForDarkAccent)
+    )
+
+    static let catppuccinLatte = GhosttyTerminalChromeStyle(
+        accent: Color(uiColor: .catppuccinLatteTerminalChromeAccent),
+        accentForeground: Color(uiColor: .terminalChromeAccentForegroundForLightAccent)
+    )
+}
+
+private struct GhosttyTerminalChromeStyleKey: EnvironmentKey {
+    static let defaultValue = GhosttyTerminalChromeStyle.ghosttyDefault
+}
+
+extension EnvironmentValues {
+    var ghosttyTerminalChromeStyle: GhosttyTerminalChromeStyle {
+        get { self[GhosttyTerminalChromeStyleKey.self] }
+        set { self[GhosttyTerminalChromeStyleKey.self] = newValue }
+    }
+}
+
+extension TerminalTheme {
+    var terminalChromeStyle: GhosttyTerminalChromeStyle {
+        switch self {
+        case .ghosttyDefault:
+            .ghosttyDefault
+        case .remuxDark:
+            .catppuccinMocha
+        case .remuxLight:
+            .catppuccinLatte
+        }
+    }
+}
+
 struct GhosttyKeyboardChrome: View {
     let keyboardMode: GhosttyKeyboardChromeMode
     let isEnabled: Bool
@@ -507,13 +563,27 @@ private extension UIColor {
             UIColor.white
         }
     }
+
+    static let ghosttyDefaultTerminalChromeAccent = UIColor(red: 0.38, green: 0.69, blue: 0.94, alpha: 1.0)
+    static let catppuccinMochaTerminalChromeAccent = UIColor(red: 0.54, green: 0.71, blue: 0.98, alpha: 1.0)
+    static let catppuccinLatteTerminalChromeAccent = UIColor(red: 0.12, green: 0.40, blue: 0.96, alpha: 1.0)
+    static let terminalChromeAccentForegroundForDarkAccent = UIColor.black.withAlphaComponent(0.74)
+    static let terminalChromeAccentForegroundForLightAccent = UIColor.white
 }
 
 extension View {
     @ViewBuilder
-    func ghosttyTerminalChromePresentation(_ colorScheme: ColorScheme? = nil) -> some View {
-        if let colorScheme {
+    func ghosttyTerminalChromePresentation(
+        _ colorScheme: ColorScheme? = nil,
+        chromeStyle: GhosttyTerminalChromeStyle? = nil
+    ) -> some View {
+        if let colorScheme, let chromeStyle {
             preferredColorScheme(colorScheme)
+                .environment(\.ghosttyTerminalChromeStyle, chromeStyle)
+        } else if let colorScheme {
+            preferredColorScheme(colorScheme)
+        } else if let chromeStyle {
+            environment(\.ghosttyTerminalChromeStyle, chromeStyle)
         } else {
             self
         }

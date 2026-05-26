@@ -307,7 +307,10 @@ struct GhosttySurfaceScreen: View {
                     .presentationContentInteraction(.scrolls)
                     .presentationDragIndicator(.visible)
                     .ghosttySelectionSheetPresentationBackground()
-                    .ghosttyTerminalChromePresentation(presentation.terminalTheme.terminalChromeColorScheme)
+                    .ghosttyTerminalChromePresentation(
+                        presentation.terminalTheme.terminalChromeColorScheme,
+                        chromeStyle: presentation.terminalTheme.terminalChromeStyle
+                    )
             }
             .sheet(isPresented: $isShortcutsSettingsPresented) {
                 ShortcutsSettingsSheet(store: shortcutStore)
@@ -315,7 +318,10 @@ struct GhosttySurfaceScreen: View {
                     .presentationDragIndicator(.visible)
                     .presentationBackground(.regularMaterial)
                     .presentationCornerRadius(28)
-                    .ghosttyTerminalChromePresentation(presentation.terminalTheme.terminalChromeColorScheme)
+                    .ghosttyTerminalChromePresentation(
+                        presentation.terminalTheme.terminalChromeColorScheme,
+                        chromeStyle: presentation.terminalTheme.terminalChromeStyle
+                    )
             }
             .sheet(item: $shortcutEditorRequest) { request in
                 ShortcutEditorSheet(request: request) { shortcut, favorite in
@@ -330,7 +336,10 @@ struct GhosttySurfaceScreen: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(28)
-                .ghosttyTerminalChromePresentation(presentation.terminalTheme.terminalChromeColorScheme)
+                .ghosttyTerminalChromePresentation(
+                    presentation.terminalTheme.terminalChromeColorScheme,
+                    chromeStyle: presentation.terminalTheme.terminalChromeStyle
+                )
             }
             .onChange(of: paneSelectionSheetTopologyProjection) { _, projection in
                 guard projection.shouldDismissPaneSheet else { return }
@@ -358,6 +367,7 @@ struct GhosttySurfaceScreen: View {
 #endif
         }
         .preferredColorScheme(presentation.terminalTheme.terminalChromeColorScheme)
+        .environment(\.ghosttyTerminalChromeStyle, presentation.terminalTheme.terminalChromeStyle)
         .onAppear {
             GhosttyRuntimeTrace.flowEvent(
                 sessionOpenFlowID,
