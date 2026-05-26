@@ -810,7 +810,7 @@ private struct ServerDetailView: View {
                 Button {
                     onEditServer(server.id)
                 } label: {
-                    Image(systemName: "pencil")
+                    Text("Edit")
                 }
                 .accessibilityLabel("Edit Server")
                 .accessibilityIdentifier("library.server.edit")
