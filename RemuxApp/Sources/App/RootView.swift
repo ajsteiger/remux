@@ -57,6 +57,7 @@ private struct RemuxWorkspaceShell: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var model: RemuxRootModel
     let shortcutStore: ShortcutStore
+    @State private var retainedTerminalID: SavedWorkspace.ID?
 
     var body: some View {
         ZStack {
@@ -73,6 +74,22 @@ private struct RemuxWorkspaceShell: View {
                 RemuxAppLifecycleProjection(scenePhase: newPhase).appLifecyclePhase
             )
         }
+        .onChange(of: selectedTerminalID) { _, newValue in
+            guard let newValue else { return }
+            retainedTerminalID = newValue
+        }
+        .onChange(of: model.activeTerminalScreenEntries.map(\.id)) { _, ids in
+            guard !ids.isEmpty else {
+                retainedTerminalID = nil
+                return
+            }
+
+            if let retainedTerminalID, ids.contains(retainedTerminalID) {
+                return
+            }
+
+            retainedTerminalID = ids[0]
+        }
     }
 
     private var selectedTerminalID: SavedWorkspace.ID? {
@@ -83,10 +100,15 @@ private struct RemuxWorkspaceShell: View {
         return id
     }
 
+    private var visibleTerminalID: SavedWorkspace.ID? {
+        selectedTerminalID ?? retainedTerminalID ?? model.activeTerminalScreenEntries.first?.id
+    }
+
     private var activeTerminalLayer: some View {
         ZStack {
             ForEach(model.activeTerminalScreenEntries) { entry in
                 let isSelected = selectedTerminalID == entry.id
+                let isVisible = visibleTerminalID == entry.id
                 ActiveTerminalSessionView(
                     entry: entry,
                     isSelected: isSelected,
@@ -112,10 +134,10 @@ private struct RemuxWorkspaceShell: View {
                     }
                 )
                 .id(entry.instanceID)
-                .opacity(isSelected ? 1 : 0)
+                .opacity(isVisible ? 1 : 0)
                 .allowsHitTesting(isSelected)
                 .accessibilityHidden(!isSelected)
-                .zIndex(isSelected ? 1 : 0)
+                .zIndex(isVisible ? 1 : 0)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
