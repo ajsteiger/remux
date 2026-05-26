@@ -641,7 +641,7 @@ private extension UIColor {
         case .dark:
             UIColor.white.withAlphaComponent(0.08)
         default:
-            UIColor.separator.withAlphaComponent(0.52)
+            .separator
         }
     }
 
