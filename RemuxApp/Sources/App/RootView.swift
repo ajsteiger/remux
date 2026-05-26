@@ -133,6 +133,7 @@ private struct RemuxWorkspaceShell: View {
                     draft: draft,
                     validation: validation,
                     mode: mode,
+                    terminalTheme: model.terminalSettings.theme,
                     onChange: model.updateDraft,
                     onConnect: {
                         Task { await model.saveAndConnect() }
@@ -441,7 +442,8 @@ private struct ConnectionLibraryView: View {
                         onEditServer: onEditServer,
                         onEditWorkspace: onEditWorkspace,
                         onConnect: onConnect,
-                        onDeleteWorkspace: onDeleteWorkspace
+                        onDeleteWorkspace: onDeleteWorkspace,
+                        terminalTheme: terminalSettings.theme
                     )
                 } label: {
                     ServerLibraryRow(
@@ -703,6 +705,7 @@ private struct ServerDetailView: View {
     let onEditWorkspace: (SavedServer.ID, SavedWorkspace.ID) -> Void
     let onConnect: (SavedWorkspace.ID) -> Void
     let onDeleteWorkspace: (SavedWorkspace.ID) -> Void
+    let terminalTheme: TerminalTheme
 
     var body: some View {
         List {
@@ -729,6 +732,7 @@ private struct ServerDetailView: View {
                         .lineLimit(1)
                 }
             }
+            .libraryHomeListRowSurface()
 
             Section("Sessions") {
                 if workspaces.isEmpty {
@@ -764,8 +768,11 @@ private struct ServerDetailView: View {
                     }
                 }
             }
+            .libraryHomeListRowSurface()
         }
         .listStyle(.insetGrouped)
+        .libraryHomeGroupedScrollBackground()
+        .libraryHomeChrome(theme: terminalTheme)
         .navigationTitle(server.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("library.server.detail")
@@ -1092,6 +1099,7 @@ private struct TerminalSettingsView: View {
                 .disabled(settings.fontSize == nil)
                 .accessibilityIdentifier("settings.font-size.stepper")
             }
+            .libraryHomeListRowSurface()
 
             Section("Theme") {
                 Picker("Terminal theme", selection: themeBinding) {
@@ -1102,7 +1110,10 @@ private struct TerminalSettingsView: View {
                 .pickerStyle(.menu)
                 .accessibilityIdentifier("settings.theme")
             }
+            .libraryHomeListRowSurface()
         }
+        .libraryHomeGroupedScrollBackground()
+        .libraryHomeChrome(theme: settings.theme)
         .navigationTitle("Terminal")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("settings.form")
@@ -1143,6 +1154,7 @@ private struct ConnectionSetupView: View {
     let draft: TmuxConnectionDraft
     let validation: TmuxConnectionDraftValidation
     let mode: RemuxRootModel.SetupMode
+    let terminalTheme: TerminalTheme
     let onChange: ((inout TmuxConnectionDraft) -> Void) -> Void
     let onConnect: () -> Void
     let onCancel: () -> Void
@@ -1205,12 +1217,14 @@ private struct ConnectionSetupView: View {
                 } header: {
                     Text("Server")
                 }
+                .libraryHomeListRowSurface()
             }
 
             if showsServerSummary {
                 Section("Server") {
                     ConnectionServerSummaryRow(draft: draft)
                 }
+                .libraryHomeListRowSurface()
             }
 
             if showsAuthenticationFields {
@@ -1220,6 +1234,7 @@ private struct ConnectionSetupView: View {
                 } header: {
                     Text("Authentication")
                 }
+                .libraryHomeListRowSurface()
             }
 
             if showsSessionFields {
@@ -1238,8 +1253,11 @@ private struct ConnectionSetupView: View {
                 } footer: {
                     Text(sessionSectionFooter)
                 }
+                .libraryHomeListRowSurface()
             }
         })
+        .libraryHomeGroupedScrollBackground()
+        .libraryHomeChrome(theme: terminalTheme)
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
