@@ -32,6 +32,8 @@
 		14890862E5A8BFE9BE759DB0 /* GhosttySurfaceKeyEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E84F774C17B5C4DB6B715A9 /* GhosttySurfaceKeyEventTests.swift */; };
 		14BCD2766E4ED765F45BA3AD /* GhosttyPanePreviewSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07301EEDA55AAD40D17C26DA /* GhosttyPanePreviewSessionTests.swift */; };
 		19AA0D1E2F3A4B5C6D7E8F91 /* GhosttyPreviewImageDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19AA0D1E2F3A4B5C6D7E8F81 /* GhosttyPreviewImageDecoder.swift */; };
+		19AA0D1E2F3A4B5C6D7E8F92 /* TerminalThemePreviewRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19AA0D1E2F3A4B5C6D7E8F82 /* TerminalThemePreviewRenderer.swift */; };
+		19AA0D1E2F3A4B5C6D7E8F93 /* TerminalThemePreviewRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19AA0D1E2F3A4B5C6D7E8F83 /* TerminalThemePreviewRendererTests.swift */; };
 		1AB873EDA295DF259439A79D /* GhosttyTerminalViewportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B4E47DA0DBB84F1301E14C /* GhosttyTerminalViewportCoordinator.swift */; };
 		1B0B1376A686D255CD982880 /* GhosttySurfaceScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2788DE85F31E74E9F80A8293 /* GhosttySurfaceScreen.swift */; };
 		1C6658B7035DAE77D022D554 /* GhosttyTerminalTransportTransitionPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8B611ABF35323F78D530A9 /* GhosttyTerminalTransportTransitionPlanner.swift */; };
@@ -210,6 +212,8 @@
 		119884123163BF2FA3ABDDE3 /* GhosttySurfaceScreenModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceScreenModelTests.swift; sourceTree = "<group>"; };
 		19F91ABC4D800253E670BB4C /* GhosttyTerminalTransportTransitionPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalTransportTransitionPlannerTests.swift; sourceTree = "<group>"; };
 		19AA0D1E2F3A4B5C6D7E8F81 /* GhosttyPreviewImageDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyPreviewImageDecoder.swift; sourceTree = "<group>"; };
+		19AA0D1E2F3A4B5C6D7E8F82 /* TerminalThemePreviewRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemePreviewRenderer.swift; sourceTree = "<group>"; };
+		19AA0D1E2F3A4B5C6D7E8F83 /* TerminalThemePreviewRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalThemePreviewRendererTests.swift; sourceTree = "<group>"; };
 		1CCFEA70AB6AEF95B946201D /* RemuxTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = RemuxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1DFA7B573241258BA93FCF29 /* GhosttyKeyboardCursorTrackpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyKeyboardCursorTrackpadTests.swift; sourceTree = "<group>"; };
 		1F7D9825009B02720AC00422 /* GhosttyClipboardContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyClipboardContentTests.swift; sourceTree = "<group>"; };
@@ -445,6 +449,7 @@
 				8BA8119EA500195F1FF488FF /* GhosttyKitRuntimeTests.swift */,
 				ED11F0B6BF0469948945A509 /* GhosttyModifierStateTests.swift */,
 				07301EEDA55AAD40D17C26DA /* GhosttyPanePreviewSessionTests.swift */,
+				19AA0D1E2F3A4B5C6D7E8F83 /* TerminalThemePreviewRendererTests.swift */,
 				A9BEEA4655420D5DCEDE5C23 /* GhosttyPhoneChromeLayoutTests.swift */,
 				387E363FF06D5C7B2164FAA1 /* GhosttyRuntimeManagedSurfaceFactoryTests.swift */,
 				AABBCCDDEEFF001122334455 /* GhosttyRuntimeManagedSurfaceStoreTests.swift */,
@@ -643,6 +648,7 @@
 				4834D38813374E9DB4B803E3 /* GhosttyShortcutSurfacePalette.swift */,
 				BC76333B637D49B9A27CB798 /* ShortcutPalette.swift */,
 				CFE401B861C30DA18E8BE1C9 /* ShortcutsSettingsSheet.swift */,
+				19AA0D1E2F3A4B5C6D7E8F82 /* TerminalThemePreviewRenderer.swift */,
 			);
 			path = Ghostty;
 			sourceTree = "<group>";
@@ -869,6 +875,7 @@
 				F2272E5730FDD1AFE3583BA5 /* ShortcutPalette.swift in Sources */,
 				036AB1FE9FEBF1EF99159FD1 /* ShortcutStore.swift in Sources */,
 				ED9FB6945BB0CB3D6CDCB3E3 /* ShortcutsSettingsSheet.swift in Sources */,
+				19AA0D1E2F3A4B5C6D7E8F92 /* TerminalThemePreviewRenderer.swift in Sources */,
 				1CC4024F89C0E668AA4682F0 /* StarterShortcuts.swift in Sources */,
 				0494A11A7D6207165CFCDAD7 /* TerminalSettings.swift in Sources */,
 				A0D6CF5A40A4953636A1928F /* TerminalSettingsRepository.swift in Sources */,
@@ -902,6 +909,7 @@
 				1FCDFBD088BC311CDCBA7C7B /* GhosttyKitRuntimeTests.swift in Sources */,
 				F4CB602D5DC2C8F2BA4FFF12 /* GhosttyModifierStateTests.swift in Sources */,
 				14BCD2766E4ED765F45BA3AD /* GhosttyPanePreviewSessionTests.swift in Sources */,
+				19AA0D1E2F3A4B5C6D7E8F93 /* TerminalThemePreviewRendererTests.swift in Sources */,
 				557B4DE97A72EE7ED2097407 /* GhosttyPhoneChromeLayoutTests.swift in Sources */,
 				78DA3C738D712ACF559811AC /* GhosttyRuntimeManagedSurfaceFactoryTests.swift in Sources */,
 				6B5A49382716F0E1D2C3B4A5 /* GhosttyRuntimeManagedSurfaceStoreTests.swift in Sources */,
