@@ -399,9 +399,12 @@ private struct ConnectionLibraryView: View {
                             Button("Edit") {
                                 onEditWorkspace(server.id, workspace.id)
                             }
+                            .tint(LibraryHomePalette.controlAccent)
+
                             Button("Delete", role: .destructive) {
                                 onDeleteWorkspace(workspace.id)
                             }
+                            .tint(.red)
                         }
                         .libraryHomeListRowSurface()
                     }
@@ -486,19 +489,20 @@ private struct ConnectionLibraryView: View {
                     Button("Delete", role: .destructive) {
                         onDeleteServer(server.id)
                     }
+                    .tint(.red)
 
                     if let latest {
                         Button("Resume") {
                             onConnect(latest.id)
                         }
-                        .tint(.green)
+                        .tint(LibraryHomePalette.controlAccent)
                     }
                 }
                 .swipeActions(edge: .leading) {
                     Button("New Session") {
                         onAddWorkspace(server.id)
                     }
-                    .tint(.blue)
+                    .tint(LibraryHomePalette.controlAccent)
                 }
                 .libraryHomeListRowSurface()
             }
@@ -761,9 +765,12 @@ private struct ServerDetailView: View {
                             Button("Edit") {
                                 onEditWorkspace(server.id, workspace.id)
                             }
+                            .tint(LibraryHomePalette.controlAccent)
+
                             Button("Delete", role: .destructive) {
                                 onDeleteWorkspace(workspace.id)
                             }
+                            .tint(.red)
                         }
                     }
                 }
@@ -1082,6 +1089,7 @@ private struct TerminalSettingsView: View {
         Form {
             Section("Font") {
                 Toggle("Use default size", isOn: useDefaultFontBinding)
+                    .tint(LibraryHomePalette.controlAccent)
                     .accessibilityIdentifier("settings.use-default-font")
 
                 Stepper(
