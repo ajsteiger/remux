@@ -8,6 +8,26 @@ enum GhosttyAttachmentPayload: Equatable, Sendable {
     case text(String)
 }
 
+enum GhosttyAttachmentPreviewPayload: Equatable, Sendable {
+    case imageData(Data)
+    case file(URL)
+    case link(URL)
+    case text(String)
+
+    init(_ payload: GhosttyAttachmentPayload) {
+        switch payload {
+        case .imageData(let data):
+            self = .imageData(data)
+        case .file(let url):
+            self = .file(url)
+        case .link(let url):
+            self = .link(url)
+        case .text(let text):
+            self = .text(text)
+        }
+    }
+}
+
 struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case photo
@@ -41,19 +61,22 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
     let title: String
     let detail: String
     let payload: GhosttyAttachmentPayload?
+    let previewPayload: GhosttyAttachmentPreviewPayload?
 
     init(
         id: UUID = UUID(),
         kind: Kind,
         title: String,
         detail: String = "Attachment",
-        payload: GhosttyAttachmentPayload? = nil
+        payload: GhosttyAttachmentPayload? = nil,
+        previewPayload: GhosttyAttachmentPreviewPayload? = nil
     ) {
         self.id = id
         self.kind = kind
         self.title = title
         self.detail = detail
         self.payload = payload
+        self.previewPayload = previewPayload ?? payload.map(GhosttyAttachmentPreviewPayload.init)
     }
 
     var systemName: String {
@@ -61,7 +84,7 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
     }
 
     var isPreviewable: Bool {
-        payload != nil
+        previewPayload != nil
     }
 
     static func mediaSelections(contentTypes: [[UTType]]) -> [GhosttyPendingAttachment] {
@@ -131,6 +154,7 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
 
     func updating(
         payload: GhosttyAttachmentPayload? = nil,
+        previewPayload: GhosttyAttachmentPreviewPayload? = nil,
         detail: String
     ) -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
@@ -138,13 +162,15 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
             kind: kind,
             title: title,
             detail: detail,
-            payload: payload ?? self.payload
+            payload: payload ?? self.payload,
+            previewPayload: previewPayload ?? self.previewPayload
         )
     }
 
     func updatingText(_ text: String) -> GhosttyPendingAttachment {
         updating(
             payload: .text(text),
+            previewPayload: .text(text),
             detail: Self.textDetail(text)
         )
     }

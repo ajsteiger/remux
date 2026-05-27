@@ -39,6 +39,7 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.detail, "GZ file")
         XCTAssertEqual(attachment.systemName, "doc")
         XCTAssertEqual(attachment.payload, .file(url))
+        XCTAssertEqual(attachment.previewPayload, .file(url))
     }
 
     func testFileAttachmentFallsBackWhenNoExtensionExists() {
@@ -70,6 +71,7 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.detail, "Image")
         XCTAssertEqual(attachment.systemName, "photo")
         XCTAssertEqual(attachment.payload, .imageData(imageData))
+        XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
     }
 
     func testPasteboardImagePlaceholderHasNoPayloadUntilPreviewLoads() {
@@ -91,6 +93,7 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.detail, "example.com/path?q=remux")
         XCTAssertEqual(attachment.systemName, "link")
         XCTAssertEqual(attachment.payload, .link(url))
+        XCTAssertEqual(attachment.previewPayload, .link(url))
     }
 
     func testPasteboardTextAttachmentUsesFirstNonEmptyLineAsDetail() {
@@ -102,6 +105,7 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.detail, "hello terminal")
         XCTAssertEqual(attachment.systemName, "text.alignleft")
         XCTAssertEqual(attachment.payload, .text(text))
+        XCTAssertEqual(attachment.previewPayload, .text(text))
     }
 
     func testBlankTextDetailFallsBackToTextLabel() {
@@ -116,5 +120,6 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.kind, .pasteboardText)
         XCTAssertEqual(attachment.detail, "Text")
         XCTAssertEqual(attachment.payload, .text(""))
+        XCTAssertEqual(attachment.previewPayload, .text(""))
     }
 }
