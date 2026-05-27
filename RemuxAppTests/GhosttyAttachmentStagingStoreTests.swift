@@ -1,4 +1,5 @@
 import XCTest
+import UniformTypeIdentifiers
 @testable import Remux
 
 final class GhosttyAttachmentStagingStoreTests: XCTestCase {
@@ -64,6 +65,25 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
             XCTAssertEqual(stagedURL.lastPathComponent, "Attachment")
             GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
         }
+    }
+
+    func testStageImageDataUsesPredictableFilename() throws {
+        let stagedURL = try GhosttyAttachmentStagingStore.stageImageDataSynchronously(
+            Data([0x01]),
+            title: "Photo 1",
+            contentTypes: [.jpeg]
+        )
+
+        XCTAssertEqual(stagedURL.lastPathComponent, "photo-1.jpeg")
+        XCTAssertEqual(try Data(contentsOf: stagedURL), Data([0x01]))
+        GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+    }
+
+    func testImageFilenameFallsBackForBlankTitleAndUnknownExtension() {
+        XCTAssertEqual(
+            GhosttyAttachmentStagingStore.imageFilename(title: "  ", contentTypes: []),
+            "image"
+        )
     }
 
     func testStageFilesCleansPartialCopiesWhenLaterCopyFails() throws {

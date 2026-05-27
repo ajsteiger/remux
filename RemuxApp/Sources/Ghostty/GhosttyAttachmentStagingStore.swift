@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum GhosttyAttachmentStagingStore {
     static let directoryName = "RemuxAttachmentStaging"
@@ -69,6 +70,28 @@ enum GhosttyAttachmentStagingStore {
         return destination
     }
 
+    static func stageImageData(
+        _ data: Data,
+        title: String,
+        contentTypes: [UTType]
+    ) async throws -> URL {
+        try await stageData(
+            data,
+            filename: imageFilename(title: title, contentTypes: contentTypes)
+        )
+    }
+
+    static func stageImageDataSynchronously(
+        _ data: Data,
+        title: String,
+        contentTypes: [UTType]
+    ) throws -> URL {
+        try stageDataSynchronously(
+            data,
+            filename: imageFilename(title: title, contentTypes: contentTypes)
+        )
+    }
+
     static func cleanup(_ attachments: [GhosttyPendingAttachment]) {
         let urls = attachments.compactMap(\.stagedFileURL)
         guard !urls.isEmpty else { return }
@@ -93,9 +116,32 @@ enum GhosttyAttachmentStagingStore {
             .appendingPathComponent(directoryName, isDirectory: true)
     }
 
+    static func imageFilename(title: String, contentTypes: [UTType]) -> String {
+        let stem = filenameStem(from: title)
+        guard let fileExtension = contentTypes
+            .lazy
+            .compactMap(\.preferredFilenameExtension)
+            .first else {
+            return stem
+        }
+        return "\(stem).\(fileExtension)"
+    }
+
     private static func stagingDirectory(fileManager: FileManager) -> URL {
         stagingRoot(fileManager: fileManager)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
+    private static func filenameStem(from title: String) -> String {
+        let characters = title
+            .lowercased()
+            .map { character -> Character in
+                character.isLetter || character.isNumber ? character : "-"
+            }
+        let stem = String(characters)
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+        return stem.isEmpty ? "image" : stem
     }
 
     private static func stagedFilename(for sourceURL: URL) -> String {
