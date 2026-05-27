@@ -694,7 +694,7 @@ struct GhosttySurfaceScreen: View {
                 GhosttyAttachmentTray(
                     onPhotosSelected: dismissAttachmentTray,
                     onFilesSelected: dismissAttachmentTray,
-                    onPasteSelected: dismissAttachmentTray
+                    onPasteSelected: handleAttachmentPasteSelection
                 )
                 .padding(.horizontal, 18)
                 .padding(.bottom, 8)
@@ -744,6 +744,42 @@ struct GhosttySurfaceScreen: View {
         guard pendingAttachments.contains(where: \.isPreviewable) else { return }
         attachmentPreviewDetent = .medium
         isAttachmentPreviewPresented = true
+    }
+
+    private func handleAttachmentPasteSelection() {
+        let snapshot = GhosttyAttachmentPasteboardSnapshot.current()
+        let attachments = snapshot.pendingAttachments
+        guard !attachments.isEmpty else {
+            dismissAttachmentTray()
+            presentAttachmentNotice(snapshot.emptyPasteMessage)
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.16)) {
+            pendingAttachments = attachments
+            isAttachmentTrayPresented = false
+            attachmentNotice = nil
+        }
+    }
+
+    private func presentAttachmentNotice(_ message: String) {
+        let notice = GhosttyAttachmentNotice(message: message)
+        withAnimation(.easeOut(duration: 0.16)) {
+            attachmentNotice = notice
+        }
+
+        Task { @MainActor in
+            do {
+                try await Task.sleep(for: .seconds(3))
+            } catch {
+                return
+            }
+
+            guard attachmentNotice?.id == notice.id else { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                attachmentNotice = nil
+            }
+        }
     }
 
     private func showShortcutPalette() {
