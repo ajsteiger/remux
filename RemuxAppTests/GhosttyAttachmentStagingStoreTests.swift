@@ -19,6 +19,20 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: stagedURL.path))
     }
 
+    func testStageFileURLCopiesIntoRemuxStagingDirectory() throws {
+        let sourceURL = try makeSourceFile(named: "image.jpeg", data: Data([0x01, 0x02]))
+
+        let stagedURL = try GhosttyAttachmentStagingStore.stageFileURLSynchronously(sourceURL)
+
+        XCTAssertNotEqual(stagedURL, sourceURL)
+        XCTAssertTrue(stagedURL.path.hasPrefix(GhosttyAttachmentStagingStore.stagingRoot().path))
+        XCTAssertEqual(stagedURL.lastPathComponent, "image.jpeg")
+        XCTAssertEqual(try Data(contentsOf: stagedURL), Data([0x01, 0x02]))
+
+        GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagedURL.path))
+    }
+
     func testCleanupIgnoresFilesOutsideStagingDirectory() throws {
         let sourceURL = try makeSourceFile(named: "keep.txt", data: Data("keep".utf8))
 

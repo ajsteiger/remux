@@ -26,6 +26,17 @@ enum GhosttyAttachmentStagingStore {
     }
 
     static func stageFileSynchronously(_ sourceURL: URL) throws -> GhosttyPendingAttachment {
+        let stagedURL = try stageFileURLSynchronously(sourceURL)
+        return .file(url: stagedURL)
+    }
+
+    static func stageFileURL(_ sourceURL: URL) async throws -> URL {
+        try await Task.detached(priority: .utility) {
+            try stageFileURLSynchronously(sourceURL)
+        }.value
+    }
+
+    static func stageFileURLSynchronously(_ sourceURL: URL) throws -> URL {
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
@@ -45,7 +56,7 @@ enum GhosttyAttachmentStagingStore {
             throw error
         }
 
-        return .file(url: destination)
+        return destination
     }
 
     static func stageData(_ data: Data, filename: String) async throws -> URL {
