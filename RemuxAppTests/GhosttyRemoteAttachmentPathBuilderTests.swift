@@ -500,6 +500,79 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         ])
     }
 
+    func testShortLivedProviderClosesLeaseAfterSuccessfulOperation() async throws {
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let leaseState = FakeGhosttyAttachmentSFTPLeaseState()
+        let provider = GhosttyAttachmentShortLivedSFTPClientProvider(
+            openLease: {
+                GhosttyAttachmentSFTPClientLease(
+                    client: client,
+                    close: { try await leaseState.close() }
+                )
+            }
+        )
+
+        let result = try await provider.withClient { client in
+            try await client.ensureDirectoryExists(atPath: ".cache")
+            return "ok"
+        }
+        let closeCount = await leaseState.closeCount
+        let events = await client.events
+
+        XCTAssertEqual(result, "ok")
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(events, [.ensureDirectory(".cache")])
+    }
+
+    func testShortLivedProviderClosesLeaseAfterOperationFailure() async {
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let leaseState = FakeGhosttyAttachmentSFTPLeaseState()
+        let provider = GhosttyAttachmentShortLivedSFTPClientProvider(
+            openLease: {
+                GhosttyAttachmentSFTPClientLease(
+                    client: client,
+                    close: { try await leaseState.close() }
+                )
+            }
+        )
+
+        do {
+            _ = try await provider.withClient { (_: FakeGhosttyAttachmentSFTPClient) in
+                throw FakeGhosttyAttachmentSFTPLeaseFailure.operation
+            } as Void
+            XCTFail("Expected operation to throw")
+        } catch let error as FakeGhosttyAttachmentSFTPLeaseFailure {
+            XCTAssertEqual(error, .operation)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let closeCount = await leaseState.closeCount
+        XCTAssertEqual(closeCount, 1)
+    }
+
+    func testShortLivedProviderDoesNotFailSuccessfulOperationWhenCloseFails() async throws {
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let leaseState = FakeGhosttyAttachmentSFTPLeaseState(closeFailure: .close)
+        let provider = GhosttyAttachmentShortLivedSFTPClientProvider(
+            openLease: {
+                GhosttyAttachmentSFTPClientLease(
+                    client: client,
+                    close: { try await leaseState.close() }
+                )
+            },
+            closeFailureHandler: { _ in }
+        )
+
+        let result = try await provider.withClient { (_: FakeGhosttyAttachmentSFTPClient) in
+            "ok"
+        }
+        let closeCount = await leaseState.closeCount
+
+        XCTAssertEqual(result, "ok")
+        XCTAssertEqual(closeCount, 1)
+    }
+
     func testRejectsMissingLocalFilesBeforeRemoteOperations() async {
         let localURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("missing-\(UUID().uuidString).txt")
@@ -729,6 +802,27 @@ private enum FakeGhosttyAttachmentSFTPFailure: Error, Equatable, Sendable {
     case upload
     case rename
     case remove
+}
+
+private enum FakeGhosttyAttachmentSFTPLeaseFailure: Error, Equatable, Sendable {
+    case operation
+    case close
+}
+
+private actor FakeGhosttyAttachmentSFTPLeaseState {
+    private let closeFailure: FakeGhosttyAttachmentSFTPLeaseFailure?
+    private(set) var closeCount = 0
+
+    init(closeFailure: FakeGhosttyAttachmentSFTPLeaseFailure? = nil) {
+        self.closeFailure = closeFailure
+    }
+
+    func close() throws {
+        closeCount += 1
+        if let closeFailure {
+            throw closeFailure
+        }
+    }
 }
 
 private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {

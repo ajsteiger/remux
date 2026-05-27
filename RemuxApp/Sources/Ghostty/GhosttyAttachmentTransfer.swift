@@ -101,6 +101,60 @@ protocol GhosttyAttachmentSFTPClientProvider: Sendable {
     ) async throws -> ReturnValue
 }
 
+struct GhosttyAttachmentSFTPClientLease<Client: GhosttyAttachmentSFTPClient>: Sendable {
+    let client: Client
+    private let closeHandler: @Sendable () async throws -> Void
+
+    init(
+        client: Client,
+        close: @escaping @Sendable () async throws -> Void
+    ) {
+        self.client = client
+        self.closeHandler = close
+    }
+
+    func close() async throws {
+        try await closeHandler()
+    }
+}
+
+struct GhosttyAttachmentShortLivedSFTPClientProvider<Client: GhosttyAttachmentSFTPClient>: GhosttyAttachmentSFTPClientProvider {
+    let openLease: @Sendable () async throws -> GhosttyAttachmentSFTPClientLease<Client>
+    let closeFailureHandler: @Sendable (Error) -> Void
+
+    init(
+        openLease: @escaping @Sendable () async throws -> GhosttyAttachmentSFTPClientLease<Client>,
+        closeFailureHandler: @escaping @Sendable (Error) -> Void = { error in
+            NSLog("Remux attachment SFTP close failed: %@", String(describing: error))
+        }
+    ) {
+        self.openLease = openLease
+        self.closeFailureHandler = closeFailureHandler
+    }
+
+    func withClient<ReturnValue: Sendable>(
+        _ operation: @Sendable (Client) async throws -> ReturnValue
+    ) async throws -> ReturnValue {
+        let lease = try await openLease()
+        do {
+            let result = try await operation(lease.client)
+            await close(lease)
+            return result
+        } catch {
+            await close(lease)
+            throw error
+        }
+    }
+
+    private func close(_ lease: GhosttyAttachmentSFTPClientLease<Client>) async {
+        do {
+            try await lease.close()
+        } catch {
+            closeFailureHandler(error)
+        }
+    }
+}
+
 struct GhosttyAttachmentSFTPClientProviderTransferService<Provider: GhosttyAttachmentSFTPClientProvider>: GhosttyAttachmentTransferService {
     let provider: Provider
     let pathBuilder: GhosttyRemoteAttachmentPathBuilder
