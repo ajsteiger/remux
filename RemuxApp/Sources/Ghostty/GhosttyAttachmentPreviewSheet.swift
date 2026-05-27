@@ -219,24 +219,45 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     private func linkPreview(_ url: URL) -> some View {
-        VStack(spacing: 14) {
-            Image(systemName: "link")
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(chromeStyle.accent)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 11) {
+                Image(systemName: "link")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(chromeStyle.accent)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        chromeStyle.selectedFill,
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
 
-            Text(url.absoluteString)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
-                .multilineTextAlignment(.center)
-                .lineLimit(4)
-                .foregroundStyle(GhosttySheetPalette.primary)
-                .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(linkTitle(for: url))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(GhosttySheetPalette.primary)
+                        .lineLimit(1)
+
+                    Text(url.absoluteString)
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(GhosttySheetPalette.secondary)
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                }
+            }
+
+            Spacer(minLength: 0)
 
             Link(destination: url) {
-                Text("Open Link")
+                Label("Open Link", systemImage: "arrow.up.forward")
                     .font(.system(size: 15, weight: .semibold))
                     .padding(.horizontal, 18)
                     .frame(height: 40)
-                    .background(chromeStyle.toolbarButtonActiveFill, in: Capsule())
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(chromeStyle.accent)
+                    .background(chromeStyle.selectedFill, in: Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(chromeStyle.accent.opacity(0.18), lineWidth: 0.75)
+                    }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -244,6 +265,14 @@ struct GhosttyAttachmentPreviewSheet: View {
         .background(GhosttyAttachmentPreviewStyle.editorFill)
         .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
         .accessibilityIdentifier("terminal.attachments.link-preview")
+    }
+
+    private func linkTitle(for url: URL) -> String {
+        guard let host = url.host(percentEncoded: false), !host.isEmpty else {
+            return "Link"
+        }
+
+        return host
     }
 
     @ViewBuilder
