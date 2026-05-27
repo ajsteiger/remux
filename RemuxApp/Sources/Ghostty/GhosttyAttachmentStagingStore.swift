@@ -5,8 +5,23 @@ enum GhosttyAttachmentStagingStore {
 
     static func stageFiles(_ urls: [URL]) async throws -> [GhosttyPendingAttachment] {
         try await Task.detached(priority: .utility) {
-            try urls.map { try stageFileSynchronously($0) }
+            try stageFilesSynchronously(urls)
         }.value
+    }
+
+    static func stageFilesSynchronously(_ urls: [URL]) throws -> [GhosttyPendingAttachment] {
+        var attachments: [GhosttyPendingAttachment] = []
+
+        do {
+            for url in urls {
+                attachments.append(try stageFileSynchronously(url))
+            }
+
+            return attachments
+        } catch {
+            cleanupSynchronously(attachments.compactMap(\.stagedFileURL))
+            throw error
+        }
     }
 
     static func stageFileSynchronously(_ sourceURL: URL) throws -> GhosttyPendingAttachment {
@@ -23,7 +38,13 @@ enum GhosttyAttachmentStagingStore {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let destination = directory.appendingPathComponent(stagedFilename(for: sourceURL))
-        try fileManager.copyItem(at: sourceURL, to: destination)
+        do {
+            try fileManager.copyItem(at: sourceURL, to: destination)
+        } catch {
+            try? fileManager.removeItem(at: directory)
+            throw error
+        }
+
         return .file(url: destination)
     }
 

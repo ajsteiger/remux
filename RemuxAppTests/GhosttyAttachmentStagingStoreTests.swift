@@ -26,6 +26,20 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourceURL.path))
     }
 
+    func testStageFilesCleansPartialCopiesWhenLaterCopyFails() throws {
+        let sourceURL = try makeSourceFile(named: "first.txt", data: Data("first".utf8))
+        let missingURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("missing.txt")
+        let stagingChildrenBefore = try stagingChildren()
+
+        XCTAssertThrowsError(
+            try GhosttyAttachmentStagingStore.stageFilesSynchronously([sourceURL, missingURL])
+        )
+
+        XCTAssertEqual(try stagingChildren(), stagingChildrenBefore)
+    }
+
     private func makeSourceFile(named name: String, data: Data) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -34,5 +48,18 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
         let url = directory.appendingPathComponent(name)
         try data.write(to: url)
         return url
+    }
+
+    private func stagingChildren() throws -> Set<String> {
+        let root = GhosttyAttachmentStagingStore.stagingRoot()
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            return []
+        }
+
+        let urls = try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil
+        )
+        return Set(urls.map(\.lastPathComponent))
     }
 }
