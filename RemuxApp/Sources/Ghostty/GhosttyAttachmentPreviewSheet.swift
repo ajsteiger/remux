@@ -122,9 +122,7 @@ struct GhosttyAttachmentPreviewSheet: View {
                     .padding(12)
             }
         }
-        .padding(GhosttyAttachmentPreviewStyle.contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .ghosttyAttachmentPreviewContentSurface()
     }
 
     private func previewOverlayActions(for attachment: GhosttyPendingAttachment) -> some View {
@@ -173,8 +171,10 @@ struct GhosttyAttachmentPreviewSheet: View {
     private func imagePreview(_ data: Data) -> some View {
         if let image = UIImage(data: data) {
             GhosttyAttachmentInteractiveImagePreview(image: image)
-                .background(Color.black.opacity(0.84))
-                .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ghosttyAttachmentPreviewContentSurface(
+                    fill: GhosttyAttachmentPreviewStyle.mediaFill
+                )
         } else {
             unavailablePreview
         }
@@ -182,7 +182,8 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func filePreview(_ url: URL) -> some View {
         GhosttyAttachmentQuickLookPreview(url: url)
-            .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ghosttyAttachmentPreviewContentSurface()
             .accessibilityIdentifier("terminal.attachments.file-preview")
     }
 
@@ -208,16 +209,7 @@ struct GhosttyAttachmentPreviewSheet: View {
                     .truncationMode(.middle)
                     .textSelection(.enabled)
             }
-            .padding(14)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(
-                GhosttyAttachmentPreviewStyle.controlFill,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 0.75)
-            }
 
             Spacer(minLength: 0)
 
@@ -236,9 +228,8 @@ struct GhosttyAttachmentPreviewSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(18)
-        .background(GhosttyAttachmentPreviewStyle.editorFill)
-        .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+        .padding(GhosttyAttachmentPreviewStyle.contentPadding)
+        .ghosttyAttachmentPreviewContentSurface()
         .accessibilityIdentifier("terminal.attachments.link-preview")
     }
 
@@ -261,6 +252,9 @@ struct GhosttyAttachmentPreviewSheet: View {
             .tint(chromeStyle.accent)
             .padding(.horizontal, 4)
             .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(GhosttyAttachmentPreviewStyle.contentPadding)
+            .ghosttyAttachmentPreviewContentSurface()
             .accessibilityIdentifier("terminal.attachments.text-editor")
     }
 
@@ -274,13 +268,13 @@ struct GhosttyAttachmentPreviewSheet: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(GhosttySheetPalette.primary)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(GhosttyAttachmentPreviewStyle.contentPadding)
+        .ghosttyAttachmentPreviewContentSurface()
     }
 
     private var unavailablePreviewCard: some View {
         unavailablePreview
-            .padding(GhosttyAttachmentPreviewStyle.contentPadding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ghosttyAttachmentPreviewContentSurface()
     }
 
     private var selectedAttachment: GhosttyPendingAttachment? {
@@ -641,13 +635,12 @@ private struct GhosttyAttachmentPreviewActionButtonStyle: ButtonStyle {
 
 private enum GhosttyAttachmentPreviewStyle {
     static let contentFill = GhosttySheetPalette.row
+    static let mediaFill = Color.black.opacity(0.84)
     static let contentStroke = GhosttySheetPalette.stroke
     static let controlFill = GhosttySheetPalette.controlFill
     static let controlPressedFill = Color(uiColor: .tertiarySystemFill)
-    static let editorFill = Color(uiColor: .secondarySystemFill).opacity(0.34)
     static let controlStroke = GhosttySheetPalette.stroke
     static let contentCornerRadius: CGFloat = 16
-    static let previewCornerRadius: CGFloat = 16
     static let chipTitleMaxWidth: CGFloat = 220
     static let contentPadding = EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
 }
@@ -705,14 +698,17 @@ private extension View {
     }
 
     @ViewBuilder
-    func ghosttyAttachmentPreviewContentSurface() -> some View {
+    func ghosttyAttachmentPreviewContentSurface(
+        fill: Color = GhosttyAttachmentPreviewStyle.contentFill
+    ) -> some View {
         let shape = RoundedRectangle(
             cornerRadius: GhosttyAttachmentPreviewStyle.contentCornerRadius,
             style: .continuous
         )
 
         self
-            .background(GhosttyAttachmentPreviewStyle.contentFill, in: shape)
+            .background(fill, in: shape)
+            .clipShape(shape)
             .overlay {
                 shape.strokeBorder(GhosttyAttachmentPreviewStyle.contentStroke, lineWidth: 1)
             }
