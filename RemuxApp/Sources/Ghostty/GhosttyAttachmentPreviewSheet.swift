@@ -500,8 +500,9 @@ private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable 
     }
 
     func updateUIViewController(_ controller: QLPreviewController, context: Context) {
-        context.coordinator.update(url: url)
-        controller.reloadData()
+        if context.coordinator.update(url: url) {
+            controller.reloadData()
+        }
     }
 
     static func dismantleUIViewController(
@@ -521,11 +522,12 @@ private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable 
             startAccessing(url)
         }
 
-        func update(url: URL) {
-            guard self.url != url else { return }
+        func update(url: URL) -> Bool {
+            guard self.url != url else { return false }
             stopAccessing()
             self.url = url
             startAccessing(url)
+            return true
         }
 
         func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
