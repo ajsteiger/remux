@@ -863,18 +863,42 @@ private struct LibraryEmptyState: View {
         } description: {
             Text("Add an SSH server to start using tmux sessions from this phone.")
         } actions: {
-            Button(action: onAddServer) {
-                Label("Add Server", systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(LibraryHomePalette.controlAccent)
-            .accessibilityIdentifier("library.empty.add-server")
+            LibraryEmptyAddServerButton(action: onAddServer)
         }
         .tint(LibraryHomePalette.controlAccent)
         .padding(.horizontal, 40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .offset(y: -48)
+    }
+}
+
+private struct LibraryEmptyAddServerButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Add Server", systemImage: "plus")
+        }
+        .fontWeight(.semibold)
+        .controlSize(.large)
+        .libraryEmptyPrimaryAction()
+        .accessibilityIdentifier("library.empty.add-server")
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func libraryEmptyPrimaryAction() -> some View {
+        if #available(iOS 26.0, *) {
+            self
+                .buttonStyle(.glass)
+                .tint(LibraryHomePalette.controlAccent)
+        } else {
+            self
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .tint(LibraryHomePalette.controlAccent)
+        }
     }
 }
 
