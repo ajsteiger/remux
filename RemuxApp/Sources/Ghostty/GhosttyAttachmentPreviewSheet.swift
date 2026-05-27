@@ -129,45 +129,28 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     private func attachmentPreviewCard(_ attachment: GhosttyPendingAttachment) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 9) {
-                Image(systemName: attachment.systemName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .frame(width: 30, height: 30)
-                    .background(
-                        chromeStyle.toolbarButtonActiveFill,
-                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    )
-                    .foregroundStyle(chromeStyle.accent)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(attachment.title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .lineLimit(1)
-                        .foregroundStyle(GhosttySheetPalette.primary)
-
-                    Text(attachment.detail)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .lineLimit(1)
-                        .foregroundStyle(GhosttySheetPalette.secondary)
-                }
-
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
                 Spacer(minLength: 0)
 
                 if showsTextEditAffordance(attachment) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(chromeStyle.accent)
-                        .frame(width: 30, height: 30)
-                        .background(
-                            chromeStyle.selectedFill,
-                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    Button {
+                        Haptic.chromeControlPress()
+                        startTextEditing(attachment)
+                    } label: {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 30, height: 30)
+                    }
+                    .buttonStyle(
+                        GhosttyAttachmentPreviewActionButtonStyle(
+                            foreground: chromeStyle.accent,
+                            fill: chromeStyle.selectedFill,
+                            stroke: chromeStyle.accent.opacity(0.18)
                         )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                .strokeBorder(chromeStyle.accent.opacity(0.18), lineWidth: 0.75)
-                        }
-                        .accessibilityHidden(true)
+                    )
+                    .accessibilityLabel("Edit pasted text")
+                    .accessibilityIdentifier("terminal.attachments.preview.edit-text")
                 }
 
                 Button {
@@ -179,7 +162,13 @@ struct GhosttyAttachmentPreviewSheet: View {
                         .symbolRenderingMode(.monochrome)
                         .frame(width: 30, height: 30)
                 }
-                .buttonStyle(GhosttyAttachmentPreviewRemoveButtonStyle())
+                .buttonStyle(
+                    GhosttyAttachmentPreviewActionButtonStyle(
+                        foreground: GhosttySheetPalette.primary,
+                        fill: GhosttyAttachmentPreviewStyle.controlFill,
+                        stroke: GhosttyAttachmentPreviewStyle.controlStroke
+                    )
+                )
                 .accessibilityLabel("Remove attachment")
                 .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
             }
@@ -781,18 +770,22 @@ private struct GhosttyAttachmentPreviewChipButtonStyle: ButtonStyle {
     }
 }
 
-private struct GhosttyAttachmentPreviewRemoveButtonStyle: ButtonStyle {
+private struct GhosttyAttachmentPreviewActionButtonStyle: ButtonStyle {
+    let foreground: Color
+    let fill: Color
+    let stroke: Color
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(GhosttySheetPalette.primary)
+            .foregroundStyle(foreground)
             .background(
                 configuration.isPressed
                     ? GhosttyAttachmentPreviewStyle.controlPressedFill
-                    : GhosttyAttachmentPreviewStyle.controlFill,
+                    : fill,
                 in: Circle()
             )
             .overlay {
-                Circle().strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 0.75)
+                Circle().strokeBorder(stroke, lineWidth: 0.75)
             }
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
