@@ -107,4 +107,14 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
     func testBlankTextDetailFallsBackToTextLabel() {
         XCTAssertEqual(GhosttyPendingAttachment.textDetail(" \n\t "), "Text")
     }
+
+    func testUpdatingTextAllowsBlankEditedPayload() {
+        let attachment = GhosttyPendingAttachment
+            .pasteboardText("hello")
+            .updatingText("")
+
+        XCTAssertEqual(attachment.kind, .pasteboardText)
+        XCTAssertEqual(attachment.detail, "Text")
+        XCTAssertEqual(attachment.payload, .text(""))
+    }
 }

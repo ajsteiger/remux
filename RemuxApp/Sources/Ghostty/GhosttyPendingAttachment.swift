@@ -142,6 +142,13 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
         )
     }
 
+    func updatingText(_ text: String) -> GhosttyPendingAttachment {
+        updating(
+            payload: .text(text),
+            detail: Self.textDetail(text)
+        )
+    }
+
     static func textDetail(_ text: String) -> String {
         let normalizedText = text
             .split(whereSeparator: \.isNewline)
