@@ -399,6 +399,107 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         ))
     }
 
+    func testProviderBackedServiceRejectsEmptyJobsBeforeLeasingClient() async {
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            sources: []
+        )
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let provider = FakeGhosttyAttachmentSFTPClientProvider(client: client)
+        let service = GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
+
+        do {
+            _ = try await service.transfer(job)
+            XCTFail("Expected transfer to throw")
+        } catch let error as GhosttyAttachmentTransferError {
+            XCTAssertEqual(error, .noSources)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let leaseCount = await provider.leaseCount
+        let events = await client.events
+        XCTAssertEqual(leaseCount, 0)
+        XCTAssertEqual(events, [])
+    }
+
+    func testProviderBackedServicePassesThroughTextAndLinksWithoutLeasingClient() async throws {
+        let textID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let linkID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let linkURL = URL(string: "https://remux.dev/docs")!
+        let transferID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            transferID: transferID,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    id: textID,
+                    title: "Text",
+                    payload: .text("hello")
+                ),
+                GhosttyAttachmentTransferSource(
+                    id: linkID,
+                    title: "Link",
+                    payload: .link(linkURL)
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let provider = FakeGhosttyAttachmentSFTPClientProvider(client: client)
+        let service = GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
+
+        let result = try await service.transfer(job)
+        let leaseCount = await provider.leaseCount
+        let events = await client.events
+
+        XCTAssertEqual(leaseCount, 0)
+        XCTAssertEqual(events, [])
+        XCTAssertEqual(result, GhosttyAttachmentTransferResult(
+            transferID: transferID,
+            items: [
+                .text(sourceID: textID, text: "hello"),
+                .link(sourceID: linkID, url: linkURL),
+            ]
+        ))
+    }
+
+    func testProviderBackedServiceUsesOneClientLeaseForBatch() async throws {
+        let sourceID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let localURL = try makeTemporaryFile(named: "report.txt", contents: "hello")
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    id: sourceID,
+                    title: "Report",
+                    payload: .file(localURL, filename: "report.txt")
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let provider = FakeGhosttyAttachmentSFTPClientProvider(client: client)
+        let service = GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
+
+        let result = try await service.transfer(job)
+        let leaseCount = await provider.leaseCount
+        let events = await client.events
+
+        XCTAssertEqual(leaseCount, 1)
+        XCTAssertEqual(result.items.count, 1)
+        XCTAssertEqual(Array(events.suffix(2)), [
+            .upload(
+                localPath: localURL.path,
+                remotePath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/.report.txt.part"
+            ),
+            .rename(
+                temporaryPath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/.report.txt.part",
+                finalPath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.txt"
+            ),
+        ])
+    }
+
     func testRejectsMissingLocalFilesBeforeRemoteOperations() async {
         let localURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("missing-\(UUID().uuidString).txt")
@@ -671,5 +772,21 @@ private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {
         if failure == .remove {
             throw FakeGhosttyAttachmentSFTPFailure.remove
         }
+    }
+}
+
+private actor FakeGhosttyAttachmentSFTPClientProvider: GhosttyAttachmentSFTPClientProvider {
+    private let client: FakeGhosttyAttachmentSFTPClient
+    private(set) var leaseCount = 0
+
+    init(client: FakeGhosttyAttachmentSFTPClient) {
+        self.client = client
+    }
+
+    func withClient<ReturnValue: Sendable>(
+        _ operation: @Sendable (FakeGhosttyAttachmentSFTPClient) async throws -> ReturnValue
+    ) async throws -> ReturnValue {
+        leaseCount += 1
+        return try await operation(client)
     }
 }

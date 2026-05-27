@@ -93,6 +93,68 @@ protocol GhosttyAttachmentSFTPClient: Sendable {
     func removeFileIfExists(atPath path: String) async throws
 }
 
+protocol GhosttyAttachmentSFTPClientProvider: Sendable {
+    associatedtype Client: GhosttyAttachmentSFTPClient
+
+    func withClient<ReturnValue: Sendable>(
+        _ operation: @Sendable (Client) async throws -> ReturnValue
+    ) async throws -> ReturnValue
+}
+
+struct GhosttyAttachmentSFTPClientProviderTransferService<Provider: GhosttyAttachmentSFTPClientProvider>: GhosttyAttachmentTransferService {
+    let provider: Provider
+    let pathBuilder: GhosttyRemoteAttachmentPathBuilder
+
+    init(
+        provider: Provider,
+        pathBuilder: GhosttyRemoteAttachmentPathBuilder = GhosttyRemoteAttachmentPathBuilder()
+    ) {
+        self.provider = provider
+        self.pathBuilder = pathBuilder
+    }
+
+    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult {
+        guard !job.sources.isEmpty else {
+            throw GhosttyAttachmentTransferError.noSources
+        }
+
+        guard job.sources.contains(where: { $0.requiresSFTPTransfer }) else {
+            return GhosttyAttachmentTransferResult(
+                transferID: job.transferID,
+                items: job.sources.compactMap(\.passthroughTransferItem)
+            )
+        }
+
+        return try await provider.withClient { client in
+            let service = GhosttyAttachmentSFTPTransferService(
+                client: client,
+                pathBuilder: pathBuilder
+            )
+            return try await service.transfer(job)
+        }
+    }
+}
+
+private extension GhosttyAttachmentTransferSource {
+    var requiresSFTPTransfer: Bool {
+        if case .file = payload {
+            return true
+        }
+        return false
+    }
+
+    var passthroughTransferItem: GhosttyAttachmentTransferResult.Item? {
+        switch payload {
+        case .file:
+            return nil
+        case .text(let text):
+            return .text(sourceID: id, text: text)
+        case .link(let url):
+            return .link(sourceID: id, url: url)
+        }
+    }
+}
+
 struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>: GhosttyAttachmentTransferService {
     let client: Client
     let pathBuilder: GhosttyRemoteAttachmentPathBuilder
