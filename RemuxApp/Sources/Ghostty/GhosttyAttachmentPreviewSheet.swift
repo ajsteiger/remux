@@ -169,6 +169,8 @@ struct GhosttyAttachmentPreviewSheet: View {
         switch attachment.payload {
         case .imageData(let data):
             imagePreview(data)
+        case .link(let url):
+            linkPreview(url)
         case .text(let text):
             textPreview(
                 attachment: attachment,
@@ -189,6 +191,34 @@ struct GhosttyAttachmentPreviewSheet: View {
         } else {
             unavailablePreview
         }
+    }
+
+    private func linkPreview(_ url: URL) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: "link")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(chromeStyle.accent)
+
+            Text(url.absoluteString)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .multilineTextAlignment(.center)
+                .lineLimit(4)
+                .foregroundStyle(GhosttySheetPalette.primary)
+                .textSelection(.enabled)
+
+            Link(destination: url) {
+                Text("Open Link")
+                    .font(.system(size: 15, weight: .semibold))
+                    .padding(.horizontal, 18)
+                    .frame(height: 40)
+                    .background(chromeStyle.toolbarButtonActiveFill, in: Capsule())
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(18)
+        .background(GhosttyAttachmentPreviewStyle.editorFill)
+        .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+        .accessibilityIdentifier("terminal.attachments.link-preview")
     }
 
     @ViewBuilder
