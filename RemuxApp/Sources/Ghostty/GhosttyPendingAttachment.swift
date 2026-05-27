@@ -68,8 +68,10 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
         guard !contentTypes.isEmpty else { return [] }
 
         let shouldNumber = contentTypes.count > 1
-        return contentTypes.enumerated().map { index, contentTypes in
+        return contentTypes.enumerated().compactMap { index, contentTypes in
             let kind = mediaKind(contentTypes)
+            guard kind == .photo else { return nil }
+
             return GhosttyPendingAttachment(
                 kind: kind,
                 title: mediaTitle(kind, number: shouldNumber ? index + 1 : nil),

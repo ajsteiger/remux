@@ -14,19 +14,16 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertNil(attachments[0].payload)
     }
 
-    func testMediaSelectionUsesVideoMetadataForMovieType() {
+    func testMediaSelectionIgnoresMovieType() {
         let attachments = GhosttyPendingAttachment.mediaSelections(contentTypes: [[.movie]])
 
-        XCTAssertEqual(attachments.count, 1)
-        XCTAssertEqual(attachments[0].kind, .video)
-        XCTAssertEqual(attachments[0].title, "Video")
-        XCTAssertEqual(attachments[0].systemName, "video")
+        XCTAssertTrue(attachments.isEmpty)
     }
 
     func testMediaSelectionNumbersMultipleItems() {
-        let attachments = GhosttyPendingAttachment.mediaSelections(contentTypes: [[.png], [.movie]])
+        let attachments = GhosttyPendingAttachment.mediaSelections(contentTypes: [[.png], [.jpeg]])
 
-        XCTAssertEqual(attachments.map(\.title), ["Photo 1", "Video 2"])
+        XCTAssertEqual(attachments.map(\.title), ["Photo 1", "Photo 2"])
     }
 
     func testEmptyMediaSelectionCreatesNoAttachments() {

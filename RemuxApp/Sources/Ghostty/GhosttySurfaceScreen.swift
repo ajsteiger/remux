@@ -43,6 +43,7 @@ struct GhosttySurfaceScreen: View {
     private let onEditConnection: () -> Void
     private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
     private let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
+    private static let maxAttachmentPhotoSelectionCount = 4
     private static let tmuxPrefixFlushDelay: Duration = .milliseconds(750)
 
     init(
@@ -383,9 +384,9 @@ struct GhosttySurfaceScreen: View {
             .photosPicker(
                 isPresented: $isAttachmentPhotosPickerPresented,
                 selection: $attachmentPhotoSelections,
-                maxSelectionCount: nil,
+                maxSelectionCount: Self.maxAttachmentPhotoSelectionCount,
                 selectionBehavior: .ordered,
-                matching: .any(of: [.images, .videos])
+                matching: .images
             )
             .fileImporter(
                 isPresented: $isAttachmentFileImporterPresented,
