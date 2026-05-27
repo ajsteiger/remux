@@ -14,16 +14,23 @@ struct GhosttyAttachmentNoticeBanner: View {
     let notice: GhosttyAttachmentNotice
 
     var body: some View {
-        Text(notice.message)
-            .font(.system(size: 13, weight: .semibold))
-            .lineLimit(2)
-            .multilineTextAlignment(.center)
-            .foregroundStyle(GhosttyPhoneChromePalette.chromeForeground)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(maxWidth: 320)
-            .ghosttyAttachmentNoticeSurface()
-            .accessibilityIdentifier("terminal.attachments.notice")
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 13, weight: .semibold))
+                .imageScale(.medium)
+                .accessibilityHidden(true)
+
+            Text(notice.message)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .foregroundStyle(GhosttyPhoneChromePalette.chromeForeground)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 360, alignment: .leading)
+        .ghosttyAttachmentNoticeSurface()
+        .accessibilityIdentifier("terminal.attachments.notice")
     }
 }
 
