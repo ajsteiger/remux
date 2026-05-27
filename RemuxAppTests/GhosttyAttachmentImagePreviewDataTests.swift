@@ -12,7 +12,7 @@ final class GhosttyAttachmentImagePreviewDataTests: XCTestCase {
         )
         let size = try XCTUnwrap(imagePixelSize(previewData))
 
-        XCTAssertLessThanOrEqual(max(size.width, size.height), GhosttyAttachmentImagePreviewData.maxPixelDimension)
+        XCTAssertLessThanOrEqual(max(size.width, size.height), CGFloat(GhosttyAttachmentImagePreviewData.maxPixelDimension))
     }
 
     func testInvalidImageDataReturnsNil() {
