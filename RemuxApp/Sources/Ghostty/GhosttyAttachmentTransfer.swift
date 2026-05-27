@@ -183,3 +183,35 @@ struct GhosttyRemoteAttachmentPathBuilder: Equatable, Sendable {
         return normalized
     }
 }
+
+extension GhosttyPendingAttachment {
+    var transferSource: GhosttyAttachmentTransferSource? {
+        guard let payload else { return nil }
+
+        switch payload {
+        case .file(let url):
+            return GhosttyAttachmentTransferSource(
+                attachmentID: id,
+                title: title,
+                payload: .file(url, filename: transferFilename(for: url))
+            )
+        case .text(let text):
+            return GhosttyAttachmentTransferSource(
+                attachmentID: id,
+                title: title,
+                payload: .text(text)
+            )
+        case .link(let url):
+            return GhosttyAttachmentTransferSource(
+                attachmentID: id,
+                title: title,
+                payload: .link(url)
+            )
+        }
+    }
+
+    private func transferFilename(for url: URL) -> String {
+        let filename = url.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return filename.isEmpty ? title : filename
+    }
+}

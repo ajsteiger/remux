@@ -170,3 +170,43 @@ final class GhosttyRemoteAttachmentPathBuilderTests: XCTestCase {
         XCTAssertTrue(GhosttyRemoteAttachmentPathBuilder().paths(for: job).isEmpty)
     }
 }
+
+final class GhosttyAttachmentTransferSourceTests: XCTestCase {
+    func testFileAttachmentCreatesTransferSourceWithFilename() {
+        let url = URL(fileURLWithPath: "/tmp/remux/report.txt")
+        let attachment = GhosttyPendingAttachment.file(url: url)
+
+        let source = attachment.transferSource
+
+        XCTAssertEqual(source?.attachmentID, attachment.id)
+        XCTAssertEqual(source?.title, "report.txt")
+        XCTAssertEqual(source?.payload, .file(url, filename: "report.txt"))
+    }
+
+    func testLinkAttachmentCreatesTransferSource() {
+        let url = URL(string: "https://example.com/remux")!
+        let attachment = GhosttyPendingAttachment.pasteboardLink(url: url)
+
+        let source = attachment.transferSource
+
+        XCTAssertEqual(source?.attachmentID, attachment.id)
+        XCTAssertEqual(source?.title, "Pasted link")
+        XCTAssertEqual(source?.payload, .link(url))
+    }
+
+    func testTextAttachmentCreatesTransferSource() {
+        let attachment = GhosttyPendingAttachment.pasteboardText("hello")
+
+        let source = attachment.transferSource
+
+        XCTAssertEqual(source?.attachmentID, attachment.id)
+        XCTAssertEqual(source?.title, "Pasted text")
+        XCTAssertEqual(source?.payload, .text("hello"))
+    }
+
+    func testPreviewOnlyAttachmentDoesNotCreateTransferSource() {
+        let attachment = GhosttyPendingAttachment.pasteboardImage(previewData: Data([0x01]))
+
+        XCTAssertNil(attachment.transferSource)
+    }
+}
