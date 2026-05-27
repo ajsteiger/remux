@@ -443,11 +443,14 @@ private struct GhosttyAttachmentPreviewHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(caption)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(1.0)
                 .foregroundStyle(GhosttySheetPalette.tertiary)
             Text(title)
-                .font(.system(size: 26, weight: .bold))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(GhosttySheetPalette.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
     }
 }
