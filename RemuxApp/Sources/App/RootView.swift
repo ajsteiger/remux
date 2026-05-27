@@ -315,24 +315,21 @@ private struct ConnectionLibraryView: View {
     @State private var showsAllRecentSessions = false
 
     var body: some View {
-        List {
+        Group {
             if snapshot.servers.isEmpty {
-                Section {
-                    LibraryEmptyState(onAddServer: onAddServer)
-                        .listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                }
+                LibraryEmptyState(onAddServer: onAddServer)
             } else {
-                activeSessionsSection
-                serversSection
-                recentSessionsSection
+                List {
+                    activeSessionsSection
+                    serversSection
+                    recentSessionsSection
+                }
+                .listStyle(.insetGrouped)
+                .accessibilityIdentifier("library.list")
             }
         }
-        .listStyle(.insetGrouped)
         .libraryHomeGroupedScrollBackground()
         .libraryHomeChrome(theme: terminalSettings.theme)
-        .accessibilityIdentifier("library.list")
         .navigationTitle("Remux")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -857,35 +854,27 @@ private struct LibraryEmptyState: View {
     let onAddServer: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 14) {
+        ContentUnavailableView {
+            Label {
+                Text("No servers")
+            } icon: {
                 Image(systemName: "server.rack")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(LibraryHomePalette.rowIconForeground)
-                    .frame(width: 38, height: 38)
-                    .background(LibraryHomePalette.rowIconSurface, in: RoundedRectangle(cornerRadius: 8))
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("No servers")
-                        .font(.headline)
-                    Text("Add an SSH server, then create one or more tmux sessions from it.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
-
+        } description: {
+            Text("Add an SSH server to start using tmux sessions from this phone.")
+        } actions: {
             Button(action: onAddServer) {
                 Label("Add Server", systemImage: "plus")
-                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .tint(LibraryHomePalette.controlAccent)
             .accessibilityIdentifier("library.empty.add-server")
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LibraryHomePalette.rowSurface, in: RoundedRectangle(cornerRadius: 8))
+        .tint(LibraryHomePalette.controlAccent)
+        .padding(.horizontal, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .offset(y: -48)
     }
 }
 
