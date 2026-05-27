@@ -857,17 +857,31 @@ private extension View {
             : GhosttyAttachmentPreviewStyle.controlFill
     }
 
+    @ViewBuilder
     func ghosttyAttachmentPreviewContentSurface() -> some View {
         let shape = RoundedRectangle(
             cornerRadius: GhosttyAttachmentPreviewStyle.contentCornerRadius,
             style: .continuous
         )
 
-        return self
-            .background(GhosttyAttachmentPreviewStyle.contentFill, in: shape)
-            .overlay {
-                shape.strokeBorder(GhosttyAttachmentPreviewStyle.contentStroke, lineWidth: 1)
-            }
-            .contentShape(shape)
+        if #available(iOS 26.0, *) {
+            self
+                .glassEffect(
+                    .regular
+                        .tint(GhosttyAttachmentTrayStyle.panelGlassTint),
+                    in: shape
+                )
+                .overlay {
+                    shape.strokeBorder(GhosttyAttachmentTrayStyle.panelGlassStroke, lineWidth: 0.75)
+                }
+                .contentShape(shape)
+        } else {
+            self
+                .background(GhosttyAttachmentPreviewStyle.contentFill, in: shape)
+                .overlay {
+                    shape.strokeBorder(GhosttyAttachmentPreviewStyle.contentStroke, lineWidth: 1)
+                }
+                .contentShape(shape)
+        }
     }
 }
