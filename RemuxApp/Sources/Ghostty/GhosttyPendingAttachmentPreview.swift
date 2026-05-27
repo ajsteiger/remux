@@ -57,19 +57,24 @@ struct GhosttyPendingAttachmentPreview: View {
                 .accessibilityLabel(removeAccessibilityLabel)
                 .accessibilityIdentifier("terminal.attachments.pending.remove")
 
-                Button {
-                    Haptic.chromeControlPress()
-                    onSend()
-                } label: {
-                    Text("Send")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
-                        .frame(width: 58, height: 30)
+                if canSend {
+                    Button {
+                        Haptic.chromeControlPress()
+                        onSend()
+                    } label: {
+                        Text("Send")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .lineLimit(1)
+                            .frame(width: 58, height: 30)
+                    }
+                    .buttonStyle(GhosttyPendingAttachmentSendButtonStyle(chromeStyle: chromeStyle))
+                    .accessibilityHint("Send attachment.")
+                    .accessibilityIdentifier("terminal.attachments.pending.send")
+                } else {
+                    GhosttyPendingAttachmentStatusBadge(chromeStyle: chromeStyle)
+                        .accessibilityLabel("Attachment staged")
+                        .accessibilityIdentifier("terminal.attachments.pending.status")
                 }
-                .buttonStyle(GhosttyPendingAttachmentSendButtonStyle(chromeStyle: chromeStyle))
-                .disabled(!canSend)
-                .accessibilityHint(canSend ? "Send attachment." : "")
-                .accessibilityIdentifier("terminal.attachments.pending.send")
             }
         }
         .foregroundStyle(GhosttyPhoneChromePalette.chromeForeground)
@@ -153,6 +158,29 @@ struct GhosttyPendingAttachmentPreview: View {
 
     private var removeAccessibilityLabel: String {
         attachments.count > 1 ? "Remove attachments" : "Remove attachment"
+    }
+}
+
+private struct GhosttyPendingAttachmentStatusBadge: View {
+    let chromeStyle: GhosttyTerminalChromeStyle
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .bold))
+                .symbolRenderingMode(.monochrome)
+
+            Text("Staged")
+                .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+        }
+        .foregroundStyle(chromeStyle.accent)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(chromeStyle.selectedFill, in: Capsule())
+        .overlay {
+            Capsule().strokeBorder(chromeStyle.accent.opacity(0.22), lineWidth: 0.75)
+        }
     }
 }
 
