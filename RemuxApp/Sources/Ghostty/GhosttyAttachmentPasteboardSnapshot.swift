@@ -65,7 +65,7 @@ struct GhosttyAttachmentPasteboardSnapshot: Equatable {
 
     var pendingAttachments: [GhosttyPendingAttachment] {
         if let imageData {
-            return [.pasteboardImage(data: imageData)]
+            return [.pasteboardImage(previewData: imageData)]
         }
 
         if let pasteboardURL {

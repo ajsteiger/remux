@@ -62,15 +62,15 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachments.map(\.payload), urls.map(GhosttyAttachmentPayload.file))
     }
 
-    func testPasteboardImageAttachmentKeepsImagePayload() {
+    func testPasteboardImageAttachmentKeepsOnlyPreviewPayload() {
         let imageData = Data([0x01, 0x02, 0x03])
-        let attachment = GhosttyPendingAttachment.pasteboardImage(data: imageData)
+        let attachment = GhosttyPendingAttachment.pasteboardImage(previewData: imageData)
 
         XCTAssertEqual(attachment.kind, .pasteboardImage)
         XCTAssertEqual(attachment.title, "Pasted image")
         XCTAssertEqual(attachment.detail, "Image")
         XCTAssertEqual(attachment.systemName, "photo")
-        XCTAssertEqual(attachment.payload, .imageData(imageData))
+        XCTAssertNil(attachment.payload)
         XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
     }
 

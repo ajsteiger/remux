@@ -19,7 +19,8 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
 
         XCTAssertEqual(snapshot.pendingAttachments.count, 1)
         XCTAssertEqual(snapshot.pendingAttachments.first?.kind, .pasteboardImage)
-        XCTAssertEqual(snapshot.pendingAttachments.first?.payload, .imageData(imageData))
+        XCTAssertNil(snapshot.pendingAttachments.first?.payload)
+        XCTAssertEqual(snapshot.pendingAttachments.first?.previewPayload, .imageData(imageData))
     }
 
     @MainActor

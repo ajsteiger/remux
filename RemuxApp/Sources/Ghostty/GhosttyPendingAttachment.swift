@@ -2,7 +2,6 @@ import Foundation
 import UniformTypeIdentifiers
 
 enum GhosttyAttachmentPayload: Equatable, Sendable {
-    case imageData(Data)
     case file(URL)
     case link(URL)
     case text(String)
@@ -16,8 +15,6 @@ enum GhosttyAttachmentPreviewPayload: Equatable, Sendable {
 
     init(_ payload: GhosttyAttachmentPayload) {
         switch payload {
-        case .imageData(let data):
-            self = .imageData(data)
         case .file(let url):
             self = .file(url)
         case .link(let url):
@@ -117,12 +114,12 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
         urls.map(file(url:))
     }
 
-    static func pasteboardImage(data: Data) -> GhosttyPendingAttachment {
+    static func pasteboardImage(previewData: Data) -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
             kind: .pasteboardImage,
             title: "Pasted image",
             detail: "Image",
-            payload: .imageData(data)
+            previewPayload: .imageData(previewData)
         )
     }
 

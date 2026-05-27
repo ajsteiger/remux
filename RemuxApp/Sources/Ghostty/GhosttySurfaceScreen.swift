@@ -837,7 +837,7 @@ struct GhosttySurfaceScreen: View {
 
                     updatePendingAttachment(
                         id: attachmentID,
-                        payload: .imageData(previewData),
+                        previewPayload: .imageData(previewData),
                         detail: "Image"
                     )
                 }
@@ -855,11 +855,13 @@ struct GhosttySurfaceScreen: View {
     private func updatePendingAttachment(
         id: UUID,
         payload: GhosttyAttachmentPayload? = nil,
+        previewPayload: GhosttyAttachmentPreviewPayload? = nil,
         detail: String
     ) {
         guard let index = pendingAttachments.firstIndex(where: { $0.id == id }) else { return }
         pendingAttachments[index] = pendingAttachments[index].updating(
             payload: payload,
+            previewPayload: previewPayload,
             detail: detail
         )
     }
@@ -950,7 +952,7 @@ struct GhosttySurfaceScreen: View {
 
                 updatePendingAttachment(
                     id: attachmentID,
-                    payload: .imageData(previewData),
+                    previewPayload: .imageData(previewData),
                     detail: "Image"
                 )
             }

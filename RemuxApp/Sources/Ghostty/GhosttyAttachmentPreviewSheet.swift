@@ -145,13 +145,13 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     private func showsOverlayActions(for attachment: GhosttyPendingAttachment) -> Bool {
-        guard case .text = attachment.payload else { return true }
+        guard case .text = attachment.previewPayload else { return true }
         return false
     }
 
     @ViewBuilder
     private func attachmentPreviewBody(_ attachment: GhosttyPendingAttachment) -> some View {
-        switch attachment.payload {
+        switch attachment.previewPayload {
         case .imageData(let data):
             imagePreview(data)
         case .file(let url):
