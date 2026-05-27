@@ -4,7 +4,11 @@ struct GhosttyAttachmentPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
     @State private var selectedAttachmentID: UUID?
+    @State private var editingTextAttachmentID: UUID?
+    @State private var pendingTextFocusAttachmentID: UUID?
+    @FocusState private var focusedTextAttachmentID: UUID?
     @Binding var attachments: [GhosttyPendingAttachment]
+    @Binding var presentationDetent: PresentationDetent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -25,6 +29,18 @@ struct GhosttyAttachmentPreviewSheet: View {
         }
         .onChange(of: attachments) { _, _ in
             ensureSelectedAttachment()
+            ensureEditingAttachmentStillExists()
+        }
+        .onChange(of: selectedAttachmentID) { _, _ in
+            guard selectedAttachmentID != editingTextAttachmentID else { return }
+            stopTextEditing()
+        }
+        .onChange(of: presentationDetent) { _, detent in
+            if detent == .large {
+                focusPendingTextEditorIfNeeded()
+            } else {
+                stopTextEditing()
+            }
         }
         .accessibilityIdentifier("terminal.attachments.preview.sheet")
     }
@@ -139,12 +155,82 @@ struct GhosttyAttachmentPreviewSheet: View {
                 Spacer(minLength: 0)
             }
 
-            unavailablePreview
+            attachmentPreviewBody(attachment)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(GhosttyAttachmentPreviewStyle.contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ghosttyAttachmentPreviewContentSurface()
+    }
+
+    @ViewBuilder
+    private func attachmentPreviewBody(_ attachment: GhosttyPendingAttachment) -> some View {
+        switch attachment.payload {
+        case .text(let text):
+            textPreview(
+                attachment: attachment,
+                text: text,
+                textBinding: textBinding(for: attachment)
+            )
+        default:
+            unavailablePreview
+        }
+    }
+
+    @ViewBuilder
+    private func textPreview(
+        attachment: GhosttyPendingAttachment,
+        text: String,
+        textBinding: Binding<String>
+    ) -> some View {
+        if isEditingText(attachment) {
+            editableTextPreview(attachment: attachment, text: textBinding)
+        } else {
+            readableTextPreview(attachment: attachment, text: text)
+        }
+    }
+
+    private func readableTextPreview(
+        attachment: GhosttyPendingAttachment,
+        text: String
+    ) -> some View {
+        ScrollView {
+            Text(text.isEmpty ? "Empty text" : text)
+                .font(.system(size: 14, weight: .regular, design: .monospaced))
+                .foregroundStyle(text.isEmpty ? GhosttySheetPalette.secondary : GhosttySheetPalette.primary)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(14)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(GhosttyAttachmentPreviewStyle.editorFill)
+        .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            startTextEditing(attachment)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Edit pasted text")
+        .accessibilityIdentifier("terminal.attachments.text-preview")
+    }
+
+    private func editableTextPreview(
+        attachment: GhosttyPendingAttachment,
+        text: Binding<String>
+    ) -> some View {
+        TextEditor(text: text)
+            .font(.system(size: 14, weight: .regular, design: .monospaced))
+            .foregroundStyle(GhosttySheetPalette.primary)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .scrollContentBackground(.hidden)
+            .tint(chromeStyle.accent)
+            .focused($focusedTextAttachmentID, equals: attachment.id)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(GhosttyAttachmentPreviewStyle.editorFill)
+            .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+            .accessibilityIdentifier("terminal.attachments.text-editor")
     }
 
     private var unavailablePreview: some View {
@@ -191,6 +277,89 @@ struct GhosttyAttachmentPreviewSheet: View {
         }
 
         selectedAttachmentID = (attachments.first(where: \.isPreviewable) ?? attachments[0]).id
+    }
+
+    private func textBinding(for attachment: GhosttyPendingAttachment) -> Binding<String> {
+        Binding {
+            guard let currentAttachment = attachments.first(where: { $0.id == attachment.id }),
+                  case .text(let text) = currentAttachment.payload else {
+                return ""
+            }
+
+            return text
+        } set: { text in
+            updateTextAttachment(id: attachment.id, text: text)
+        }
+    }
+
+    private func updateTextAttachment(id: UUID, text: String) {
+        guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
+        attachments[index] = attachments[index].updating(
+            payload: .text(text),
+            detail: GhosttyPendingAttachment.textDetail(text)
+        )
+    }
+
+    private func isEditingText(_ attachment: GhosttyPendingAttachment) -> Bool {
+        editingTextAttachmentID == attachment.id
+    }
+
+    private func startTextEditing(_ attachment: GhosttyPendingAttachment) {
+        selectedAttachmentID = attachment.id
+        editingTextAttachmentID = attachment.id
+        pendingTextFocusAttachmentID = attachment.id
+
+        guard presentationDetent != .large else {
+            focusPendingTextEditorIfNeeded()
+            return
+        }
+
+        withAnimation(
+            .spring(response: 0.28, dampingFraction: 0.88),
+            completionCriteria: .logicallyComplete
+        ) {
+            presentationDetent = .large
+        } completion: {
+            focusPendingTextEditorIfNeeded()
+        }
+    }
+
+    private func stopTextEditing() {
+        pendingTextFocusAttachmentID = nil
+        focusedTextAttachmentID = nil
+        editingTextAttachmentID = nil
+    }
+
+    private func focusPendingTextEditorIfNeeded() {
+        guard let attachmentID = pendingTextFocusAttachmentID,
+              editingTextAttachmentID == attachmentID,
+              presentationDetent == .large else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard pendingTextFocusAttachmentID == attachmentID,
+                  editingTextAttachmentID == attachmentID,
+                  presentationDetent == .large else {
+                return
+            }
+
+            focusedTextAttachmentID = attachmentID
+            pendingTextFocusAttachmentID = nil
+        }
+    }
+
+    private func ensureEditingAttachmentStillExists() {
+        guard let editingTextAttachmentID else { return }
+        guard attachments.contains(where: { $0.id == editingTextAttachmentID }) else {
+            stopTextEditing()
+            return
+        }
+
+        guard case .text = attachments.first(where: { $0.id == editingTextAttachmentID })?.payload else {
+            stopTextEditing()
+            return
+        }
     }
 }
 
@@ -243,8 +412,10 @@ private enum GhosttyAttachmentPreviewStyle {
     static let contentStroke = GhosttyShortcutSurfacePalette.contentStroke
     static let controlFill = GhosttySheetPalette.controlFill
     static let controlPressedFill = Color(uiColor: .tertiarySystemFill)
+    static let editorFill = Color(uiColor: .secondarySystemFill).opacity(0.34)
     static let controlStroke = GhosttySheetPalette.stroke
     static let contentCornerRadius = GhosttyShortcutSurfacePalette.cornerRadiusLarge
+    static let previewCornerRadius: CGFloat = 16
     static let chipTitleMaxWidth: CGFloat = 220
     static let contentPadding = EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
 }
