@@ -54,14 +54,14 @@ struct GhosttyAttachmentPasteboardSnapshot: Equatable {
 
     var emptyPasteMessage: String {
         if string != nil && pasteboardText == nil && imageData == nil && pasteboardURL == nil {
-            return "Paste content is empty."
+            return "Clipboard text is empty."
         }
 
         if hasImages || hasURLs || hasStrings {
-            return "Paste content could not be read."
+            return "Clipboard content could not be read."
         }
 
-        return "Nothing to attach from Paste."
+        return "Clipboard has no attachable content."
     }
 
     private var pasteboardText: String? {

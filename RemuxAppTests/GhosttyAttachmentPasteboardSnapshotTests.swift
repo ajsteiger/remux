@@ -70,7 +70,7 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         )
 
         XCTAssertTrue(snapshot.pendingAttachments.isEmpty)
-        XCTAssertEqual(snapshot.emptyPasteMessage, "Paste content could not be read.")
+        XCTAssertEqual(snapshot.emptyPasteMessage, "Clipboard content could not be read.")
     }
 
     func testWhitespaceStringReportsEmptyPaste() {
@@ -82,7 +82,7 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         )
 
         XCTAssertTrue(snapshot.pendingAttachments.isEmpty)
-        XCTAssertEqual(snapshot.emptyPasteMessage, "Paste content is empty.")
+        XCTAssertEqual(snapshot.emptyPasteMessage, "Clipboard text is empty.")
     }
 
     func testUnreadableImageReportsUnreadablePaste() {
@@ -93,7 +93,7 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         )
 
         XCTAssertTrue(snapshot.pendingAttachments.isEmpty)
-        XCTAssertEqual(snapshot.emptyPasteMessage, "Paste content could not be read.")
+        XCTAssertEqual(snapshot.emptyPasteMessage, "Clipboard content could not be read.")
     }
 
     func testEmptyPasteboardReportsNothingToAttach() {
@@ -104,6 +104,6 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         )
 
         XCTAssertTrue(snapshot.pendingAttachments.isEmpty)
-        XCTAssertEqual(snapshot.emptyPasteMessage, "Nothing to attach from Paste.")
+        XCTAssertEqual(snapshot.emptyPasteMessage, "Clipboard has no attachable content.")
     }
 }
