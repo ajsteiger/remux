@@ -18,6 +18,10 @@ struct RemuxAppDependencies: Sendable {
         _ trustedHostStore: TrustedHostStore,
         _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     ) async -> Void
+    private let attachmentTransferServiceFactory: @Sendable (
+        _ target: TmuxConnectionTarget,
+        _ trustedHostStore: TrustedHostStore
+    ) -> any GhosttyAttachmentTransferService
     private let debugConnectionSeeder: @Sendable (
         _ profileRepository: any ConnectionProfileRepository,
         _ passwordStore: any PasswordStore
@@ -40,6 +44,10 @@ struct RemuxAppDependencies: Sendable {
             _ trustedHostStore: TrustedHostStore,
             _ sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
         ) async -> Void = RemuxAppDependencies.liveSSHConnectionPrewarmer,
+        attachmentTransferServiceFactory: @escaping @Sendable (
+            _ target: TmuxConnectionTarget,
+            _ trustedHostStore: TrustedHostStore
+        ) -> any GhosttyAttachmentTransferService = RemuxAppDependencies.liveAttachmentTransferService,
         debugConnectionSeeder: @escaping @Sendable (
             _ profileRepository: any ConnectionProfileRepository,
             _ passwordStore: any PasswordStore
@@ -53,6 +61,7 @@ struct RemuxAppDependencies: Sendable {
         self.sshConnectionPool = sshConnectionPool
         self.transportFactory = transportFactory
         self.sshConnectionPrewarmer = sshConnectionPrewarmer
+        self.attachmentTransferServiceFactory = attachmentTransferServiceFactory
         self.debugConnectionSeeder = debugConnectionSeeder
     }
 
@@ -103,6 +112,10 @@ struct RemuxAppDependencies: Sendable {
 
     func prewarmSSHConnection(for target: TmuxConnectionTarget) async {
         await sshConnectionPrewarmer(target, trustedHostStore, sshConnectionPool)
+    }
+
+    func makeAttachmentTransferService(for target: TmuxConnectionTarget) -> any GhosttyAttachmentTransferService {
+        attachmentTransferServiceFactory(target, trustedHostStore)
     }
 
     func closeIdleSSHConnections(forServerID serverID: SavedServer.ID) {
@@ -166,6 +179,25 @@ struct RemuxAppDependencies: Sendable {
             traceFlowID: traceFlowID,
             authenticatedConnectionPoolKey: SSHTmuxAuthenticatedConnectionPoolKey(target: target)
         )
+    }
+
+    private static func liveAttachmentTransferService(
+        target: TmuxConnectionTarget,
+        trustedHostStore: TrustedHostStore
+    ) -> any GhosttyAttachmentTransferService {
+        let configuration = GhosttyAttachmentCitadelSFTPConnectionConfiguration(
+            host: target.server.host,
+            port: target.server.port,
+            authenticationMethod: {
+                .passwordBased(
+                    username: target.server.username,
+                    password: target.password
+                )
+            },
+            hostKeyValidator: trustedHostStore.validator(for: target.server)
+        )
+        let provider = GhosttyAttachmentCitadelSFTPClientProvider(configuration: configuration)
+        return GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
     }
 
 #if DEBUG
