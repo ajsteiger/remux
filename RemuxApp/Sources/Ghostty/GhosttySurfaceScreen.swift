@@ -780,6 +780,60 @@ struct GhosttySurfaceScreen: View {
             pendingAttachments = attachments
             attachmentNotice = nil
         }
+
+        for (item, attachment) in zip(items, attachments) {
+            loadPhotoPreview(item, for: attachment.id)
+        }
+    }
+
+    private func loadPhotoPreview(_ item: PhotosPickerItem, for attachmentID: UUID) {
+        guard item.supportedContentTypes.contains(where: { $0.conforms(to: .image) }) else {
+            updatePendingAttachment(
+                id: attachmentID,
+                detail: "Preview unavailable"
+            )
+            return
+        }
+
+        Task {
+            do {
+                let data = try await item.loadTransferable(type: Data.self)
+                await MainActor.run {
+                    guard let data else {
+                        updatePendingAttachment(
+                            id: attachmentID,
+                            detail: "Preview unavailable"
+                        )
+                        return
+                    }
+
+                    updatePendingAttachment(
+                        id: attachmentID,
+                        payload: .imageData(data),
+                        detail: "Image"
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    updatePendingAttachment(
+                        id: attachmentID,
+                        detail: "Preview unavailable"
+                    )
+                }
+            }
+        }
+    }
+
+    private func updatePendingAttachment(
+        id: UUID,
+        payload: GhosttyAttachmentPayload? = nil,
+        detail: String
+    ) {
+        guard let index = pendingAttachments.firstIndex(where: { $0.id == id }) else { return }
+        pendingAttachments[index] = pendingAttachments[index].updating(
+            payload: payload,
+            detail: detail
+        )
     }
 
     private func handleAttachmentPasteSelection() {
