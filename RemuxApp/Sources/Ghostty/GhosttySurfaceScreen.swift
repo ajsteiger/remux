@@ -930,7 +930,7 @@ struct GhosttySurfaceScreen: View {
                 isAttachmentTrayPresented = false
                 attachmentNotice = nil
             }
-            loadPasteboardImagePreview(for: attachment.id)
+            loadPasteboardImageAttachment(for: attachment.id)
             return
         }
 
@@ -954,25 +954,32 @@ struct GhosttySurfaceScreen: View {
         GhosttyAttachmentStagingStore.cleanup(oldAttachments)
     }
 
-    private func loadPasteboardImagePreview(for attachmentID: UUID) {
+    private func loadPasteboardImageAttachment(for attachmentID: UUID) {
         Task {
-            let previewData = await GhosttyAttachmentPasteboardSnapshot.currentImagePreviewData()
+            let attachment = await GhosttyAttachmentPasteboardSnapshot.currentImageAttachment()
 
-            await MainActor.run {
-                guard pendingAttachments.contains(where: { $0.id == attachmentID }) else { return }
-                guard let previewData else {
+            let didApply = await MainActor.run { () -> Bool in
+                guard pendingAttachments.contains(where: { $0.id == attachmentID }) else {
+                    return false
+                }
+                guard let attachment else {
                     updatePendingAttachment(
                         id: attachmentID,
                         detail: "Preview unavailable"
                     )
-                    return
+                    return true
                 }
 
                 updatePendingAttachment(
                     id: attachmentID,
-                    previewPayload: .imageData(previewData),
+                    payload: attachment.payload,
+                    previewPayload: attachment.previewPayload,
                     detail: "Image"
                 )
+                return true
+            }
+            if !didApply, let attachment {
+                GhosttyAttachmentStagingStore.cleanup([attachment])
             }
         }
     }
