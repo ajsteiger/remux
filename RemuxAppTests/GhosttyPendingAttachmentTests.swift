@@ -74,6 +74,37 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
     }
 
+    func testPasteboardImageAttachmentCanCarryStagedFilePayload() {
+        let imageData = Data([0x01, 0x02, 0x03])
+        let fileURL = URL(fileURLWithPath: "/tmp/remux/pasted.png")
+        let attachment = GhosttyPendingAttachment.pasteboardImage(
+            fileURL: fileURL,
+            previewData: imageData
+        )
+
+        XCTAssertEqual(attachment.kind, .pasteboardImage)
+        XCTAssertEqual(attachment.title, "Pasted image")
+        XCTAssertEqual(attachment.detail, "Image")
+        XCTAssertEqual(attachment.payload, .file(fileURL))
+        XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
+    }
+
+    func testPhotoAttachmentCanCarryStagedFilePayload() {
+        let imageData = Data([0x01, 0x02, 0x03])
+        let fileURL = URL(fileURLWithPath: "/tmp/remux/photo.jpeg")
+        let attachment = GhosttyPendingAttachment.photo(
+            title: "Photo 1",
+            fileURL: fileURL,
+            previewData: imageData
+        )
+
+        XCTAssertEqual(attachment.kind, .photo)
+        XCTAssertEqual(attachment.title, "Photo 1")
+        XCTAssertEqual(attachment.detail, "Image")
+        XCTAssertEqual(attachment.payload, .file(fileURL))
+        XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
+    }
+
     func testPasteboardImagePlaceholderHasNoPayloadUntilPreviewLoads() {
         let attachment = GhosttyPendingAttachment.pasteboardImagePlaceholder()
 

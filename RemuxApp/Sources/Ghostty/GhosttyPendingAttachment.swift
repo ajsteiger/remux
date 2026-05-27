@@ -123,6 +123,26 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
         )
     }
 
+    static func pasteboardImage(fileURL: URL, previewData: Data) -> GhosttyPendingAttachment {
+        GhosttyPendingAttachment(
+            kind: .pasteboardImage,
+            title: "Pasted image",
+            detail: "Image",
+            payload: .file(fileURL),
+            previewPayload: .imageData(previewData)
+        )
+    }
+
+    static func photo(title: String, fileURL: URL, previewData: Data) -> GhosttyPendingAttachment {
+        GhosttyPendingAttachment(
+            kind: .photo,
+            title: title,
+            detail: "Image",
+            payload: .file(fileURL),
+            previewPayload: .imageData(previewData)
+        )
+    }
+
     static func pasteboardImagePlaceholder() -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
             kind: .pasteboardImage,
