@@ -1,3 +1,4 @@
+import ImageIO
 import UniformTypeIdentifiers
 import UIKit
 import XCTest
@@ -21,12 +22,17 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.pendingAttachments.first?.payload, .imageData(imageData))
     }
 
-    func testCurrentImageDataReadsRawImageBytes() {
+    @MainActor
+    func testCurrentImagePreviewDataLoadsImageThroughItemProvider() async throws {
         let pasteboard = UIPasteboard.withUniqueName()
-        let imageData = Data([0x89, 0x50, 0x4e, 0x47])
-        pasteboard.setData(imageData, forPasteboardType: UTType.png.identifier)
+        let imageData = try makeJPEGData(width: 1_600, height: 900)
+        pasteboard.setData(imageData, forPasteboardType: UTType.jpeg.identifier)
 
-        XCTAssertEqual(GhosttyAttachmentPasteboardSnapshot.currentImageData(pasteboard), imageData)
+        let loadedPreviewData = await GhosttyAttachmentPasteboardSnapshot.currentImagePreviewData(pasteboard)
+        let previewData = try XCTUnwrap(loadedPreviewData)
+        let size = try XCTUnwrap(imagePixelSize(previewData))
+
+        XCTAssertLessThanOrEqual(max(size.width, size.height), CGFloat(GhosttyAttachmentImagePreviewData.maxPixelDimension))
     }
 
     func testURLWinsOverStringWhenBothAreReadable() {
@@ -141,5 +147,24 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
 
         XCTAssertTrue(snapshot.pendingAttachments.isEmpty)
         XCTAssertEqual(snapshot.emptyPasteMessage, "Clipboard has no attachable content.")
+    }
+
+    private func makeJPEGData(width: Int, height: Int) throws -> Data {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
+        return renderer.jpegData(withCompressionQuality: 0.9) { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        }
+    }
+
+    private func imagePixelSize(_ data: Data) -> CGSize? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
+            return nil
+        }
+
+        return CGSize(width: width, height: height)
     }
 }

@@ -936,16 +936,7 @@ struct GhosttySurfaceScreen: View {
 
     private func loadPasteboardImagePreview(for attachmentID: UUID) {
         Task {
-            let sourceData = await MainActor.run {
-                GhosttyAttachmentPasteboardSnapshot.currentImageData()
-            }
-
-            let previewData: Data?
-            if let sourceData {
-                previewData = await GhosttyAttachmentImagePreviewData.makePreviewData(from: sourceData)
-            } else {
-                previewData = nil
-            }
+            let previewData = await GhosttyAttachmentPasteboardSnapshot.currentImagePreviewData()
 
             await MainActor.run {
                 guard pendingAttachments.contains(where: { $0.id == attachmentID }) else { return }
