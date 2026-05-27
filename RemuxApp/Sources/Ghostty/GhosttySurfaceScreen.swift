@@ -389,6 +389,11 @@ struct GhosttySurfaceScreen: View {
                 guard projection.shouldDismissPaneSheet else { return }
                 dismissSelectionSheet()
             }
+            .onChange(of: attachmentPhotoSelections) { _, items in
+                guard !items.isEmpty else { return }
+                attachmentPhotoSelections = []
+                handleAttachmentPhotoSelection(items)
+            }
             .onChange(of: interactionProjection.selectedActiveLeafID) { _, activeLeafID in
                 handleActiveLeafChange(activeLeafID)
             }
@@ -759,6 +764,22 @@ struct GhosttySurfaceScreen: View {
     private func openAttachmentPhotosPicker() {
         dismissAttachmentTray()
         isAttachmentPhotosPickerPresented = true
+    }
+
+    private func handleAttachmentPhotoSelection(_ items: [PhotosPickerItem]) {
+        let attachments = GhosttyPendingAttachment.mediaSelections(
+            contentTypes: items.map(\.supportedContentTypes)
+        )
+
+        guard !attachments.isEmpty else {
+            presentAttachmentNotice("No media selected.")
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.16)) {
+            pendingAttachments = attachments
+            attachmentNotice = nil
+        }
     }
 
     private func handleAttachmentPasteSelection() {
