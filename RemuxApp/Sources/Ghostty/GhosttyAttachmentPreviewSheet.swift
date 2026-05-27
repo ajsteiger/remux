@@ -340,6 +340,11 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func updateTextAttachment(id: UUID, text: String) {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
+        if text.isEmpty {
+            removeAttachment(attachments[index])
+            return
+        }
+
         attachments[index] = attachments[index].updating(
             payload: .text(text),
             detail: GhosttyPendingAttachment.textDetail(text)
