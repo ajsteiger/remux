@@ -63,6 +63,33 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
         payload != nil
     }
 
+    static func pasteboardImage(data: Data) -> GhosttyPendingAttachment {
+        GhosttyPendingAttachment(
+            kind: .pasteboardImage,
+            title: "Pasteboard image",
+            detail: "Image from Paste",
+            payload: .imageData(data)
+        )
+    }
+
+    static func pasteboardLink(url: URL) -> GhosttyPendingAttachment {
+        GhosttyPendingAttachment(
+            kind: .pasteboardLink,
+            title: "Pasteboard link",
+            detail: linkDetail(url),
+            payload: .link(url)
+        )
+    }
+
+    static func pasteboardText(_ text: String) -> GhosttyPendingAttachment {
+        GhosttyPendingAttachment(
+            kind: .pasteboardText,
+            title: "Pasteboard text",
+            detail: textDetail(text),
+            payload: .text(text)
+        )
+    }
+
     func updating(
         payload: GhosttyAttachmentPayload? = nil,
         detail: String
@@ -74,5 +101,30 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
             detail: detail,
             payload: payload ?? self.payload
         )
+    }
+
+    static func textDetail(_ text: String) -> String {
+        let normalizedText = text
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let normalizedText, !normalizedText.isEmpty else {
+            return "Text"
+        }
+
+        return normalizedText
+    }
+
+    private static func linkDetail(_ url: URL) -> String {
+        guard let host = url.host(percentEncoded: false), !host.isEmpty else {
+            return url.absoluteString
+        }
+
+        let path = url.path(percentEncoded: false)
+        let query = url.query(percentEncoded: false).map { "?\($0)" } ?? ""
+        let suffix = [path == "/" ? "" : path, query].joined()
+        return suffix.isEmpty ? host : "\(host)\(suffix)"
     }
 }
