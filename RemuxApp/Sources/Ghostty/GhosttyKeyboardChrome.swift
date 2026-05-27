@@ -114,9 +114,13 @@ struct GhosttyKeyboardChrome: View {
     let windowCount: Int
     let selectedPaneIndex: Int?
     let paneCount: Int
+    let isAttachmentControlActive: Bool
+    let isAttachmentControlEnabled: Bool
+    let pendingAttachmentCount: Int
     let onShowHome: () -> Void
     let onShowWindows: () -> Void
     let onShowPanes: () -> Void
+    let onShowAttachments: () -> Void
     let onToggleKeyboard: () -> Void
     let onToggleControl: () -> Void
     let onShowShortcuts: () -> Void
@@ -222,6 +226,18 @@ struct GhosttyKeyboardChrome: View {
         controlGroup {
             HStack(spacing: 2) {
                 GhosttyKeyboardChromeDockButton(
+                    systemName: "paperclip",
+                    badge: attachmentBadge,
+                    chromeStyle: chromeStyle,
+                    accessibilityLabel: attachmentAccessibilityLabel,
+                    accessibilityHint: attachmentAccessibilityHint,
+                    accessibilityIdentifier: "terminal.attachments",
+                    isActive: isAttachmentControlActive,
+                    isEnabled: isEnabled && isAttachmentControlEnabled,
+                    action: onShowAttachments
+                )
+
+                GhosttyKeyboardChromeDockButton(
                     systemName: "keyboard",
                     badge: nil,
                     chromeStyle: chromeStyle,
@@ -234,6 +250,28 @@ struct GhosttyKeyboardChrome: View {
                 )
             }
         }
+    }
+
+    private var attachmentBadge: String? {
+        guard pendingAttachmentCount > 0 else { return nil }
+        return "\(pendingAttachmentCount)"
+    }
+
+    private var attachmentAccessibilityLabel: String {
+        guard pendingAttachmentCount > 0 else { return "Attachments" }
+        return "Attachments, \(pendingAttachmentCount) pending"
+    }
+
+    private var attachmentAccessibilityHint: String {
+        if isAttachmentControlActive {
+            return "Close attachment options."
+        }
+
+        if pendingAttachmentCount > 0 {
+            return "Remove pending attachments before choosing another source."
+        }
+
+        return "Choose Photos, Files, or Paste."
     }
 
     private func controlGroup<Content: View>(@ViewBuilder content: () -> Content) -> some View {
