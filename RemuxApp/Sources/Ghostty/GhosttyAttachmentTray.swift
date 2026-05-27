@@ -9,7 +9,7 @@ struct GhosttyAttachmentTray: View {
     let onPasteSelected: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             attachmentAction(
                 title: "Photos",
                 systemName: "photo",
@@ -17,16 +17,12 @@ struct GhosttyAttachmentTray: View {
                 action: onPhotosSelected
             )
 
-            attachmentSeparator
-
             attachmentAction(
                 title: "Files",
                 systemName: "doc",
                 accessibilityIdentifier: "terminal.attachments.files",
                 action: onFilesSelected
             )
-
-            attachmentSeparator
 
             attachmentAction(
                 title: "Paste",
@@ -36,7 +32,7 @@ struct GhosttyAttachmentTray: View {
             )
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
         .ghosttyAttachmentActionGroupSurface()
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
@@ -59,14 +55,6 @@ struct GhosttyAttachmentTray: View {
         }
         .buttonStyle(GhosttyAttachmentActionButtonStyle(chromeStyle: chromeStyle))
         .accessibilityIdentifier(accessibilityIdentifier)
-    }
-
-    private var attachmentSeparator: some View {
-        Capsule()
-            .fill(GhosttyAttachmentTrayStyle.actionSeparator)
-            .frame(width: 1, height: 44)
-            .padding(.horizontal, 2)
-            .accessibilityHidden(true)
     }
 }
 
@@ -111,7 +99,8 @@ enum GhosttyAttachmentTrayStyle {
     static let fallbackShadow = Color.black.opacity(0.20)
     static let actionGroupFill = Color.primary.opacity(0.026)
     static let actionGroupStroke = Color.primary.opacity(0.06)
-    static let actionSeparator = Color.primary.opacity(0.11)
+    static let actionButtonFill = Color.primary.opacity(0.035)
+    static let actionButtonStroke = Color.primary.opacity(0.075)
     static let pendingIconStroke = Color.primary.opacity(0.08)
 }
 
@@ -166,25 +155,27 @@ extension View {
         if #available(iOS 26.0, *) {
             self
                 .background(
-                    isPressed ? chromeStyle.toolbarButtonActiveFill : Color.clear,
+                    isPressed ? chromeStyle.toolbarButtonActiveFill : GhosttyAttachmentTrayStyle.actionButtonFill,
                     in: shape
                 )
                 .overlay {
-                    if isPressed {
-                        shape.strokeBorder(chromeStyle.accent.opacity(0.20), lineWidth: 0.75)
-                    }
+                    shape.strokeBorder(
+                        isPressed ? chromeStyle.accent.opacity(0.20) : GhosttyAttachmentTrayStyle.actionButtonStroke,
+                        lineWidth: 0.75
+                    )
                 }
                 .contentShape(shape)
         } else {
             self
                 .background(
-                    isPressed ? Color.primary.opacity(0.06) : Color.clear,
+                    isPressed ? Color.primary.opacity(0.06) : GhosttyAttachmentTrayStyle.actionButtonFill,
                     in: shape
                 )
                 .overlay {
-                    if isPressed {
-                        shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.75)
-                    }
+                    shape.strokeBorder(
+                        isPressed ? Color.primary.opacity(0.12) : GhosttyAttachmentTrayStyle.actionButtonStroke,
+                        lineWidth: 0.75
+                    )
                 }
                 .contentShape(shape)
         }
