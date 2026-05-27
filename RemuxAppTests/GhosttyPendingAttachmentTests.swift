@@ -69,8 +69,8 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         let attachment = GhosttyPendingAttachment.pasteboardImage(data: imageData)
 
         XCTAssertEqual(attachment.kind, .pasteboardImage)
-        XCTAssertEqual(attachment.title, "Pasteboard image")
-        XCTAssertEqual(attachment.detail, "Image from Paste")
+        XCTAssertEqual(attachment.title, "Pasted image")
+        XCTAssertEqual(attachment.detail, "Image")
         XCTAssertEqual(attachment.systemName, "photo")
         XCTAssertEqual(attachment.payload, .imageData(imageData))
     }
@@ -80,7 +80,7 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         let attachment = GhosttyPendingAttachment.pasteboardLink(url: url)
 
         XCTAssertEqual(attachment.kind, .pasteboardLink)
-        XCTAssertEqual(attachment.title, "Pasteboard link")
+        XCTAssertEqual(attachment.title, "Pasted link")
         XCTAssertEqual(attachment.detail, "example.com/path?q=remux")
         XCTAssertEqual(attachment.systemName, "link")
         XCTAssertEqual(attachment.payload, .link(url))
@@ -91,7 +91,7 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         let attachment = GhosttyPendingAttachment.pasteboardText(text)
 
         XCTAssertEqual(attachment.kind, .pasteboardText)
-        XCTAssertEqual(attachment.title, "Pasteboard text")
+        XCTAssertEqual(attachment.title, "Pasted text")
         XCTAssertEqual(attachment.detail, "hello terminal")
         XCTAssertEqual(attachment.systemName, "text.alignleft")
         XCTAssertEqual(attachment.payload, .text(text))

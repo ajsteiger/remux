@@ -95,8 +95,8 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
     static func pasteboardImage(data: Data) -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
             kind: .pasteboardImage,
-            title: "Pasteboard image",
-            detail: "Image from Paste",
+            title: "Pasted image",
+            detail: "Image",
             payload: .imageData(data)
         )
     }
@@ -104,7 +104,7 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
     static func pasteboardLink(url: URL) -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
             kind: .pasteboardLink,
-            title: "Pasteboard link",
+            title: "Pasted link",
             detail: linkDetail(url),
             payload: .link(url)
         )
@@ -113,7 +113,7 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
     static func pasteboardText(_ text: String) -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
             kind: .pasteboardText,
-            title: "Pasteboard text",
+            title: "Pasted text",
             detail: textDetail(text),
             payload: .text(text)
         )
