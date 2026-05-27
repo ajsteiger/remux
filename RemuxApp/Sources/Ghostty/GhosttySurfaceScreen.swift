@@ -767,9 +767,11 @@ struct GhosttySurfaceScreen: View {
 
     private func clearPendingAttachments() {
         guard hasPendingAttachments else { return }
+        let attachments = pendingAttachments
         withAnimation(.easeOut(duration: 0.14)) {
             pendingAttachments.removeAll()
         }
+        GhosttyAttachmentStagingStore.cleanup(attachments)
     }
 
     private func showPendingAttachmentPreview() {
@@ -799,7 +801,7 @@ struct GhosttySurfaceScreen: View {
         }
 
         withAnimation(.easeOut(duration: 0.16)) {
-            pendingAttachments = attachments
+            replacePendingAttachments(attachments)
             attachmentNotice = nil
         }
 
@@ -867,15 +869,30 @@ struct GhosttySurfaceScreen: View {
     private func handleAttachmentFileSelection(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            let attachments = GhosttyPendingAttachment.files(urls: urls)
-            guard !attachments.isEmpty else {
+            guard !urls.isEmpty else {
                 presentAttachmentNotice("No file selected.")
                 return
             }
 
-            withAnimation(.easeOut(duration: 0.16)) {
-                pendingAttachments = attachments
-                attachmentNotice = nil
+            Task {
+                do {
+                    let attachments = try await GhosttyAttachmentStagingStore.stageFiles(urls)
+                    await MainActor.run {
+                        guard !attachments.isEmpty else {
+                            presentAttachmentNotice("No file selected.")
+                            return
+                        }
+
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            replacePendingAttachments(attachments)
+                            attachmentNotice = nil
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        presentAttachmentNotice("File selection failed.")
+                    }
+                }
             }
         case .failure(let error):
             let nsError = error as NSError
@@ -891,7 +908,7 @@ struct GhosttySurfaceScreen: View {
         if snapshot.hasImages {
             let attachment = GhosttyPendingAttachment.pasteboardImagePlaceholder()
             withAnimation(.easeOut(duration: 0.16)) {
-                pendingAttachments = [attachment]
+                replacePendingAttachments([attachment])
                 isAttachmentTrayPresented = false
                 attachmentNotice = nil
             }
@@ -907,10 +924,16 @@ struct GhosttySurfaceScreen: View {
         }
 
         withAnimation(.easeOut(duration: 0.16)) {
-            pendingAttachments = attachments
+            replacePendingAttachments(attachments)
             isAttachmentTrayPresented = false
             attachmentNotice = nil
         }
+    }
+
+    private func replacePendingAttachments(_ attachments: [GhosttyPendingAttachment]) {
+        let oldAttachments = pendingAttachments
+        pendingAttachments = attachments
+        GhosttyAttachmentStagingStore.cleanup(oldAttachments)
     }
 
     private func loadPasteboardImagePreview(for attachmentID: UUID) {

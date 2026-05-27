@@ -1,15 +1,15 @@
 import Foundation
 import UniformTypeIdentifiers
 
-enum GhosttyAttachmentPayload: Equatable {
+enum GhosttyAttachmentPayload: Equatable, Sendable {
     case imageData(Data)
     case file(URL)
     case link(URL)
     case text(String)
 }
 
-struct GhosttyPendingAttachment: Identifiable, Equatable {
-    enum Kind: Equatable {
+struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
         case photo
         case video
         case media
