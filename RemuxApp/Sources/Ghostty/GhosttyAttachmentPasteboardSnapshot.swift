@@ -71,18 +71,26 @@ struct GhosttyAttachmentPasteboardSnapshot: Equatable {
     }
 
     private var pasteboardURL: URL? {
-        if let url {
+        if let url, Self.isAttachableLink(url) {
             return url
         }
 
         guard let pasteboardText,
               let parsedURL = URL(string: pasteboardText),
-              let scheme = parsedURL.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              parsedURL.host?.isEmpty == false else {
+              Self.isAttachableLink(parsedURL) else {
             return nil
         }
 
         return parsedURL
+    }
+
+    private static func isAttachableLink(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false else {
+            return false
+        }
+
+        return true
     }
 }

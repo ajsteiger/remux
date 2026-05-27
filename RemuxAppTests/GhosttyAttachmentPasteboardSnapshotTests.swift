@@ -34,6 +34,18 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.pendingAttachments.first?.payload, .link(url))
     }
 
+    func testPasteboardURLRejectsNonHTTPURL() {
+        let snapshot = GhosttyAttachmentPasteboardSnapshot(
+            hasImages: false,
+            hasURLs: true,
+            hasStrings: false,
+            url: URL(fileURLWithPath: "/tmp/remux/test.txt")
+        )
+
+        XCTAssertTrue(snapshot.pendingAttachments.isEmpty)
+        XCTAssertEqual(snapshot.emptyPasteMessage, "Clipboard content could not be read.")
+    }
+
     func testHTTPTextStagesLinkAttachment() {
         let url = URL(string: "https://example.com/path?q=remux")!
         let snapshot = GhosttyAttachmentPasteboardSnapshot(
@@ -46,6 +58,20 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.pendingAttachments.count, 1)
         XCTAssertEqual(snapshot.pendingAttachments.first?.kind, .pasteboardLink)
         XCTAssertEqual(snapshot.pendingAttachments.first?.payload, .link(url))
+    }
+
+    func testTextURLRejectsCustomScheme() {
+        let text = "remux://attach?id=1"
+        let snapshot = GhosttyAttachmentPasteboardSnapshot(
+            hasImages: false,
+            hasURLs: false,
+            hasStrings: true,
+            string: text
+        )
+
+        XCTAssertEqual(snapshot.pendingAttachments.count, 1)
+        XCTAssertEqual(snapshot.pendingAttachments.first?.kind, .pasteboardText)
+        XCTAssertEqual(snapshot.pendingAttachments.first?.payload, .text(text))
     }
 
     func testPlainTextStagesTextAttachment() {
