@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import GhosttyKit
 import PhotosUI
+import UniformTypeIdentifiers
 
 struct GhosttySurfaceScreenPresentation: Equatable {
     let workspaceID: SavedWorkspace.ID
@@ -31,6 +32,7 @@ struct GhosttySurfaceScreen: View {
     @State private var shortcutEditorRequest: ShortcutEditorRequest?
     @State private var isAttachmentTrayPresented = false
     @State private var isAttachmentPhotosPickerPresented = false
+    @State private var isAttachmentFileImporterPresented = false
     @State private var attachmentPhotoSelections: [PhotosPickerItem] = []
     @State private var isAttachmentPreviewPresented = false
     @State private var attachmentPreviewDetent: PresentationDetent = .medium
@@ -385,6 +387,12 @@ struct GhosttySurfaceScreen: View {
                 selectionBehavior: .ordered,
                 matching: .any(of: [.images, .videos])
             )
+            .fileImporter(
+                isPresented: $isAttachmentFileImporterPresented,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true,
+                onCompletion: handleAttachmentFileSelection
+            )
             .onChange(of: paneSelectionSheetTopologyProjection) { _, projection in
                 guard projection.shouldDismissPaneSheet else { return }
                 dismissSelectionSheet()
@@ -708,7 +716,7 @@ struct GhosttySurfaceScreen: View {
 
                 GhosttyAttachmentTray(
                     onPhotosSelected: openAttachmentPhotosPicker,
-                    onFilesSelected: dismissAttachmentTray,
+                    onFilesSelected: openAttachmentFilePicker,
                     onPasteSelected: handleAttachmentPasteSelection
                 )
                 .padding(.horizontal, 18)
@@ -764,6 +772,11 @@ struct GhosttySurfaceScreen: View {
     private func openAttachmentPhotosPicker() {
         dismissAttachmentTray()
         isAttachmentPhotosPickerPresented = true
+    }
+
+    private func openAttachmentFilePicker() {
+        dismissAttachmentTray()
+        isAttachmentFileImporterPresented = true
     }
 
     private func handleAttachmentPhotoSelection(_ items: [PhotosPickerItem]) {
@@ -834,6 +847,28 @@ struct GhosttySurfaceScreen: View {
             payload: payload,
             detail: detail
         )
+    }
+
+    private func handleAttachmentFileSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            let attachments = GhosttyPendingAttachment.files(urls: urls)
+            guard !attachments.isEmpty else {
+                presentAttachmentNotice("No file selected.")
+                return
+            }
+
+            withAnimation(.easeOut(duration: 0.16)) {
+                pendingAttachments = attachments
+                attachmentNotice = nil
+            }
+        case .failure(let error):
+            let nsError = error as NSError
+            guard !(nsError.domain == NSCocoaErrorDomain && nsError.code == NSUserCancelledError) else {
+                return
+            }
+            presentAttachmentNotice("File selection failed.")
+        }
     }
 
     private func handleAttachmentPasteSelection() {
