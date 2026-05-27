@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import GhosttyKit
+import PhotosUI
 
 struct GhosttySurfaceScreenPresentation: Equatable {
     let workspaceID: SavedWorkspace.ID
@@ -29,6 +30,8 @@ struct GhosttySurfaceScreen: View {
     @State private var isShortcutsSettingsPresented = false
     @State private var shortcutEditorRequest: ShortcutEditorRequest?
     @State private var isAttachmentTrayPresented = false
+    @State private var isAttachmentPhotosPickerPresented = false
+    @State private var attachmentPhotoSelections: [PhotosPickerItem] = []
     @State private var isAttachmentPreviewPresented = false
     @State private var attachmentPreviewDetent: PresentationDetent = .medium
     @State private var pendingAttachments: [GhosttyPendingAttachment] = []
@@ -375,6 +378,13 @@ struct GhosttySurfaceScreen: View {
                     chromeStyle: presentation.terminalTheme.terminalChromeStyle
                 )
             }
+            .photosPicker(
+                isPresented: $isAttachmentPhotosPickerPresented,
+                selection: $attachmentPhotoSelections,
+                maxSelectionCount: nil,
+                selectionBehavior: .ordered,
+                matching: .any(of: [.images, .videos])
+            )
             .onChange(of: paneSelectionSheetTopologyProjection) { _, projection in
                 guard projection.shouldDismissPaneSheet else { return }
                 dismissSelectionSheet()
@@ -692,7 +702,7 @@ struct GhosttySurfaceScreen: View {
                     }
 
                 GhosttyAttachmentTray(
-                    onPhotosSelected: dismissAttachmentTray,
+                    onPhotosSelected: openAttachmentPhotosPicker,
                     onFilesSelected: dismissAttachmentTray,
                     onPasteSelected: handleAttachmentPasteSelection
                 )
@@ -744,6 +754,11 @@ struct GhosttySurfaceScreen: View {
         guard pendingAttachments.contains(where: \.isPreviewable) else { return }
         attachmentPreviewDetent = .medium
         isAttachmentPreviewPresented = true
+    }
+
+    private func openAttachmentPhotosPicker() {
+        dismissAttachmentTray()
+        isAttachmentPhotosPickerPresented = true
     }
 
     private func handleAttachmentPasteSelection() {
