@@ -50,7 +50,7 @@ struct GhosttyAttachmentPreviewSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             GhosttyAttachmentPreviewHeader(
-                caption: "\(attachments.count) STAGED",
+                caption: previewCaption,
                 title: attachments.count == 1 ? "Attachment" : "Attachments"
             )
 
@@ -317,6 +317,10 @@ struct GhosttyAttachmentPreviewSheet: View {
         return attachments.first(where: \.isPreviewable) ?? attachments.first
     }
 
+    private var previewCaption: String {
+        attachments.count == 1 ? "Staged" : "\(attachments.count) staged"
+    }
+
     private func isSelected(_ attachment: GhosttyPendingAttachment) -> Bool {
         selectedAttachment?.id == attachment.id
     }
@@ -502,7 +506,6 @@ private struct GhosttyAttachmentPreviewHeader: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(caption)
                 .font(.system(size: 12, weight: .semibold))
-                .tracking(0.7)
                 .foregroundStyle(GhosttySheetPalette.tertiary)
             Text(title)
                 .font(.system(size: 26, weight: .bold))
