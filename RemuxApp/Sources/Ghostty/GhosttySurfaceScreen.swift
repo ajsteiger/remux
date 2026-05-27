@@ -29,6 +29,8 @@ struct GhosttySurfaceScreen: View {
     @State private var isShortcutsSettingsPresented = false
     @State private var shortcutEditorRequest: ShortcutEditorRequest?
     @State private var isAttachmentTrayPresented = false
+    @State private var isAttachmentPreviewPresented = false
+    @State private var attachmentPreviewDetent: PresentationDetent = .medium
     @State private var pendingAttachments: [GhosttyPendingAttachment] = []
     @State private var attachmentNotice: GhosttyAttachmentNotice?
 
@@ -349,6 +351,20 @@ struct GhosttySurfaceScreen: View {
                     }
                 }
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(28)
+                .ghosttyTerminalChromePresentation(
+                    presentation.terminalTheme.terminalChromeColorScheme,
+                    chromeStyle: presentation.terminalTheme.terminalChromeStyle
+                )
+            }
+            .sheet(isPresented: $isAttachmentPreviewPresented) {
+                GhosttyAttachmentPreviewSheet(
+                    attachments: $pendingAttachments,
+                    presentationDetent: $attachmentPreviewDetent
+                )
+                .presentationDetents([.medium, .large], selection: $attachmentPreviewDetent)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(28)
@@ -690,7 +706,7 @@ struct GhosttySurfaceScreen: View {
             GhosttyPendingAttachmentPreview(
                 attachments: pendingAttachments,
                 canSend: false,
-                onOpen: {},
+                onOpen: showPendingAttachmentPreview,
                 onSend: {},
                 onRemove: clearPendingAttachments
             )
@@ -717,6 +733,12 @@ struct GhosttySurfaceScreen: View {
         withAnimation(.easeOut(duration: 0.14)) {
             pendingAttachments.removeAll()
         }
+    }
+
+    private func showPendingAttachmentPreview() {
+        guard pendingAttachments.contains(where: \.isPreviewable) else { return }
+        attachmentPreviewDetent = .medium
+        isAttachmentPreviewPresented = true
     }
 
     private func showShortcutPalette() {
