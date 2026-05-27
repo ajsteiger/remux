@@ -112,6 +112,7 @@ enum GhosttyAttachmentTrayStyle {
     static let actionGroupFill = Color.primary.opacity(0.026)
     static let actionGroupStroke = Color.primary.opacity(0.06)
     static let actionSeparator = Color.primary.opacity(0.11)
+    static let pendingIconStroke = Color.primary.opacity(0.08)
 }
 
 extension View {
