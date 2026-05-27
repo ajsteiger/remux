@@ -820,8 +820,14 @@ struct GhosttySurfaceScreen: View {
         Task {
             do {
                 let data = try await item.loadTransferable(type: Data.self)
+                let previewData: Data?
+                if let data {
+                    previewData = await GhosttyAttachmentImagePreviewData.makePreviewData(from: data)
+                } else {
+                    previewData = nil
+                }
                 await MainActor.run {
-                    guard let data else {
+                    guard let previewData else {
                         updatePendingAttachment(
                             id: attachmentID,
                             detail: "Preview unavailable"
@@ -831,7 +837,7 @@ struct GhosttySurfaceScreen: View {
 
                     updatePendingAttachment(
                         id: attachmentID,
-                        payload: .imageData(data),
+                        payload: .imageData(previewData),
                         detail: "Image"
                     )
                 }
