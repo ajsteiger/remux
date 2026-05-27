@@ -33,6 +33,37 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertTrue(GhosttyPendingAttachment.mediaSelections(contentTypes: []).isEmpty)
     }
 
+    func testFileAttachmentUsesFilenameAndExtensionDetail() {
+        let url = URL(fileURLWithPath: "/tmp/remux/archive.tar.gz")
+        let attachment = GhosttyPendingAttachment.file(url: url)
+
+        XCTAssertEqual(attachment.kind, .file)
+        XCTAssertEqual(attachment.title, "archive.tar.gz")
+        XCTAssertEqual(attachment.detail, "GZ file")
+        XCTAssertEqual(attachment.systemName, "doc")
+        XCTAssertEqual(attachment.payload, .file(url))
+    }
+
+    func testFileAttachmentFallsBackWhenNoExtensionExists() {
+        let url = URL(fileURLWithPath: "/tmp/remux/Makefile")
+        let attachment = GhosttyPendingAttachment.file(url: url)
+
+        XCTAssertEqual(attachment.title, "Makefile")
+        XCTAssertEqual(attachment.detail, "File")
+    }
+
+    func testFileAttachmentsPreserveSelectionOrder() {
+        let urls = [
+            URL(fileURLWithPath: "/tmp/remux/first.txt"),
+            URL(fileURLWithPath: "/tmp/remux/second.pdf")
+        ]
+
+        let attachments = GhosttyPendingAttachment.files(urls: urls)
+
+        XCTAssertEqual(attachments.map(\.title), ["first.txt", "second.pdf"])
+        XCTAssertEqual(attachments.map(\.payload), urls.map(GhosttyAttachmentPayload.file))
+    }
+
     func testPasteboardImageAttachmentKeepsImagePayload() {
         let imageData = Data([0x01, 0x02, 0x03])
         let attachment = GhosttyPendingAttachment.pasteboardImage(data: imageData)

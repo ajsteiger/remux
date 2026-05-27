@@ -78,6 +78,20 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
         }
     }
 
+    static func file(url: URL) -> GhosttyPendingAttachment {
+        let filename = url.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return GhosttyPendingAttachment(
+            kind: .file,
+            title: filename.isEmpty ? "File" : filename,
+            detail: fileDetail(url),
+            payload: .file(url)
+        )
+    }
+
+    static func files(urls: [URL]) -> [GhosttyPendingAttachment] {
+        urls.map(file(url:))
+    }
+
     static func pasteboardImage(data: Data) -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
             kind: .pasteboardImage,
@@ -141,6 +155,12 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
         let query = url.query(percentEncoded: false).map { "?\($0)" } ?? ""
         let suffix = [path == "/" ? "" : path, query].joined()
         return suffix.isEmpty ? host : "\(host)\(suffix)"
+    }
+
+    private static func fileDetail(_ url: URL) -> String {
+        let fileExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fileExtension.isEmpty else { return "File" }
+        return "\(fileExtension.uppercased()) file"
     }
 
     private static func mediaKind(_ contentTypes: [UTType]) -> Kind {
