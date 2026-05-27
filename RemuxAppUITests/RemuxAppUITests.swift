@@ -82,9 +82,11 @@ final class RemuxAppUITests: XCTestCase {
 
         let themeButton = app.descendants(matching: .any)["settings.theme"]
         XCTAssertTrue(themeButton.waitForExistence(timeout: 2))
-        themeButton.tap()
-        XCTAssertTrue(app.buttons["Remux Dark"].waitForExistence(timeout: 2))
-        app.buttons["Remux Dark"].tap()
+        XCTAssertTrue(app.buttons["Mocha"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Latte"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.descendants(matching: .any)["settings.theme.preview"].waitForExistence(timeout: 2))
+        app.buttons["Mocha"].tap()
+        XCTAssertTrue(app.staticTexts["Catppuccin Mocha"].waitForExistence(timeout: 2))
     }
 
     func testLiveSSHSeededServerOpensReadyTerminalWhenConfigured() throws {
