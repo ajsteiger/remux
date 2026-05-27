@@ -41,6 +41,7 @@ struct GhosttySurfaceScreen: View {
 
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
+    private let attachmentTransferServiceFactory: @Sendable () -> any GhosttyAttachmentTransferService
     private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
     private let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
     private static let maxAttachmentPhotoSelectionCount = 4
@@ -51,6 +52,7 @@ struct GhosttySurfaceScreen: View {
         presentation: GhosttySurfaceScreenPresentation,
         isSelected: Bool,
         shortcutStore: ShortcutStore,
+        attachmentTransferServiceFactory: @escaping @Sendable () -> any GhosttyAttachmentTransferService,
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void,
         onMount: @escaping (GhosttyTerminalScreenViewComponent) -> Void,
@@ -60,6 +62,7 @@ struct GhosttySurfaceScreen: View {
         self.presentation = presentation
         self.isSelected = isSelected
         self.shortcutStore = shortcutStore
+        self.attachmentTransferServiceFactory = attachmentTransferServiceFactory
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
         self.onMount = onMount

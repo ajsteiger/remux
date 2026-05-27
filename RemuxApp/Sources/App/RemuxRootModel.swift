@@ -66,8 +66,13 @@ struct ActiveTerminalScreenEntry: Identifiable {
     let runtimeAttemptKey: TerminalRuntimeAttemptKey
     let presentation: GhosttySurfaceScreenPresentation
     let model: GhosttySurfaceScreenModel
+    let attachmentTransferServiceFactory: @Sendable () -> any GhosttyAttachmentTransferService
 
-    init(session: ActiveTerminalSession, model: GhosttySurfaceScreenModel) {
+    init(
+        session: ActiveTerminalSession,
+        model: GhosttySurfaceScreenModel,
+        attachmentTransferServiceFactory: @escaping @Sendable () -> any GhosttyAttachmentTransferService
+    ) {
         self.id = session.id
         self.instanceID = session.instanceID
         self.runtimeAttemptKey = TerminalRuntimeAttemptKey(session: session)
@@ -77,6 +82,7 @@ struct ActiveTerminalScreenEntry: Identifiable {
             terminalTheme: session.target.terminalSettings.theme
         )
         self.model = model
+        self.attachmentTransferServiceFactory = attachmentTransferServiceFactory
     }
 }
 
@@ -132,7 +138,10 @@ final class RemuxRootModel: ObservableObject {
         activeSessions.map { session in
             ActiveTerminalScreenEntry(
                 session: session,
-                model: terminalScreenModel(for: session)
+                model: terminalScreenModel(for: session),
+                attachmentTransferServiceFactory: { [dependencies, target = session.target] in
+                    dependencies.makeAttachmentTransferService(for: target)
+                }
             )
         }
     }

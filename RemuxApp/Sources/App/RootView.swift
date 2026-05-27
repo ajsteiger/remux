@@ -285,6 +285,7 @@ private struct ActiveTerminalSessionView: View {
             presentation: entry.presentation,
             isSelected: isSelected,
             shortcutStore: shortcutStore,
+            attachmentTransferServiceFactory: entry.attachmentTransferServiceFactory,
             onReconnect: onReconnect,
             onEditConnection: onShowLibrary,
             onMount: onMount,
