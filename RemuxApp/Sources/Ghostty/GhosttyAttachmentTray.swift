@@ -9,13 +9,15 @@ struct GhosttyAttachmentTray: View {
     let onPasteSelected: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             attachmentAction(
                 title: "Photos",
                 systemName: "photo",
                 accessibilityIdentifier: "terminal.attachments.photos",
                 action: onPhotosSelected
             )
+
+            attachmentDivider
 
             attachmentAction(
                 title: "Files",
@@ -24,6 +26,8 @@ struct GhosttyAttachmentTray: View {
                 action: onFilesSelected
             )
 
+            attachmentDivider
+
             attachmentAction(
                 title: "Paste",
                 systemName: "clipboard",
@@ -31,11 +35,8 @@ struct GhosttyAttachmentTray: View {
                 action: onPasteSelected
             )
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 4)
-        .ghosttyAttachmentActionGroupSurface()
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
         .frame(maxWidth: 420)
         .ghosttyAttachmentTraySurface()
         .accessibilityElement(children: .contain)
@@ -55,6 +56,14 @@ struct GhosttyAttachmentTray: View {
         }
         .buttonStyle(GhosttyAttachmentActionButtonStyle(chromeStyle: chromeStyle))
         .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private var attachmentDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.10))
+            .frame(width: 0.75, height: 44)
+            .padding(.horizontal, 2)
+            .accessibilityHidden(true)
     }
 }
 
@@ -97,10 +106,6 @@ enum GhosttyAttachmentTrayStyle {
     static let fallbackPanelFill = Color(uiColor: .secondarySystemBackground).opacity(0.72)
     static let fallbackPanelStroke = Color.primary.opacity(0.08)
     static let fallbackShadow = Color.black.opacity(0.20)
-    static let actionGroupFill = Color.primary.opacity(0.026)
-    static let actionGroupStroke = Color.primary.opacity(0.06)
-    static let actionButtonFill = Color.primary.opacity(0.035)
-    static let actionButtonStroke = Color.primary.opacity(0.075)
     static let pendingIconStroke = Color.primary.opacity(0.08)
 }
 
@@ -134,50 +139,18 @@ extension View {
         }
     }
 
-    func ghosttyAttachmentActionGroupSurface() -> some View {
-        let shape = RoundedRectangle(cornerRadius: 23, style: .continuous)
-
-        return self
-            .background(GhosttyAttachmentTrayStyle.actionGroupFill, in: shape)
-            .overlay {
-                shape.strokeBorder(GhosttyAttachmentTrayStyle.actionGroupStroke, lineWidth: 0.75)
-            }
-            .contentShape(shape)
-    }
-
     @ViewBuilder
     func ghosttyAttachmentActionButtonSurface(
         isPressed: Bool,
         chromeStyle: GhosttyTerminalChromeStyle
     ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
 
-        if #available(iOS 26.0, *) {
-            self
-                .background(
-                    isPressed ? chromeStyle.toolbarButtonActiveFill : GhosttyAttachmentTrayStyle.actionButtonFill,
-                    in: shape
-                )
-                .overlay {
-                    shape.strokeBorder(
-                        isPressed ? chromeStyle.accent.opacity(0.20) : GhosttyAttachmentTrayStyle.actionButtonStroke,
-                        lineWidth: 0.75
-                    )
-                }
-                .contentShape(shape)
-        } else {
-            self
-                .background(
-                    isPressed ? Color.primary.opacity(0.06) : GhosttyAttachmentTrayStyle.actionButtonFill,
-                    in: shape
-                )
-                .overlay {
-                    shape.strokeBorder(
-                        isPressed ? Color.primary.opacity(0.12) : GhosttyAttachmentTrayStyle.actionButtonStroke,
-                        lineWidth: 0.75
-                    )
-                }
-                .contentShape(shape)
-        }
+        self
+            .background(
+                isPressed ? chromeStyle.toolbarButtonActiveFill : Color.clear,
+                in: shape
+            )
+            .contentShape(shape)
     }
 }
