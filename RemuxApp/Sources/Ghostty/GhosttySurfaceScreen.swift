@@ -369,8 +369,7 @@ struct GhosttySurfaceScreen: View {
             }
             .sheet(isPresented: $isAttachmentPreviewPresented) {
                 GhosttyAttachmentPreviewSheet(
-                    attachments: $pendingAttachments,
-                    presentationDetent: $attachmentPreviewDetent
+                    attachments: $pendingAttachments
                 )
                 .presentationDetents([.medium, .large], selection: $attachmentPreviewDetent)
                 .presentationDragIndicator(.visible)

@@ -6,11 +6,7 @@ struct GhosttyAttachmentPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
     @State private var selectedAttachmentID: UUID?
-    @State private var editingTextAttachmentID: UUID?
-    @State private var pendingTextFocusAttachmentID: UUID?
-    @FocusState private var focusedTextAttachmentID: UUID?
     @Binding var attachments: [GhosttyPendingAttachment]
-    @Binding var presentationDetent: PresentationDetent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -31,18 +27,6 @@ struct GhosttyAttachmentPreviewSheet: View {
         }
         .onChange(of: attachments) { _, _ in
             ensureSelectedAttachment()
-            ensureEditingAttachmentStillExists()
-        }
-        .onChange(of: selectedAttachmentID) { _, _ in
-            guard selectedAttachmentID != editingTextAttachmentID else { return }
-            stopTextEditing()
-        }
-        .onChange(of: presentationDetent) { _, detent in
-            if detent == .large {
-                focusPendingTextEditorIfNeeded()
-            } else {
-                stopTextEditing()
-            }
         }
     }
 
@@ -133,8 +117,10 @@ struct GhosttyAttachmentPreviewSheet: View {
             attachmentPreviewBody(attachment)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            previewOverlayActions(for: attachment)
-                .padding(12)
+            if showsOverlayActions(for: attachment) {
+                previewOverlayActions(for: attachment)
+                    .padding(12)
+            }
         }
         .padding(GhosttyAttachmentPreviewStyle.contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -142,46 +128,29 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     private func previewOverlayActions(for attachment: GhosttyPendingAttachment) -> some View {
-        HStack(spacing: 8) {
-            if showsTextEditAffordance(attachment) {
-                Button {
-                    Haptic.chromeControlPress()
-                    startTextEditing(attachment)
-                } label: {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(
-                    GhosttyAttachmentPreviewActionButtonStyle(
-                        foreground: chromeStyle.accent,
-                        fill: chromeStyle.selectedFill,
-                        stroke: chromeStyle.accent.opacity(0.18)
-                    )
-                )
-                .accessibilityLabel("Edit pasted text")
-                .accessibilityIdentifier("terminal.attachments.preview.edit-text")
-            }
-
-            Button {
-                Haptic.chromeControlPress()
-                removeAttachment(attachment)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .symbolRenderingMode(.monochrome)
-                    .frame(width: 30, height: 30)
-            }
-            .buttonStyle(
-                GhosttyAttachmentPreviewActionButtonStyle(
-                    foreground: GhosttySheetPalette.primary,
-                    fill: GhosttyAttachmentPreviewStyle.controlFill,
-                    stroke: GhosttyAttachmentPreviewStyle.controlStroke
-                )
-            )
-            .accessibilityLabel("Remove attachment")
-            .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
+        Button {
+            Haptic.chromeControlPress()
+            removeAttachment(attachment)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .bold))
+                .symbolRenderingMode(.monochrome)
+                .frame(width: 30, height: 30)
         }
+        .buttonStyle(
+            GhosttyAttachmentPreviewActionButtonStyle(
+                foreground: GhosttySheetPalette.primary,
+                fill: GhosttyAttachmentPreviewStyle.controlFill,
+                stroke: GhosttyAttachmentPreviewStyle.controlStroke
+            )
+        )
+        .accessibilityLabel("Remove attachment")
+        .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
+    }
+
+    private func showsOverlayActions(for attachment: GhosttyPendingAttachment) -> Bool {
+        guard case .text = attachment.payload else { return true }
+        return false
     }
 
     @ViewBuilder
@@ -193,12 +162,8 @@ struct GhosttyAttachmentPreviewSheet: View {
             filePreview(url)
         case .link(let url):
             linkPreview(url)
-        case .text(let text):
-            textPreview(
-                attachment: attachment,
-                text: text,
-                textBinding: textBinding(for: attachment)
-            )
+        case .text:
+            textPreview(textBinding: textBinding(for: attachment))
         default:
             unavailablePreview
         }
@@ -286,62 +251,19 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     @ViewBuilder
-    private func textPreview(
-        attachment: GhosttyPendingAttachment,
-        text: String,
-        textBinding: Binding<String>
-    ) -> some View {
-        if isEditingText(attachment) {
-            editableTextPreview(attachment: attachment, text: textBinding)
-        } else {
-            readableTextPreview(attachment: attachment, text: text)
-        }
-    }
-
-    private func readableTextPreview(
-        attachment: GhosttyPendingAttachment,
-        text: String
-    ) -> some View {
-        ScrollView {
-            Text(text.isEmpty ? "Empty text" : text)
-                .font(.system(size: 14, weight: .regular, design: .monospaced))
-                .foregroundStyle(text.isEmpty ? GhosttySheetPalette.secondary : GhosttySheetPalette.primary)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .padding(14)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(GhosttyAttachmentPreviewStyle.editorFill)
-        .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            startTextEditing(attachment)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("Edit pasted text")
-        .accessibilityIdentifier("terminal.attachments.text-preview")
-    }
-
-    private func editableTextPreview(
-        attachment: GhosttyPendingAttachment,
-        text: Binding<String>
-    ) -> some View {
-        TextEditor(text: text)
+    private func textPreview(textBinding: Binding<String>) -> some View {
+        TextEditor(text: textBinding)
             .font(.system(size: 14, weight: .regular, design: .monospaced))
             .foregroundStyle(GhosttySheetPalette.primary)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .scrollContentBackground(.hidden)
             .tint(chromeStyle.accent)
-            .focused($focusedTextAttachmentID, equals: attachment.id)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(GhosttyAttachmentPreviewStyle.editorFill)
             .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
             .accessibilityIdentifier("terminal.attachments.text-editor")
-            .task(id: pendingTextFocusAttachmentID) {
-                await focusTextEditorOnAppearIfNeeded(attachment.id)
-            }
     }
 
     private var unavailablePreview: some View {
@@ -424,88 +346,7 @@ struct GhosttyAttachmentPreviewSheet: View {
         )
     }
 
-    private func isEditingText(_ attachment: GhosttyPendingAttachment) -> Bool {
-        editingTextAttachmentID == attachment.id
-    }
-
-    private func showsTextEditAffordance(_ attachment: GhosttyPendingAttachment) -> Bool {
-        guard !isEditingText(attachment),
-              case .text = attachment.payload else {
-            return false
-        }
-
-        return true
-    }
-
-    private func startTextEditing(_ attachment: GhosttyPendingAttachment) {
-        selectedAttachmentID = attachment.id
-        pendingTextFocusAttachmentID = attachment.id
-
-        guard presentationDetent != .large else {
-            focusPendingTextEditorIfNeeded()
-            return
-        }
-
-        withAnimation(
-            .spring(response: 0.28, dampingFraction: 0.88),
-            completionCriteria: .logicallyComplete
-        ) {
-            presentationDetent = .large
-        } completion: {
-            focusPendingTextEditorIfNeeded()
-        }
-    }
-
-    private func stopTextEditing() {
-        pendingTextFocusAttachmentID = nil
-        focusedTextAttachmentID = nil
-        editingTextAttachmentID = nil
-    }
-
-    private func focusPendingTextEditorIfNeeded() {
-        guard let attachmentID = pendingTextFocusAttachmentID,
-              presentationDetent == .large else {
-            return
-        }
-
-        editingTextAttachmentID = attachmentID
-    }
-
-    @MainActor
-    private func focusTextEditorOnAppearIfNeeded(_ attachmentID: UUID) async {
-        guard pendingTextFocusAttachmentID == attachmentID,
-              editingTextAttachmentID == attachmentID,
-              presentationDetent == .large else {
-            return
-        }
-
-        await Task.yield()
-
-        guard pendingTextFocusAttachmentID == attachmentID,
-              editingTextAttachmentID == attachmentID,
-              presentationDetent == .large else {
-            return
-        }
-
-        focusedTextAttachmentID = attachmentID
-        pendingTextFocusAttachmentID = nil
-    }
-
-    private func ensureEditingAttachmentStillExists() {
-        guard let editingTextAttachmentID else { return }
-        guard attachments.contains(where: { $0.id == editingTextAttachmentID }) else {
-            stopTextEditing()
-            return
-        }
-
-        guard case .text = attachments.first(where: { $0.id == editingTextAttachmentID })?.payload else {
-            stopTextEditing()
-            return
-        }
-    }
-
     private func removeAttachment(_ attachment: GhosttyPendingAttachment) {
-        stopTextEditing()
         withAnimation(.easeOut(duration: 0.16)) {
             attachments.removeAll { $0.id == attachment.id }
         }
