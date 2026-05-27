@@ -793,13 +793,13 @@ private struct GhosttyAttachmentPreviewActionButtonStyle: ButtonStyle {
 }
 
 private enum GhosttyAttachmentPreviewStyle {
-    static let contentFill = GhosttyShortcutSurfacePalette.contentFill
-    static let contentStroke = GhosttyShortcutSurfacePalette.contentStroke
+    static let contentFill = GhosttySheetPalette.row
+    static let contentStroke = GhosttySheetPalette.stroke
     static let controlFill = GhosttySheetPalette.controlFill
     static let controlPressedFill = Color(uiColor: .tertiarySystemFill)
     static let editorFill = Color(uiColor: .secondarySystemFill).opacity(0.34)
     static let controlStroke = GhosttySheetPalette.stroke
-    static let contentCornerRadius = GhosttyShortcutSurfacePalette.cornerRadiusLarge
+    static let contentCornerRadius: CGFloat = 16
     static let previewCornerRadius: CGFloat = 16
     static let chipTitleMaxWidth: CGFloat = 220
     static let contentPadding = EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
@@ -864,24 +864,11 @@ private extension View {
             style: .continuous
         )
 
-        if #available(iOS 26.0, *) {
-            self
-                .glassEffect(
-                    .regular
-                        .tint(GhosttyAttachmentTrayStyle.panelGlassTint),
-                    in: shape
-                )
-                .overlay {
-                    shape.strokeBorder(GhosttyAttachmentTrayStyle.panelGlassStroke, lineWidth: 0.75)
-                }
-                .contentShape(shape)
-        } else {
-            self
-                .background(GhosttyAttachmentPreviewStyle.contentFill, in: shape)
-                .overlay {
-                    shape.strokeBorder(GhosttyAttachmentPreviewStyle.contentStroke, lineWidth: 1)
-                }
-                .contentShape(shape)
-        }
+        self
+            .background(GhosttyAttachmentPreviewStyle.contentFill, in: shape)
+            .overlay {
+                shape.strokeBorder(GhosttyAttachmentPreviewStyle.contentStroke, lineWidth: 1)
+            }
+            .contentShape(shape)
     }
 }
