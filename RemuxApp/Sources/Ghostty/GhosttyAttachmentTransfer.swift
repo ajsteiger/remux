@@ -76,6 +76,7 @@ enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
     case remoteDirectoryCreationFailed(String)
     case uploadFailed(remotePath: String)
     case remoteRenameFailed(from: String, to: String)
+    case remoteTemporaryCleanupFailed(remotePath: String)
     case cancellationCleanupFailed(remotePath: String)
     case cancelled
     case terminalInsertionFailed
@@ -83,6 +84,188 @@ enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
 
 protocol GhosttyAttachmentTransferService: Sendable {
     func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult
+}
+
+protocol GhosttyAttachmentSFTPClient: Sendable {
+    func ensureDirectoryExists(atPath path: String) async throws
+    func uploadFile(from localURL: URL, to remotePath: String) async throws
+    func renameFile(from temporaryPath: String, to finalPath: String) async throws
+    func removeFileIfExists(atPath path: String) async throws
+}
+
+struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>: GhosttyAttachmentTransferService {
+    let client: Client
+    let pathBuilder: GhosttyRemoteAttachmentPathBuilder
+
+    init(
+        client: Client,
+        pathBuilder: GhosttyRemoteAttachmentPathBuilder = GhosttyRemoteAttachmentPathBuilder()
+    ) {
+        self.client = client
+        self.pathBuilder = pathBuilder
+    }
+
+    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult {
+        guard !job.sources.isEmpty else {
+            throw GhosttyAttachmentTransferError.noSources
+        }
+
+        let uploadPaths = Dictionary(
+            uniqueKeysWithValues: pathBuilder.paths(for: job).map { ($0.sourceID, $0) }
+        )
+        try checkCancellation()
+        try validateLocalSources(job.sources, uploadPaths: uploadPaths)
+
+        var ensuredDirectories = Set<String>()
+        var items: [GhosttyAttachmentTransferResult.Item] = []
+
+        for source in job.sources {
+            try checkCancellation()
+
+            switch source.payload {
+            case .file(let localURL, _):
+                let remotePath = try remotePath(for: source, in: uploadPaths)
+                try await ensureDirectories(for: remotePath, ensuredDirectories: &ensuredDirectories)
+                try await upload(localURL, to: remotePath)
+                items.append(.remoteFile(sourceID: source.id, path: remotePath))
+            case .text(let text):
+                items.append(.text(sourceID: source.id, text: text))
+            case .link(let url):
+                items.append(.link(sourceID: source.id, url: url))
+            }
+        }
+
+        return GhosttyAttachmentTransferResult(
+            transferID: job.transferID,
+            items: items
+        )
+    }
+
+    private func checkCancellation() throws {
+        do {
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            throw GhosttyAttachmentTransferError.cancelled
+        }
+    }
+
+    private func validateLocalSources(
+        _ sources: [GhosttyAttachmentTransferSource],
+        uploadPaths: [GhosttyAttachmentTransferSource.ID: GhosttyRemoteAttachmentPath]
+    ) throws {
+        for source in sources {
+            try checkCancellation()
+
+            guard case .file(let localURL, _) = source.payload else {
+                continue
+            }
+
+            _ = try remotePath(for: source, in: uploadPaths)
+            try validateLocalSource(localURL)
+        }
+    }
+
+    private func remotePath(
+        for source: GhosttyAttachmentTransferSource,
+        in uploadPaths: [GhosttyAttachmentTransferSource.ID: GhosttyRemoteAttachmentPath]
+    ) throws -> GhosttyRemoteAttachmentPath {
+        guard let remotePath = uploadPaths[source.id] else {
+            throw GhosttyAttachmentTransferError.remotePathResolutionFailed(source.title)
+        }
+        return remotePath
+    }
+
+    private func validateLocalSource(_ localURL: URL) throws {
+        var isDirectory = ObjCBool(false)
+        let exists = FileManager.default.fileExists(
+            atPath: localURL.path,
+            isDirectory: &isDirectory
+        )
+        guard exists, !isDirectory.boolValue else {
+            throw GhosttyAttachmentTransferError.localSourceUnavailable(localURL)
+        }
+    }
+
+    private func ensureDirectories(
+        for remotePath: GhosttyRemoteAttachmentPath,
+        ensuredDirectories: inout Set<String>
+    ) async throws {
+        for directory in GhosttyRemoteAttachmentPathBuilder.directoryPrefixes(
+            for: remotePath.remoteDirectory
+        ) where ensuredDirectories.insert(directory).inserted {
+            do {
+                try await client.ensureDirectoryExists(atPath: directory)
+            } catch is CancellationError {
+                throw GhosttyAttachmentTransferError.cancelled
+            } catch {
+                throw GhosttyAttachmentTransferError.remoteDirectoryCreationFailed(directory)
+            }
+        }
+    }
+
+    private func upload(
+        _ localURL: URL,
+        to remotePath: GhosttyRemoteAttachmentPath
+    ) async throws {
+        do {
+            try await client.uploadFile(
+                from: localURL,
+                to: remotePath.remoteTemporaryPath
+            )
+        } catch is CancellationError {
+            try await cleanupAfterCancellation(remotePath.remoteTemporaryPath)
+            throw GhosttyAttachmentTransferError.cancelled
+        } catch {
+            try await cleanupTemporaryFile(
+                at: remotePath.remoteTemporaryPath,
+                cleanupFailure: .remoteTemporaryCleanupFailed(
+                    remotePath: remotePath.remoteTemporaryPath
+                )
+            )
+            throw GhosttyAttachmentTransferError.uploadFailed(
+                remotePath: remotePath.remoteTemporaryPath
+            )
+        }
+
+        do {
+            try await client.renameFile(
+                from: remotePath.remoteTemporaryPath,
+                to: remotePath.remoteFinalPath
+            )
+        } catch is CancellationError {
+            try await cleanupAfterCancellation(remotePath.remoteTemporaryPath)
+            throw GhosttyAttachmentTransferError.cancelled
+        } catch {
+            try await cleanupTemporaryFile(
+                at: remotePath.remoteTemporaryPath,
+                cleanupFailure: .remoteTemporaryCleanupFailed(
+                    remotePath: remotePath.remoteTemporaryPath
+                )
+            )
+            throw GhosttyAttachmentTransferError.remoteRenameFailed(
+                from: remotePath.remoteTemporaryPath,
+                to: remotePath.remoteFinalPath
+            )
+        }
+    }
+
+    private func cleanupAfterCancellation(_ remotePath: String) async throws {
+        try await cleanupTemporaryFile(
+            at: remotePath,
+            cleanupFailure: .cancellationCleanupFailed(remotePath: remotePath)
+        )
+    }
+
+    private func cleanupTemporaryFile(
+        at remotePath: String,
+        cleanupFailure: GhosttyAttachmentTransferError
+    ) async throws {
+        do {
+            try await client.removeFileIfExists(atPath: remotePath)
+        } catch {
+            throw cleanupFailure
+        }
+    }
 }
 
 struct GhosttyRemoteAttachmentPath: Equatable, Sendable {
