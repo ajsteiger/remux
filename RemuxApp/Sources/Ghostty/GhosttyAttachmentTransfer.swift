@@ -64,6 +64,10 @@ enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
     case terminalInsertionFailed
 }
 
+protocol GhosttyAttachmentTransferService: Sendable {
+    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult
+}
+
 struct GhosttyRemoteAttachmentPath: Equatable, Sendable {
     let sourceID: GhosttyAttachmentTransferSource.ID
     let filename: String

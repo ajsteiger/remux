@@ -210,3 +210,64 @@ final class GhosttyAttachmentTransferSourceTests: XCTestCase {
         XCTAssertNil(attachment.transferSource)
     }
 }
+
+final class GhosttyAttachmentTransferServiceTests: XCTestCase {
+    func testServiceContractReturnsTransferResult() async throws {
+        let sourceID = UUID(uuidString: "99999999-8888-7777-6666-555555555555")!
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    id: sourceID,
+                    title: "Note",
+                    payload: .text("hello")
+                ),
+            ]
+        )
+        let expectedResult = GhosttyAttachmentTransferResult(
+            transferID: job.transferID,
+            items: [
+                .text(sourceID: sourceID, text: "hello"),
+            ]
+        )
+        let service = FakeGhosttyAttachmentTransferService(result: .success(expectedResult))
+
+        let result = try await service.transfer(job)
+        let jobs = await service.jobs
+
+        XCTAssertEqual(result, expectedResult)
+        XCTAssertEqual(jobs, [job])
+    }
+
+    func testServiceContractPropagatesTypedErrors() async {
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(),
+            sources: []
+        )
+        let service = FakeGhosttyAttachmentTransferService(result: .failure(.noSources))
+
+        do {
+            _ = try await service.transfer(job)
+            XCTFail("Expected transfer to throw")
+        } catch let error as GhosttyAttachmentTransferError {
+            XCTAssertEqual(error, .noSources)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+}
+
+private actor FakeGhosttyAttachmentTransferService: GhosttyAttachmentTransferService {
+    private let result: Result<GhosttyAttachmentTransferResult, GhosttyAttachmentTransferError>
+    private(set) var jobs: [GhosttyAttachmentTransferJob] = []
+
+    init(result: Result<GhosttyAttachmentTransferResult, GhosttyAttachmentTransferError>) {
+        self.result = result
+    }
+
+    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult {
+        jobs.append(job)
+        return try result.get()
+    }
+}
