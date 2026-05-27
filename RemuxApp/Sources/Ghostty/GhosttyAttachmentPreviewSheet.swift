@@ -131,15 +131,13 @@ struct GhosttyAttachmentPreviewSheet: View {
             removeAttachment(attachment)
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .symbolRenderingMode(.monochrome)
-                .frame(width: 30, height: 30)
+                .frame(width: 34, height: 34)
         }
         .buttonStyle(
             GhosttyAttachmentPreviewActionButtonStyle(
-                foreground: GhosttySheetPalette.primary,
-                fill: GhosttyAttachmentPreviewStyle.controlFill,
-                stroke: GhosttyAttachmentPreviewStyle.controlStroke
+                foreground: GhosttySheetPalette.primary
             )
         )
         .accessibilityLabel("Remove attachment")
@@ -613,21 +611,11 @@ private struct GhosttyAttachmentPreviewChipButtonStyle: ButtonStyle {
 
 private struct GhosttyAttachmentPreviewActionButtonStyle: ButtonStyle {
     let foreground: Color
-    let fill: Color
-    let stroke: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(foreground)
-            .background(
-                configuration.isPressed
-                    ? GhosttyAttachmentPreviewStyle.controlPressedFill
-                    : fill,
-                in: Circle()
-            )
-            .overlay {
-                Circle().strokeBorder(stroke, lineWidth: 0.75)
-            }
+            .ghosttyAttachmentPreviewOverlayActionSurface(isPressed: configuration.isPressed)
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -713,5 +701,36 @@ private extension View {
                 shape.strokeBorder(GhosttyAttachmentPreviewStyle.contentStroke, lineWidth: 1)
             }
             .contentShape(shape)
+    }
+
+    @ViewBuilder
+    func ghosttyAttachmentPreviewOverlayActionSurface(isPressed: Bool) -> some View {
+        let shape = Circle()
+
+        if #available(iOS 26.0, *) {
+            self
+                .glassEffect(
+                    .regular
+                        .tint(GhosttyAttachmentTrayStyle.panelGlassTint)
+                        .interactive(),
+                    in: shape
+                )
+                .overlay {
+                    shape.strokeBorder(GhosttyAttachmentTrayStyle.panelGlassStroke, lineWidth: 0.75)
+                }
+                .shadow(color: GhosttyAttachmentTrayStyle.panelGlassShadow, radius: 12, y: 7)
+                .contentShape(shape)
+        } else {
+            self
+                .background(.regularMaterial, in: shape)
+                .background {
+                    shape.fill(isPressed ? GhosttyAttachmentPreviewStyle.controlPressedFill : GhosttyAttachmentPreviewStyle.controlFill)
+                }
+                .overlay {
+                    shape.strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 0.75)
+                }
+                .shadow(color: GhosttyAttachmentTrayStyle.fallbackShadow, radius: 12, y: 7)
+                .contentShape(shape)
+        }
     }
 }
