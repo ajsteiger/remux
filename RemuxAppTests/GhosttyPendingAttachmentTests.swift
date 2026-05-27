@@ -1,7 +1,38 @@
 import XCTest
+import UniformTypeIdentifiers
 @testable import Remux
 
 final class GhosttyPendingAttachmentTests: XCTestCase {
+    func testMediaSelectionUsesPhotoMetadataForImageType() {
+        let attachments = GhosttyPendingAttachment.mediaSelections(contentTypes: [[.png]])
+
+        XCTAssertEqual(attachments.count, 1)
+        XCTAssertEqual(attachments[0].kind, .photo)
+        XCTAssertEqual(attachments[0].title, "Photo")
+        XCTAssertEqual(attachments[0].detail, "Loading preview")
+        XCTAssertEqual(attachments[0].systemName, "photo")
+        XCTAssertNil(attachments[0].payload)
+    }
+
+    func testMediaSelectionUsesVideoMetadataForMovieType() {
+        let attachments = GhosttyPendingAttachment.mediaSelections(contentTypes: [[.movie]])
+
+        XCTAssertEqual(attachments.count, 1)
+        XCTAssertEqual(attachments[0].kind, .video)
+        XCTAssertEqual(attachments[0].title, "Video")
+        XCTAssertEqual(attachments[0].systemName, "video")
+    }
+
+    func testMediaSelectionNumbersMultipleItems() {
+        let attachments = GhosttyPendingAttachment.mediaSelections(contentTypes: [[.png], [.movie]])
+
+        XCTAssertEqual(attachments.map(\.title), ["Photo 1", "Video 2"])
+    }
+
+    func testEmptyMediaSelectionCreatesNoAttachments() {
+        XCTAssertTrue(GhosttyPendingAttachment.mediaSelections(contentTypes: []).isEmpty)
+    }
+
     func testPasteboardImageAttachmentKeepsImagePayload() {
         let imageData = Data([0x01, 0x02, 0x03])
         let attachment = GhosttyPendingAttachment.pasteboardImage(data: imageData)

@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 enum GhosttyAttachmentPayload: Equatable {
     case imageData(Data)
@@ -61,6 +62,20 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
 
     var isPreviewable: Bool {
         payload != nil
+    }
+
+    static func mediaSelections(contentTypes: [[UTType]]) -> [GhosttyPendingAttachment] {
+        guard !contentTypes.isEmpty else { return [] }
+
+        let shouldNumber = contentTypes.count > 1
+        return contentTypes.enumerated().map { index, contentTypes in
+            let kind = mediaKind(contentTypes)
+            return GhosttyPendingAttachment(
+                kind: kind,
+                title: mediaTitle(kind, number: shouldNumber ? index + 1 : nil),
+                detail: "Loading preview"
+            )
+        }
     }
 
     static func pasteboardImage(data: Data) -> GhosttyPendingAttachment {
@@ -126,5 +141,32 @@ struct GhosttyPendingAttachment: Identifiable, Equatable {
         let query = url.query(percentEncoded: false).map { "?\($0)" } ?? ""
         let suffix = [path == "/" ? "" : path, query].joined()
         return suffix.isEmpty ? host : "\(host)\(suffix)"
+    }
+
+    private static func mediaKind(_ contentTypes: [UTType]) -> Kind {
+        if contentTypes.contains(where: { $0.conforms(to: .image) }) {
+            return .photo
+        }
+
+        if contentTypes.contains(where: { $0.conforms(to: .movie) || $0.conforms(to: .audiovisualContent) }) {
+            return .video
+        }
+
+        return .media
+    }
+
+    private static func mediaTitle(_ kind: Kind, number: Int?) -> String {
+        let title: String
+        switch kind {
+        case .photo:
+            title = "Photo"
+        case .video:
+            title = "Video"
+        default:
+            title = "Media"
+        }
+
+        guard let number else { return title }
+        return "\(title) \(number)"
     }
 }
