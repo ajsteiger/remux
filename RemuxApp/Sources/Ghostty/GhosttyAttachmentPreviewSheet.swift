@@ -169,6 +169,19 @@ struct GhosttyAttachmentPreviewSheet: View {
                         }
                         .accessibilityHidden(true)
                 }
+
+                Button {
+                    Haptic.chromeControlPress()
+                    removeAttachment(attachment)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .symbolRenderingMode(.monochrome)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(GhosttyAttachmentPreviewRemoveButtonStyle())
+                .accessibilityLabel("Remove attachment")
+                .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
             }
 
             attachmentPreviewBody(attachment)
@@ -484,6 +497,14 @@ struct GhosttyAttachmentPreviewSheet: View {
             return
         }
     }
+
+    private func removeAttachment(_ attachment: GhosttyPendingAttachment) {
+        stopTextEditing()
+        withAnimation(.easeOut(duration: 0.16)) {
+            attachments.removeAll { $0.id == attachment.id }
+        }
+        GhosttyAttachmentStagingStore.cleanup([attachment])
+    }
 }
 
 private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable {
@@ -742,6 +763,24 @@ private struct GhosttyAttachmentPreviewChipButtonStyle: ButtonStyle {
                 chromeStyle: chromeStyle
             )
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private struct GhosttyAttachmentPreviewRemoveButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(GhosttySheetPalette.primary)
+            .background(
+                configuration.isPressed
+                    ? GhosttyAttachmentPreviewStyle.controlPressedFill
+                    : GhosttyAttachmentPreviewStyle.controlFill,
+                in: Circle()
+            )
+            .overlay {
+                Circle().strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 0.75)
+            }
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
