@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import UIKit
 
@@ -169,6 +170,8 @@ struct GhosttyAttachmentPreviewSheet: View {
         switch attachment.payload {
         case .imageData(let data):
             imagePreview(data)
+        case .file(let url):
+            filePreview(url)
         case .link(let url):
             linkPreview(url)
         case .text(let text):
@@ -191,6 +194,12 @@ struct GhosttyAttachmentPreviewSheet: View {
         } else {
             unavailablePreview
         }
+    }
+
+    private func filePreview(_ url: URL) -> some View {
+        GhosttyAttachmentQuickLookPreview(url: url)
+            .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+            .accessibilityIdentifier("terminal.attachments.file-preview")
     }
 
     private func linkPreview(_ url: URL) -> some View {
@@ -403,6 +412,69 @@ struct GhosttyAttachmentPreviewSheet: View {
         guard case .text = attachments.first(where: { $0.id == editingTextAttachmentID })?.payload else {
             stopTextEditing()
             return
+        }
+    }
+}
+
+private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(url: url)
+    }
+
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        context.coordinator.update(url: url)
+        controller.reloadData()
+    }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        private var url: URL
+        private var accessedURL: URL?
+
+        init(url: URL) {
+            self.url = url
+            super.init()
+            startAccessing(url)
+        }
+
+        deinit {
+            stopAccessing()
+        }
+
+        func update(url: URL) {
+            guard self.url != url else { return }
+            stopAccessing()
+            self.url = url
+            startAccessing(url)
+        }
+
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+            1
+        }
+
+        func previewController(
+            _ controller: QLPreviewController,
+            previewItemAt index: Int
+        ) -> QLPreviewItem {
+            url as NSURL
+        }
+
+        private func startAccessing(_ url: URL) {
+            if url.startAccessingSecurityScopedResource() {
+                accessedURL = url
+            }
+        }
+
+        private func stopAccessing() {
+            accessedURL?.stopAccessingSecurityScopedResource()
+            accessedURL = nil
         }
     }
 }
