@@ -1316,10 +1316,11 @@ private struct ConnectionSetupView: View {
 
                     textInputRow(
                         title: "Host",
-                        placeholder: "Tailscale IP or hostname",
+                        placeholder: "example.tailnet.ts.net",
                         keyPath: \.host,
                         field: .host,
                         validationMessage: validation.host,
+                        textStyle: .monospaced,
                         keyboardType: .URL,
                         accessibilityIdentifier: "connection.host"
                     )
@@ -1330,21 +1331,27 @@ private struct ConnectionSetupView: View {
                         keyPath: \.port,
                         field: .port,
                         validationMessage: validation.port,
+                        textStyle: .monospaced,
                         keyboardType: .numberPad,
                         accessibilityIdentifier: "connection.port"
                     )
 
                     textInputRow(
                         title: "User",
-                        placeholder: "Username",
+                        placeholder: "macbook",
                         keyPath: \.username,
                         field: .username,
                         validationMessage: validation.username,
+                        textStyle: .monospaced,
                         accessibilityIdentifier: "connection.username"
                     )
 
                 } header: {
                     Text("Server")
+                } footer: {
+                    if let serverSectionFooter {
+                        Text(serverSectionFooter)
+                    }
                 }
                 .libraryHomeListRowSurface()
             }
@@ -1373,6 +1380,7 @@ private struct ConnectionSetupView: View {
                         keyPath: \.sessionName,
                         field: .sessionName,
                         validationMessage: validation.sessionName,
+                        textStyle: .monospaced,
                         submitLabel: .go,
                         accessibilityIdentifier: "connection.session"
                     )
@@ -1597,6 +1605,17 @@ private struct ConnectionSetupView: View {
         }
     }
 
+    private var serverSectionFooter: String? {
+        switch mode {
+        case .newServer:
+            nil
+        case .editServer:
+            "Updates the saved endpoint for future connections."
+        case .newWorkspace, .editWorkspace:
+            nil
+        }
+    }
+
     private var sessionSectionFooter: String {
         switch mode {
         case .newServer:
@@ -1610,12 +1629,27 @@ private struct ConnectionSetupView: View {
         }
     }
 
+    private enum ConnectionFieldTextStyle {
+        case standard
+        case monospaced
+
+        var font: Font {
+            switch self {
+            case .standard:
+                .body
+            case .monospaced:
+                .body.monospaced()
+            }
+        }
+    }
+
     private func textInputRow(
         title: String,
         placeholder: String,
         keyPath: WritableKeyPath<TmuxConnectionDraft, String>,
         field: Field,
         validationMessage: String?,
+        textStyle: ConnectionFieldTextStyle = .standard,
         textInputAutocapitalization: TextInputAutocapitalization = .never,
         autocorrectionDisabled: Bool = true,
         keyboardType: UIKeyboardType = .default,
@@ -1631,6 +1665,7 @@ private struct ConnectionSetupView: View {
                 .textInputAutocapitalization(textInputAutocapitalization)
                 .autocorrectionDisabled(autocorrectionDisabled)
                 .keyboardType(keyboardType)
+                .font(textStyle.font)
                 .multilineTextAlignment(.leading)
                 .focused($focusedField, equals: field)
                 .submitLabel(submitLabel)
