@@ -129,56 +129,59 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     private func attachmentPreviewCard(_ attachment: GhosttyPendingAttachment) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Spacer(minLength: 0)
-
-                if showsTextEditAffordance(attachment) {
-                    Button {
-                        Haptic.chromeControlPress()
-                        startTextEditing(attachment)
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 30, height: 30)
-                    }
-                    .buttonStyle(
-                        GhosttyAttachmentPreviewActionButtonStyle(
-                            foreground: chromeStyle.accent,
-                            fill: chromeStyle.selectedFill,
-                            stroke: chromeStyle.accent.opacity(0.18)
-                        )
-                    )
-                    .accessibilityLabel("Edit pasted text")
-                    .accessibilityIdentifier("terminal.attachments.preview.edit-text")
-                }
-
-                Button {
-                    Haptic.chromeControlPress()
-                    removeAttachment(attachment)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .symbolRenderingMode(.monochrome)
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(
-                    GhosttyAttachmentPreviewActionButtonStyle(
-                        foreground: GhosttySheetPalette.primary,
-                        fill: GhosttyAttachmentPreviewStyle.controlFill,
-                        stroke: GhosttyAttachmentPreviewStyle.controlStroke
-                    )
-                )
-                .accessibilityLabel("Remove attachment")
-                .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
-            }
-
+        ZStack(alignment: .topTrailing) {
             attachmentPreviewBody(attachment)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            previewOverlayActions(for: attachment)
+                .padding(12)
         }
         .padding(GhosttyAttachmentPreviewStyle.contentPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .ghosttyAttachmentPreviewContentSurface()
+    }
+
+    private func previewOverlayActions(for attachment: GhosttyPendingAttachment) -> some View {
+        HStack(spacing: 8) {
+            if showsTextEditAffordance(attachment) {
+                Button {
+                    Haptic.chromeControlPress()
+                    startTextEditing(attachment)
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(
+                    GhosttyAttachmentPreviewActionButtonStyle(
+                        foreground: chromeStyle.accent,
+                        fill: chromeStyle.selectedFill,
+                        stroke: chromeStyle.accent.opacity(0.18)
+                    )
+                )
+                .accessibilityLabel("Edit pasted text")
+                .accessibilityIdentifier("terminal.attachments.preview.edit-text")
+            }
+
+            Button {
+                Haptic.chromeControlPress()
+                removeAttachment(attachment)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .symbolRenderingMode(.monochrome)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(
+                GhosttyAttachmentPreviewActionButtonStyle(
+                    foreground: GhosttySheetPalette.primary,
+                    fill: GhosttyAttachmentPreviewStyle.controlFill,
+                    stroke: GhosttyAttachmentPreviewStyle.controlStroke
+                )
+            )
+            .accessibilityLabel("Remove attachment")
+            .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
+        }
     }
 
     @ViewBuilder
