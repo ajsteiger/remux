@@ -402,6 +402,14 @@ struct GhosttySurfaceScreen: View {
                 attachmentPhotoSelections = []
                 handleAttachmentPhotoSelection(items)
             }
+            .onChange(of: pendingAttachments) { _, attachments in
+                guard attachments.isEmpty else { return }
+                isAttachmentPreviewPresented = false
+            }
+            .onChange(of: isAttachmentPreviewPresented) { _, isPresented in
+                guard !isPresented else { return }
+                attachmentPreviewDetent = .medium
+            }
             .onChange(of: interactionProjection.selectedActiveLeafID) { _, activeLeafID in
                 handleActiveLeafChange(activeLeafID)
             }
