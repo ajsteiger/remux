@@ -1308,40 +1308,40 @@ private struct ConnectionSetupView: View {
                         placeholder: "Mac mini",
                         keyPath: \.displayName,
                         field: .displayName,
+                        validationMessage: validation.displayName,
                         textInputAutocapitalization: .words,
                         autocorrectionDisabled: false,
                         accessibilityIdentifier: "connection.name"
                     )
-                    validationMessage(validation.displayName)
 
                     textInputRow(
                         title: "Host",
                         placeholder: "Tailscale IP or hostname",
                         keyPath: \.host,
                         field: .host,
+                        validationMessage: validation.host,
                         keyboardType: .URL,
                         accessibilityIdentifier: "connection.host"
                     )
-                    validationMessage(validation.host)
 
                     textInputRow(
                         title: "Port",
                         placeholder: "22",
                         keyPath: \.port,
                         field: .port,
+                        validationMessage: validation.port,
                         keyboardType: .numberPad,
                         accessibilityIdentifier: "connection.port"
                     )
-                    validationMessage(validation.port)
 
                     textInputRow(
                         title: "User",
                         placeholder: "Username",
                         keyPath: \.username,
                         field: .username,
+                        validationMessage: validation.username,
                         accessibilityIdentifier: "connection.username"
                     )
-                    validationMessage(validation.username)
 
                 } header: {
                     Text("Server")
@@ -1358,8 +1358,7 @@ private struct ConnectionSetupView: View {
 
             if showsAuthenticationFields {
                 Section {
-                    passwordInputRow()
-                    validationMessage(validation.password)
+                    passwordInputRow(validationMessage: validation.password)
                 } header: {
                     Text("Authentication")
                 }
@@ -1373,10 +1372,10 @@ private struct ConnectionSetupView: View {
                         placeholder: "e.g. main, work",
                         keyPath: \.sessionName,
                         field: .sessionName,
+                        validationMessage: validation.sessionName,
                         submitLabel: .go,
                         accessibilityIdentifier: "connection.session"
                     )
-                    validationMessage(validation.sessionName)
                 } header: {
                     Text(sessionSectionTitle)
                 } footer: {
@@ -1611,70 +1610,62 @@ private struct ConnectionSetupView: View {
         }
     }
 
-    private var primaryActionTitle: String {
-        switch mode {
-        case .newServer:
-            "Connect"
-        case .newWorkspace:
-            "Start"
-        case .editServer(_, let reconnectWorkspaceID):
-            reconnectWorkspaceID == nil ? "Save" : "Connect"
-        case .editWorkspace:
-            "Save"
-        }
-    }
-
     private func textInputRow(
         title: String,
         placeholder: String,
         keyPath: WritableKeyPath<TmuxConnectionDraft, String>,
         field: Field,
+        validationMessage: String?,
         textInputAutocapitalization: TextInputAutocapitalization = .never,
         autocorrectionDisabled: Bool = true,
         keyboardType: UIKeyboardType = .default,
         submitLabel: SubmitLabel = .next,
         accessibilityIdentifier: String
     ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 12)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
 
             TextField(placeholder, text: binding(for: keyPath))
                 .textInputAutocapitalization(textInputAutocapitalization)
                 .autocorrectionDisabled(autocorrectionDisabled)
                 .keyboardType(keyboardType)
-                .multilineTextAlignment(.trailing)
+                .multilineTextAlignment(.leading)
                 .focused($focusedField, equals: field)
                 .submitLabel(submitLabel)
                 .onSubmit { advance(from: field) }
                 .accessibilityIdentifier(accessibilityIdentifier)
+
+            fieldValidationMessage(validationMessage)
         }
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture {
             focusedField = field
         }
     }
 
-    private func passwordInputRow() -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+    private func passwordInputRow(validationMessage: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Password")
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 12)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
 
             SecureField("Required", text: binding(for: \.password))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .textContentType(.oneTimeCode)
-                .multilineTextAlignment(.trailing)
+                .multilineTextAlignment(.leading)
                 .focused($focusedField, equals: .password)
                 .submitLabel(showsSessionFields ? .next : .go)
                 .onSubmit { advance(from: .password) }
                 .frame(minHeight: 28)
                 .accessibilityIdentifier("connection.password")
+
+            fieldValidationMessage(validationMessage)
         }
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture {
             focusedField = .password
@@ -1693,20 +1684,26 @@ private struct ConnectionSetupView: View {
     }
 
     @ViewBuilder
-    private func validationMessage(
-        _ message: String?,
-        accessibilityIdentifier: String? = nil
-    ) -> some View {
+    private func fieldValidationMessage(_ message: String?) -> some View {
         if let message {
-            let text = Text(message)
+            Text(message)
                 .font(.footnote)
                 .foregroundStyle(.red)
+        }
+    }
+}
 
-            if let accessibilityIdentifier {
-                text.accessibilityIdentifier(accessibilityIdentifier)
-            } else {
-                text
-            }
+private extension ConnectionSetupView {
+    var primaryActionTitle: String {
+        switch mode {
+        case .newServer:
+            "Connect"
+        case .newWorkspace:
+            "Start"
+        case .editServer(_, let reconnectWorkspaceID):
+            reconnectWorkspaceID == nil ? "Save" : "Connect"
+        case .editWorkspace:
+            "Save"
         }
     }
 }
