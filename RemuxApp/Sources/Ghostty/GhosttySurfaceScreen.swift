@@ -29,6 +29,8 @@ struct GhosttySurfaceScreen: View {
     @State private var isShortcutsSettingsPresented = false
     @State private var shortcutEditorRequest: ShortcutEditorRequest?
     @State private var isAttachmentTrayPresented = false
+    @State private var pendingAttachments: [GhosttyPendingAttachment] = []
+    @State private var attachmentNotice: GhosttyAttachmentNotice?
 
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
@@ -246,6 +248,12 @@ struct GhosttySurfaceScreen: View {
             .overlay(alignment: .bottom) {
                 attachmentTrayLayer()
             }
+            .overlay(alignment: .bottom) {
+                pendingAttachmentLayer()
+            }
+            .overlay(alignment: .bottom) {
+                attachmentNoticeLayer()
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 GhosttyKeyboardChrome(
                     keyboardMode: renderedKeyboardMode,
@@ -257,8 +265,8 @@ struct GhosttySurfaceScreen: View {
                     selectedPaneIndex: interactionProjection.selectedPaneIndex,
                     paneCount: interactionProjection.paneCount,
                     isAttachmentControlActive: isAttachmentTrayPresented,
-                    isAttachmentControlEnabled: true,
-                    pendingAttachmentCount: 0,
+                    isAttachmentControlEnabled: !hasPendingAttachments,
+                    pendingAttachmentCount: pendingAttachments.count,
                     onShowHome: onEditConnection,
                     onShowWindows: showWindows,
                     onShowPanes: showPanes,
@@ -410,6 +418,10 @@ struct GhosttySurfaceScreen: View {
 
     private var isTerminalViewportFrozen: Bool {
         terminalViewportCoordinator.isFrozen
+    }
+
+    private var hasPendingAttachments: Bool {
+        !pendingAttachments.isEmpty
     }
 
     private func showSystemKeyboard() {
@@ -669,6 +681,41 @@ struct GhosttySurfaceScreen: View {
             }
             .transition(.opacity)
             .zIndex(1)
+        }
+    }
+
+    @ViewBuilder
+    private func pendingAttachmentLayer() -> some View {
+        if hasPendingAttachments, !isAttachmentTrayPresented {
+            GhosttyPendingAttachmentPreview(
+                attachments: pendingAttachments,
+                canSend: false,
+                onOpen: {},
+                onSend: {},
+                onRemove: clearPendingAttachments
+            )
+            .padding(.horizontal, 18)
+            .padding(.bottom, 8)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .zIndex(2)
+        }
+    }
+
+    @ViewBuilder
+    private func attachmentNoticeLayer() -> some View {
+        if let attachmentNotice {
+            GhosttyAttachmentNoticeBanner(notice: attachmentNotice)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(3)
+        }
+    }
+
+    private func clearPendingAttachments() {
+        guard hasPendingAttachments else { return }
+        withAnimation(.easeOut(duration: 0.14)) {
+            pendingAttachments.removeAll()
         }
     }
 
