@@ -33,8 +33,7 @@ enum GhosttyAttachmentStagingStore {
         }
 
         let fileManager = FileManager.default
-        let directory = stagingRoot(fileManager: fileManager)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let directory = stagingDirectory(fileManager: fileManager)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let destination = directory.appendingPathComponent(stagedFilename(for: sourceURL))
@@ -46,6 +45,28 @@ enum GhosttyAttachmentStagingStore {
         }
 
         return .file(url: destination)
+    }
+
+    static func stageData(_ data: Data, filename: String) async throws -> URL {
+        try await Task.detached(priority: .utility) {
+            try stageDataSynchronously(data, filename: filename)
+        }.value
+    }
+
+    static func stageDataSynchronously(_ data: Data, filename: String) throws -> URL {
+        let fileManager = FileManager.default
+        let directory = stagingDirectory(fileManager: fileManager)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let destination = directory.appendingPathComponent(stagedFilename(for: filename))
+        do {
+            try data.write(to: destination, options: .atomic)
+        } catch {
+            try? fileManager.removeItem(at: directory)
+            throw error
+        }
+
+        return destination
     }
 
     static func cleanup(_ attachments: [GhosttyPendingAttachment]) {
@@ -72,9 +93,33 @@ enum GhosttyAttachmentStagingStore {
             .appendingPathComponent(directoryName, isDirectory: true)
     }
 
+    private static func stagingDirectory(fileManager: FileManager) -> URL {
+        stagingRoot(fileManager: fileManager)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
     private static func stagedFilename(for sourceURL: URL) -> String {
-        let filename = sourceURL.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
-        return filename.isEmpty ? "Attachment" : filename
+        stagedFilename(for: sourceURL.lastPathComponent)
+    }
+
+    private static func stagedFilename(for filename: String) -> String {
+        let component = filename
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split { character in
+                character == "/" || character == "\\"
+            }
+            .last
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let component,
+              !component.isEmpty,
+              component != ".",
+              component != ".." else {
+            return "Attachment"
+        }
+
+        return component
     }
 }
 

@@ -26,6 +26,46 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourceURL.path))
     }
 
+    func testStageDataWritesIntoRemuxStagingDirectory() throws {
+        let data = Data([0x01, 0x02, 0x03])
+
+        let stagedURL = try GhosttyAttachmentStagingStore.stageDataSynchronously(
+            data,
+            filename: "image.png"
+        )
+
+        XCTAssertTrue(stagedURL.path.hasPrefix(GhosttyAttachmentStagingStore.stagingRoot().path))
+        XCTAssertEqual(stagedURL.lastPathComponent, "image.png")
+        XCTAssertEqual(try Data(contentsOf: stagedURL), data)
+
+        GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagedURL.path))
+    }
+
+    func testStageDataUsesSafeFallbackFilename() throws {
+        let stagedURL = try GhosttyAttachmentStagingStore.stageDataSynchronously(
+            Data(),
+            filename: " ../image.png "
+        )
+
+        XCTAssertEqual(stagedURL.lastPathComponent, "image.png")
+        GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+    }
+
+    func testStageDataFallsBackForEmptyAndDotFilenames() throws {
+        let filenames = ["", "   ", ".", "..", "////"]
+
+        for filename in filenames {
+            let stagedURL = try GhosttyAttachmentStagingStore.stageDataSynchronously(
+                Data(),
+                filename: filename
+            )
+
+            XCTAssertEqual(stagedURL.lastPathComponent, "Attachment")
+            GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+        }
+    }
+
     func testStageFilesCleansPartialCopiesWhenLaterCopyFails() throws {
         let sourceURL = try makeSourceFile(named: "first.txt", data: Data("first".utf8))
         let missingURL = FileManager.default.temporaryDirectory
