@@ -434,6 +434,13 @@ private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable 
         controller.reloadData()
     }
 
+    static func dismantleUIViewController(
+        _ controller: QLPreviewController,
+        coordinator: Coordinator
+    ) {
+        coordinator.stopAccessing()
+    }
+
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
         private var url: URL
         private var accessedURL: URL?
@@ -442,10 +449,6 @@ private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable 
             self.url = url
             super.init()
             startAccessing(url)
-        }
-
-        deinit {
-            stopAccessing()
         }
 
         func update(url: URL) {
@@ -472,7 +475,7 @@ private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable 
             }
         }
 
-        private func stopAccessing() {
+        func stopAccessing() {
             accessedURL?.stopAccessingSecurityScopedResource()
             accessedURL = nil
         }
