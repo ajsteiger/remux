@@ -15,6 +15,22 @@ final class GhosttyAttachmentImagePreviewDataTests: XCTestCase {
         XCTAssertLessThanOrEqual(max(size.width, size.height), CGFloat(GhosttyAttachmentImagePreviewData.maxPixelDimension))
     }
 
+    func testPreviewDataDownsamplesImageFile() throws {
+        let sourceData = try makeJPEGData(width: 1_600, height: 900)
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("jpg")
+        try sourceData.write(to: sourceURL)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let previewData = try XCTUnwrap(
+            GhosttyAttachmentImagePreviewData.makePreviewDataSynchronously(fromFileAt: sourceURL)
+        )
+        let size = try XCTUnwrap(imagePixelSize(previewData))
+
+        XCTAssertLessThanOrEqual(max(size.width, size.height), CGFloat(GhosttyAttachmentImagePreviewData.maxPixelDimension))
+    }
+
     func testInvalidImageDataReturnsNil() {
         XCTAssertNil(GhosttyAttachmentImagePreviewData.makePreviewDataSynchronously(from: Data([0x01, 0x02])))
     }

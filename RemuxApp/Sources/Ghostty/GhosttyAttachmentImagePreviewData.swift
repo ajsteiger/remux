@@ -12,6 +12,12 @@ enum GhosttyAttachmentImagePreviewData {
         }.value
     }
 
+    static func makePreviewData(fromFileAt url: URL) async -> Data? {
+        await Task.detached(priority: .utility) {
+            makePreviewDataSynchronously(fromFileAt: url)
+        }.value
+    }
+
     static func makePreviewDataSynchronously(from data: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, [
             kCGImageSourceShouldCache: false
@@ -19,6 +25,20 @@ enum GhosttyAttachmentImagePreviewData {
             return nil
         }
 
+        return makePreviewDataSynchronously(from: source)
+    }
+
+    static func makePreviewDataSynchronously(fromFileAt url: URL) -> Data? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary) else {
+            return nil
+        }
+
+        return makePreviewDataSynchronously(from: source)
+    }
+
+    private static func makePreviewDataSynchronously(from source: CGImageSource) -> Data? {
         let thumbnailOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
