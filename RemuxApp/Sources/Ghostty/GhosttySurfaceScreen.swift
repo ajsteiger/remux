@@ -373,8 +373,7 @@ struct GhosttySurfaceScreen: View {
                 )
                 .presentationDetents([.medium, .large], selection: $attachmentPreviewDetent)
                 .presentationDragIndicator(.visible)
-                .presentationBackground(.regularMaterial)
-                .presentationCornerRadius(28)
+                .ghosttySelectionSheetPresentationBackground()
                 .ghosttyTerminalChromePresentation(
                     presentation.terminalTheme.terminalChromeColorScheme,
                     chromeStyle: presentation.terminalTheme.terminalChromeStyle
