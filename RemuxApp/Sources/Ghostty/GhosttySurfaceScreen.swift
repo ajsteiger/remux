@@ -166,10 +166,12 @@ struct GhosttySurfaceScreen: View {
                             .background(presentation.terminalTheme.terminalSurfaceBackground)
 
                         GhosttyTerminalResponderRepresentable(
-                            isEnabled: interactionProjection.isInputAvailable,
+                            isEnabled: interactionProjection.isInputAvailable
+                                && !isAttachmentPreviewPresented,
                             wantsFirstResponder: isSelected
                                 && inputCoordinator.keyboardMode.enablesSystemKeyboard
-                                && interactionProjection.isInputAvailable,
+                                && interactionProjection.isInputAvailable
+                                && !isAttachmentPreviewPresented,
                             activationToken: inputCoordinator.terminalActivationToken,
                             keyboardAppearance: presentation.terminalTheme.terminalKeyboardAppearance,
                             sendText: sendTerminalText,
@@ -418,7 +420,10 @@ struct GhosttySurfaceScreen: View {
     }
 
     private var shouldHandleTerminalKeyboardNotification: Bool {
-        isSelected && !isShortcutsSettingsPresented && shortcutEditorRequest == nil
+        isSelected
+            && !isShortcutsSettingsPresented
+            && shortcutEditorRequest == nil
+            && !isAttachmentPreviewPresented
     }
 
     private var selectionSheetBinding: Binding<GhosttySurfaceSelectionSheet?> {
