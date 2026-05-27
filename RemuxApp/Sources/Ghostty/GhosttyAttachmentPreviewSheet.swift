@@ -44,14 +44,13 @@ struct GhosttyAttachmentPreviewSheet: View {
                 stopTextEditing()
             }
         }
-        .accessibilityIdentifier("terminal.attachments.preview.sheet")
     }
 
     private var header: some View {
         HStack(spacing: 12) {
             GhosttyAttachmentPreviewHeader(
                 caption: previewCaption,
-                title: attachments.count == 1 ? "Attachment" : "Attachments"
+                title: previewTitle
             )
 
             Spacer()
@@ -124,7 +123,6 @@ struct GhosttyAttachmentPreviewSheet: View {
     private var attachmentPreview: some View {
         if let attachment = selectedAttachment {
             attachmentPreviewCard(attachment)
-                .accessibilityIdentifier("terminal.attachments.preview.content")
         } else {
             unavailablePreviewCard
         }
@@ -220,29 +218,22 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func linkPreview(_ url: URL) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 11) {
-                Image(systemName: "link")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(chromeStyle.accent)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        chromeStyle.selectedFill,
-                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    )
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(linkTitle(for: url))
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(GhosttySheetPalette.primary)
-                        .lineLimit(1)
-
-                    Text(url.absoluteString)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(GhosttySheetPalette.secondary)
-                        .lineLimit(3)
-                        .textSelection(.enabled)
+            Text(url.absoluteString)
+                .font(.system(size: 13.5, weight: .medium, design: .rounded))
+                .foregroundStyle(GhosttySheetPalette.primary)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(
+                    GhosttyAttachmentPreviewStyle.controlFill,
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 0.75)
                 }
-            }
 
             Spacer(minLength: 0)
 
@@ -364,6 +355,15 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private var previewCaption: String {
         attachments.count == 1 ? "Staged" : "\(attachments.count) staged"
+    }
+
+    private var previewTitle: String {
+        guard attachments.count == 1,
+              let selectedAttachment else {
+            return "Attachments"
+        }
+
+        return selectedAttachment.previewSheetTitle
     }
 
     private func isSelected(_ attachment: GhosttyPendingAttachment) -> Bool {
@@ -548,6 +548,25 @@ private struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable 
         func stopAccessing() {
             accessedURL?.stopAccessingSecurityScopedResource()
             accessedURL = nil
+        }
+    }
+}
+
+private extension GhosttyPendingAttachment {
+    var previewSheetTitle: String {
+        switch kind {
+        case .photo, .pasteboardImage:
+            "Image"
+        case .video:
+            "Video"
+        case .media:
+            "Media"
+        case .file:
+            "File"
+        case .pasteboardLink:
+            "Link"
+        case .pasteboardText:
+            "Text"
         }
     }
 }

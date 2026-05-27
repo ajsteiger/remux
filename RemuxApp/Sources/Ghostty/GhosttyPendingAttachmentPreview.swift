@@ -181,6 +181,7 @@ private struct GhosttyPendingAttachmentStatusBadge: View {
         .overlay {
             Capsule().strokeBorder(chromeStyle.accent.opacity(0.22), lineWidth: 0.75)
         }
+        .accessibilityElement(children: .ignore)
     }
 }
 
