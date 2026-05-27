@@ -231,22 +231,36 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func linkPreview(_ url: URL) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(url.absoluteString)
-                .font(.system(size: 13.5, weight: .medium, design: .rounded))
-                .foregroundStyle(GhosttySheetPalette.primary)
-                .lineLimit(nil)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .background(
-                    GhosttyAttachmentPreviewStyle.controlFill,
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 0.75)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(chromeStyle.accent)
+                        .accessibilityHidden(true)
+
+                    Text(linkTitle(for: url))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(GhosttySheetPalette.primary)
+                        .lineLimit(1)
                 }
+
+                Text(url.absoluteString)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(GhosttySheetPalette.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(
+                GhosttyAttachmentPreviewStyle.controlFill,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 0.75)
+            }
 
             Spacer(minLength: 0)
 
