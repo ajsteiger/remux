@@ -1,3 +1,5 @@
+import UniformTypeIdentifiers
+import UIKit
 import XCTest
 @testable import Remux
 
@@ -17,6 +19,14 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.pendingAttachments.count, 1)
         XCTAssertEqual(snapshot.pendingAttachments.first?.kind, .pasteboardImage)
         XCTAssertEqual(snapshot.pendingAttachments.first?.payload, .imageData(imageData))
+    }
+
+    func testCurrentImageDataReadsRawImageBytes() {
+        let pasteboard = UIPasteboard.withUniqueName()
+        let imageData = Data([0x89, 0x50, 0x4e, 0x47])
+        pasteboard.setData(imageData, forPasteboardType: UTType.png.identifier)
+
+        XCTAssertEqual(GhosttyAttachmentPasteboardSnapshot.currentImageData(pasteboard), imageData)
     }
 
     func testURLWinsOverStringWhenBothAreReadable() {

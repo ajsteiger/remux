@@ -72,6 +72,16 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.payload, .imageData(imageData))
     }
 
+    func testPasteboardImagePlaceholderHasNoPayloadUntilPreviewLoads() {
+        let attachment = GhosttyPendingAttachment.pasteboardImagePlaceholder()
+
+        XCTAssertEqual(attachment.kind, .pasteboardImage)
+        XCTAssertEqual(attachment.title, "Pasted image")
+        XCTAssertEqual(attachment.detail, "Loading preview")
+        XCTAssertEqual(attachment.systemName, "photo")
+        XCTAssertNil(attachment.payload)
+    }
+
     func testPasteboardLinkAttachmentUsesReadableURLDetail() {
         let url = URL(string: "https://example.com/path?q=remux")!
         let attachment = GhosttyPendingAttachment.pasteboardLink(url: url)

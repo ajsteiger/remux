@@ -888,6 +888,17 @@ struct GhosttySurfaceScreen: View {
 
     private func handleAttachmentPasteSelection() {
         let snapshot = GhosttyAttachmentPasteboardSnapshot.current()
+        if snapshot.hasImages {
+            let attachment = GhosttyPendingAttachment.pasteboardImagePlaceholder()
+            withAnimation(.easeOut(duration: 0.16)) {
+                pendingAttachments = [attachment]
+                isAttachmentTrayPresented = false
+                attachmentNotice = nil
+            }
+            loadPasteboardImagePreview(for: attachment.id)
+            return
+        }
+
         let attachments = snapshot.pendingAttachments
         guard !attachments.isEmpty else {
             dismissAttachmentTray()
@@ -899,6 +910,38 @@ struct GhosttySurfaceScreen: View {
             pendingAttachments = attachments
             isAttachmentTrayPresented = false
             attachmentNotice = nil
+        }
+    }
+
+    private func loadPasteboardImagePreview(for attachmentID: UUID) {
+        Task {
+            let sourceData = await MainActor.run {
+                GhosttyAttachmentPasteboardSnapshot.currentImageData()
+            }
+
+            let previewData: Data?
+            if let sourceData {
+                previewData = await GhosttyAttachmentImagePreviewData.makePreviewData(from: sourceData)
+            } else {
+                previewData = nil
+            }
+
+            await MainActor.run {
+                guard pendingAttachments.contains(where: { $0.id == attachmentID }) else { return }
+                guard let previewData else {
+                    updatePendingAttachment(
+                        id: attachmentID,
+                        detail: "Preview unavailable"
+                    )
+                    return
+                }
+
+                updatePendingAttachment(
+                    id: attachmentID,
+                    payload: .imageData(previewData),
+                    detail: "Image"
+                )
+            }
         }
     }
 

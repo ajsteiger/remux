@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import UniformTypeIdentifiers
 
 struct GhosttyAttachmentPasteboardSnapshot: Equatable {
     let hasImages: Bool
@@ -30,10 +31,23 @@ struct GhosttyAttachmentPasteboardSnapshot: Equatable {
             hasImages: pasteboard.hasImages,
             hasURLs: pasteboard.hasURLs,
             hasStrings: pasteboard.hasStrings,
-            imageData: pasteboard.image?.pngData(),
             url: pasteboard.url,
             string: pasteboard.string
         )
+    }
+
+    static func currentImageData(_ pasteboard: UIPasteboard = .general) -> Data? {
+        for pasteboardType in imagePasteboardTypes {
+            guard pasteboard.contains(pasteboardTypes: [pasteboardType]),
+                  let data = pasteboard.data(forPasteboardType: pasteboardType),
+                  !data.isEmpty else {
+                continue
+            }
+
+            return data
+        }
+
+        return nil
     }
 
     var pendingAttachments: [GhosttyPendingAttachment] {
@@ -92,5 +106,15 @@ struct GhosttyAttachmentPasteboardSnapshot: Equatable {
         }
 
         return true
+    }
+
+    private static var imagePasteboardTypes: [String] {
+        [
+            UTType.png.identifier,
+            UTType.jpeg.identifier,
+            UTType.tiff.identifier,
+            "public.heic",
+            "public.image"
+        ]
     }
 }
