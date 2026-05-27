@@ -1747,16 +1747,27 @@ private struct ConnectionServerSummaryRow: View {
     let draft: TmuxConnectionDraft
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(draft.displayName)
-                .lineLimit(1)
+        HStack(spacing: 12) {
+            Image(systemName: "server.rack")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(LibraryHomePalette.rowIconForeground)
+                .frame(width: 30, height: 30)
+                .background(LibraryHomePalette.rowIconSurface, in: RoundedRectangle(cornerRadius: 7))
 
-            Text("\(draft.username)@\(draft.host)\(draft.port == "22" ? "" : ":\(draft.port)")")
-                .font(.footnote.monospaced())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(draft.displayName)
+                    .font(.headline)
+                    .lineLimit(1)
+
+                Text("\(draft.username)@\(draft.host)\(draft.port == "22" ? "" : ":\(draft.port)")")
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
