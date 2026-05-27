@@ -63,6 +63,36 @@ struct GhosttyAttachmentPasteboardSnapshot: Equatable {
         return await GhosttyAttachmentImagePreviewData.makePreviewData(from: data)
     }
 
+    @MainActor
+    static func currentImageAttachment(_ pasteboard: UIPasteboard = .general) async -> GhosttyPendingAttachment? {
+        guard let request = imageProviderRequest(in: pasteboard) else {
+            return nil
+        }
+
+        if let fileURL = await loadImageFileCopy(
+            from: request.provider,
+            typeIdentifier: request.typeIdentifier
+        ) {
+            defer {
+                removeTemporaryImageFileCopy(fileURL)
+            }
+
+            return await makeImageAttachment(fromFileAt: fileURL)
+        }
+
+        guard let data = await loadImageData(
+            from: request.provider,
+            typeIdentifier: request.typeIdentifier
+        ) else {
+            return nil
+        }
+
+        return await makeImageAttachment(
+            from: data,
+            contentType: UTType(request.typeIdentifier)
+        )
+    }
+
     var pendingAttachments: [GhosttyPendingAttachment] {
         if let imageData {
             return [.pasteboardImage(previewData: imageData)]
@@ -192,6 +222,45 @@ struct GhosttyAttachmentPasteboardSnapshot: Equatable {
 
     private static func removeTemporaryImageFileCopy(_ url: URL) {
         try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
+    private static func makeImageAttachment(fromFileAt fileURL: URL) async -> GhosttyPendingAttachment? {
+        async let previewData = GhosttyAttachmentImagePreviewData.makePreviewData(fromFileAt: fileURL)
+
+        do {
+            let stagedURL = try await GhosttyAttachmentStagingStore.stageFileURL(fileURL)
+            guard let previewData = await previewData else {
+                GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+                return nil
+            }
+
+            return .pasteboardImage(fileURL: stagedURL, previewData: previewData)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func makeImageAttachment(
+        from data: Data,
+        contentType: UTType?
+    ) async -> GhosttyPendingAttachment? {
+        async let previewData = GhosttyAttachmentImagePreviewData.makePreviewData(from: data)
+
+        do {
+            let stagedURL = try await GhosttyAttachmentStagingStore.stageImageData(
+                data,
+                title: "Pasted image",
+                contentTypes: contentType.map { [$0] } ?? []
+            )
+            guard let previewData = await previewData else {
+                GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+                return nil
+            }
+
+            return .pasteboardImage(fileURL: stagedURL, previewData: previewData)
+        } catch {
+            return nil
+        }
     }
 
     private static func fileExtension(for url: URL, typeIdentifier: String) -> String {

@@ -36,6 +36,36 @@ final class GhosttyAttachmentPasteboardSnapshotTests: XCTestCase {
         XCTAssertLessThanOrEqual(max(size.width, size.height), CGFloat(GhosttyAttachmentImagePreviewData.maxPixelDimension))
     }
 
+    @MainActor
+    func testCurrentImageAttachmentStagesUploadFileAndPreviewData() async throws {
+        let pasteboard = UIPasteboard.withUniqueName()
+        let imageData = try makeJPEGData(width: 1_600, height: 900)
+        pasteboard.setData(imageData, forPasteboardType: UTType.jpeg.identifier)
+
+        let loadedAttachment = await GhosttyAttachmentPasteboardSnapshot.currentImageAttachment(pasteboard)
+        let attachment = try XCTUnwrap(loadedAttachment)
+        XCTAssertEqual(attachment.kind, .pasteboardImage)
+
+        guard case .file(let stagedURL) = attachment.payload else {
+            return XCTFail("Expected file-backed image payload")
+        }
+        defer {
+            GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+        }
+
+        guard case .imageData(let previewData) = attachment.previewPayload else {
+            return XCTFail("Expected image preview payload")
+        }
+
+        XCTAssertTrue(stagedURL.path.hasPrefix(GhosttyAttachmentStagingStore.stagingRoot().path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
+        XCTAssertGreaterThan(try Data(contentsOf: stagedURL).count, 0)
+        XCTAssertNotNil(attachment.transferSource)
+
+        let size = try XCTUnwrap(imagePixelSize(previewData))
+        XCTAssertLessThanOrEqual(max(size.width, size.height), CGFloat(GhosttyAttachmentImagePreviewData.maxPixelDimension))
+    }
+
     func testURLWinsOverStringWhenBothAreReadable() {
         let url = URL(string: "https://example.com/image.png")!
         let snapshot = GhosttyAttachmentPasteboardSnapshot(
