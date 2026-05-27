@@ -299,6 +299,102 @@ final class GhosttyAttachmentTransferServiceTests: XCTestCase {
     }
 }
 
+final class GhosttyAttachmentTerminalInsertionFormatterTests: XCTestCase {
+    func testFormatsMixedTransferResultsInOrder() {
+        let fileID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let textID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let linkID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+        let linkURL = URL(string: "https://remux.dev/docs")!
+        let result = GhosttyAttachmentTransferResult(
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            items: [
+                .remoteFile(
+                    sourceID: fileID,
+                    path: remotePath(sourceID: fileID, terminalPath: "~/.cache/remux/attachments/report.txt")
+                ),
+                .text(sourceID: textID, text: "note"),
+                .link(sourceID: linkID, url: linkURL),
+            ]
+        )
+
+        XCTAssertEqual(
+            GhosttyAttachmentTerminalInsertionFormatter.insertionText(for: result),
+            "~/.cache/remux/attachments/report.txt note https://remux.dev/docs"
+        )
+    }
+
+    func testEscapesRemoteFilePathsWithWhitespaceAndQuotes() {
+        let sourceID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let result = GhosttyAttachmentTransferResult(
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            items: [
+                .remoteFile(
+                    sourceID: sourceID,
+                    path: remotePath(
+                        sourceID: sourceID,
+                        terminalPath: "~/.cache/remux/attachments/Bob's report.txt"
+                    )
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            GhosttyAttachmentTerminalInsertionFormatter.insertionText(for: result),
+            "~/'.cache/remux/attachments/Bob'\"'\"'s report.txt'"
+        )
+    }
+
+    func testEscapesRemoteFilePathsWithShellMetacharacters() {
+        let sourceID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let result = GhosttyAttachmentTransferResult(
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            items: [
+                .remoteFile(
+                    sourceID: sourceID,
+                    path: remotePath(
+                        sourceID: sourceID,
+                        terminalPath: "~/.cache/remux/attachments/$(report);rm.txt"
+                    )
+                ),
+            ]
+        )
+
+        XCTAssertEqual(
+            GhosttyAttachmentTerminalInsertionFormatter.insertionText(for: result),
+            "~/'.cache/remux/attachments/$(report);rm.txt'"
+        )
+    }
+
+    func testPreservesPastedTextPayload() {
+        let sourceID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let result = GhosttyAttachmentTransferResult(
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            items: [
+                .text(sourceID: sourceID, text: "hello from preview\nsecond line"),
+            ]
+        )
+
+        XCTAssertEqual(
+            GhosttyAttachmentTerminalInsertionFormatter.insertionText(for: result),
+            "hello from preview\nsecond line"
+        )
+    }
+
+    private func remotePath(
+        sourceID: GhosttyAttachmentTransferSource.ID,
+        terminalPath: String
+    ) -> GhosttyRemoteAttachmentPath {
+        GhosttyRemoteAttachmentPath(
+            sourceID: sourceID,
+            filename: URL(fileURLWithPath: terminalPath).lastPathComponent,
+            remoteDirectory: ".cache/remux/attachments/workspace/transfer",
+            remoteTemporaryPath: ".cache/remux/attachments/workspace/transfer/.attachment.part",
+            remoteFinalPath: ".cache/remux/attachments/workspace/transfer/attachment",
+            terminalPath: terminalPath
+        )
+    }
+}
+
 final class GhosttyAttachmentTransferJobBuilderTests: XCTestCase {
     func testBuildsJobFromTransferableAttachments() throws {
         let workspaceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!

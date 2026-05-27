@@ -69,6 +69,55 @@ struct GhosttyAttachmentTransferResult: Equatable, Sendable {
     let items: [Item]
 }
 
+enum GhosttyAttachmentTerminalInsertionFormatter {
+    static func insertionText(for result: GhosttyAttachmentTransferResult) -> String {
+        result.items
+            .map(insertionText(for:))
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func insertionText(for item: GhosttyAttachmentTransferResult.Item) -> String {
+        switch item {
+        case .remoteFile(_, let path):
+            return shellEscapedPath(path.terminalPath)
+        case .text(_, let text):
+            return text
+        case .link(_, let url):
+            return url.absoluteString
+        }
+    }
+
+    private static func shellEscapedPath(_ path: String) -> String {
+        if isShellSafeToken(path) {
+            return path
+        }
+
+        if path.hasPrefix("~/") {
+            return "~/" + singleQuote(String(path.dropFirst(2)))
+        }
+
+        return singleQuote(path)
+    }
+
+    private static func singleQuote(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\"'\"'"))'"
+    }
+
+    private static func isShellSafeToken(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.unicodeScalars.allSatisfy { scalar in
+                CharacterSet.ghosttyAttachmentShellSafeTokenScalars.contains(scalar)
+            }
+    }
+}
+
+private extension CharacterSet {
+    static let ghosttyAttachmentShellSafeTokenScalars = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./~-"
+    )
+}
+
 enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
     case noSources
     case localSourceUnavailable(URL)
