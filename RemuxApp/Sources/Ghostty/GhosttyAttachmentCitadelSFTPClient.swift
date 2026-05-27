@@ -90,3 +90,111 @@ struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
         return status.errorCode == .noSuchFile
     }
 }
+
+struct GhosttyAttachmentCitadelSFTPConnectionConfiguration: Sendable {
+    let host: String
+    let port: Int
+    let authenticationMethod: @Sendable () -> SSHAuthenticationMethod
+    let hostKeyValidator: SSHHostKeyValidator
+    let connectTimeout: TimeAmount
+
+    init(
+        host: String,
+        port: Int = 22,
+        authenticationMethod: @escaping @Sendable () -> SSHAuthenticationMethod,
+        hostKeyValidator: SSHHostKeyValidator,
+        connectTimeout: TimeAmount = .seconds(30)
+    ) {
+        self.host = host
+        self.port = port
+        self.authenticationMethod = authenticationMethod
+        self.hostKeyValidator = hostKeyValidator
+        self.connectTimeout = connectTimeout
+    }
+}
+
+struct GhosttyAttachmentCitadelSFTPClientProvider: GhosttyAttachmentSFTPClientProvider {
+    private let provider: GhosttyAttachmentShortLivedSFTPClientProvider<GhosttyAttachmentCitadelSFTPClient>
+
+    init(
+        configuration: GhosttyAttachmentCitadelSFTPConnectionConfiguration,
+        chunkSize: Int = 64 * 1024,
+        closeFailureHandler: @escaping @Sendable (Error) -> Void = { error in
+            NSLog("Remux attachment Citadel SFTP lease close failed: %@", String(describing: error))
+        }
+    ) {
+        self.provider = GhosttyAttachmentShortLivedSFTPClientProvider(
+            openLease: {
+                try await Self.openLease(
+                    configuration: configuration,
+                    chunkSize: chunkSize
+                )
+            },
+            closeFailureHandler: closeFailureHandler
+        )
+    }
+
+    func withClient<ReturnValue: Sendable>(
+        _ operation: @Sendable (GhosttyAttachmentCitadelSFTPClient) async throws -> ReturnValue
+    ) async throws -> ReturnValue {
+        try await provider.withClient(operation)
+    }
+
+    private static func openLease(
+        configuration: GhosttyAttachmentCitadelSFTPConnectionConfiguration,
+        chunkSize: Int
+    ) async throws -> GhosttyAttachmentSFTPClientLease<GhosttyAttachmentCitadelSFTPClient> {
+        let ssh = try await SSHClient.connect(
+            host: configuration.host,
+            port: configuration.port,
+            authenticationMethod: configuration.authenticationMethod(),
+            hostKeyValidator: configuration.hostKeyValidator,
+            reconnect: .never,
+            connectTimeout: configuration.connectTimeout
+        )
+
+        do {
+            let sftp = try await ssh.openSFTP()
+            let client = GhosttyAttachmentCitadelSFTPClient(
+                sftp: sftp,
+                chunkSize: chunkSize
+            )
+            return GhosttyAttachmentSFTPClientLease(
+                client: client,
+                close: {
+                    try await close(sftp: sftp, ssh: ssh)
+                }
+            )
+        } catch {
+            try? await ssh.close()
+            throw error
+        }
+    }
+
+    private static func close(
+        sftp: SFTPClient,
+        ssh: SSHClient
+    ) async throws {
+        var closeFailure: Error?
+
+        do {
+            try await sftp.close()
+        } catch {
+            closeFailure = error
+        }
+
+        do {
+            try await ssh.close()
+        } catch {
+            if closeFailure == nil {
+                closeFailure = error
+            } else {
+                NSLog("Remux attachment SSH close failed after SFTP close failure: %@", String(describing: error))
+            }
+        }
+
+        if let closeFailure {
+            throw closeFailure
+        }
+    }
+}
