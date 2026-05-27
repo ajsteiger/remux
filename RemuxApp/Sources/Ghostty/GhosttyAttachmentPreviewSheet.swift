@@ -155,6 +155,22 @@ struct GhosttyAttachmentPreviewSheet: View {
                 }
 
                 Spacer(minLength: 0)
+
+                if showsTextEditAffordance(attachment) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(chromeStyle.accent)
+                        .frame(width: 30, height: 30)
+                        .background(
+                            chromeStyle.selectedFill,
+                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .strokeBorder(chromeStyle.accent.opacity(0.18), lineWidth: 0.75)
+                        }
+                        .accessibilityHidden(true)
+                }
             }
 
             attachmentPreviewBody(attachment)
@@ -362,6 +378,15 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func isEditingText(_ attachment: GhosttyPendingAttachment) -> Bool {
         editingTextAttachmentID == attachment.id
+    }
+
+    private func showsTextEditAffordance(_ attachment: GhosttyPendingAttachment) -> Bool {
+        guard !isEditingText(attachment),
+              case .text = attachment.payload else {
+            return false
+        }
+
+        return true
     }
 
     private func startTextEditing(_ attachment: GhosttyPendingAttachment) {
