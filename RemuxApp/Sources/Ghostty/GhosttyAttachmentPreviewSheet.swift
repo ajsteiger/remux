@@ -259,10 +259,8 @@ struct GhosttyAttachmentPreviewSheet: View {
             .autocorrectionDisabled()
             .scrollContentBackground(.hidden)
             .tint(chromeStyle.accent)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(GhosttyAttachmentPreviewStyle.editorFill)
-            .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
             .accessibilityIdentifier("terminal.attachments.text-editor")
     }
 
