@@ -165,6 +165,24 @@ struct GhosttyRemoteAttachmentPathBuilder: Equatable, Sendable {
         return String(sanitized.prefix(180))
     }
 
+    static func directoryPrefixes(for directory: String) -> [String] {
+        let normalized = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return [] }
+
+        let isAbsolute = normalized.hasPrefix("/")
+        let components = normalized
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+        guard !components.isEmpty else { return [] }
+
+        var prefixes: [String] = []
+        for index in components.indices {
+            let prefix = components[...index].joined(separator: "/")
+            prefixes.append(isAbsolute ? "/\(prefix)" : prefix)
+        }
+        return prefixes
+    }
+
     private static func uniqueFilename(
         _ filename: String,
         usedFilenames: inout Set<String>

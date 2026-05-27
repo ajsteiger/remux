@@ -169,6 +169,41 @@ final class GhosttyRemoteAttachmentPathBuilderTests: XCTestCase {
 
         XCTAssertTrue(GhosttyRemoteAttachmentPathBuilder().paths(for: job).isEmpty)
     }
+
+    func testBuildsRelativeDirectoryPrefixes() {
+        XCTAssertEqual(
+            GhosttyRemoteAttachmentPathBuilder.directoryPrefixes(
+                for: ".cache/remux/attachments/workspace/transfer"
+            ),
+            [
+                ".cache",
+                ".cache/remux",
+                ".cache/remux/attachments",
+                ".cache/remux/attachments/workspace",
+                ".cache/remux/attachments/workspace/transfer",
+            ]
+        )
+    }
+
+    func testBuildsAbsoluteDirectoryPrefixes() {
+        XCTAssertEqual(
+            GhosttyRemoteAttachmentPathBuilder.directoryPrefixes(
+                for: "/tmp/remux/uploads/workspace"
+            ),
+            [
+                "/tmp",
+                "/tmp/remux",
+                "/tmp/remux/uploads",
+                "/tmp/remux/uploads/workspace",
+            ]
+        )
+    }
+
+    func testEmptyDirectoryPrefixesAreEmpty() {
+        XCTAssertEqual(GhosttyRemoteAttachmentPathBuilder.directoryPrefixes(for: ""), [])
+        XCTAssertEqual(GhosttyRemoteAttachmentPathBuilder.directoryPrefixes(for: "   "), [])
+        XCTAssertEqual(GhosttyRemoteAttachmentPathBuilder.directoryPrefixes(for: "/"), [])
+    }
 }
 
 final class GhosttyAttachmentTransferSourceTests: XCTestCase {
