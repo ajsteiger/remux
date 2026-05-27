@@ -804,11 +804,13 @@ struct GhosttySurfaceScreen: View {
         }
 
         for (item, attachment) in zip(items, attachments) {
-            loadPhotoPreview(item, for: attachment.id)
+            loadPhotoPreview(item, for: attachment)
         }
     }
 
-    private func loadPhotoPreview(_ item: PhotosPickerItem, for attachmentID: UUID) {
+    private func loadPhotoPreview(_ item: PhotosPickerItem, for attachment: GhosttyPendingAttachment) {
+        let attachmentID = attachment.id
+
         guard item.supportedContentTypes.contains(where: { $0.conforms(to: .image) }) else {
             updatePendingAttachment(
                 id: attachmentID,
@@ -826,20 +828,36 @@ struct GhosttySurfaceScreen: View {
                 } else {
                     previewData = nil
                 }
-                await MainActor.run {
-                    guard let previewData else {
+
+                guard let data, let previewData else {
+                    await MainActor.run {
                         updatePendingAttachment(
                             id: attachmentID,
                             detail: "Preview unavailable"
                         )
-                        return
                     }
+                    return
+                }
 
+                let stagedURL = try await GhosttyAttachmentStagingStore.stageImageData(
+                    data,
+                    title: attachment.title,
+                    contentTypes: item.supportedContentTypes
+                )
+                let didApply = await MainActor.run { () -> Bool in
+                    guard pendingAttachments.contains(where: { $0.id == attachmentID }) else {
+                        return false
+                    }
                     updatePendingAttachment(
                         id: attachmentID,
+                        payload: .file(stagedURL),
                         previewPayload: .imageData(previewData),
                         detail: "Image"
                     )
+                    return true
+                }
+                if !didApply {
+                    GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
                 }
             } catch {
                 await MainActor.run {
