@@ -41,6 +41,23 @@ struct GhosttyAttachmentTransferJob: Equatable, Sendable {
     }
 }
 
+enum GhosttyAttachmentTransferJobBuilder {
+    static func job(
+        workspaceID: SavedWorkspace.ID,
+        attachments: [GhosttyPendingAttachment]
+    ) throws -> GhosttyAttachmentTransferJob {
+        let sources = attachments.compactMap(\.transferSource)
+        guard !sources.isEmpty else {
+            throw GhosttyAttachmentTransferError.noSources
+        }
+
+        return GhosttyAttachmentTransferJob(
+            workspaceID: workspaceID,
+            sources: sources
+        )
+    }
+}
+
 struct GhosttyAttachmentTransferResult: Equatable, Sendable {
     enum Item: Equatable, Sendable {
         case remoteFile(sourceID: GhosttyAttachmentTransferSource.ID, path: GhosttyRemoteAttachmentPath)

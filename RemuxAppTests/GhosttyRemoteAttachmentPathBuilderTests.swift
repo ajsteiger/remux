@@ -258,6 +258,44 @@ final class GhosttyAttachmentTransferServiceTests: XCTestCase {
     }
 }
 
+final class GhosttyAttachmentTransferJobBuilderTests: XCTestCase {
+    func testBuildsJobFromTransferableAttachments() throws {
+        let workspaceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let textAttachment = GhosttyPendingAttachment.pasteboardText("hello")
+        let linkURL = URL(string: "https://example.com")!
+        let linkAttachment = GhosttyPendingAttachment.pasteboardLink(url: linkURL)
+
+        let job = try GhosttyAttachmentTransferJobBuilder.job(
+            workspaceID: workspaceID,
+            attachments: [
+                GhosttyPendingAttachment.pasteboardImage(previewData: Data([0x01])),
+                textAttachment,
+                linkAttachment,
+            ]
+        )
+
+        XCTAssertEqual(job.workspaceID, workspaceID)
+        XCTAssertEqual(job.sources.count, 2)
+        XCTAssertEqual(job.sources[0].attachmentID, textAttachment.id)
+        XCTAssertEqual(job.sources[0].payload, .text("hello"))
+        XCTAssertEqual(job.sources[1].attachmentID, linkAttachment.id)
+        XCTAssertEqual(job.sources[1].payload, .link(linkURL))
+    }
+
+    func testThrowsWhenNoTransferableAttachmentsExist() {
+        XCTAssertThrowsError(
+            try GhosttyAttachmentTransferJobBuilder.job(
+                workspaceID: UUID(),
+                attachments: [
+                    GhosttyPendingAttachment.pasteboardImage(previewData: Data([0x01])),
+                ]
+            )
+        ) { error in
+            XCTAssertEqual(error as? GhosttyAttachmentTransferError, .noSources)
+        }
+    }
+}
+
 private actor FakeGhosttyAttachmentTransferService: GhosttyAttachmentTransferService {
     private let result: Result<GhosttyAttachmentTransferResult, GhosttyAttachmentTransferError>
     private(set) var jobs: [GhosttyAttachmentTransferJob] = []
