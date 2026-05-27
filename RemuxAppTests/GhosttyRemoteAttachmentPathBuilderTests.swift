@@ -239,6 +239,12 @@ final class GhosttyAttachmentTransferSourceTests: XCTestCase {
         XCTAssertEqual(source?.payload, .text("hello"))
     }
 
+    func testEmptyTextAttachmentDoesNotCreateTransferSource() {
+        let attachment = GhosttyPendingAttachment.pasteboardText(" \n\t ")
+
+        XCTAssertNil(attachment.transferSource)
+    }
+
     func testPreviewOnlyAttachmentDoesNotCreateTransferSource() {
         let attachment = GhosttyPendingAttachment.pasteboardImage(previewData: Data([0x01]))
 

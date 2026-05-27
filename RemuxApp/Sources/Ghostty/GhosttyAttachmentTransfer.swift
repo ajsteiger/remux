@@ -534,6 +534,9 @@ extension GhosttyPendingAttachment {
                 payload: .file(url, filename: transferFilename(for: url))
             )
         case .text(let text):
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
             return GhosttyAttachmentTransferSource(
                 attachmentID: id,
                 title: title,
