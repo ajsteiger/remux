@@ -284,6 +284,9 @@ struct GhosttyAttachmentPreviewSheet: View {
             .background(GhosttyAttachmentPreviewStyle.editorFill)
             .clipShape(RoundedRectangle(cornerRadius: GhosttyAttachmentPreviewStyle.previewCornerRadius, style: .continuous))
             .accessibilityIdentifier("terminal.attachments.text-editor")
+            .task(id: pendingTextFocusAttachmentID) {
+                await focusTextEditorOnAppearIfNeeded(attachment.id)
+            }
     }
 
     private var unavailablePreview: some View {
@@ -359,7 +362,6 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func startTextEditing(_ attachment: GhosttyPendingAttachment) {
         selectedAttachmentID = attachment.id
-        editingTextAttachmentID = attachment.id
         pendingTextFocusAttachmentID = attachment.id
 
         guard presentationDetent != .large else {
@@ -385,21 +387,31 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func focusPendingTextEditorIfNeeded() {
         guard let attachmentID = pendingTextFocusAttachmentID,
+              presentationDetent == .large else {
+            return
+        }
+
+        editingTextAttachmentID = attachmentID
+    }
+
+    @MainActor
+    private func focusTextEditorOnAppearIfNeeded(_ attachmentID: UUID) async {
+        guard pendingTextFocusAttachmentID == attachmentID,
               editingTextAttachmentID == attachmentID,
               presentationDetent == .large else {
             return
         }
 
-        DispatchQueue.main.async {
-            guard pendingTextFocusAttachmentID == attachmentID,
-                  editingTextAttachmentID == attachmentID,
-                  presentationDetent == .large else {
-                return
-            }
+        await Task.yield()
 
-            focusedTextAttachmentID = attachmentID
-            pendingTextFocusAttachmentID = nil
+        guard pendingTextFocusAttachmentID == attachmentID,
+              editingTextAttachmentID == attachmentID,
+              presentationDetent == .large else {
+            return
         }
+
+        focusedTextAttachmentID = attachmentID
+        pendingTextFocusAttachmentID = nil
     }
 
     private func ensureEditingAttachmentStillExists() {
