@@ -70,7 +70,7 @@ struct GhosttySurfaceScreen: View {
     private let attachmentTransferServiceFactory: @Sendable () -> any GhosttyAttachmentTransferService
     private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
     private let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
-    private static let maxAttachmentPhotoSelectionCount = 4
+    private static let maxAttachmentPhotoSelectionCount = 10
     private static let tmuxPrefixFlushDelay: Duration = .milliseconds(750)
 
     init(
