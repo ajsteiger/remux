@@ -918,6 +918,8 @@ struct GhosttySurfaceScreen: View {
         switch transferError {
         case .noSources, .localSourceUnavailable:
             return "Attachment is not ready."
+        case .securityScopedSourceUnavailable:
+            return "File needs to be selected again."
         case .remoteDirectoryCreationFailed:
             return "Could not create upload folder."
         case .uploadFailed, .remoteRenameFailed:
@@ -1049,7 +1051,9 @@ struct GhosttySurfaceScreen: View {
 
             Task {
                 do {
-                    let attachments = try await GhosttyAttachmentStagingStore.stageFiles(urls)
+                    let attachments = try await Task.detached(priority: .utility) {
+                        try GhosttyPendingAttachment.securityScopedFiles(urls: urls)
+                    }.value
                     await MainActor.run {
                         guard !attachments.isEmpty else {
                             presentAttachmentNotice("No file selected.")
