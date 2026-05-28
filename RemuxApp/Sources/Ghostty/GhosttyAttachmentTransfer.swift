@@ -3,6 +3,7 @@ import Foundation
 struct GhosttyAttachmentTransferSource: Identifiable, Equatable, Sendable {
     enum Payload: Equatable, Sendable {
         case file(URL, filename: String)
+        case securityScopedFile(GhosttySecurityScopedAttachmentFile)
         case text(String)
         case link(URL)
     }
@@ -121,6 +122,7 @@ private extension CharacterSet {
 enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
     case noSources
     case localSourceUnavailable(URL)
+    case securityScopedSourceUnavailable(String)
     case remotePathResolutionFailed(String)
     case remoteDirectoryCreationFailed(String)
     case uploadFailed(remotePath: String)
@@ -241,7 +243,7 @@ struct GhosttyAttachmentSFTPClientProviderTransferService<Provider: GhosttyAttac
 
 private extension GhosttyAttachmentTransferSource {
     var requiresSFTPTransfer: Bool {
-        if case .file = payload {
+        if payload.transferFilename != nil {
             return true
         }
         return false
@@ -249,12 +251,25 @@ private extension GhosttyAttachmentTransferSource {
 
     var passthroughTransferItem: GhosttyAttachmentTransferResult.Item? {
         switch payload {
-        case .file:
+        case .file, .securityScopedFile:
             return nil
         case .text(let text):
             return .text(sourceID: id, text: text)
         case .link(let url):
             return .link(sourceID: id, url: url)
+        }
+    }
+}
+
+private extension GhosttyAttachmentTransferSource.Payload {
+    var transferFilename: String? {
+        switch self {
+        case .file(_, let filename):
+            return filename
+        case .securityScopedFile(let file):
+            return file.filename
+        case .text, .link:
+            return nil
         }
     }
 }
@@ -281,7 +296,7 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         let uploadPaths = Dictionary(
             uniqueKeysWithValues: pathBuilder.paths(for: job).map { ($0.sourceID, $0) }
         )
-        try validateLocalSources(job.sources, uploadPaths: uploadPaths)
+        try await validateLocalSources(job.sources, uploadPaths: uploadPaths)
 
         var ensuredDirectories = Set<String>()
         var items: [GhosttyAttachmentTransferResult.Item] = []
@@ -294,6 +309,13 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
                 let remotePath = try remotePath(for: source, in: uploadPaths)
                 try await ensureDirectories(for: remotePath, ensuredDirectories: &ensuredDirectories)
                 let uploadedPath = try await upload(localURL, to: remotePath)
+                items.append(.remoteFile(sourceID: source.id, path: uploadedPath))
+            case .securityScopedFile(let file):
+                let remotePath = try remotePath(for: source, in: uploadPaths)
+                try await ensureDirectories(for: remotePath, ensuredDirectories: &ensuredDirectories)
+                let uploadedPath = try await withAccessibleURL(file) { localURL in
+                    try await upload(localURL, to: remotePath)
+                }
                 items.append(.remoteFile(sourceID: source.id, path: uploadedPath))
             case .text(let text):
                 items.append(.text(sourceID: source.id, text: text))
@@ -319,16 +341,22 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
     private func validateLocalSources(
         _ sources: [GhosttyAttachmentTransferSource],
         uploadPaths: [GhosttyAttachmentTransferSource.ID: GhosttyRemoteAttachmentPath]
-    ) throws {
+    ) async throws {
         for source in sources {
             try checkCancellation()
 
-            guard case .file(let localURL, _) = source.payload else {
+            switch source.payload {
+            case .file(let localURL, _):
+                _ = try remotePath(for: source, in: uploadPaths)
+                try validateLocalSource(localURL)
+            case .securityScopedFile(let file):
+                _ = try remotePath(for: source, in: uploadPaths)
+                try await withAccessibleURL(file) { localURL in
+                    try validateLocalSource(localURL)
+                }
+            case .text, .link:
                 continue
             }
-
-            _ = try remotePath(for: source, in: uploadPaths)
-            try validateLocalSource(localURL)
         }
     }
 
@@ -350,6 +378,19 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         )
         guard exists, !isDirectory.boolValue else {
             throw GhosttyAttachmentTransferError.localSourceUnavailable(localURL)
+        }
+    }
+
+    private func withAccessibleURL<ReturnValue: Sendable>(
+        _ file: GhosttySecurityScopedAttachmentFile,
+        operation: (URL) async throws -> ReturnValue
+    ) async throws -> ReturnValue {
+        do {
+            return try await file.withAccessibleURL(operation)
+        } catch GhosttySecurityScopedAttachmentFile.AccessError.bookmarkResolutionFailed(let filename) {
+            throw GhosttyAttachmentTransferError.securityScopedSourceUnavailable(filename)
+        } catch GhosttySecurityScopedAttachmentFile.AccessError.staleBookmark(let filename) {
+            throw GhosttyAttachmentTransferError.securityScopedSourceUnavailable(filename)
         }
     }
 
@@ -497,7 +538,7 @@ struct GhosttyRemoteAttachmentPathBuilder: Equatable, Sendable {
 
         var usedFilenames = Set<String>()
         return job.sources.compactMap { source in
-            guard case .file(_, let filename) = source.payload else { return nil }
+            guard let filename = source.payload.transferFilename else { return nil }
 
             let sanitizedFilename = Self.uniqueFilename(
                 Self.sanitizedFilename(filename),
@@ -601,6 +642,12 @@ extension GhosttyPendingAttachment {
                 attachmentID: id,
                 title: title,
                 payload: .file(url, filename: transferFilename(for: url))
+            )
+        case .securityScopedFile(let file):
+            return GhosttyAttachmentTransferSource(
+                attachmentID: id,
+                title: title,
+                payload: .securityScopedFile(file)
             )
         case .text(let text):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

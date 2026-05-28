@@ -2,10 +2,23 @@ import QuickLook
 import SwiftUI
 
 struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable {
-    let url: URL
+    enum Source: Equatable {
+        case url(URL)
+        case securityScopedFile(GhosttySecurityScopedAttachmentFile)
+    }
+
+    let source: Source
+
+    init(url: URL) {
+        self.source = .url(url)
+    }
+
+    init(file: GhosttySecurityScopedAttachmentFile) {
+        self.source = .securityScopedFile(file)
+    }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(url: url)
+        Coordinator(source: source)
     }
 
     func makeUIViewController(context: Context) -> QLPreviewController {
@@ -15,7 +28,7 @@ struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: QLPreviewController, context: Context) {
-        if context.coordinator.update(url: url) {
+        if context.coordinator.update(source: source) {
             controller.reloadData()
         }
     }
@@ -28,35 +41,53 @@ struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable {
     }
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
-        private var url: URL
+        private var source: Source
+        private var previewURL: URL?
         private var accessedURL: URL?
 
-        init(url: URL) {
-            self.url = url
+        init(source: Source) {
+            self.source = source
             super.init()
-            startAccessing(url)
+            startAccessing(source)
         }
 
-        func update(url: URL) -> Bool {
-            guard self.url != url else { return false }
+        func update(source: Source) -> Bool {
+            guard self.source != source else { return false }
             stopAccessing()
-            self.url = url
-            startAccessing(url)
+            self.source = source
+            startAccessing(source)
             return true
         }
 
         func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
-            1
+            previewURL == nil ? 0 : 1
         }
 
         func previewController(
             _ controller: QLPreviewController,
             previewItemAt index: Int
         ) -> QLPreviewItem {
-            url as NSURL
+            guard let previewURL else {
+                return URL(fileURLWithPath: "/dev/null") as NSURL
+            }
+            return previewURL as NSURL
         }
 
-        private func startAccessing(_ url: URL) {
+        private func startAccessing(_ source: Source) {
+            let url: URL
+            switch source {
+            case .url(let sourceURL):
+                url = sourceURL
+            case .securityScopedFile(let file):
+                do {
+                    url = try file.resolvedURL()
+                } catch {
+                    previewURL = nil
+                    return
+                }
+            }
+
+            previewURL = url
             if url.startAccessingSecurityScopedResource() {
                 accessedURL = url
             }
@@ -65,6 +96,7 @@ struct GhosttyAttachmentQuickLookPreview: UIViewControllerRepresentable {
         func stopAccessing() {
             accessedURL?.stopAccessingSecurityScopedResource()
             accessedURL = nil
+            previewURL = nil
         }
     }
 }

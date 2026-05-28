@@ -155,6 +155,8 @@ struct GhosttyAttachmentPreviewSheet: View {
             imagePreview(data)
         case .file(let url):
             filePreview(url)
+        case .securityScopedFile(let file):
+            filePreview(file)
         case .link(let url):
             linkPreview(url)
         case .text:
@@ -179,6 +181,13 @@ struct GhosttyAttachmentPreviewSheet: View {
 
     private func filePreview(_ url: URL) -> some View {
         GhosttyAttachmentQuickLookPreview(url: url)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ghosttyAttachmentPreviewContentSurface()
+            .accessibilityIdentifier("terminal.attachments.file-preview")
+    }
+
+    private func filePreview(_ file: GhosttySecurityScopedAttachmentFile) -> some View {
+        GhosttyAttachmentQuickLookPreview(file: file)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ghosttyAttachmentPreviewContentSurface()
             .accessibilityIdentifier("terminal.attachments.file-preview")

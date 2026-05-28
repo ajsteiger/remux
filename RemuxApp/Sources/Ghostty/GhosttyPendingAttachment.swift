@@ -1,8 +1,143 @@
 import Foundation
 import UniformTypeIdentifiers
 
+struct GhosttySecurityScopedAttachmentFile: Equatable, Sendable {
+    enum AccessError: Error, Equatable, Sendable {
+        case bookmarkResolutionFailed(String)
+        case staleBookmark(String)
+    }
+
+    let bookmarkData: Data
+    let originalURL: URL
+    let filename: String
+    let fileSize: Int64?
+
+    init(
+        bookmarkData: Data,
+        originalURL: URL,
+        filename: String,
+        fileSize: Int64? = nil
+    ) {
+        self.bookmarkData = bookmarkData
+        self.originalURL = originalURL
+        self.filename = filename
+        self.fileSize = fileSize
+    }
+
+    static func make(url: URL) throws -> GhosttySecurityScopedAttachmentFile {
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let resourceValues = try? url.resourceValues(forKeys: [
+            .fileSizeKey,
+            .localizedNameKey,
+        ])
+        let filename = Self.displayFilename(
+            localizedName: resourceValues?.localizedName,
+            fallbackURL: url
+        )
+        let bookmarkData = try url.bookmarkData(
+            options: bookmarkCreationOptions,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+
+        return GhosttySecurityScopedAttachmentFile(
+            bookmarkData: bookmarkData,
+            originalURL: url,
+            filename: filename,
+            fileSize: resourceValues?.fileSize.map(Int64.init)
+        )
+    }
+
+    func withAccessibleURL<ReturnValue>(
+        _ operation: (URL) throws -> ReturnValue
+    ) throws -> ReturnValue {
+        let resolvedURL = try resolvedURL()
+        let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                resolvedURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return try operation(resolvedURL)
+    }
+
+    func withAccessibleURL<ReturnValue: Sendable>(
+        _ operation: (URL) async throws -> ReturnValue
+    ) async throws -> ReturnValue {
+        let resolvedURL = try resolvedURL()
+        let didAccess = resolvedURL.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                resolvedURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return try await operation(resolvedURL)
+    }
+
+    func resolvedURL() throws -> URL {
+        var isStale = false
+        let resolvedURL: URL
+        do {
+            resolvedURL = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: Self.bookmarkResolutionOptions,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+        } catch {
+            throw AccessError.bookmarkResolutionFailed(filename)
+        }
+
+        guard !isStale else {
+            throw AccessError.staleBookmark(filename)
+        }
+
+        return resolvedURL
+    }
+
+    private static func displayFilename(
+        localizedName: String?,
+        fallbackURL: URL
+    ) -> String {
+        let localizedName = localizedName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let localizedName, !localizedName.isEmpty {
+            return localizedName
+        }
+
+        let filename = fallbackURL.lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return filename.isEmpty ? "File" : filename
+    }
+
+    private static var bookmarkCreationOptions: URL.BookmarkCreationOptions {
+        #if os(iOS)
+        [.minimalBookmark]
+        #else
+        [.withSecurityScope]
+        #endif
+    }
+
+    private static var bookmarkResolutionOptions: URL.BookmarkResolutionOptions {
+        #if os(iOS)
+        []
+        #else
+        [.withSecurityScope]
+        #endif
+    }
+}
+
 enum GhosttyAttachmentPayload: Equatable, Sendable {
     case file(URL)
+    case securityScopedFile(GhosttySecurityScopedAttachmentFile)
     case link(URL)
     case text(String)
 }
@@ -10,6 +145,7 @@ enum GhosttyAttachmentPayload: Equatable, Sendable {
 enum GhosttyAttachmentPreviewPayload: Equatable, Sendable {
     case imageData(Data)
     case file(URL)
+    case securityScopedFile(GhosttySecurityScopedAttachmentFile)
     case link(URL)
     case text(String)
 
@@ -17,6 +153,8 @@ enum GhosttyAttachmentPreviewPayload: Equatable, Sendable {
         switch payload {
         case .file(let url):
             self = .file(url)
+        case .securityScopedFile(let file):
+            self = .securityScopedFile(file)
         case .link(let url):
             self = .link(url)
         case .text(let text):
@@ -112,6 +250,21 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
 
     static func files(urls: [URL]) -> [GhosttyPendingAttachment] {
         urls.map(file(url:))
+    }
+
+    static func securityScopedFile(url: URL) throws -> GhosttyPendingAttachment {
+        let file = try GhosttySecurityScopedAttachmentFile.make(url: url)
+        return GhosttyPendingAttachment(
+            kind: .file,
+            title: file.filename,
+            detail: fileDetail(filename: file.filename),
+            payload: .securityScopedFile(file),
+            previewPayload: .securityScopedFile(file)
+        )
+    }
+
+    static func securityScopedFiles(urls: [URL]) throws -> [GhosttyPendingAttachment] {
+        try urls.map(securityScopedFile(url:))
     }
 
     static func pasteboardImage(previewData: Data) -> GhosttyPendingAttachment {
@@ -218,7 +371,13 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
     }
 
     private static func fileDetail(_ url: URL) -> String {
-        let fileExtension = url.pathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+        fileDetail(filename: url.lastPathComponent)
+    }
+
+    private static func fileDetail(filename: String) -> String {
+        let fileExtension = URL(fileURLWithPath: filename)
+            .pathExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !fileExtension.isEmpty else { return "File" }
         return "\(fileExtension.uppercased()) file"
     }

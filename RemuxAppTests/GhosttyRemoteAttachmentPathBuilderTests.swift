@@ -93,6 +93,38 @@ final class GhosttyRemoteAttachmentPathBuilderTests: XCTestCase {
         ])
     }
 
+    func testBuildsPathForSecurityScopedFileSources() {
+        let workspaceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let transferID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let sourceID = UUID(uuidString: "99999999-8888-7777-6666-555555555555")!
+        let file = GhosttySecurityScopedAttachmentFile(
+            bookmarkData: Data([0x01]),
+            originalURL: URL(fileURLWithPath: "/tmp/report.pdf"),
+            filename: "report.pdf"
+        )
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: workspaceID,
+            transferID: transferID,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    id: sourceID,
+                    title: "Report",
+                    payload: .securityScopedFile(file)
+                ),
+            ]
+        )
+
+        let paths = GhosttyRemoteAttachmentPathBuilder().paths(for: job)
+
+        XCTAssertEqual(paths.count, 1)
+        XCTAssertEqual(paths[0].sourceID, sourceID)
+        XCTAssertEqual(paths[0].filename, "report.pdf")
+        XCTAssertEqual(
+            paths[0].remoteFinalPath,
+            ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.pdf"
+        )
+    }
+
     func testPreservesAbsoluteRemoteRoots() {
         let workspaceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
         let transferID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
@@ -218,6 +250,20 @@ final class GhosttyAttachmentTransferSourceTests: XCTestCase {
         XCTAssertEqual(source?.payload, .file(url, filename: "report.txt"))
     }
 
+    func testSecurityScopedFileAttachmentCreatesTransferSource() throws {
+        let url = try makeTemporaryFile(named: "report.pdf", contents: "hello")
+        let attachment = try GhosttyPendingAttachment.securityScopedFile(url: url)
+
+        let source = attachment.transferSource
+
+        XCTAssertEqual(source?.attachmentID, attachment.id)
+        XCTAssertEqual(source?.title, "report.pdf")
+        guard case .securityScopedFile(let file) = attachment.payload else {
+            return XCTFail("Expected security-scoped payload")
+        }
+        XCTAssertEqual(source?.payload, .securityScopedFile(file))
+    }
+
     func testLinkAttachmentCreatesTransferSource() {
         let url = URL(string: "https://example.com/remux")!
         let attachment = GhosttyPendingAttachment.pasteboardLink(url: url)
@@ -249,6 +295,25 @@ final class GhosttyAttachmentTransferSourceTests: XCTestCase {
         let attachment = GhosttyPendingAttachment.pasteboardImage(previewData: Data([0x01]))
 
         XCTAssertNil(attachment.transferSource)
+    }
+
+    private func makeTemporaryFile(named filename: String, contents: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("remux-attachment-source-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let url = directory.appendingPathComponent(filename)
+        guard let data = contents.data(using: .utf8) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try data.write(to: url)
+        return url
     }
 }
 
@@ -500,6 +565,89 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
                 .link(sourceID: linkID, url: linkURL),
             ]
         ))
+    }
+
+    func testTransfersSecurityScopedFileSource() async throws {
+        let workspaceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let transferID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let sourceID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+        let localURL = try makeTemporaryFile(named: "report.pdf", contents: "hello")
+        let file = try GhosttySecurityScopedAttachmentFile.make(url: localURL)
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: workspaceID,
+            transferID: transferID,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    id: sourceID,
+                    title: "Report",
+                    payload: .securityScopedFile(file)
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let service = GhosttyAttachmentSFTPTransferService(client: client)
+
+        let result = try await service.transfer(job)
+        let events = await client.events
+
+        let remoteDirectory = ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        let temporaryPath = "\(remoteDirectory)/.report.pdf.part"
+        let finalPath = "\(remoteDirectory)/report.pdf"
+        XCTAssertEqual(events, [
+            .ensureDirectory(".cache"),
+            .ensureDirectory(".cache/remux"),
+            .ensureDirectory(".cache/remux/attachments"),
+            .ensureDirectory(".cache/remux/attachments/11111111-2222-3333-4444-555555555555"),
+            .ensureDirectory(remoteDirectory),
+            .upload(localPath: localURL.path, remotePath: temporaryPath),
+            .rename(temporaryPath: temporaryPath, finalPath: finalPath),
+            .realPath(finalPath),
+        ])
+        XCTAssertEqual(result.items, [
+            .remoteFile(
+                sourceID: sourceID,
+                path: GhosttyRemoteAttachmentPath(
+                    sourceID: sourceID,
+                    filename: "report.pdf",
+                    remoteDirectory: remoteDirectory,
+                    remoteTemporaryPath: temporaryPath,
+                    remoteFinalPath: finalPath,
+                    terminalPath: "/Users/remux/.cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.pdf"
+                )
+            ),
+        ])
+    }
+
+    func testRejectsUnresolvableSecurityScopedFileBeforeRemoteOperations() async {
+        let file = GhosttySecurityScopedAttachmentFile(
+            bookmarkData: Data([0xde, 0xad, 0xbe, 0xef]),
+            originalURL: URL(fileURLWithPath: "/tmp/missing.pdf"),
+            filename: "missing.pdf"
+        )
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    title: "Missing",
+                    payload: .securityScopedFile(file)
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let service = GhosttyAttachmentSFTPTransferService(client: client)
+
+        do {
+            _ = try await service.transfer(job)
+            XCTFail("Expected transfer to throw")
+        } catch let error as GhosttyAttachmentTransferError {
+            XCTAssertEqual(error, .securityScopedSourceUnavailable("missing.pdf"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let events = await client.events
+        XCTAssertEqual(events, [])
     }
 
     func testProviderBackedServiceRejectsEmptyJobsBeforeLeasingClient() async {
