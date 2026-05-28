@@ -40,6 +40,27 @@ final class GhosttyTerminalResponderFocusPolicyTests: XCTestCase {
         )
     }
 
+    func testPendingAttachmentPreviewCanOpenOnlyWhenNotSending() {
+        XCTAssertTrue(
+            GhosttyPendingAttachmentInteractionProjection(
+                hasPreviewableAttachments: true,
+                isTransferInProgress: false
+            ).canOpenPreview
+        )
+        XCTAssertFalse(
+            GhosttyPendingAttachmentInteractionProjection(
+                hasPreviewableAttachments: true,
+                isTransferInProgress: true
+            ).canOpenPreview
+        )
+        XCTAssertFalse(
+            GhosttyPendingAttachmentInteractionProjection(
+                hasPreviewableAttachments: false,
+                isTransferInProgress: false
+            ).canOpenPreview
+        )
+    }
+
     func testStagedAttachmentsDoNotSuspendTerminalResponder() {
         let policy = GhosttyTerminalResponderFocusPolicy(
             isSelected: true,

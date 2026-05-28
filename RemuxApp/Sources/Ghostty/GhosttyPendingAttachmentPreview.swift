@@ -5,6 +5,7 @@ struct GhosttyPendingAttachmentPreview: View {
 
     let attachments: [GhosttyPendingAttachment]
     let canSend: Bool
+    let isSending: Bool
     let onOpen: () -> Void
     let onSend: () -> Void
     let onRemove: () -> Void
@@ -54,6 +55,8 @@ struct GhosttyPendingAttachmentPreview: View {
                         .frame(width: 30, height: 30)
                 }
                 .buttonStyle(GhosttyPendingAttachmentRemoveButtonStyle())
+                .disabled(isSending)
+                .opacity(isSending ? 0.58 : 1)
                 .accessibilityLabel(removeAccessibilityLabel)
                 .accessibilityIdentifier("terminal.attachments.pending.remove")
 
@@ -71,8 +74,11 @@ struct GhosttyPendingAttachmentPreview: View {
                     .accessibilityHint("Send attachment.")
                     .accessibilityIdentifier("terminal.attachments.pending.send")
                 } else {
-                    GhosttyPendingAttachmentStatusBadge(chromeStyle: chromeStyle)
-                        .accessibilityLabel("Attachment staged")
+                    GhosttyPendingAttachmentStatusBadge(
+                        chromeStyle: chromeStyle,
+                        isSending: isSending
+                    )
+                        .accessibilityLabel(isSending ? "Attachment sending" : "Attachment staged")
                         .accessibilityIdentifier("terminal.attachments.pending.status")
                 }
             }
@@ -149,7 +155,7 @@ struct GhosttyPendingAttachmentPreview: View {
     }
 
     private var canOpen: Bool {
-        attachments.contains(where: \.isPreviewable)
+        attachments.contains(where: \.isPreviewable) && !isSending
     }
 
     private var openAccessibilityLabel: String {
@@ -163,14 +169,15 @@ struct GhosttyPendingAttachmentPreview: View {
 
 private struct GhosttyPendingAttachmentStatusBadge: View {
     let chromeStyle: GhosttyTerminalChromeStyle
+    let isSending: Bool
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "checkmark")
+            Image(systemName: isSending ? "arrow.up" : "checkmark")
                 .font(.system(size: 10, weight: .bold))
                 .symbolRenderingMode(.monochrome)
 
-            Text("Staged")
+            Text(isSending ? "Sending" : "Staged")
                 .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                 .lineLimit(1)
         }

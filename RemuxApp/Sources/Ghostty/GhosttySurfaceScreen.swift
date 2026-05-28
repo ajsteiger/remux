@@ -23,6 +23,15 @@ struct GhosttyAttachmentInputOwnerProjection: Equatable {
     }
 }
 
+struct GhosttyPendingAttachmentInteractionProjection: Equatable {
+    let hasPreviewableAttachments: Bool
+    let isTransferInProgress: Bool
+
+    var canOpenPreview: Bool {
+        hasPreviewableAttachments && !isTransferInProgress
+    }
+}
+
 struct GhosttySurfaceScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var model: GhosttySurfaceScreenModel
@@ -50,6 +59,7 @@ struct GhosttySurfaceScreen: View {
     @State private var isAttachmentPreviewPresented = false
     @State private var attachmentPreviewDetent: PresentationDetent = .medium
     @State private var pendingAttachments: [GhosttyPendingAttachment] = []
+    @State private var isAttachmentTransferInProgress = false
     @State private var attachmentNotice: GhosttyAttachmentNotice?
 
     private let onReconnect: () -> Void
@@ -502,6 +512,19 @@ struct GhosttySurfaceScreen: View {
         !pendingAttachments.isEmpty
     }
 
+    private var canSendPendingAttachments: Bool {
+        !isAttachmentTransferInProgress
+            && !pendingAttachments.isEmpty
+            && pendingAttachments.allSatisfy { $0.transferSource != nil }
+    }
+
+    private var pendingAttachmentInteractionProjection: GhosttyPendingAttachmentInteractionProjection {
+        GhosttyPendingAttachmentInteractionProjection(
+            hasPreviewableAttachments: pendingAttachments.contains(where: \.isPreviewable),
+            isTransferInProgress: isAttachmentTransferInProgress
+        )
+    }
+
     private func showSystemKeyboard() {
         GhosttyRuntimeTrace.flowEventIfActive("terminal.input", event: "ui.showSystemKeyboard")
         inputCoordinator.showSystemKeyboard(isInputAvailable: isTerminalInputAvailable)
@@ -767,9 +790,10 @@ struct GhosttySurfaceScreen: View {
         if hasPendingAttachments, !isAttachmentTrayPresented {
             GhosttyPendingAttachmentPreview(
                 attachments: pendingAttachments,
-                canSend: false,
+                canSend: canSendPendingAttachments,
+                isSending: isAttachmentTransferInProgress,
                 onOpen: showPendingAttachmentPreview,
-                onSend: {},
+                onSend: sendPendingAttachments,
                 onRemove: clearPendingAttachments
             )
             .padding(.horizontal, 18)
@@ -791,7 +815,7 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func clearPendingAttachments() {
-        guard hasPendingAttachments else { return }
+        guard hasPendingAttachments, !isAttachmentTransferInProgress else { return }
         let attachments = pendingAttachments
         withAnimation(.easeOut(duration: 0.14)) {
             pendingAttachments.removeAll()
@@ -800,9 +824,113 @@ struct GhosttySurfaceScreen: View {
     }
 
     private func showPendingAttachmentPreview() {
-        guard pendingAttachments.contains(where: \.isPreviewable) else { return }
+        guard pendingAttachmentInteractionProjection.canOpenPreview else { return }
         attachmentPreviewDetent = .medium
         isAttachmentPreviewPresented = true
+    }
+
+    private func sendPendingAttachments() {
+        guard canSendPendingAttachments else {
+            presentAttachmentNotice("Attachment is still loading.")
+            return
+        }
+
+        guard isTerminalInputAvailable else {
+            presentAttachmentNotice("Terminal is not ready.")
+            return
+        }
+
+        guard let targetSurfaceID = model.terminalInteractionProjection.selectedActiveLeafID else {
+            presentAttachmentNotice("Terminal is not ready.")
+            return
+        }
+
+        let attachments = pendingAttachments
+        let job: GhosttyAttachmentTransferJob
+        do {
+            job = try GhosttyAttachmentTransferJobBuilder.job(
+                workspaceID: presentation.workspaceID,
+                attachments: attachments
+            )
+        } catch {
+            presentAttachmentNotice("Attachment is still loading.")
+            return
+        }
+
+        isAttachmentTransferInProgress = true
+        isAttachmentPreviewPresented = false
+        attachmentNotice = nil
+
+        Task {
+            let service = attachmentTransferServiceFactory()
+            do {
+                let result = try await service.transfer(job)
+                let insertionText = GhosttyAttachmentTerminalInsertionFormatter.insertionText(for: result)
+                await MainActor.run {
+                    completePendingAttachmentSend(
+                        insertionText: insertionText,
+                        attachments: attachments,
+                        targetSurfaceID: targetSurfaceID
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    handlePendingAttachmentSendFailure(error)
+                }
+            }
+        }
+    }
+
+    private func completePendingAttachmentSend(
+        insertionText: String,
+        attachments: [GhosttyPendingAttachment],
+        targetSurfaceID: UUID
+    ) {
+        isAttachmentTransferInProgress = false
+
+        guard !insertionText.isEmpty else {
+            presentAttachmentNotice("No attachment content to insert.")
+            return
+        }
+
+        guard sendTerminalPaste(insertionText, to: targetSurfaceID) else {
+            presentAttachmentNotice("Could not insert attachment.")
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.14)) {
+            pendingAttachments.removeAll()
+            isAttachmentPreviewPresented = false
+        }
+        GhosttyAttachmentStagingStore.cleanup(attachments)
+    }
+
+    private func handlePendingAttachmentSendFailure(_ error: Error) {
+        isAttachmentTransferInProgress = false
+        presentAttachmentNotice(pendingAttachmentSendFailureMessage(for: error))
+    }
+
+    private func pendingAttachmentSendFailureMessage(for error: Error) -> String {
+        guard let transferError = error as? GhosttyAttachmentTransferError else {
+            return "Attachment send failed."
+        }
+
+        switch transferError {
+        case .noSources, .localSourceUnavailable:
+            return "Attachment is not ready."
+        case .remoteDirectoryCreationFailed:
+            return "Could not create upload folder."
+        case .uploadFailed, .remoteRenameFailed:
+            return "Attachment upload failed."
+        case .remoteTemporaryCleanupFailed, .cancellationCleanupFailed:
+            return "Upload cleanup failed."
+        case .remotePathResolutionFailed:
+            return "Attachment path failed."
+        case .cancelled:
+            return "Attachment send cancelled."
+        case .terminalInsertionFailed:
+            return "Could not insert attachment."
+        }
     }
 
     private func openAttachmentPhotosPicker() {
@@ -1277,6 +1405,14 @@ struct GhosttySurfaceScreen: View {
             text,
             submitPendingPrefix: submitTerminalText(_:),
             sendPaste: { model.sendPasteToFocusedSurface($0).isAccepted }
+        )
+    }
+
+    private func sendTerminalPaste(_ text: String, to surfaceID: UUID) -> Bool {
+        terminalInputController.performPaste(
+            text,
+            submitPendingPrefix: submitTerminalText(_:),
+            sendPaste: { model.sendPaste($0, to: surfaceID).isAccepted }
         )
     }
 
