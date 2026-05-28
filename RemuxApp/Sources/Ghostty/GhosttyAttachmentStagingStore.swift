@@ -1,6 +1,10 @@
 import Foundation
 import UniformTypeIdentifiers
 
+enum GhosttyAttachmentStagingStoreError: Error, Equatable {
+    case urlOutsideStagingRoot(URL)
+}
+
 enum GhosttyAttachmentStagingStore {
     static let directoryName = "RemuxAttachmentStaging"
 
@@ -53,6 +57,37 @@ enum GhosttyAttachmentStagingStore {
             try fileManager.copyItem(at: sourceURL, to: destination)
         } catch {
             try? fileManager.removeItem(at: directory)
+            throw error
+        }
+
+        return destination
+    }
+
+    static func renameStagedFile(_ stagedURL: URL, filename: String) async throws -> URL {
+        try await Task.detached(priority: .utility) {
+            try renameStagedFileSynchronously(stagedURL, filename: filename)
+        }.value
+    }
+
+    static func renameStagedFileSynchronously(_ stagedURL: URL, filename: String) throws -> URL {
+        let fileManager = FileManager.default
+        let root = stagingRoot(fileManager: fileManager)
+        guard isStagedURL(stagedURL, root: root) else {
+            throw GhosttyAttachmentStagingStoreError.urlOutsideStagingRoot(stagedURL)
+        }
+
+        let destination = stagedURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(stagedFilename(for: filename))
+
+        guard destination != stagedURL else {
+            return stagedURL
+        }
+
+        do {
+            try fileManager.moveItem(at: stagedURL, to: destination)
+        } catch {
+            try? fileManager.removeItem(at: stagedURL.deletingLastPathComponent())
             throw error
         }
 
@@ -177,6 +212,12 @@ enum GhosttyAttachmentStagingStore {
         }
 
         return component
+    }
+
+    private static func isStagedURL(_ url: URL, root: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 }
 

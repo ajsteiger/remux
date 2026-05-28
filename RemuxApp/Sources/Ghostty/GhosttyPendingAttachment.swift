@@ -296,6 +296,17 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
         )
     }
 
+    static func photo(title: String, stagedFileURL: URL) async -> GhosttyPendingAttachment? {
+        guard let previewData = await GhosttyAttachmentImagePreviewData.makePreviewData(
+            fromFileAt: stagedFileURL
+        ) else {
+            GhosttyAttachmentStagingStore.cleanupSynchronously([stagedFileURL])
+            return nil
+        }
+
+        return photo(title: title, fileURL: stagedFileURL, previewData: previewData)
+    }
+
     static func pasteboardImagePlaceholder() -> GhosttyPendingAttachment {
         GhosttyPendingAttachment(
             kind: .pasteboardImage,

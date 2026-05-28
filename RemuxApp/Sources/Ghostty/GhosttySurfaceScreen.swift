@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreTransferable
 import GhosttyKit
 import PhotosUI
 import UniformTypeIdentifiers
@@ -992,15 +993,9 @@ struct GhosttySurfaceScreen: View {
 
         Task {
             do {
-                let data = try await item.loadTransferable(type: Data.self)
-                let previewData: Data?
-                if let data {
-                    previewData = await GhosttyAttachmentImagePreviewData.makePreviewData(from: data)
-                } else {
-                    previewData = nil
-                }
-
-                guard let data, let previewData else {
+                guard let transfer = try await item.loadTransferable(
+                    type: GhosttyPhotoPickerTransfer.self
+                ) else {
                     await MainActor.run {
                         updatePendingAttachment(
                             id: attachmentID,
@@ -1010,20 +1005,35 @@ struct GhosttySurfaceScreen: View {
                     return
                 }
 
-                let stagedURL = try await GhosttyAttachmentStagingStore.stageImageData(
-                    data,
-                    title: attachment.title,
-                    contentTypes: item.supportedContentTypes
+                let stagedURL = try await GhosttyAttachmentStagingStore.renameStagedFile(
+                    transfer.stagedURL,
+                    filename: GhosttyAttachmentStagingStore.imageFilename(
+                        title: attachment.title,
+                        contentTypes: item.supportedContentTypes
+                    )
                 )
+                guard let photo = await GhosttyPendingAttachment.photo(
+                    title: attachment.title,
+                    stagedFileURL: stagedURL
+                ) else {
+                    await MainActor.run {
+                        updatePendingAttachment(
+                            id: attachmentID,
+                            detail: "Preview unavailable"
+                        )
+                    }
+                    return
+                }
+
                 let didApply = await MainActor.run { () -> Bool in
                     guard pendingAttachments.contains(where: { $0.id == attachmentID }) else {
                         return false
                     }
                     updatePendingAttachment(
                         id: attachmentID,
-                        payload: .file(stagedURL),
-                        previewPayload: .imageData(previewData),
-                        detail: "Image"
+                        payload: photo.payload,
+                        previewPayload: photo.previewPayload,
+                        detail: photo.detail
                     )
                     return true
                 }
@@ -1869,6 +1879,19 @@ struct GhosttySurfaceScreen: View {
                     closeTmuxPaneFromSelectionSheet(id, topLevelID: topLevelID)
                 }
             )
+        }
+    }
+}
+
+private struct GhosttyPhotoPickerTransfer: Transferable, Sendable {
+    let stagedURL: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .image) { receivedFile in
+            let stagedURL = try await GhosttyAttachmentStagingStore.stageFileURL(
+                receivedFile.file
+            )
+            return GhosttyPhotoPickerTransfer(stagedURL: stagedURL)
         }
     }
 }
