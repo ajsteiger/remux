@@ -6,6 +6,7 @@ struct GhosttyPendingAttachmentPreview: View {
     let attachments: [GhosttyPendingAttachment]
     let canSend: Bool
     let isSending: Bool
+    let sendProgress: GhosttyAttachmentTransferProgress?
     let onOpen: () -> Void
     let onSend: () -> Void
     let onRemove: () -> Void
@@ -76,9 +77,9 @@ struct GhosttyPendingAttachmentPreview: View {
                 } else {
                     GhosttyPendingAttachmentStatusBadge(
                         chromeStyle: chromeStyle,
-                        isSending: isSending
+                        isSending: isSending,
+                        progress: sendProgress
                     )
-                        .accessibilityLabel(isSending ? "Attachment sending" : "Attachment staged")
                         .accessibilityIdentifier("terminal.attachments.pending.status")
                 }
             }
@@ -170,6 +171,7 @@ struct GhosttyPendingAttachmentPreview: View {
 private struct GhosttyPendingAttachmentStatusBadge: View {
     let chromeStyle: GhosttyTerminalChromeStyle
     let isSending: Bool
+    let progress: GhosttyAttachmentTransferProgress?
 
     var body: some View {
         HStack(spacing: 5) {
@@ -177,18 +179,71 @@ private struct GhosttyPendingAttachmentStatusBadge: View {
                 .font(.system(size: 10, weight: .bold))
                 .symbolRenderingMode(.monochrome)
 
-            Text(isSending ? "Sending" : "Staged")
+            Text(label)
                 .font(.system(size: 12.5, weight: .semibold, design: .rounded))
                 .lineLimit(1)
         }
         .foregroundStyle(chromeStyle.accent)
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(chromeStyle.selectedFill, in: Capsule())
+        .background {
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(chromeStyle.selectedFill)
+
+                    if isSending {
+                        Capsule()
+                            .fill(chromeStyle.accent.opacity(0.34))
+                            .frame(width: proxy.size.width * progressFraction)
+                    }
+                }
+            }
+        }
+        .clipShape(Capsule())
         .overlay {
             Capsule().strokeBorder(chromeStyle.accent.opacity(0.22), lineWidth: 0.75)
         }
         .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+        .animation(.easeOut(duration: 0.18), value: progressFraction)
+        .animation(.easeOut(duration: 0.12), value: isSending)
+    }
+
+    private var label: String {
+        guard isSending else {
+            return "Staged"
+        }
+
+        guard let progress, progress.totalUploadCount > 1 else {
+            return "Sending"
+        }
+
+        return "Sending \(progress.currentUploadIndex) of \(progress.totalUploadCount)"
+    }
+
+    private var progressFraction: Double {
+        guard isSending, let progress else {
+            return 0
+        }
+        return progress.currentUploadFraction
+    }
+
+    private var accessibilityLabel: String {
+        guard isSending else {
+            return "Attachment staged"
+        }
+
+        guard let progress else {
+            return "Attachment sending"
+        }
+
+        let percent = Int((progress.currentUploadFraction * 100).rounded())
+        if progress.totalUploadCount > 1 {
+            return "Attachment sending \(progress.currentUploadIndex) of \(progress.totalUploadCount), \(percent) percent"
+        }
+
+        return "Attachment sending, \(percent) percent"
     }
 }
 

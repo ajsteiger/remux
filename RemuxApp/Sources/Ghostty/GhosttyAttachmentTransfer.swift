@@ -70,6 +70,25 @@ struct GhosttyAttachmentTransferResult: Equatable, Sendable {
     let items: [Item]
 }
 
+struct GhosttyAttachmentTransferProgress: Equatable, Sendable {
+    let completedUploadCount: Int
+    let totalUploadCount: Int
+    let currentUploadIndex: Int
+    let currentUploadedBytes: Int64
+    let currentTotalBytes: Int64
+
+    var currentUploadFraction: Double {
+        guard currentTotalBytes > 0 else {
+            return 1
+        }
+
+        return min(1, max(0, Double(currentUploadedBytes) / Double(currentTotalBytes)))
+    }
+}
+
+typealias GhosttyAttachmentTransferProgressHandler = @Sendable (GhosttyAttachmentTransferProgress) async -> Void
+typealias GhosttyAttachmentFileUploadProgressHandler = @Sendable (Int64) async -> Void
+
 enum GhosttyAttachmentTerminalInsertionFormatter {
     static func insertionText(for result: GhosttyAttachmentTransferResult) -> String {
         result.items
@@ -134,13 +153,20 @@ enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
 }
 
 protocol GhosttyAttachmentTransferService: Sendable {
-    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult
+    func transfer(
+        _ job: GhosttyAttachmentTransferJob,
+        progress: @escaping GhosttyAttachmentTransferProgressHandler
+    ) async throws -> GhosttyAttachmentTransferResult
 }
 
 protocol GhosttyAttachmentSFTPClient: Sendable {
     func realPath(atPath path: String) async throws -> String
     func ensureDirectoryExists(atPath path: String) async throws
-    func uploadFile(from localURL: URL, to remotePath: String) async throws
+    func uploadFile(
+        from localURL: URL,
+        to remotePath: String,
+        progress: @escaping GhosttyAttachmentFileUploadProgressHandler
+    ) async throws
     func renameFile(from temporaryPath: String, to finalPath: String) async throws
     func removeFileIfExists(atPath path: String) async throws
 }
@@ -219,7 +245,10 @@ struct GhosttyAttachmentSFTPClientProviderTransferService<Provider: GhosttyAttac
         self.pathBuilder = pathBuilder
     }
 
-    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult {
+    func transfer(
+        _ job: GhosttyAttachmentTransferJob,
+        progress: @escaping GhosttyAttachmentTransferProgressHandler
+    ) async throws -> GhosttyAttachmentTransferResult {
         guard !job.sources.isEmpty else {
             throw GhosttyAttachmentTransferError.noSources
         }
@@ -236,7 +265,7 @@ struct GhosttyAttachmentSFTPClientProviderTransferService<Provider: GhosttyAttac
                 client: client,
                 pathBuilder: pathBuilder
             )
-            return try await service.transfer(job)
+            return try await service.transfer(job, progress: progress)
         }
     }
 }
@@ -286,13 +315,17 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         self.pathBuilder = pathBuilder
     }
 
-    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult {
+    func transfer(
+        _ job: GhosttyAttachmentTransferJob,
+        progress: @escaping GhosttyAttachmentTransferProgressHandler
+    ) async throws -> GhosttyAttachmentTransferResult {
         guard !job.sources.isEmpty else {
             throw GhosttyAttachmentTransferError.noSources
         }
 
         try checkCancellation()
 
+        let totalUploadCount = job.sources.filter(\.requiresSFTPTransfer).count
         let uploadPaths = Dictionary(
             uniqueKeysWithValues: pathBuilder.paths(for: job).map { ($0.sourceID, $0) }
         )
@@ -300,6 +333,7 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
 
         var ensuredDirectories = Set<String>()
         var items: [GhosttyAttachmentTransferResult.Item] = []
+        var completedUploadCount = 0
 
         for source in job.sources {
             try checkCancellation()
@@ -308,14 +342,28 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
             case .file(let localURL, _):
                 let remotePath = try remotePath(for: source, in: uploadPaths)
                 try await ensureDirectories(for: remotePath, ensuredDirectories: &ensuredDirectories)
-                let uploadedPath = try await upload(localURL, to: remotePath)
+                let uploadedPath = try await upload(
+                    localURL,
+                    to: remotePath,
+                    completedUploadCount: completedUploadCount,
+                    totalUploadCount: totalUploadCount,
+                    progress: progress
+                )
+                completedUploadCount += 1
                 items.append(.remoteFile(sourceID: source.id, path: uploadedPath))
             case .securityScopedFile(let file):
                 let remotePath = try remotePath(for: source, in: uploadPaths)
                 try await ensureDirectories(for: remotePath, ensuredDirectories: &ensuredDirectories)
                 let uploadedPath = try await withAccessibleURL(file) { localURL in
-                    try await upload(localURL, to: remotePath)
+                    try await upload(
+                        localURL,
+                        to: remotePath,
+                        completedUploadCount: completedUploadCount,
+                        totalUploadCount: totalUploadCount,
+                        progress: progress
+                    )
                 }
+                completedUploadCount += 1
                 items.append(.remoteFile(sourceID: source.id, path: uploadedPath))
             case .text(let text):
                 items.append(.text(sourceID: source.id, text: text))
@@ -381,6 +429,18 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         }
     }
 
+    private func localFileSize(_ localURL: URL) throws -> Int64 {
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: localURL.path)
+            guard let size = attributes[.size] as? NSNumber else {
+                return 0
+            }
+            return max(0, size.int64Value)
+        } catch {
+            throw GhosttyAttachmentTransferError.localSourceUnavailable(localURL)
+        }
+    }
+
     private func withAccessibleURL<ReturnValue: Sendable>(
         _ file: GhosttySecurityScopedAttachmentFile,
         operation: (URL) async throws -> ReturnValue
@@ -413,12 +473,35 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
 
     private func upload(
         _ localURL: URL,
-        to remotePath: GhosttyRemoteAttachmentPath
+        to remotePath: GhosttyRemoteAttachmentPath,
+        completedUploadCount: Int,
+        totalUploadCount: Int,
+        progress: @escaping GhosttyAttachmentTransferProgressHandler
     ) async throws -> GhosttyRemoteAttachmentPath {
+        let totalBytes = try localFileSize(localURL)
+        let currentUploadIndex = completedUploadCount + 1
+
+        await progress(GhosttyAttachmentTransferProgress(
+            completedUploadCount: completedUploadCount,
+            totalUploadCount: totalUploadCount,
+            currentUploadIndex: currentUploadIndex,
+            currentUploadedBytes: 0,
+            currentTotalBytes: totalBytes
+        ))
+
         do {
             try await client.uploadFile(
                 from: localURL,
-                to: remotePath.remoteTemporaryPath
+                to: remotePath.remoteTemporaryPath,
+                progress: { uploadedBytes in
+                    await progress(GhosttyAttachmentTransferProgress(
+                        completedUploadCount: completedUploadCount,
+                        totalUploadCount: totalUploadCount,
+                        currentUploadIndex: currentUploadIndex,
+                        currentUploadedBytes: min(max(0, uploadedBytes), totalBytes),
+                        currentTotalBytes: totalBytes
+                    ))
+                }
             )
         } catch is CancellationError {
             try await cleanupAfterCancellation(remotePath.remoteTemporaryPath)

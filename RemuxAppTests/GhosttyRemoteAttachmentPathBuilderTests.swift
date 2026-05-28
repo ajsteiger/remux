@@ -339,7 +339,7 @@ final class GhosttyAttachmentTransferServiceTests: XCTestCase {
         )
         let service = FakeGhosttyAttachmentTransferService(result: .success(expectedResult))
 
-        let result = try await service.transfer(job)
+        let result = try await service.transfer(job, progress: { _ in })
         let jobs = await service.jobs
 
         XCTAssertEqual(result, expectedResult)
@@ -354,7 +354,7 @@ final class GhosttyAttachmentTransferServiceTests: XCTestCase {
         let service = FakeGhosttyAttachmentTransferService(result: .failure(.noSources))
 
         do {
-            _ = try await service.transfer(job)
+            _ = try await service.transfer(job, progress: { _ in })
             XCTFail("Expected transfer to throw")
         } catch let error as GhosttyAttachmentTransferError {
             XCTAssertEqual(error, .noSources)
@@ -531,7 +531,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let client = FakeGhosttyAttachmentSFTPClient()
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
-        let result = try await service.transfer(job)
+        let result = try await service.transfer(job, progress: { _ in })
         let events = await client.events
 
         let remoteDirectory = ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -587,7 +587,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let client = FakeGhosttyAttachmentSFTPClient()
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
-        let result = try await service.transfer(job)
+        let result = try await service.transfer(job, progress: { _ in })
         let events = await client.events
 
         let remoteDirectory = ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -618,6 +618,80 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         ])
     }
 
+    func testReportsPerFileProgressForSequentialUploads() async throws {
+        let workspaceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let transferID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let firstURL = try makeTemporaryFile(named: "first.txt", contents: "abcd")
+        let secondURL = try makeTemporaryFile(named: "second.txt", contents: "abcdefgh")
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: workspaceID,
+            transferID: transferID,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    title: "First",
+                    payload: .file(firstURL, filename: "first.txt")
+                ),
+                GhosttyAttachmentTransferSource(
+                    title: "Second",
+                    payload: .file(secondURL, filename: "second.txt")
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient()
+        let progressRecorder = GhosttyAttachmentProgressRecorder()
+        let service = GhosttyAttachmentSFTPTransferService(client: client)
+
+        _ = try await service.transfer(job) { progress in
+            await progressRecorder.append(progress)
+        }
+
+        let progresses = await progressRecorder.progresses
+        XCTAssertEqual(progresses, [
+            GhosttyAttachmentTransferProgress(
+                completedUploadCount: 0,
+                totalUploadCount: 2,
+                currentUploadIndex: 1,
+                currentUploadedBytes: 0,
+                currentTotalBytes: 4
+            ),
+            GhosttyAttachmentTransferProgress(
+                completedUploadCount: 0,
+                totalUploadCount: 2,
+                currentUploadIndex: 1,
+                currentUploadedBytes: 2,
+                currentTotalBytes: 4
+            ),
+            GhosttyAttachmentTransferProgress(
+                completedUploadCount: 0,
+                totalUploadCount: 2,
+                currentUploadIndex: 1,
+                currentUploadedBytes: 4,
+                currentTotalBytes: 4
+            ),
+            GhosttyAttachmentTransferProgress(
+                completedUploadCount: 1,
+                totalUploadCount: 2,
+                currentUploadIndex: 2,
+                currentUploadedBytes: 0,
+                currentTotalBytes: 8
+            ),
+            GhosttyAttachmentTransferProgress(
+                completedUploadCount: 1,
+                totalUploadCount: 2,
+                currentUploadIndex: 2,
+                currentUploadedBytes: 4,
+                currentTotalBytes: 8
+            ),
+            GhosttyAttachmentTransferProgress(
+                completedUploadCount: 1,
+                totalUploadCount: 2,
+                currentUploadIndex: 2,
+                currentUploadedBytes: 8,
+                currentTotalBytes: 8
+            ),
+        ])
+    }
+
     func testRejectsUnresolvableSecurityScopedFileBeforeRemoteOperations() async {
         let file = GhosttySecurityScopedAttachmentFile(
             bookmarkData: Data([0xde, 0xad, 0xbe, 0xef]),
@@ -638,7 +712,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
         do {
-            _ = try await service.transfer(job)
+            _ = try await service.transfer(job, progress: { _ in })
             XCTFail("Expected transfer to throw")
         } catch let error as GhosttyAttachmentTransferError {
             XCTAssertEqual(error, .securityScopedSourceUnavailable("missing.pdf"))
@@ -661,7 +735,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let service = GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
 
         do {
-            _ = try await service.transfer(job)
+            _ = try await service.transfer(job, progress: { _ in })
             XCTFail("Expected transfer to throw")
         } catch let error as GhosttyAttachmentTransferError {
             XCTAssertEqual(error, .noSources)
@@ -700,7 +774,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let provider = FakeGhosttyAttachmentSFTPClientProvider(client: client)
         let service = GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
 
-        let result = try await service.transfer(job)
+        let result = try await service.transfer(job, progress: { _ in })
         let leaseCount = await provider.leaseCount
         let events = await client.events
 
@@ -733,7 +807,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let provider = FakeGhosttyAttachmentSFTPClientProvider(client: client)
         let service = GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
 
-        let result = try await service.transfer(job)
+        let result = try await service.transfer(job, progress: { _ in })
         let leaseCount = await provider.leaseCount
         let events = await client.events
 
@@ -841,7 +915,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
         do {
-            _ = try await service.transfer(job)
+            _ = try await service.transfer(job, progress: { _ in })
             XCTFail("Expected transfer to throw")
         } catch let error as GhosttyAttachmentTransferError {
             XCTAssertEqual(error, .localSourceUnavailable(localURL))
@@ -874,7 +948,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
         do {
-            _ = try await service.transfer(job)
+            _ = try await service.transfer(job, progress: { _ in })
             XCTFail("Expected transfer to throw")
         } catch let error as GhosttyAttachmentTransferError {
             XCTAssertEqual(error, .localSourceUnavailable(missingURL))
@@ -905,7 +979,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let client = FakeGhosttyAttachmentSFTPClient(failure: .realPath)
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
-        let result = try await service.transfer(job)
+        let result = try await service.transfer(job, progress: { _ in })
 
         let remoteDirectory = ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         let temporaryPath = "\(remoteDirectory)/.report.txt.part"
@@ -963,7 +1037,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
 
         let task = Task {
             await gate.wait()
-            return try await service.transfer(job)
+            return try await service.transfer(job, progress: { _ in })
         }
         task.cancel()
         await gate.open()
@@ -997,7 +1071,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
         do {
-            _ = try await service.transfer(job)
+            _ = try await service.transfer(job, progress: { _ in })
             XCTFail("Expected transfer to throw")
         } catch let error as GhosttyAttachmentTransferError {
             XCTAssertEqual(error, .uploadFailed(
@@ -1029,7 +1103,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         let service = GhosttyAttachmentSFTPTransferService(client: client)
 
         do {
-            _ = try await service.transfer(job)
+            _ = try await service.transfer(job, progress: { _ in })
             XCTFail("Expected transfer to throw")
         } catch let error as GhosttyAttachmentTransferError {
             XCTAssertEqual(error, .remoteRenameFailed(
@@ -1095,6 +1169,14 @@ private actor AsyncGate {
     }
 }
 
+private actor GhosttyAttachmentProgressRecorder {
+    private(set) var progresses: [GhosttyAttachmentTransferProgress] = []
+
+    func append(_ progress: GhosttyAttachmentTransferProgress) {
+        progresses.append(progress)
+    }
+}
+
 private actor FakeGhosttyAttachmentTransferService: GhosttyAttachmentTransferService {
     private let result: Result<GhosttyAttachmentTransferResult, GhosttyAttachmentTransferError>
     private(set) var jobs: [GhosttyAttachmentTransferJob] = []
@@ -1103,7 +1185,10 @@ private actor FakeGhosttyAttachmentTransferService: GhosttyAttachmentTransferSer
         self.result = result
     }
 
-    func transfer(_ job: GhosttyAttachmentTransferJob) async throws -> GhosttyAttachmentTransferResult {
+    func transfer(
+        _ job: GhosttyAttachmentTransferJob,
+        progress: @escaping GhosttyAttachmentTransferProgressHandler
+    ) async throws -> GhosttyAttachmentTransferResult {
         jobs.append(job)
         return try result.get()
     }
@@ -1172,11 +1257,21 @@ private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {
         }
     }
 
-    func uploadFile(from localURL: URL, to remotePath: String) async throws {
+    func uploadFile(
+        from localURL: URL,
+        to remotePath: String,
+        progress: @escaping GhosttyAttachmentFileUploadProgressHandler
+    ) async throws {
         events.append(.upload(localPath: localURL.path, remotePath: remotePath))
         if failure == .upload {
             throw FakeGhosttyAttachmentSFTPFailure.upload
         }
+        let attributes = try FileManager.default.attributesOfItem(atPath: localURL.path)
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        if size > 1 {
+            await progress(size / 2)
+        }
+        await progress(size)
     }
 
     func renameFile(from temporaryPath: String, to finalPath: String) async throws {

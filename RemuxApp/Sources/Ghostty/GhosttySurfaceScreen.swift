@@ -60,6 +60,7 @@ struct GhosttySurfaceScreen: View {
     @State private var attachmentPreviewDetent: PresentationDetent = .medium
     @State private var pendingAttachments: [GhosttyPendingAttachment] = []
     @State private var isAttachmentTransferInProgress = false
+    @State private var attachmentTransferProgress: GhosttyAttachmentTransferProgress?
     @State private var attachmentNotice: GhosttyAttachmentNotice?
 
     private let onReconnect: () -> Void
@@ -792,6 +793,7 @@ struct GhosttySurfaceScreen: View {
                 attachments: pendingAttachments,
                 canSend: canSendPendingAttachments,
                 isSending: isAttachmentTransferInProgress,
+                sendProgress: attachmentTransferProgress,
                 onOpen: showPendingAttachmentPreview,
                 onSend: sendPendingAttachments,
                 onRemove: clearPendingAttachments
@@ -858,13 +860,18 @@ struct GhosttySurfaceScreen: View {
         }
 
         isAttachmentTransferInProgress = true
+        attachmentTransferProgress = nil
         isAttachmentPreviewPresented = false
         attachmentNotice = nil
 
         Task {
             let service = attachmentTransferServiceFactory()
             do {
-                let result = try await service.transfer(job)
+                let result = try await service.transfer(job) { progress in
+                    await MainActor.run {
+                        attachmentTransferProgress = progress
+                    }
+                }
                 let insertionText = GhosttyAttachmentTerminalInsertionFormatter.insertionText(for: result)
                 await MainActor.run {
                     completePendingAttachmentSend(
@@ -887,6 +894,7 @@ struct GhosttySurfaceScreen: View {
         targetSurfaceID: UUID
     ) {
         isAttachmentTransferInProgress = false
+        attachmentTransferProgress = nil
 
         guard !insertionText.isEmpty else {
             presentAttachmentNotice("No attachment content to insert.")
@@ -907,6 +915,7 @@ struct GhosttySurfaceScreen: View {
 
     private func handlePendingAttachmentSendFailure(_ error: Error) {
         isAttachmentTransferInProgress = false
+        attachmentTransferProgress = nil
         presentAttachmentNotice(pendingAttachmentSendFailureMessage(for: error))
     }
 

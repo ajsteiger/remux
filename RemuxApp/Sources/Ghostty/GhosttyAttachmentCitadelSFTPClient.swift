@@ -36,7 +36,11 @@ struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
         }
     }
 
-    func uploadFile(from localURL: URL, to remotePath: String) async throws {
+    func uploadFile(
+        from localURL: URL,
+        to remotePath: String,
+        progress: @escaping GhosttyAttachmentFileUploadProgressHandler
+    ) async throws {
         let localFile = try FileHandle(forReadingFrom: localURL)
         defer {
             try? localFile.close()
@@ -63,6 +67,7 @@ struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
                     maxInFlight: Self.pipelinedWriteMaxInFlight
                 )
                 offset += UInt64(data.count)
+                await progress(Int64(min(offset, UInt64(Int64.max))))
             }
 
             try await remoteFile.close()
