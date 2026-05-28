@@ -518,6 +518,41 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         return result
     }
 
+    @discardableResult
+    func sendPaste(
+        _ text: String,
+        to surfaceID: UUID
+    ) -> FocusedTerminalInputSubmissionResult {
+        let start = GhosttyRuntimeTrace.nowNanos()
+        GhosttyRuntimeTrace.diagnostics(
+            "model.sendPaste target=\(ghosttyDiagnosticShortID(surfaceID)) bytes=\(text.lengthOfBytes(using: .utf8)) \(surfaceRegistry.diagnosticSelectionSummary())"
+        )
+        let result = preflightTargetedTerminalInputSubmission(to: surfaceID)
+            ?? surfaceRegistry.sendPaste(text, to: surfaceID)
+        if !result.isAccepted {
+            updateDebugStatusForTerminalInputResult(result, kind: "paste")
+            switch result {
+            case .noFocusedSurface:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendPaste rejected missingTarget elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .transportUnavailable:
+                GhosttyRuntimeTrace.latency(
+                    "model.sendPaste rejected transportUnavailable elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+                )
+                return result
+            case .accepted, .empty, .surfaceRejected:
+                break
+            }
+        }
+        GhosttyRuntimeTrace.latency(
+            "model.sendPaste target=\(ghosttyDiagnosticShortID(surfaceID)) end result=\(result) accepted=\(result.isAccepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
+        )
+
+        return result
+    }
+
     func readSelectionFromFocusedSurface() -> GhosttyTerminalSelectionReadOutcome {
         let outcome = surfaceRegistry.readSelectionFromFocusedSurface()
         if outcome.selectedText == nil {
@@ -1169,6 +1204,21 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         }
 
         guard TerminalReadinessProjector.canSubmitInput(readiness) else {
+            return .transportUnavailable
+        }
+
+        return nil
+    }
+
+    private func preflightTargetedTerminalInputSubmission(to surfaceID: UUID) -> FocusedTerminalInputSubmissionResult? {
+        guard surfaceRegistry.managedSurface(for: surfaceID) != nil else {
+            return .noFocusedSurface
+        }
+
+        guard TerminalReadinessProjector.isTransportAvailableForInput(
+            phase: terminalRuntimePhase,
+            transportWritable: hostSessionSlot.isWriteAvailable
+        ) else {
             return .transportUnavailable
         }
 

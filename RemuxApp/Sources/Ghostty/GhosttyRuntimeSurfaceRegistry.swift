@@ -982,6 +982,41 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
     }
 
     @MainActor
+    @discardableResult
+    func sendPaste(
+        _ text: String,
+        to surfaceID: UUID
+    ) -> FocusedTerminalInputSubmissionResult {
+        guard !text.isEmpty else { return .empty }
+        let start = GhosttyRuntimeTrace.latencyEnabled ? GhosttyRuntimeTrace.nowNanos() : nil
+        let router = surfaceInputRouter
+        guard let surface = router.managedSurface(for: surfaceID) else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendPaste drop-missing-surface bytes=\(text.lengthOfBytes(using: .utf8)) target=\(ghosttyDiagnosticShortID(surfaceID)) \(diagnosticSelectionSummary())"
+            )
+            updateDebugSummary("paste dropped: target surface missing")
+            return .noFocusedSurface
+        }
+
+        GhosttyRuntimeTrace.diagnostics(
+            "sendPaste begin bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
+        let result = router.sendPaste(text, to: surface)
+        guard result.isAccepted else {
+            GhosttyRuntimeTrace.diagnostics(
+                "sendPaste rejected result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+            )
+            updateDebugSummary("paste rejected by target surface")
+            return result
+        }
+
+        GhosttyRuntimeTrace.diagnostics(
+            "sendPaste accepted result=\(result) bytes=\(text.lengthOfBytes(using: .utf8)) elapsed_ms=\(elapsedMilliseconds(from: start)) target={\(surface.diagnosticSummary())} \(diagnosticSelectionSummary())"
+        )
+        return result
+    }
+
+    @MainActor
     func readSelectionFromFocusedSurface() -> GhosttyTerminalSelectionReadOutcome {
         let outcome = surfaceInputRouter.readSelectionFromFocusedSurface()
         guard outcome != .noFocusedSurface else {

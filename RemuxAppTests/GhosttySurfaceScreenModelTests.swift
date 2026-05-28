@@ -1910,6 +1910,28 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(secondPaste, ["first\nsecond"])
     }
 
+    func testTargetedPasteRoutesToRequestedManagedSurface() {
+        let registry = GhosttyRuntimeSurfaceRegistry()
+        var firstPaste: [String] = []
+        var secondPaste: [String] = []
+        let first = Self.managedSurface(sendPaste: {
+            firstPaste.append($0)
+            return true
+        })
+        let second = Self.managedSurface(sendPaste: {
+            secondPaste.append($0)
+            return true
+        })
+
+        registry.registerManagedSurfaceForTesting(first)
+        registry.registerManagedSurfaceForTesting(second)
+        registry.selectSurface(second.id)
+
+        XCTAssertEqual(registry.sendPaste("attachment", to: first.id), .accepted)
+        XCTAssertEqual(firstPaste, ["attachment"])
+        XCTAssertTrue(secondPaste.isEmpty)
+    }
+
     func testPasteWithoutFocusedSurfaceIsRejected() {
         let registry = GhosttyRuntimeSurfaceRegistry()
 
@@ -3657,6 +3679,12 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
             .accepted
         )
         XCTAssertEqual(receivedPaste, ["paste"])
+
+        XCTAssertEqual(
+            model.sendPaste("targeted paste", to: managed.id),
+            .accepted
+        )
+        XCTAssertEqual(receivedPaste, ["paste", "targeted paste"])
 
         let event = GhosttySurfaceKeyEvent(keyCode: .tab)
         XCTAssertEqual(

@@ -55,6 +55,19 @@ struct GhosttyRuntimeSurfaceInputRouter {
         return surface.sendPaste(text)
     }
 
+    @discardableResult
+    func sendPaste(
+        _ text: String,
+        to surfaceID: UUID
+    ) -> FocusedTerminalInputSubmissionResult {
+        guard !text.isEmpty else { return .empty }
+        guard let surface = managedSurface(for: surfaceID) else {
+            return .noFocusedSurface
+        }
+
+        return sendPaste(text, to: surface)
+    }
+
     func readSelectionFromFocusedSurface() -> GhosttyTerminalSelectionReadOutcome {
         guard let surfaceID = selectedActiveLeafID else { return .noFocusedSurface }
         return readSelection(from: surfaceID)

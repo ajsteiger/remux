@@ -39,6 +39,34 @@ final class GhosttyRuntimeSurfaceInputRouterTests: XCTestCase {
         XCTAssertEqual(receivedKeys, [key])
     }
 
+    func testTargetedPasteRoutesToRequestedSurface() {
+        let firstID = UUID()
+        let secondID = UUID()
+        var firstPaste: [String] = []
+        var secondPaste: [String] = []
+        let first = Self.managedSurface(
+            handleValue: 0x1101,
+            id: firstID,
+            sendPaste: {
+                firstPaste.append($0)
+                return true
+            }
+        )
+        let second = Self.managedSurface(
+            handleValue: 0x1102,
+            id: secondID,
+            sendPaste: {
+                secondPaste.append($0)
+                return true
+            }
+        )
+        let router = Self.router(selectedActiveLeafID: secondID, surfaces: [first, second])
+
+        XCTAssertEqual(router.sendPaste("attachment", to: firstID), .accepted)
+        XCTAssertEqual(firstPaste, ["attachment"])
+        XCTAssertTrue(secondPaste.isEmpty)
+    }
+
     func testFocusedTerminalInputHandlesEmptyMissingFocusAndRejection() {
         var inputCalls = 0
         var pasteCalls = 0
