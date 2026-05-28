@@ -293,7 +293,16 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     private var previewCaption: String {
-        attachments.count == 1 ? "Staged" : "\(attachments.count) staged"
+        let readyCount = attachments.filter { $0.transferSource != nil }.count
+        guard readyCount == attachments.count else {
+            guard attachments.contains(where: \.isPreparingTransferSource) else {
+                return attachments.count == 1 ? "Unavailable" : "\(readyCount) of \(attachments.count) ready"
+            }
+
+            return attachments.count == 1 ? "Preparing" : "\(readyCount) of \(attachments.count) ready"
+        }
+
+        return attachments.count == 1 ? "Ready to send" : "\(attachments.count) ready"
     }
 
     private var previewTitle: String {

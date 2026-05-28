@@ -79,6 +79,7 @@ struct GhosttyPendingAttachmentPreview: View {
                     GhosttyPendingAttachmentStatusBadge(
                         chromeStyle: chromeStyle,
                         isSending: isSending,
+                        isPreparing: isPreparing,
                         uploadCount: sendUploadCount,
                         progress: sendProgress
                     )
@@ -161,6 +162,10 @@ struct GhosttyPendingAttachmentPreview: View {
         attachments.contains(where: \.isPreviewable) && !isSending
     }
 
+    private var isPreparing: Bool {
+        attachments.contains(where: \.isPreparingTransferSource)
+    }
+
     private var openAccessibilityLabel: String {
         attachments.count > 1 ? "Preview attachments" : "Preview attachment"
     }
@@ -173,14 +178,27 @@ struct GhosttyPendingAttachmentPreview: View {
 private struct GhosttyPendingAttachmentStatusBadge: View {
     let chromeStyle: GhosttyTerminalChromeStyle
     let isSending: Bool
+    let isPreparing: Bool
     let uploadCount: Int
     let progress: GhosttyAttachmentTransferProgress?
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: isSending ? "arrow.up" : "checkmark")
-                .font(.system(size: 10, weight: .bold))
-                .symbolRenderingMode(.monochrome)
+            if isSending {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 10, weight: .bold))
+                    .symbolRenderingMode(.monochrome)
+            } else if isPreparing {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(chromeStyle.accent)
+                    .frame(width: 10, height: 10)
+            } else {
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .symbolRenderingMode(.monochrome)
+                    .frame(width: 10, height: 10)
+            }
 
             Text(label)
                 .font(.system(size: 12.5, weight: .semibold, design: .rounded))
@@ -215,7 +233,7 @@ private struct GhosttyPendingAttachmentStatusBadge: View {
 
     private var label: String {
         guard isSending else {
-            return "Staged"
+            return isPreparing ? "Preparing" : "Unavailable"
         }
 
         let totalUploadCount = progress?.totalUploadCount ?? uploadCount
@@ -236,7 +254,7 @@ private struct GhosttyPendingAttachmentStatusBadge: View {
 
     private var accessibilityLabel: String {
         guard isSending else {
-            return "Attachment staged"
+            return isPreparing ? "Attachment preparing" : "Attachment unavailable"
         }
 
         let totalUploadCount = progress?.totalUploadCount ?? uploadCount

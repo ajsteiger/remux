@@ -720,6 +720,10 @@ struct GhosttyRemoteAttachmentPathBuilder: Equatable, Sendable {
 }
 
 extension GhosttyPendingAttachment {
+    var isPreparingTransferSource: Bool {
+        payload == nil && detail == "Loading preview"
+    }
+
     var transferSource: GhosttyAttachmentTransferSource? {
         guard let payload else { return nil }
 
