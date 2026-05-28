@@ -16,8 +16,8 @@ settings:
       - -lc++
 packages:
   Citadel:
-    url: https://github.com/orlandos-nl/Citadel.git
-    exactVersion: 0.12.1
+    url: https://github.com/h3nock/Citadel.git
+    revision: e0ec2798f9bccf0c248ce01d1572d760211b8a41
 targets:
   Remux:
     type: application

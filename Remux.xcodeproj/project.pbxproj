@@ -1371,10 +1371,10 @@
 /* Begin XCRemoteSwiftPackageReference section */
 		47811F8DDBDD37CBCC69753C /* XCRemoteSwiftPackageReference "Citadel" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/orlandos-nl/Citadel.git";
+			repositoryURL = "https://github.com/h3nock/Citadel.git";
 			requirement = {
-				kind = exactVersion;
-				version = 0.12.1;
+				kind = revision;
+				revision = e0ec2798f9bccf0c248ce01d1572d760211b8a41;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

@@ -3,12 +3,14 @@ import Foundation
 import NIO
 
 struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
+    private static let pipelinedWriteMaxInFlight = 64
+
     let sftp: SFTPClient
     let chunkSize: Int
 
     init(
         sftp: SFTPClient,
-        chunkSize: Int = 64 * 1024
+        chunkSize: Int = 4 * 1024 * 1024
     ) {
         self.sftp = sftp
         self.chunkSize = chunkSize
@@ -55,7 +57,11 @@ struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
 
                 var buffer = ByteBufferAllocator().buffer(capacity: data.count)
                 buffer.writeBytes(data)
-                try await remoteFile.write(buffer, at: offset)
+                try await remoteFile.writePipelined(
+                    buffer,
+                    at: offset,
+                    maxInFlight: Self.pipelinedWriteMaxInFlight
+                )
                 offset += UInt64(data.count)
             }
 
@@ -122,7 +128,7 @@ struct GhosttyAttachmentCitadelSFTPClientProvider: GhosttyAttachmentSFTPClientPr
 
     init(
         configuration: GhosttyAttachmentCitadelSFTPConnectionConfiguration,
-        chunkSize: Int = 64 * 1024,
+        chunkSize: Int = 4 * 1024 * 1024,
         closeFailureHandler: @escaping @Sendable (Error) -> Void = { error in
             NSLog("Remux attachment Citadel SFTP lease close failed: %@", String(describing: error))
         }
