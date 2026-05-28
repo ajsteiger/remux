@@ -320,6 +320,7 @@ struct GhosttyKeyboardViewportCompletionProjection: Equatable {
         isDismissSystemKeyboardRequested: Bool,
         isInputAvailable: Bool,
         isSelectionSheetPresented: Bool,
+        isTransientInputOwnerPresented: Bool = false,
         isAwaitingSystemKeyboardPresentation: Bool,
         isSceneActive: Bool
     ) {
@@ -338,6 +339,7 @@ struct GhosttyKeyboardViewportCompletionProjection: Equatable {
                     isDismissSystemKeyboardRequested: isDismissSystemKeyboardRequested,
                     isInputAvailable: isInputAvailable,
                     isSelectionSheetPresented: isSelectionSheetPresented,
+                    isTransientInputOwnerPresented: isTransientInputOwnerPresented,
                     isAwaitingSystemKeyboardPresentation: isAwaitingSystemKeyboardPresentation,
                     isSceneActive: isSceneActive
                 )
@@ -385,6 +387,7 @@ enum GhosttyKeyboardViewportTransitionPolicy {
         isDismissSystemKeyboardRequested: Bool,
         isInputAvailable: Bool,
         isSelectionSheetPresented: Bool,
+        isTransientInputOwnerPresented: Bool = false,
         isAwaitingSystemKeyboardPresentation: Bool,
         isSceneActive: Bool
     ) -> Bool {
@@ -392,6 +395,7 @@ enum GhosttyKeyboardViewportTransitionPolicy {
             && !isDismissSystemKeyboardRequested
             && isInputAvailable
             && !isSelectionSheetPresented
+            && !isTransientInputOwnerPresented
             && !isAwaitingSystemKeyboardPresentation
             && isSceneActive
     }

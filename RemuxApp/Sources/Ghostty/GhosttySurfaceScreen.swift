@@ -82,6 +82,12 @@ struct GhosttySurfaceScreen: View {
             let screenProjection = model.terminalScreenPresentationProjection
             let readiness = screenProjection.readiness
             let interactionProjection = screenProjection.interaction
+            let terminalResponderFocusPolicy = GhosttyTerminalResponderFocusPolicy(
+                isSelected: isSelected,
+                keyboardMode: inputCoordinator.keyboardMode,
+                isInputAvailable: interactionProjection.isInputAvailable,
+                isTransientInputOwnerPresented: isAttachmentInputOwnerPresented
+            )
             let paneSelectionSheetTopologyProjection = model.paneSelectionSheetTopologyProjection(
                 topLevelID: selectionSheet?.paneTopLevelIDForTopologyValidation
             )
@@ -175,12 +181,8 @@ struct GhosttySurfaceScreen: View {
                             .background(presentation.terminalTheme.terminalSurfaceBackground)
 
                         GhosttyTerminalResponderRepresentable(
-                            isEnabled: interactionProjection.isInputAvailable
-                                && !isAttachmentPreviewPresented,
-                            wantsFirstResponder: isSelected
-                                && inputCoordinator.keyboardMode.enablesSystemKeyboard
-                                && interactionProjection.isInputAvailable
-                                && !isAttachmentPreviewPresented,
+                            isEnabled: terminalResponderFocusPolicy.isResponderEnabled,
+                            wantsFirstResponder: terminalResponderFocusPolicy.wantsFirstResponder,
                             activationToken: inputCoordinator.terminalActivationToken,
                             keyboardAppearance: presentation.terminalTheme.terminalKeyboardAppearance,
                             sendText: sendTerminalText,
@@ -457,6 +459,13 @@ struct GhosttySurfaceScreen: View {
             && !isShortcutsSettingsPresented
             && shortcutEditorRequest == nil
             && !isAttachmentPreviewPresented
+    }
+
+    private var isAttachmentInputOwnerPresented: Bool {
+        isAttachmentTrayPresented
+            || isAttachmentPhotosPickerPresented
+            || isAttachmentFileImporterPresented
+            || isAttachmentPreviewPresented
     }
 
     private var selectionSheetBinding: Binding<GhosttySurfaceSelectionSheet?> {
@@ -1519,6 +1528,7 @@ struct GhosttySurfaceScreen: View {
             isDismissSystemKeyboardRequested: inputCoordinator.isDismissSystemKeyboardRequested,
             isInputAvailable: isTerminalInputAvailable,
             isSelectionSheetPresented: selectionSheet != nil,
+            isTransientInputOwnerPresented: isAttachmentInputOwnerPresented,
             isAwaitingSystemKeyboardPresentation: isAwaitingSystemKeyboardPresentation,
             isSceneActive: scenePhase == .active
         )

@@ -585,4 +585,20 @@ final class GhosttyKeyboardVisibilityProjectionTests: XCTestCase {
 
         XCTAssertEqual(projection.action, .recoverUnexpectedHide)
     }
+
+    func testCompletionProjectionDoesNotRecoverUnexpectedHideWhileTransientInputOwnerIsPresented() {
+        let projection = GhosttyKeyboardViewportCompletionProjection(
+            eventTarget: .hidden,
+            activeTransitionTarget: .shown,
+            keyboardMode: .system,
+            isDismissSystemKeyboardRequested: false,
+            isInputAvailable: true,
+            isSelectionSheetPresented: false,
+            isTransientInputOwnerPresented: true,
+            isAwaitingSystemKeyboardPresentation: false,
+            isSceneActive: true
+        )
+
+        XCTAssertEqual(projection.action, .ignorePolicy)
+    }
 }
