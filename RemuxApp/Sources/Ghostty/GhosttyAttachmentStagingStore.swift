@@ -162,8 +162,16 @@ enum GhosttyAttachmentStagingStore {
             .appendingPathComponent(directoryName, isDirectory: true)
     }
 
-    static func imageFilename(title: String, contentTypes: [UTType]) -> String {
-        let stem = filenameStem(from: title)
+    static func imageFilename(
+        title: String,
+        contentTypes: [UTType],
+        uniqueID: UUID? = nil
+    ) -> String {
+        var stem = filenameStem(from: title)
+        if let uniqueID {
+            stem += "-\(uniqueID.uuidString.prefix(8).lowercased())"
+        }
+
         guard let fileExtension = contentTypes
             .lazy
             .compactMap(\.preferredFilenameExtension)

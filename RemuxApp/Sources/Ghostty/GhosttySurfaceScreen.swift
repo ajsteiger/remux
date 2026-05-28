@@ -1009,7 +1009,8 @@ struct GhosttySurfaceScreen: View {
                     transfer.stagedURL,
                     filename: GhosttyAttachmentStagingStore.imageFilename(
                         title: attachment.title,
-                        contentTypes: item.supportedContentTypes
+                        contentTypes: item.supportedContentTypes,
+                        uniqueID: attachment.id
                     )
                 )
                 guard let photo = await GhosttyPendingAttachment.photo(

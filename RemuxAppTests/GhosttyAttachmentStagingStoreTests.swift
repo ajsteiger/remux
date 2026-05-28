@@ -151,6 +151,19 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
         GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
     }
 
+    func testImageFilenameCanIncludeUniqueID() {
+        let uniqueID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+
+        XCTAssertEqual(
+            GhosttyAttachmentStagingStore.imageFilename(
+                title: "Photo 1",
+                contentTypes: [.jpeg],
+                uniqueID: uniqueID
+            ),
+            "photo-1-aaaaaaaa.jpeg"
+        )
+    }
+
     func testImageFilenameFallsBackForBlankTitleAndUnknownExtension() {
         XCTAssertEqual(
             GhosttyAttachmentStagingStore.imageFilename(title: "  ", contentTypes: []),
