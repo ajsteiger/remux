@@ -10,6 +10,19 @@ struct GhosttySurfaceScreenPresentation: Equatable {
     let terminalTheme: TerminalTheme
 }
 
+struct GhosttyAttachmentInputOwnerProjection: Equatable {
+    let isTrayPresented: Bool
+    let isPhotosPickerPresented: Bool
+    let isFileImporterPresented: Bool
+    let isPreviewPresented: Bool
+
+    var isTransientInputOwnerPresented: Bool {
+        isPhotosPickerPresented
+            || isFileImporterPresented
+            || isPreviewPresented
+    }
+}
+
 struct GhosttySurfaceScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var model: GhosttySurfaceScreenModel
@@ -462,10 +475,12 @@ struct GhosttySurfaceScreen: View {
     }
 
     private var isAttachmentInputOwnerPresented: Bool {
-        isAttachmentTrayPresented
-            || isAttachmentPhotosPickerPresented
-            || isAttachmentFileImporterPresented
-            || isAttachmentPreviewPresented
+        GhosttyAttachmentInputOwnerProjection(
+            isTrayPresented: isAttachmentTrayPresented,
+            isPhotosPickerPresented: isAttachmentPhotosPickerPresented,
+            isFileImporterPresented: isAttachmentFileImporterPresented,
+            isPreviewPresented: isAttachmentPreviewPresented
+        ).isTransientInputOwnerPresented
     }
 
     private var selectionSheetBinding: Binding<GhosttySurfaceSelectionSheet?> {

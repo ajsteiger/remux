@@ -2,6 +2,44 @@ import XCTest
 @testable import Remux
 
 final class GhosttyTerminalResponderFocusPolicyTests: XCTestCase {
+    func testAttachmentTrayDoesNotBecomeTransientInputOwner() {
+        let projection = GhosttyAttachmentInputOwnerProjection(
+            isTrayPresented: true,
+            isPhotosPickerPresented: false,
+            isFileImporterPresented: false,
+            isPreviewPresented: false
+        )
+
+        XCTAssertFalse(projection.isTransientInputOwnerPresented)
+    }
+
+    func testAttachmentModalPresentationsBecomeTransientInputOwners() {
+        XCTAssertTrue(
+            GhosttyAttachmentInputOwnerProjection(
+                isTrayPresented: false,
+                isPhotosPickerPresented: true,
+                isFileImporterPresented: false,
+                isPreviewPresented: false
+            ).isTransientInputOwnerPresented
+        )
+        XCTAssertTrue(
+            GhosttyAttachmentInputOwnerProjection(
+                isTrayPresented: false,
+                isPhotosPickerPresented: false,
+                isFileImporterPresented: true,
+                isPreviewPresented: false
+            ).isTransientInputOwnerPresented
+        )
+        XCTAssertTrue(
+            GhosttyAttachmentInputOwnerProjection(
+                isTrayPresented: false,
+                isPhotosPickerPresented: false,
+                isFileImporterPresented: false,
+                isPreviewPresented: true
+            ).isTransientInputOwnerPresented
+        )
+    }
+
     func testStagedAttachmentsDoNotSuspendTerminalResponder() {
         let policy = GhosttyTerminalResponderFocusPolicy(
             isSelected: true,
