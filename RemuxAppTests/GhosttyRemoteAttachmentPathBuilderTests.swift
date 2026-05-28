@@ -480,6 +480,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
             .ensureDirectory(remoteDirectory),
             .upload(localPath: localURL.path, remotePath: temporaryPath),
             .rename(temporaryPath: temporaryPath, finalPath: finalPath),
+            .realPath(finalPath),
         ])
         XCTAssertEqual(result, GhosttyAttachmentTransferResult(
             transferID: transferID,
@@ -493,7 +494,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
                         remoteDirectory: remoteDirectory,
                         remoteTemporaryPath: temporaryPath,
                         remoteFinalPath: finalPath,
-                        terminalPath: "~/.cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.txt"
+                        terminalPath: "/Users/remux/.cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.txt"
                     )
                 ),
                 .link(sourceID: linkID, url: linkURL),
@@ -590,7 +591,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
 
         XCTAssertEqual(leaseCount, 1)
         XCTAssertEqual(result.items.count, 1)
-        XCTAssertEqual(Array(events.suffix(2)), [
+        XCTAssertEqual(Array(events.suffix(3)), [
             .upload(
                 localPath: localURL.path,
                 remotePath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/.report.txt.part"
@@ -599,6 +600,7 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
                 temporaryPath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/.report.txt.part",
                 finalPath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.txt"
             ),
+            .realPath(".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.txt"),
         ])
     }
 
@@ -734,6 +736,66 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
 
         let events = await client.events
         XCTAssertEqual(events, [])
+    }
+
+    func testFallsBackToResolvedUploadPathWhenRemoteFinalPathResolutionFails() async throws {
+        let localURL = try makeTemporaryFile(named: "report.txt", contents: "hello")
+        let workspaceID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+        let transferID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
+        let sourceID = UUID(uuidString: "bbbbbbbb-cccc-dddd-eeee-ffffffffffff")!
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: workspaceID,
+            transferID: transferID,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    id: sourceID,
+                    title: "Report",
+                    payload: .file(localURL, filename: "report.txt")
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient(failure: .realPath)
+        let service = GhosttyAttachmentSFTPTransferService(client: client)
+
+        let result = try await service.transfer(job)
+
+        let remoteDirectory = ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        let temporaryPath = "\(remoteDirectory)/.report.txt.part"
+        let finalPath = "\(remoteDirectory)/report.txt"
+        XCTAssertEqual(result, GhosttyAttachmentTransferResult(
+            transferID: transferID,
+            items: [
+                .remoteFile(
+                    sourceID: sourceID,
+                    path: GhosttyRemoteAttachmentPath(
+                        sourceID: sourceID,
+                        filename: "report.txt",
+                        remoteDirectory: remoteDirectory,
+                        remoteTemporaryPath: temporaryPath,
+                        remoteFinalPath: finalPath,
+                        terminalPath: "~/.cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/report.txt"
+                    )
+                ),
+            ]
+        ))
+
+        let events = await client.events
+        XCTAssertEqual(events, [
+            .ensureDirectory(".cache"),
+            .ensureDirectory(".cache/remux"),
+            .ensureDirectory(".cache/remux/attachments"),
+            .ensureDirectory(".cache/remux/attachments/11111111-2222-3333-4444-555555555555"),
+            .ensureDirectory(".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            .upload(
+                localPath: localURL.path,
+                remotePath: temporaryPath
+            ),
+            .rename(
+                temporaryPath: temporaryPath,
+                finalPath: finalPath
+            ),
+            .realPath(finalPath),
+        ])
     }
 
     func testMapsCancellationBeforeRemoteOperations() async throws {
@@ -900,6 +962,7 @@ private actor FakeGhosttyAttachmentTransferService: GhosttyAttachmentTransferSer
 }
 
 private enum FakeGhosttyAttachmentSFTPFailure: Error, Equatable, Sendable {
+    case realPath
     case ensureDirectory
     case upload
     case rename
@@ -929,6 +992,7 @@ private actor FakeGhosttyAttachmentSFTPLeaseState {
 
 private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {
     enum Event: Equatable, Sendable {
+        case realPath(String)
         case ensureDirectory(String)
         case upload(localPath: String, remotePath: String)
         case rename(temporaryPath: String, finalPath: String)
@@ -940,6 +1004,17 @@ private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {
 
     init(failure: FakeGhosttyAttachmentSFTPFailure? = nil) {
         self.failure = failure
+    }
+
+    func realPath(atPath path: String) async throws -> String {
+        events.append(.realPath(path))
+        if failure == .realPath {
+            throw FakeGhosttyAttachmentSFTPFailure.realPath
+        }
+        if path.hasPrefix("/") {
+            return path
+        }
+        return "/Users/remux/\(path)"
     }
 
     func ensureDirectoryExists(atPath path: String) async throws {

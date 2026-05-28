@@ -136,6 +136,7 @@ protocol GhosttyAttachmentTransferService: Sendable {
 }
 
 protocol GhosttyAttachmentSFTPClient: Sendable {
+    func realPath(atPath path: String) async throws -> String
     func ensureDirectoryExists(atPath path: String) async throws
     func uploadFile(from localURL: URL, to remotePath: String) async throws
     func renameFile(from temporaryPath: String, to finalPath: String) async throws
@@ -275,10 +276,11 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
             throw GhosttyAttachmentTransferError.noSources
         }
 
+        try checkCancellation()
+
         let uploadPaths = Dictionary(
             uniqueKeysWithValues: pathBuilder.paths(for: job).map { ($0.sourceID, $0) }
         )
-        try checkCancellation()
         try validateLocalSources(job.sources, uploadPaths: uploadPaths)
 
         var ensuredDirectories = Set<String>()
@@ -291,8 +293,8 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
             case .file(let localURL, _):
                 let remotePath = try remotePath(for: source, in: uploadPaths)
                 try await ensureDirectories(for: remotePath, ensuredDirectories: &ensuredDirectories)
-                try await upload(localURL, to: remotePath)
-                items.append(.remoteFile(sourceID: source.id, path: remotePath))
+                let uploadedPath = try await upload(localURL, to: remotePath)
+                items.append(.remoteFile(sourceID: source.id, path: uploadedPath))
             case .text(let text):
                 items.append(.text(sourceID: source.id, text: text))
             case .link(let url):
@@ -371,7 +373,7 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
     private func upload(
         _ localURL: URL,
         to remotePath: GhosttyRemoteAttachmentPath
-    ) async throws {
+    ) async throws -> GhosttyRemoteAttachmentPath {
         do {
             try await client.uploadFile(
                 from: localURL,
@@ -412,6 +414,13 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
                 to: remotePath.remoteFinalPath
             )
         }
+
+        do {
+            let terminalPath = try await client.realPath(atPath: remotePath.remoteFinalPath)
+            return remotePath.withTerminalPath(terminalPath)
+        } catch {
+            return remotePath
+        }
     }
 
     private func cleanupAfterCancellation(_ remotePath: String) async throws {
@@ -440,6 +449,17 @@ struct GhosttyRemoteAttachmentPath: Equatable, Sendable {
     let remoteTemporaryPath: String
     let remoteFinalPath: String
     let terminalPath: String
+
+    func withTerminalPath(_ terminalPath: String) -> GhosttyRemoteAttachmentPath {
+        GhosttyRemoteAttachmentPath(
+            sourceID: sourceID,
+            filename: filename,
+            remoteDirectory: remoteDirectory,
+            remoteTemporaryPath: remoteTemporaryPath,
+            remoteFinalPath: remoteFinalPath,
+            terminalPath: terminalPath
+        )
+    }
 }
 
 struct GhosttyRemoteAttachmentPathBuilder: Equatable, Sendable {

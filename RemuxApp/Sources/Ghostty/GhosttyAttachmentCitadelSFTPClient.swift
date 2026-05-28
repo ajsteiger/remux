@@ -14,6 +14,10 @@ struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
         self.chunkSize = chunkSize
     }
 
+    func realPath(atPath path: String) async throws -> String {
+        try await sftp.getRealPath(atPath: path)
+    }
+
     func ensureDirectoryExists(atPath path: String) async throws {
         do {
             _ = try await sftp.getAttributes(at: path)
