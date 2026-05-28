@@ -40,6 +40,10 @@ struct GhosttyAttachmentTransferJob: Equatable, Sendable {
         self.transferID = transferID
         self.sources = sources
     }
+
+    var uploadSourceCount: Int {
+        sources.count(where: \.requiresSFTPTransfer)
+    }
 }
 
 enum GhosttyAttachmentTransferJobBuilder {
@@ -325,7 +329,7 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
 
         try checkCancellation()
 
-        let totalUploadCount = job.sources.filter(\.requiresSFTPTransfer).count
+        let totalUploadCount = job.uploadSourceCount
         let uploadPaths = Dictionary(
             uniqueKeysWithValues: pathBuilder.paths(for: job).map { ($0.sourceID, $0) }
         )

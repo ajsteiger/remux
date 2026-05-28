@@ -60,6 +60,7 @@ struct GhosttySurfaceScreen: View {
     @State private var attachmentPreviewDetent: PresentationDetent = .medium
     @State private var pendingAttachments: [GhosttyPendingAttachment] = []
     @State private var isAttachmentTransferInProgress = false
+    @State private var attachmentTransferUploadCount = 0
     @State private var attachmentTransferProgress: GhosttyAttachmentTransferProgress?
     @State private var attachmentNotice: GhosttyAttachmentNotice?
 
@@ -793,6 +794,7 @@ struct GhosttySurfaceScreen: View {
                 attachments: pendingAttachments,
                 canSend: canSendPendingAttachments,
                 isSending: isAttachmentTransferInProgress,
+                sendUploadCount: attachmentTransferUploadCount,
                 sendProgress: attachmentTransferProgress,
                 onOpen: showPendingAttachmentPreview,
                 onSend: sendPendingAttachments,
@@ -860,6 +862,7 @@ struct GhosttySurfaceScreen: View {
         }
 
         isAttachmentTransferInProgress = true
+        attachmentTransferUploadCount = job.uploadSourceCount
         attachmentTransferProgress = nil
         isAttachmentPreviewPresented = false
         attachmentNotice = nil
@@ -894,6 +897,7 @@ struct GhosttySurfaceScreen: View {
         targetSurfaceID: UUID
     ) {
         isAttachmentTransferInProgress = false
+        attachmentTransferUploadCount = 0
         attachmentTransferProgress = nil
 
         guard !insertionText.isEmpty else {
@@ -915,6 +919,7 @@ struct GhosttySurfaceScreen: View {
 
     private func handlePendingAttachmentSendFailure(_ error: Error) {
         isAttachmentTransferInProgress = false
+        attachmentTransferUploadCount = 0
         attachmentTransferProgress = nil
         presentAttachmentNotice(pendingAttachmentSendFailureMessage(for: error))
     }

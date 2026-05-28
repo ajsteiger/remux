@@ -6,6 +6,7 @@ struct GhosttyPendingAttachmentPreview: View {
     let attachments: [GhosttyPendingAttachment]
     let canSend: Bool
     let isSending: Bool
+    let sendUploadCount: Int
     let sendProgress: GhosttyAttachmentTransferProgress?
     let onOpen: () -> Void
     let onSend: () -> Void
@@ -78,6 +79,7 @@ struct GhosttyPendingAttachmentPreview: View {
                     GhosttyPendingAttachmentStatusBadge(
                         chromeStyle: chromeStyle,
                         isSending: isSending,
+                        uploadCount: sendUploadCount,
                         progress: sendProgress
                     )
                         .accessibilityIdentifier("terminal.attachments.pending.status")
@@ -171,6 +173,7 @@ struct GhosttyPendingAttachmentPreview: View {
 private struct GhosttyPendingAttachmentStatusBadge: View {
     let chromeStyle: GhosttyTerminalChromeStyle
     let isSending: Bool
+    let uploadCount: Int
     let progress: GhosttyAttachmentTransferProgress?
 
     var body: some View {
@@ -215,11 +218,13 @@ private struct GhosttyPendingAttachmentStatusBadge: View {
             return "Staged"
         }
 
-        guard let progress, progress.totalUploadCount > 1 else {
+        let totalUploadCount = progress?.totalUploadCount ?? uploadCount
+        guard totalUploadCount > 1 else {
             return "Sending"
         }
 
-        return "Sending \(progress.currentUploadIndex) of \(progress.totalUploadCount)"
+        let currentUploadIndex = progress?.currentUploadIndex ?? 1
+        return "Sending \(currentUploadIndex) of \(totalUploadCount)"
     }
 
     private var progressFraction: Double {
@@ -234,13 +239,17 @@ private struct GhosttyPendingAttachmentStatusBadge: View {
             return "Attachment staged"
         }
 
+        let totalUploadCount = progress?.totalUploadCount ?? uploadCount
         guard let progress else {
+            if totalUploadCount > 1 {
+                return "Attachment sending 1 of \(totalUploadCount)"
+            }
             return "Attachment sending"
         }
 
         let percent = Int((progress.currentUploadFraction * 100).rounded())
-        if progress.totalUploadCount > 1 {
-            return "Attachment sending \(progress.currentUploadIndex) of \(progress.totalUploadCount), \(percent) percent"
+        if totalUploadCount > 1 {
+            return "Attachment sending \(progress.currentUploadIndex) of \(totalUploadCount), \(percent) percent"
         }
 
         return "Attachment sending, \(percent) percent"

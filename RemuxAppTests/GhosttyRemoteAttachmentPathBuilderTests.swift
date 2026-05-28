@@ -318,6 +318,32 @@ final class GhosttyAttachmentTransferSourceTests: XCTestCase {
 }
 
 final class GhosttyAttachmentTransferServiceTests: XCTestCase {
+    func testTransferJobCountsUploadSources() {
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    title: "Photo",
+                    payload: .file(URL(fileURLWithPath: "/tmp/photo.png"), filename: "photo.png")
+                ),
+                GhosttyAttachmentTransferSource(
+                    title: "Note",
+                    payload: .text("hello")
+                ),
+                GhosttyAttachmentTransferSource(
+                    title: "Link",
+                    payload: .link(URL(string: "https://remux.dev")!)
+                ),
+                GhosttyAttachmentTransferSource(
+                    title: "Archive",
+                    payload: .file(URL(fileURLWithPath: "/tmp/archive.zip"), filename: "archive.zip")
+                ),
+            ]
+        )
+
+        XCTAssertEqual(job.uploadSourceCount, 2)
+    }
+
     func testServiceContractReturnsTransferResult() async throws {
         let sourceID = UUID(uuidString: "99999999-8888-7777-6666-555555555555")!
         let job = GhosttyAttachmentTransferJob(
