@@ -52,9 +52,10 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
 private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
     private var servers: [SavedServer] = []
     private var workspaces: [SavedWorkspace] = []
+    private var identities: [SSHIdentity] = []
 
     func loadSnapshot() async throws -> ConnectionLibrarySnapshot {
-        ConnectionLibrarySnapshot(servers: servers, workspaces: workspaces)
+        ConnectionLibrarySnapshot(servers: servers, workspaces: workspaces, identities: identities)
     }
 
     func loadProfile() async throws -> (SavedServer, SavedWorkspace)? {
@@ -73,6 +74,10 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
         upsert(workspace, into: &workspaces)
     }
 
+    func saveIdentity(_ identity: SSHIdentity) async throws {
+        upsert(identity, into: &identities)
+    }
+
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
         upsert(server, into: &servers)
         upsert(workspace, into: &workspaces)
@@ -85,6 +90,10 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
 
     func deleteWorkspace(id: SavedWorkspace.ID) async throws {
         workspaces.removeAll { $0.id == id }
+    }
+
+    func deleteIdentity(id: SSHIdentity.ID) async throws {
+        identities.removeAll { $0.id == id }
     }
 
     private func upsert<Element: Identifiable>(_ element: Element, into elements: inout [Element]) where Element.ID: Equatable {

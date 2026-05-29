@@ -2065,13 +2065,16 @@ private actor RecordingRootTmuxControlTransport: TmuxControlTransport {
 private actor TestConnectionProfileRepository: ConnectionProfileRepository {
     private var servers: [SavedServer]
     private var workspaces: [SavedWorkspace]
+    private var identities: [SSHIdentity]
 
     init(
         servers: [SavedServer] = [],
-        workspaces: [SavedWorkspace] = []
+        workspaces: [SavedWorkspace] = [],
+        identities: [SSHIdentity] = []
     ) {
         self.servers = servers
         self.workspaces = workspaces
+        self.identities = identities
     }
 
     func loadSnapshot() async throws -> ConnectionLibrarySnapshot {
@@ -2080,7 +2083,10 @@ private actor TestConnectionProfileRepository: ConnectionProfileRepository {
             servers: servers.sorted {
                 $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
             },
-            workspaces: workspaces.filter { serverIDs.contains($0.serverID) }
+            workspaces: workspaces.filter { serverIDs.contains($0.serverID) },
+            identities: identities.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
         )
     }
 
@@ -2100,6 +2106,10 @@ private actor TestConnectionProfileRepository: ConnectionProfileRepository {
         upsert(workspace, into: &workspaces)
     }
 
+    func saveIdentity(_ identity: SSHIdentity) async throws {
+        upsert(identity, into: &identities)
+    }
+
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
         upsert(server, into: &servers)
         upsert(workspace, into: &workspaces)
@@ -2112,6 +2122,10 @@ private actor TestConnectionProfileRepository: ConnectionProfileRepository {
 
     func deleteWorkspace(id: SavedWorkspace.ID) async throws {
         workspaces.removeAll { $0.id == id }
+    }
+
+    func deleteIdentity(id: SSHIdentity.ID) async throws {
+        identities.removeAll { $0.id == id }
     }
 
     private func upsert<Element: Identifiable>(_ element: Element, into elements: inout [Element]) where Element.ID: Equatable {

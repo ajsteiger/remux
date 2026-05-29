@@ -138,6 +138,39 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         }
     }
 
+    func testFileBackedRepositoryPersistsIdentitiesSeparatelyFromServers() async throws {
+        let root = temporaryRoot()
+        let repository = FileBackedConnectionProfileRepository(rootURL: root)
+        let identity = SSHIdentity(
+            name: "Work key",
+            authenticationKind: .privateKey,
+            publicFingerprint: "SHA256:abc123"
+        )
+
+        try await repository.saveIdentity(identity)
+
+        let snapshot = try await repository.loadSnapshot()
+        XCTAssertEqual(snapshot.identities, [identity])
+        XCTAssertEqual(snapshot.identity(id: identity.id), identity)
+        XCTAssertEqual(snapshot.servers, [])
+        XCTAssertEqual(snapshot.workspaces, [])
+    }
+
+    func testFileBackedRepositoryDeletesIdentity() async throws {
+        let root = temporaryRoot()
+        let repository = FileBackedConnectionProfileRepository(rootURL: root)
+        let retained = SSHIdentity(name: "Retained", authenticationKind: .password)
+        let removed = SSHIdentity(name: "Removed", authenticationKind: .password)
+        try await repository.saveIdentity(removed)
+        try await repository.saveIdentity(retained)
+
+        try await repository.deleteIdentity(id: removed.id)
+
+        let snapshot = try await repository.loadSnapshot()
+        XCTAssertEqual(snapshot.identities, [retained])
+        XCTAssertNil(snapshot.identity(id: removed.id))
+    }
+
     func testLegacyServerJSONIgnoresRemovedTransportKind() throws {
         let id = UUID()
         let data = Data(

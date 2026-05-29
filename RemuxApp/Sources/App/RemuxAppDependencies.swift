@@ -254,6 +254,7 @@ struct RemuxAppDependencies: Sendable {
 private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
     private var servers: [SavedServer] = []
     private var workspaces: [SavedWorkspace] = []
+    private var identities: [SSHIdentity] = []
 
     func loadSnapshot() async throws -> ConnectionLibrarySnapshot {
         let serverIDs = Set(servers.map(\.id))
@@ -261,7 +262,10 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
             servers: servers.sorted {
                 $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
             },
-            workspaces: workspaces.filter { serverIDs.contains($0.serverID) }
+            workspaces: workspaces.filter { serverIDs.contains($0.serverID) },
+            identities: identities.sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
         )
     }
 
@@ -281,6 +285,10 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
         upsert(workspace, into: &workspaces)
     }
 
+    func saveIdentity(_ identity: SSHIdentity) async throws {
+        upsert(identity, into: &identities)
+    }
+
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
         upsert(server, into: &servers)
         upsert(workspace, into: &workspaces)
@@ -293,6 +301,10 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
 
     func deleteWorkspace(id: SavedWorkspace.ID) async throws {
         workspaces.removeAll { $0.id == id }
+    }
+
+    func deleteIdentity(id: SSHIdentity.ID) async throws {
+        identities.removeAll { $0.id == id }
     }
 
     private func upsert<Element: Identifiable>(_ element: Element, into elements: inout [Element]) where Element.ID: Equatable {

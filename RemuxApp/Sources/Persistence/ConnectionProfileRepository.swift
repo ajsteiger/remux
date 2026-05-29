@@ -1,10 +1,21 @@
 import Foundation
 
 struct ConnectionLibrarySnapshot: Equatable, Sendable {
-    static let empty = ConnectionLibrarySnapshot(servers: [], workspaces: [])
+    static let empty = ConnectionLibrarySnapshot(servers: [], workspaces: [], identities: [])
 
     let servers: [SavedServer]
     let workspaces: [SavedWorkspace]
+    let identities: [SSHIdentity]
+
+    init(
+        servers: [SavedServer],
+        workspaces: [SavedWorkspace],
+        identities: [SSHIdentity] = []
+    ) {
+        self.servers = servers
+        self.workspaces = workspaces
+        self.identities = identities
+    }
 
     var isEmpty: Bool {
         servers.isEmpty && workspaces.isEmpty
@@ -30,6 +41,10 @@ struct ConnectionLibrarySnapshot: Equatable, Sendable {
         workspaces.first(where: { $0.id == id })
     }
 
+    func identity(id: SSHIdentity.ID) -> SSHIdentity? {
+        identities.first(where: { $0.id == id })
+    }
+
     func workspaces(for serverID: SavedServer.ID) -> [SavedWorkspace] {
         workspaces
             .filter { $0.serverID == serverID }
@@ -48,9 +63,11 @@ protocol ConnectionProfileRepository: Sendable {
     func loadProfile() async throws -> (SavedServer, SavedWorkspace)?
     func saveServer(_ server: SavedServer) async throws
     func saveWorkspace(_ workspace: SavedWorkspace) async throws
+    func saveIdentity(_ identity: SSHIdentity) async throws
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws
     func deleteServer(id: SavedServer.ID) async throws
     func deleteWorkspace(id: SavedWorkspace.ID) async throws
+    func deleteIdentity(id: SSHIdentity.ID) async throws
 }
 
 enum ConnectionProfileRepositoryError: Error, Equatable {
@@ -60,15 +77,18 @@ enum ConnectionProfileRepositoryError: Error, Equatable {
 actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
     private let serverStore: JSONFileStore<SavedServer>
     private let workspaceStore: JSONFileStore<SavedWorkspace>
+    private let identityStore: JSONFileStore<SSHIdentity>
 
     init(rootURL: URL) {
         self.serverStore = JSONFileStore(fileURL: rootURL.appendingPathComponent("servers.json"))
         self.workspaceStore = JSONFileStore(fileURL: rootURL.appendingPathComponent("workspaces.json"))
+        self.identityStore = JSONFileStore(fileURL: rootURL.appendingPathComponent("ssh-identities.json"))
     }
 
     func loadSnapshot() async throws -> ConnectionLibrarySnapshot {
         let servers = try await serverStore.load()
         let workspaces = try await workspaceStore.load()
+        let identities = try await identityStore.load()
         let serverIDs = Set(servers.map(\.id))
         let validWorkspaces = workspaces.filter { serverIDs.contains($0.serverID) }
 
@@ -76,7 +96,10 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
             servers: servers.sorted { lhs, rhs in
                 lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
             },
-            workspaces: validWorkspaces
+            workspaces: validWorkspaces,
+            identities: identities.sorted { lhs, rhs in
+                lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
         )
     }
 
@@ -101,6 +124,12 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
         try await workspaceStore.save(workspaces)
     }
 
+    func saveIdentity(_ identity: SSHIdentity) async throws {
+        var identities = try await identityStore.load()
+        upsert(identity, into: &identities)
+        try await identityStore.save(identities)
+    }
+
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
         var servers = try await serverStore.load()
         upsert(server, into: &servers)
@@ -123,6 +152,11 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
     func deleteWorkspace(id: SavedWorkspace.ID) async throws {
         let workspaces = try await workspaceStore.load()
         try await workspaceStore.save(workspaces.filter { $0.id != id })
+    }
+
+    func deleteIdentity(id: SSHIdentity.ID) async throws {
+        let identities = try await identityStore.load()
+        try await identityStore.save(identities.filter { $0.id != id })
     }
 
     private func upsert<Element: Identifiable>(_ element: Element, into elements: inout [Element]) where Element.ID: Equatable {
