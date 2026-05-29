@@ -7,11 +7,15 @@ final class SSHTmuxControlTransportTests: XCTestCase {
     func testPasswordResolvedAuthFingerprintChangesWithSecret() {
         let first = ResolvedSSHAuth.password(
             username: "deploy",
-            password: "first"
+            password: "first",
+            identityID: UUID(),
+            displayLabel: "deploy"
         )
         let second = ResolvedSSHAuth.password(
             username: "deploy",
-            password: "second"
+            password: "second",
+            identityID: UUID(),
+            displayLabel: "deploy"
         )
 
         XCTAssertNotEqual(first.authFingerprint, second.authFingerprint)
@@ -20,7 +24,9 @@ final class SSHTmuxControlTransportTests: XCTestCase {
     func testPasswordResolvedAuthFingerprintDoesNotExposeSecret() {
         let auth = ResolvedSSHAuth.password(
             username: "deploy",
-            password: "super-secret"
+            password: "super-secret",
+            identityID: UUID(),
+            displayLabel: "deploy"
         )
 
         XCTAssertFalse(auth.authFingerprint.contains("super-secret"))
@@ -84,24 +90,25 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         let baseTarget = TmuxConnectionTarget(
             server: server,
             workspace: base,
-            password: "test-password"
+            sshAuth: makePasswordAuth(server: server, password: "test-password")
         )
         let logsTarget = TmuxConnectionTarget(
             server: server,
             workspace: logs,
-            password: "test-password"
+            sshAuth: makePasswordAuth(server: server, password: "test-password")
         )
         let changedPasswordTarget = TmuxConnectionTarget(
             server: server,
             workspace: base,
-            password: "other-test-password"
+            sshAuth: makePasswordAuth(server: server, password: "other-test-password")
         )
         let changedSavedUserPreservedAuthTarget = TmuxConnectionTarget(
             server: SavedServer(
                 id: server.id,
                 displayName: server.displayName,
                 host: server.host,
-                username: "other-tester"
+                username: "other-tester",
+                identityID: server.identityID
             ),
             workspace: base,
             sshAuth: baseTarget.sshAuth
@@ -111,10 +118,15 @@ final class SSHTmuxControlTransportTests: XCTestCase {
                 id: server.id,
                 displayName: server.displayName,
                 host: server.host,
-                username: "other-tester"
+                username: "other-tester",
+                identityID: server.identityID
             ),
             workspace: base,
-            password: "test-password"
+            sshAuth: makePasswordAuth(
+                server: server,
+                username: "other-tester",
+                password: "test-password"
+            )
         )
 
         XCTAssertEqual(
@@ -814,8 +826,25 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             target: TmuxConnectionTarget(
                 server: server,
                 workspace: workspace,
-                password: password
+                sshAuth: makePasswordAuth(
+                    server: server,
+                    username: username,
+                    password: password
+                )
             )
+        )
+    }
+
+    private func makePasswordAuth(
+        server: SavedServer,
+        username: String? = nil,
+        password: String
+    ) -> ResolvedSSHAuth {
+        .password(
+            username: username ?? server.username,
+            password: password,
+            identityID: server.identityID,
+            displayLabel: server.displayName
         )
     }
 }

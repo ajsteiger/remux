@@ -11,36 +11,34 @@ struct SSHIdentity: Identifiable, Equatable, Codable, Sendable {
     var name: String
     var authenticationKind: SSHAuthenticationKind
     var publicFingerprint: String?
-    let credentialID: UUID
 
     init(
         id: UUID = UUID(),
         name: String,
         authenticationKind: SSHAuthenticationKind,
-        publicFingerprint: String? = nil,
-        credentialID: UUID? = nil
+        publicFingerprint: String? = nil
     ) {
         self.id = id
         self.name = name
         self.authenticationKind = authenticationKind
         self.publicFingerprint = publicFingerprint
-        self.credentialID = credentialID ?? id
     }
 }
 
 struct ResolvedSSHAuth: Equatable, Sendable {
     enum Credential: Equatable, Sendable {
         case password(String)
+        case privateKey(SSHPrivateKeyCredential)
     }
 
-    let identityID: UUID?
+    let identityID: UUID
     let username: String
     let displayLabel: String
     let authFingerprint: String
     let credential: Credential
 
     private init(
-        identityID: UUID?,
+        identityID: UUID,
         username: String,
         displayLabel: String,
         authFingerprint: String,
@@ -56,8 +54,8 @@ struct ResolvedSSHAuth: Equatable, Sendable {
     static func password(
         username: String,
         password: String,
-        identityID: UUID? = nil,
-        displayLabel: String = "Password"
+        identityID: UUID,
+        displayLabel: String
     ) -> ResolvedSSHAuth {
         ResolvedSSHAuth(
             identityID: identityID,
@@ -65,6 +63,26 @@ struct ResolvedSSHAuth: Equatable, Sendable {
             displayLabel: displayLabel,
             authFingerprint: "password:\(fingerprint(password))",
             credential: .password(password)
+        )
+    }
+
+    static func privateKey(
+        username: String,
+        credential: SSHPrivateKeyCredential,
+        identityID: UUID,
+        displayLabel: String
+    ) throws -> ResolvedSSHAuth {
+        let inspection = try SSHPrivateKeyInspector.inspect(credential.privateKeyPEM)
+        return ResolvedSSHAuth(
+            identityID: identityID,
+            username: username,
+            displayLabel: displayLabel,
+            authFingerprint: [
+                "private-key",
+                inspection.publicFingerprint,
+                fingerprint(credential.passphrase ?? ""),
+            ].joined(separator: ":"),
+            credential: .privateKey(credential)
         )
     }
 
@@ -81,7 +99,7 @@ struct SavedServer: Identifiable, Equatable, Codable, Sendable {
     var host: String
     var port: Int
     var username: String
-    var identityID: SSHIdentity.ID?
+    var identityID: SSHIdentity.ID
 
     init(
         id: UUID = UUID(),
@@ -89,7 +107,7 @@ struct SavedServer: Identifiable, Equatable, Codable, Sendable {
         host: String,
         port: Int = 22,
         username: String,
-        identityID: SSHIdentity.ID? = nil
+        identityID: SSHIdentity.ID
     ) {
         self.id = id
         self.displayName = displayName
@@ -124,30 +142,6 @@ struct TmuxConnectionTarget: Equatable, Sendable {
     let workspace: SavedWorkspace
     let sshAuth: ResolvedSSHAuth
     let terminalSettings: TerminalSettings
-
-    var password: String {
-        switch sshAuth.credential {
-        case .password(let password):
-            password
-        }
-    }
-
-    init(
-        server: SavedServer,
-        workspace: SavedWorkspace,
-        password: String,
-        terminalSettings: TerminalSettings = .default
-    ) {
-        self.init(
-            server: server,
-            workspace: workspace,
-            sshAuth: .password(
-                username: server.username,
-                password: password
-            ),
-            terminalSettings: terminalSettings
-        )
-    }
 
     init(
         server: SavedServer,
@@ -290,18 +284,39 @@ struct TmuxConnectionDraft: Equatable, Sendable {
     var host: String = ""
     var port: String = "22"
     var username: String = ""
+    var authenticationKind: SSHAuthenticationKind = .password
     var password: String = ""
+    var privateKeyPEM: String = ""
+    var privateKeyFileName: String = ""
+    var privateKeyPassphrase: String = ""
     var sessionName: String = ""
 
     init() {}
 
-    init(server: SavedServer, workspace: SavedWorkspace, password: String) {
+    init(server: SavedServer, workspace: SavedWorkspace) {
         self.displayName = server.displayName
         self.host = server.host
         self.port = String(server.port)
         self.username = server.username
-        self.password = password
         self.sessionName = workspace.sessionName
+    }
+
+    init(
+        server: SavedServer,
+        workspace: SavedWorkspace,
+        identity: SSHIdentity,
+        credential: SSHCredential
+    ) {
+        self.init(server: server, workspace: workspace)
+        self.authenticationKind = identity.authenticationKind
+
+        switch credential {
+        case .password(let password):
+            self.password = password
+        case .privateKey(let credential):
+            self.privateKeyPEM = credential.privateKeyPEM
+            self.privateKeyPassphrase = credential.passphrase ?? ""
+        }
     }
 }
 
@@ -311,6 +326,8 @@ struct TmuxConnectionDraftValidation: Equatable, Sendable {
     var port: String?
     var username: String?
     var password: String?
+    var privateKey: String?
+    var privateKeyPassphrase: String?
     var sessionName: String?
 
     static let empty = TmuxConnectionDraftValidation()
@@ -321,19 +338,49 @@ struct TmuxConnectionDraftValidation: Equatable, Sendable {
             port == nil &&
             username == nil &&
             password == nil &&
+            privateKey == nil &&
+            privateKeyPassphrase == nil &&
             sessionName == nil
     }
 }
 
 struct ValidatedTmuxConnectionDraft: Equatable, Sendable {
-    let server: SavedServer
+    let server: ValidatedTmuxServerDraft
     let workspace: SavedWorkspace
-    let password: String
 }
 
 struct ValidatedTmuxServerDraft: Equatable, Sendable {
-    let server: SavedServer
-    let password: String
+    enum Credential: Equatable, Sendable {
+        case password(String)
+        case privateKey(SSHPrivateKeyCredential)
+
+        var authenticationKind: SSHAuthenticationKind {
+            switch self {
+            case .password:
+                .password
+            case .privateKey:
+                .privateKey
+            }
+        }
+    }
+
+    let serverID: SavedServer.ID
+    let displayName: String
+    let host: String
+    let port: Int
+    let username: String
+    let credential: Credential
+
+    func savedServer(identityID: SSHIdentity.ID) -> SavedServer {
+        SavedServer(
+            id: serverID,
+            displayName: displayName,
+            host: host,
+            port: port,
+            username: username,
+            identityID: identityID
+        )
+    }
 }
 
 struct ValidatedTmuxWorkspaceDraft: Equatable, Sendable {
@@ -364,7 +411,7 @@ enum TmuxConnectionDraftValidator {
         let serverResult = validateServer(draft, existingServerID: existingServerID)
         let workspaceServerID: SavedServer.ID
         if case .valid(let serverSubmission) = serverResult {
-            workspaceServerID = serverSubmission.server.id
+            workspaceServerID = serverSubmission.serverID
         } else {
             workspaceServerID = existingServerID ?? UUID()
         }
@@ -379,9 +426,8 @@ enum TmuxConnectionDraftValidator {
            case .valid(let workspaceSubmission) = workspaceResult {
             return .valid(
                 ValidatedTmuxConnectionDraft(
-                    server: serverSubmission.server,
-                    workspace: workspaceSubmission.workspace,
-                    password: serverSubmission.password
+                    server: serverSubmission,
+                    workspace: workspaceSubmission.workspace
                 )
             )
         }
@@ -405,6 +451,8 @@ enum TmuxConnectionDraftValidator {
         let host = draft.host.trimmingCharacters(in: .whitespacesAndNewlines)
         let username = draft.username.trimmingCharacters(in: .whitespacesAndNewlines)
         let password = draft.password
+        let privateKeyPEM = draft.privateKeyPEM.trimmingCharacters(in: .whitespacesAndNewlines)
+        let privateKeyPassphrase = draft.privateKeyPassphrase.isEmpty ? nil : draft.privateKeyPassphrase
 
         if displayName.isEmpty {
             validation.displayName = "Name is required."
@@ -424,8 +472,24 @@ enum TmuxConnectionDraftValidator {
             validation.username = "Username is required."
         }
 
-        if password.isEmpty {
-            validation.password = "Password is required."
+        let credential: ValidatedTmuxServerDraft.Credential
+        switch draft.authenticationKind {
+        case .password:
+            if password.isEmpty {
+                validation.password = "Password is required."
+            }
+            credential = .password(password)
+
+        case .privateKey:
+            if privateKeyPEM.isEmpty {
+                validation.privateKey = "Private key is required."
+            }
+            credential = .privateKey(
+                SSHPrivateKeyCredential(
+                    privateKeyPEM: privateKeyPEM,
+                    passphrase: privateKeyPassphrase
+                )
+            )
         }
 
         guard validation.isValid else {
@@ -434,14 +498,12 @@ enum TmuxConnectionDraftValidator {
 
         return .valid(
             ValidatedTmuxServerDraft(
-                server: SavedServer(
-                    id: serverID,
-                    displayName: displayName,
-                    host: host,
-                    port: port,
-                    username: username
-                ),
-                password: password
+                serverID: serverID,
+                displayName: displayName,
+                host: host,
+                port: port,
+                username: username,
+                credential: credential
             )
         )
     }
@@ -482,6 +544,8 @@ private extension TmuxConnectionDraftValidation {
         port = port ?? other.port
         username = username ?? other.username
         password = password ?? other.password
+        privateKey = privateKey ?? other.privateKey
+        privateKeyPassphrase = privateKeyPassphrase ?? other.privateKeyPassphrase
         sessionName = sessionName ?? other.sessionName
     }
 }

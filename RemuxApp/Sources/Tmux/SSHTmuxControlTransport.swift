@@ -7,7 +7,7 @@ import NIOConcurrencyHelpers
 struct SSHTmuxControlConfiguration: Sendable {
     let host: String
     let port: Int
-    let authenticationMethod: @Sendable () -> SSHAuthenticationMethod
+    let authenticationMethod: @Sendable () throws -> SSHAuthenticationMethod
     let hostKeyValidator: SSHHostKeyValidator
     let connectTimeout: TimeAmount
     let tmuxExecutable: String
@@ -19,7 +19,7 @@ struct SSHTmuxControlConfiguration: Sendable {
     init(
         host: String,
         port: Int = 22,
-        authenticationMethod: @escaping @Sendable () -> SSHAuthenticationMethod,
+        authenticationMethod: @escaping @Sendable () throws -> SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator,
         connectTimeout: TimeAmount = .seconds(30),
         tmuxExecutable: String = "tmux",
@@ -1352,8 +1352,15 @@ private enum SSHTmuxControlBootstrap {
                         eventLoop: channel.eventLoop,
                         timeout: configuration.connectTimeout
                     )
+                    let authenticationMethod: SSHAuthenticationMethod
+                    do {
+                        authenticationMethod = try configuration.authenticationMethod()
+                    } catch {
+                        return channel.eventLoop.makeFailedFuture(error)
+                    }
+
                     let sshConfiguration = SSHClientConfiguration(
-                        userAuthDelegate: configuration.authenticationMethod(),
+                        userAuthDelegate: authenticationMethod,
                         serverAuthDelegate: configuration.hostKeyValidator
                     )
                     let sshHandler = NIOSSHHandler(

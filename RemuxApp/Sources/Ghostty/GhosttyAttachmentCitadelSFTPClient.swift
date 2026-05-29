@@ -109,14 +109,14 @@ struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
 struct GhosttyAttachmentCitadelSFTPConnectionConfiguration: Sendable {
     let host: String
     let port: Int
-    let authenticationMethod: @Sendable () -> SSHAuthenticationMethod
+    let authenticationMethod: @Sendable () throws -> SSHAuthenticationMethod
     let hostKeyValidator: SSHHostKeyValidator
     let connectTimeout: TimeAmount
 
     init(
         host: String,
         port: Int = 22,
-        authenticationMethod: @escaping @Sendable () -> SSHAuthenticationMethod,
+        authenticationMethod: @escaping @Sendable () throws -> SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator,
         connectTimeout: TimeAmount = .seconds(30)
     ) {
@@ -162,7 +162,7 @@ struct GhosttyAttachmentCitadelSFTPClientProvider: GhosttyAttachmentSFTPClientPr
         let ssh = try await SSHClient.connect(
             host: configuration.host,
             port: configuration.port,
-            authenticationMethod: configuration.authenticationMethod(),
+            authenticationMethod: try configuration.authenticationMethod(),
             hostKeyValidator: configuration.hostKeyValidator,
             reconnect: .never,
             connectTimeout: configuration.connectTimeout

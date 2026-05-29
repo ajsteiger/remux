@@ -2,7 +2,7 @@ import XCTest
 @testable import Remux
 
 final class TmuxConnectionDraftValidatorTests: XCTestCase {
-    func testValidDraftProducesServerWorkspaceAndPassword() {
+    func testValidDraftProducesServerDraftWorkspaceAndPassword() {
         var draft = TmuxConnectionDraft()
         draft.displayName = "Example Server"
         draft.host = "server.example.com"
@@ -26,9 +26,9 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertEqual(submission.server.host, "server.example.com")
         XCTAssertEqual(submission.server.port, 22)
         XCTAssertEqual(submission.server.username, "demo")
-        XCTAssertEqual(submission.workspace.serverID, submission.server.id)
+        XCTAssertEqual(submission.workspace.serverID, submission.server.serverID)
         XCTAssertEqual(submission.workspace.sessionName, "base")
-        XCTAssertEqual(submission.password, "demo-password")
+        XCTAssertEqual(submission.server.credential, .password("demo-password"))
     }
 
     func testValidDraftReusesExistingIDs() throws {
@@ -53,7 +53,7 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(submission.server.id, serverID)
+        XCTAssertEqual(submission.server.serverID, serverID)
         XCTAssertEqual(submission.workspace.id, workspaceID)
         XCTAssertEqual(submission.workspace.serverID, serverID)
     }
@@ -119,9 +119,9 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(submission.server.id, serverID)
-        XCTAssertEqual(submission.server.displayName, "Laptop")
-        XCTAssertEqual(submission.password, "demo-password")
+        XCTAssertEqual(submission.serverID, serverID)
+        XCTAssertEqual(submission.displayName, "Laptop")
+        XCTAssertEqual(submission.credential, .password("demo-password"))
     }
 
     func testWorkspaceDraftValidationOnlyRequiresSessionName() {
