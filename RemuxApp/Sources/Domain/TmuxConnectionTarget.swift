@@ -1,6 +1,33 @@
 import CryptoKit
 import Foundation
 
+enum SSHAuthenticationKind: String, Codable, Sendable {
+    case password
+    case privateKey
+}
+
+struct SSHIdentity: Identifiable, Equatable, Codable, Sendable {
+    let id: UUID
+    var name: String
+    var authenticationKind: SSHAuthenticationKind
+    var publicFingerprint: String?
+    let credentialID: UUID
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        authenticationKind: SSHAuthenticationKind,
+        publicFingerprint: String? = nil,
+        credentialID: UUID? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.authenticationKind = authenticationKind
+        self.publicFingerprint = publicFingerprint
+        self.credentialID = credentialID ?? id
+    }
+}
+
 struct ResolvedSSHAuth: Equatable, Sendable {
     enum Credential: Equatable, Sendable {
         case password(String)

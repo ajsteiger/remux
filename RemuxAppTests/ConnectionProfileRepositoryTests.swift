@@ -162,6 +162,37 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         XCTAssertEqual(server.username, "demo")
     }
 
+    func testSSHIdentityCodableKeepsCredentialReferenceStable() throws {
+        let id = UUID()
+        let credentialID = UUID()
+        let identity = SSHIdentity(
+            id: id,
+            name: "Work key",
+            authenticationKind: .privateKey,
+            publicFingerprint: "SHA256:abc123",
+            credentialID: credentialID
+        )
+
+        let encoded = try JSONEncoder().encode(identity)
+        let decoded = try JSONDecoder().decode(SSHIdentity.self, from: encoded)
+
+        XCTAssertEqual(decoded, identity)
+        XCTAssertEqual(decoded.id, id)
+        XCTAssertEqual(decoded.credentialID, credentialID)
+    }
+
+    func testSSHIdentityUsesIdentityIDAsDefaultCredentialReference() {
+        let id = UUID()
+
+        let identity = SSHIdentity(
+            id: id,
+            name: "Password",
+            authenticationKind: .password
+        )
+
+        XCTAssertEqual(identity.credentialID, id)
+    }
+
     private func temporaryRoot() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
