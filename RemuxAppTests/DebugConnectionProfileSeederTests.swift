@@ -5,12 +5,12 @@ import XCTest
 final class DebugConnectionProfileSeederTests: XCTestCase {
     func testSeedIsNoopWhenEnvironmentFlagIsMissing() async throws {
         let repository = InMemoryConnectionProfileRepository()
-        let passwordStore = InMemoryPasswordStore()
+        let credentialStore = InMemorySSHCredentialStore()
 
         let seeded = try await DebugConnectionProfileSeeder.seedIfRequested(
             environment: [:],
             profileRepository: repository,
-            passwordStore: passwordStore
+            credentialStore: credentialStore
         )
 
         XCTAssertFalse(seeded)
@@ -18,9 +18,9 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
         XCTAssertNil(profile)
     }
 
-    func testSeedPersistsConnectionProfileAndPassword() async throws {
+    func testSeedPersistsConnectionProfileAndCredential() async throws {
         let repository = InMemoryConnectionProfileRepository()
-        let passwordStore = InMemoryPasswordStore()
+        let credentialStore = InMemorySSHCredentialStore()
 
         let seeded = try await DebugConnectionProfileSeeder.seedIfRequested(
             environment: [
@@ -33,18 +33,23 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
                 "REMUX_DEBUG_TMUX_SESSION": "base",
             ],
             profileRepository: repository,
-            passwordStore: passwordStore
+            credentialStore: credentialStore
         )
 
         let profile = try await repository.loadProfile()
+        let snapshot = try await repository.loadSnapshot()
+        let server = try XCTUnwrap(profile?.0)
+        let identity = try XCTUnwrap(snapshot.identity(id: server.identityID))
+        let credential = try await credentialStore.loadCredential(identityID: identity.id)
         XCTAssertTrue(seeded)
-        XCTAssertEqual(profile?.0.displayName, "Example Server")
-        XCTAssertEqual(profile?.0.host, "server.example.com")
-        XCTAssertEqual(profile?.0.port, 22)
-        XCTAssertEqual(profile?.0.username, "demo")
+        XCTAssertEqual(server.displayName, "Example Server")
+        XCTAssertEqual(server.host, "server.example.com")
+        XCTAssertEqual(server.port, 22)
+        XCTAssertEqual(server.username, "demo")
         XCTAssertEqual(profile?.1.sessionName, "base")
-        let password = try await passwordStore.loadPassword(for: try XCTUnwrap(profile?.0.id))
-        XCTAssertEqual(password, "debug-password")
+        XCTAssertEqual(identity.name, "Example Server")
+        XCTAssertEqual(identity.authenticationKind, .password)
+        XCTAssertEqual(credential, .password("debug-password"))
     }
 
 }
@@ -78,6 +83,16 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
         upsert(identity, into: &identities)
     }
 
+    func saveIdentityProfile(
+        identity: SSHIdentity,
+        server: SavedServer,
+        workspace: SavedWorkspace
+    ) async throws {
+        upsert(identity, into: &identities)
+        upsert(server, into: &servers)
+        upsert(workspace, into: &workspaces)
+    }
+
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
         upsert(server, into: &servers)
         upsert(workspace, into: &workspaces)
@@ -105,19 +120,19 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
     }
 }
 
-private actor InMemoryPasswordStore: PasswordStore {
-    private var passwords: [SavedServer.ID: String] = [:]
+private actor InMemorySSHCredentialStore: SSHCredentialStore {
+    private var credentials: [UUID: SSHCredential] = [:]
 
-    func loadPassword(for serverID: SavedServer.ID) async throws -> String? {
-        passwords[serverID]
+    func loadCredential(identityID: UUID) async throws -> SSHCredential? {
+        credentials[identityID]
     }
 
-    func savePassword(_ password: String, for serverID: SavedServer.ID) async throws {
-        passwords[serverID] = password
+    func saveCredential(_ credential: SSHCredential, identityID: UUID) async throws {
+        credentials[identityID] = credential
     }
 
-    func deletePassword(for serverID: SavedServer.ID) async throws {
-        passwords.removeValue(forKey: serverID)
+    func deleteCredential(identityID: UUID) async throws {
+        credentials.removeValue(forKey: identityID)
     }
 }
 #endif

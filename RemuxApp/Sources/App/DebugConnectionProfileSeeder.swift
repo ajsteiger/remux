@@ -13,6 +13,8 @@ enum DebugConnectionProfileSeederError: LocalizedError, Sendable {
                 validation.port,
                 validation.username,
                 validation.password,
+                validation.privateKey,
+                validation.privateKeyPassphrase,
                 validation.sessionName,
             ].compactMap { $0 }
             return "Invalid debug connection seed: \(messages.joined(separator: " "))"
@@ -35,7 +37,7 @@ enum DebugConnectionProfileSeeder {
     static func seedIfRequested(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         profileRepository: any ConnectionProfileRepository,
-        passwordStore: any PasswordStore
+        credentialStore: any SSHCredentialStore
     ) async throws -> Bool {
         guard environment[Key.enabled] == "1" else { return false }
 
@@ -58,13 +60,22 @@ enum DebugConnectionProfileSeeder {
             throw DebugConnectionProfileSeederError.invalidEnvironment(validation)
 
         case .valid(let submission):
-            try await profileRepository.saveProfile(
-                server: submission.server,
-                workspace: submission.workspace
+            guard case .password(let password) = submission.server.credential else {
+                return false
+            }
+            let identity = SSHIdentity(
+                name: submission.server.displayName,
+                authenticationKind: .password
             )
-            try await passwordStore.savePassword(
-                submission.password,
-                for: submission.server.id
+            let server = submission.server.savedServer(identityID: identity.id)
+            try await credentialStore.saveCredential(
+                .password(password),
+                identityID: identity.id
+            )
+            try await profileRepository.saveIdentityProfile(
+                identity: identity,
+                server: server,
+                workspace: submission.workspace
             )
             return true
         }
