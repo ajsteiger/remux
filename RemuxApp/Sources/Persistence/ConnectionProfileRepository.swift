@@ -64,6 +64,11 @@ protocol ConnectionProfileRepository: Sendable {
     func saveServer(_ server: SavedServer) async throws
     func saveWorkspace(_ workspace: SavedWorkspace) async throws
     func saveIdentity(_ identity: SSHIdentity) async throws
+    func saveIdentityProfile(
+        identity: SSHIdentity,
+        server: SavedServer,
+        workspace: SavedWorkspace
+    ) async throws
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws
     func deleteServer(id: SavedServer.ID) async throws
     func deleteWorkspace(id: SavedWorkspace.ID) async throws
@@ -128,6 +133,25 @@ actor FileBackedConnectionProfileRepository: ConnectionProfileRepository {
         var identities = try await identityStore.load()
         upsert(identity, into: &identities)
         try await identityStore.save(identities)
+    }
+
+    func saveIdentityProfile(
+        identity: SSHIdentity,
+        server: SavedServer,
+        workspace: SavedWorkspace
+    ) async throws {
+        var identities = try await identityStore.load()
+        upsert(identity, into: &identities)
+
+        var servers = try await serverStore.load()
+        upsert(server, into: &servers)
+
+        var workspaces = try await workspaceStore.load()
+        upsert(workspace, into: &workspaces)
+
+        try await identityStore.save(identities)
+        try await serverStore.save(servers)
+        try await workspaceStore.save(workspaces)
     }
 
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {

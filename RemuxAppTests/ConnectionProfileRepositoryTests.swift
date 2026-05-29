@@ -171,7 +171,7 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         XCTAssertNil(snapshot.identity(id: removed.id))
     }
 
-    func testLegacyServerJSONIgnoresRemovedTransportKind() throws {
+    func testSavedServerDecodingRequiresIdentityReference() throws {
         let id = UUID()
         let data = Data(
             """
@@ -180,20 +180,18 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
               "displayName": "Legacy",
               "host": "legacy.example.test",
               "port": 22,
-              "username": "demo",
-              "transportKind": "ssh"
+              "username": "demo"
             }
             """.utf8
         )
 
-        let server = try JSONDecoder().decode(SavedServer.self, from: data)
-
-        XCTAssertEqual(server.id, id)
-        XCTAssertEqual(server.displayName, "Legacy")
-        XCTAssertEqual(server.host, "legacy.example.test")
-        XCTAssertEqual(server.port, 22)
-        XCTAssertEqual(server.username, "demo")
-        XCTAssertNil(server.identityID)
+        XCTAssertThrowsError(try JSONDecoder().decode(SavedServer.self, from: data)) { error in
+            guard case DecodingError.keyNotFound(let key, _) = error else {
+                XCTFail("expected missing identityID decode failure, got \(error)")
+                return
+            }
+            XCTAssertEqual(key.stringValue, "identityID")
+        }
     }
 
     func testSavedServerCodablePreservesIdentityReference() throws {
@@ -212,15 +210,13 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         XCTAssertEqual(decoded.identityID, identityID)
     }
 
-    func testSSHIdentityCodableKeepsCredentialReferenceStable() throws {
+    func testSSHIdentityCodablePreservesFields() throws {
         let id = UUID()
-        let credentialID = UUID()
         let identity = SSHIdentity(
             id: id,
             name: "Work key",
             authenticationKind: .privateKey,
-            publicFingerprint: "SHA256:abc123",
-            credentialID: credentialID
+            publicFingerprint: "SHA256:abc123"
         )
 
         let encoded = try JSONEncoder().encode(identity)
@@ -228,19 +224,6 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
 
         XCTAssertEqual(decoded, identity)
         XCTAssertEqual(decoded.id, id)
-        XCTAssertEqual(decoded.credentialID, credentialID)
-    }
-
-    func testSSHIdentityUsesIdentityIDAsDefaultCredentialReference() {
-        let id = UUID()
-
-        let identity = SSHIdentity(
-            id: id,
-            name: "Password",
-            authenticationKind: .password
-        )
-
-        XCTAssertEqual(identity.credentialID, id)
     }
 
     func testSSHCredentialCodablePreservesPassword() throws {
@@ -265,27 +248,24 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         XCTAssertEqual(decoded, credential)
     }
 
-    func testKeychainSSHCredentialStoreUsesCredentialReference() async throws {
+    func testKeychainSSHCredentialStoreUsesIdentityReference() async throws {
         let store = KeychainSSHCredentialStore(service: "dev.remux.tests.\(UUID().uuidString)")
         let identity = SSHIdentity(
             id: UUID(),
-            name: "Work key",
-            authenticationKind: .privateKey,
-            credentialID: UUID()
+            name: "Work password",
+            authenticationKind: .password
         )
         let credential = SSHCredential.password("secret")
 
-        XCTAssertNotEqual(identity.id, identity.credentialID)
+        try await store.saveCredential(credential, identityID: identity.id)
 
-        try await store.saveCredential(credential, credentialID: identity.credentialID)
+        let savedCredential = try await store.loadCredential(identityID: identity.id)
 
-        let identityIDCredential = try await store.loadCredential(credentialID: identity.id)
-        let credentialIDCredential = try await store.loadCredential(credentialID: identity.credentialID)
+        XCTAssertEqual(savedCredential, credential)
 
-        XCTAssertNil(identityIDCredential)
-        XCTAssertEqual(credentialIDCredential, credential)
-
-        try await store.deleteCredential(credentialID: identity.credentialID)
+        try await store.deleteCredential(identityID: identity.id)
+        let deletedCredential = try await store.loadCredential(identityID: identity.id)
+        XCTAssertNil(deletedCredential)
     }
 
     private func temporaryRoot() -> URL {
