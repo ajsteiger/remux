@@ -309,7 +309,10 @@ final class RemuxRootModel: ObservableObject {
                 activate(
                     server: submission.server,
                     workspace: submission.workspace,
-                    password: submission.password
+                    sshAuth: .password(
+                        username: submission.server.username,
+                        password: submission.password
+                    )
                 )
             } catch {
                 transitionToFailed(error)
@@ -359,7 +362,10 @@ final class RemuxRootModel: ObservableObject {
                 activate(
                     server: submission.server,
                     workspace: workspace,
-                    password: submission.password
+                    sshAuth: .password(
+                        username: submission.server.username,
+                        password: submission.password
+                    )
                 )
             } catch {
                 transitionToFailed(error)
@@ -391,8 +397,10 @@ final class RemuxRootModel: ObservableObject {
                 try await dependencies.profileRepository.saveWorkspace(submission.workspace)
                 library = try await dependencies.profileRepository.loadSnapshot()
 
-                let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
-                guard !password.isEmpty else {
+                let sshAuth: ResolvedSSHAuth
+                do {
+                    sshAuth = try await resolveSSHAuth(for: server)
+                } catch SSHAuthResolverError.missingLegacyPassword(_) {
                     var validation = TmuxConnectionDraftValidation.empty
                     validation.password = "Password is required."
                     state = .setup(
@@ -401,12 +409,14 @@ final class RemuxRootModel: ObservableObject {
                         .editServer(serverID, reconnectWorkspaceID: submission.workspace.id)
                     )
                     return
+                } catch {
+                    throw error
                 }
 
                 activate(
                     server: server,
                     workspace: submission.workspace,
-                    password: password
+                    sshAuth: sshAuth
                 )
             } catch {
                 transitionToFailed(error)
@@ -470,8 +480,10 @@ final class RemuxRootModel: ObservableObject {
             return
         }
 
-        let password = (try? await dependencies.passwordStore.loadPassword(for: server.id)) ?? ""
-        guard !password.isEmpty else {
+        let sshAuth: ResolvedSSHAuth
+        do {
+            sshAuth = try await resolveSSHAuth(for: server)
+        } catch SSHAuthResolverError.missingLegacyPassword(_) {
             GhosttyRuntimeTrace.flowEnd(
                 flow,
                 event: "model.connect.missingPassword",
@@ -485,6 +497,18 @@ final class RemuxRootModel: ObservableObject {
                 .empty,
                 .editServer(server.id, reconnectWorkspaceID: workspace.id)
             )
+            return
+        } catch {
+            GhosttyRuntimeTrace.flowEnd(
+                flow,
+                event: "model.connect.authResolutionFailed",
+                fields: [
+                    "workspaceID": workspaceID.uuidString,
+                    "server": server.displayName,
+                    "error": String(describing: error),
+                ]
+            )
+            transitionToFailed(error)
             return
         }
 
@@ -502,7 +526,7 @@ final class RemuxRootModel: ObservableObject {
             )
             library = try await dependencies.profileRepository.loadSnapshot()
             GhosttyRuntimeTrace.flowEvent(flow, event: "model.connect.libraryReloaded")
-            activate(server: server, workspace: openedWorkspace, password: password)
+            activate(server: server, workspace: openedWorkspace, sshAuth: sshAuth)
         } catch {
             GhosttyRuntimeTrace.flowEnd(
                 flow,
@@ -765,7 +789,7 @@ final class RemuxRootModel: ObservableObject {
     private func activate(
         server: SavedServer,
         workspace: SavedWorkspace,
-        password: String
+        sshAuth: ResolvedSSHAuth
     ) {
         let flow = sessionOpenFlowID(workspace.id)
         GhosttyRuntimeTrace.flowEvent(
@@ -779,7 +803,7 @@ final class RemuxRootModel: ObservableObject {
         )
         cancelLibrarySSHPrewarm()
         closePreparedTransports(forServerID: server.id, excludingWorkspaceID: workspace.id)
-        let target = target(server: server, workspace: workspace, password: password)
+        let target = target(server: server, workspace: workspace, sshAuth: sshAuth)
         let activeSession = ActiveTerminalSession(target: target)
         prepareTransport(for: target, reason: .activation)
         replaceTerminalScreenModel(for: activeSession)
@@ -800,15 +824,22 @@ final class RemuxRootModel: ObservableObject {
         )
     }
 
+    private func resolveSSHAuth(for server: SavedServer) async throws -> ResolvedSSHAuth {
+        try await SSHAuthResolver(
+            passwordStore: dependencies.passwordStore,
+            credentialStore: dependencies.credentialStore
+        ).resolve(server: server, in: library)
+    }
+
     private func target(
         server: SavedServer,
         workspace: SavedWorkspace,
-        password: String
+        sshAuth: ResolvedSSHAuth
     ) -> TmuxConnectionTarget {
         TmuxConnectionTarget(
             server: server,
             workspace: workspace,
-            password: password,
+            sshAuth: sshAuth,
             terminalSettings: terminalSettings
         )
     }

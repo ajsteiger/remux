@@ -47,6 +47,9 @@ struct SSHAuthResolver: Sendable {
             guard let password = try await passwordStore.loadPassword(for: server.id) else {
                 throw SSHAuthResolverError.missingLegacyPassword(server.id)
             }
+            guard !password.isEmpty else {
+                throw SSHAuthResolverError.missingLegacyPassword(server.id)
+            }
 
             return .password(
                 username: server.username,

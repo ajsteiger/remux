@@ -781,6 +781,92 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertTrue(terminalModel === modelFactory.createdModels[key])
     }
 
+    func testConnectUsesLinkedPasswordIdentity() async throws {
+        let credentialID = UUID()
+        let identity = SSHIdentity(
+            name: "Deploy Password",
+            authenticationKind: .password,
+            credentialID: credentialID
+        )
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder",
+            identityID: identity.id
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            identities: [identity]
+        )
+        try await harness.credentialStore.saveCredential(.password("identity-secret"), credentialID: credentialID)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(session.target.password, "identity-secret")
+        XCTAssertEqual(session.target.sshAuth.identityID, identity.id)
+        XCTAssertEqual(session.target.sshAuth.displayLabel, "Deploy Password")
+    }
+
+    func testNewWorkspaceUsesLinkedPasswordIdentity() async throws {
+        let credentialID = UUID()
+        let identity = SSHIdentity(
+            name: "Deploy Password",
+            authenticationKind: .password,
+            credentialID: credentialID
+        )
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder",
+            identityID: identity.id
+        )
+        let harness = makeHarness(servers: [server], identities: [identity])
+        try await harness.credentialStore.saveCredential(.password("identity-secret"), credentialID: credentialID)
+
+        await harness.model.load()
+        await harness.model.beginNewWorkspace(for: server.id)
+        harness.model.updateDraft { draft in
+            draft.sessionName = "logs"
+        }
+
+        await harness.model.saveAndConnect()
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(session.target.workspace.sessionName, "logs")
+        XCTAssertEqual(session.target.password, "identity-secret")
+        XCTAssertEqual(session.target.sshAuth.identityID, identity.id)
+    }
+
+    func testConnectMissingLegacyPasswordOpensServerEdit() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(servers: [server], workspaces: [workspace])
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        guard case .setup(let draft, _, let mode) = harness.model.state else {
+            XCTFail("expected setup state")
+            return
+        }
+
+        XCTAssertEqual(draft.displayName, server.displayName)
+        XCTAssertEqual(draft.host, server.host)
+        XCTAssertEqual(draft.port, String(server.port))
+        XCTAssertEqual(draft.username, server.username)
+        XCTAssertEqual(draft.sessionName, workspace.sessionName)
+        XCTAssertEqual(draft.password, "")
+        XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: workspace.id))
+    }
+
     func testActiveTerminalScreenEntriesPairSessionsWithExactAttemptModels() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -1712,6 +1798,7 @@ final class RemuxRootModelTests: XCTestCase {
     private func makeHarness(
         servers: [SavedServer] = [],
         workspaces: [SavedWorkspace] = [],
+        identities: [SSHIdentity] = [],
         settings: TerminalSettings = .default,
         settingsRepository: (any TerminalSettingsRepository)? = nil,
         transportFactory: (@Sendable (
@@ -1728,7 +1815,8 @@ final class RemuxRootModelTests: XCTestCase {
     ) -> RemuxRootModelHarness {
         let profileRepository = TestConnectionProfileRepository(
             servers: servers,
-            workspaces: workspaces
+            workspaces: workspaces,
+            identities: identities
         )
         let settingsRepository = settingsRepository ?? TestTerminalSettingsRepository(settings: settings)
         let shortcutRepository = FileBackedShortcutRepository(rootURL: temporaryRoot())
@@ -1759,7 +1847,8 @@ final class RemuxRootModelTests: XCTestCase {
             ),
             profileRepository: profileRepository,
             settingsRepository: settingsRepository,
-            passwordStore: passwordStore
+            passwordStore: passwordStore,
+            credentialStore: credentialStore
         )
     }
 
@@ -1801,6 +1890,7 @@ private struct RemuxRootModelHarness {
     let profileRepository: TestConnectionProfileRepository
     let settingsRepository: any TerminalSettingsRepository
     let passwordStore: TestPasswordStore
+    let credentialStore: TestSSHCredentialStore
 }
 
 @MainActor

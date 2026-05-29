@@ -46,6 +46,28 @@ final class SSHAuthResolverTests: XCTestCase {
         }
     }
 
+    func testEmptyLegacyPasswordFailsExplicitly() async throws {
+        let server = SavedServer(
+            displayName: "Server",
+            host: "server.example.test",
+            username: "deploy"
+        )
+        let resolver = SSHAuthResolver(
+            passwordStore: TestPasswordStore(passwords: [server.id: ""]),
+            credentialStore: TestSSHCredentialStore()
+        )
+
+        do {
+            _ = try await resolver.resolve(
+                server: server,
+                in: ConnectionLibrarySnapshot(servers: [server], workspaces: [])
+            )
+            XCTFail("Expected missing legacy password error")
+        } catch let error as SSHAuthResolverError {
+            XCTAssertEqual(error, .missingLegacyPassword(server.id))
+        }
+    }
+
     func testResolvesPasswordIdentityThroughCredentialReference() async throws {
         let identity = SSHIdentity(
             id: UUID(),
