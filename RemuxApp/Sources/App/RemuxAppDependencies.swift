@@ -6,6 +6,7 @@ struct RemuxAppDependencies: Sendable {
     let settingsRepository: any TerminalSettingsRepository
     let shortcutRepository: any ShortcutRepository
     let passwordStore: any PasswordStore
+    let credentialStore: any SSHCredentialStore
     let trustedHostStore: TrustedHostStore
     private let sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
     private let transportFactory: @Sendable (
@@ -32,6 +33,7 @@ struct RemuxAppDependencies: Sendable {
         settingsRepository: any TerminalSettingsRepository,
         shortcutRepository: any ShortcutRepository,
         passwordStore: any PasswordStore,
+        credentialStore: any SSHCredentialStore,
         trustedHostStore: TrustedHostStore,
         sshConnectionPool: SSHTmuxAuthenticatedConnectionPool = SSHTmuxAuthenticatedConnectionPool(),
         transportFactory: @escaping @Sendable (
@@ -57,6 +59,7 @@ struct RemuxAppDependencies: Sendable {
         self.settingsRepository = settingsRepository
         self.shortcutRepository = shortcutRepository
         self.passwordStore = passwordStore
+        self.credentialStore = credentialStore
         self.trustedHostStore = trustedHostStore
         self.sshConnectionPool = sshConnectionPool
         self.transportFactory = transportFactory
@@ -82,6 +85,7 @@ struct RemuxAppDependencies: Sendable {
         let usesEphemeralDebugStorage = environment[DebugLiveEnvironmentKey.ephemeralStorage] == "1"
         let root: URL
         let passwordStore: any PasswordStore
+        let credentialStore: any SSHCredentialStore
         if usesEphemeralDebugStorage {
             root = try ApplicationStorage.remuxRoot(
                 overridePath: FileManager.default.temporaryDirectory
@@ -89,19 +93,23 @@ struct RemuxAppDependencies: Sendable {
                     .path
             )
             passwordStore = InMemoryPasswordStore()
+            credentialStore = InMemorySSHCredentialStore()
         } else {
             root = try ApplicationStorage.remuxRoot()
             passwordStore = KeychainPasswordStore()
+            credentialStore = KeychainSSHCredentialStore()
         }
 #else
         let root = try ApplicationStorage.remuxRoot()
         let passwordStore: any PasswordStore = KeychainPasswordStore()
+        let credentialStore: any SSHCredentialStore = KeychainSSHCredentialStore()
 #endif
         return RemuxAppDependencies(
             profileRepository: FileBackedConnectionProfileRepository(rootURL: root),
             settingsRepository: FileBackedTerminalSettingsRepository(rootURL: root),
             shortcutRepository: FileBackedShortcutRepository(rootURL: root),
             passwordStore: passwordStore,
+            credentialStore: credentialStore,
             trustedHostStore: TrustedHostStore(rootURL: root)
         )
     }
@@ -215,6 +223,7 @@ struct RemuxAppDependencies: Sendable {
             settingsRepository: InMemoryTerminalSettingsRepository(),
             shortcutRepository: InMemoryShortcutRepository(),
             passwordStore: InMemoryPasswordStore(),
+            credentialStore: InMemorySSHCredentialStore(),
             trustedHostStore: TrustedHostStore(rootURL: root),
             transportFactory: { _, _, _ in
                 DeterministicTmuxControlTransport(chunks: [])
@@ -363,6 +372,22 @@ private actor InMemoryPasswordStore: PasswordStore {
 
     func deletePassword(for serverID: SavedServer.ID) async throws {
         passwords.removeValue(forKey: serverID)
+    }
+}
+
+private actor InMemorySSHCredentialStore: SSHCredentialStore {
+    private var credentials: [UUID: SSHCredential] = [:]
+
+    func loadCredential(credentialID: UUID) async throws -> SSHCredential? {
+        credentials[credentialID]
+    }
+
+    func saveCredential(_ credential: SSHCredential, credentialID: UUID) async throws {
+        credentials[credentialID] = credential
+    }
+
+    func deleteCredential(credentialID: UUID) async throws {
+        credentials.removeValue(forKey: credentialID)
     }
 }
 #endif

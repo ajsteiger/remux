@@ -1733,6 +1733,7 @@ final class RemuxRootModelTests: XCTestCase {
         let settingsRepository = settingsRepository ?? TestTerminalSettingsRepository(settings: settings)
         let shortcutRepository = FileBackedShortcutRepository(rootURL: temporaryRoot())
         let passwordStore = TestPasswordStore()
+        let credentialStore = TestSSHCredentialStore()
         let trustedHostStore = TrustedHostStore(rootURL: temporaryRoot())
         let resolvedTransportFactory = transportFactory ?? { _, _, _ in
             DeterministicTmuxControlTransport(chunks: [])
@@ -1744,6 +1745,7 @@ final class RemuxRootModelTests: XCTestCase {
             settingsRepository: settingsRepository,
             shortcutRepository: shortcutRepository,
             passwordStore: passwordStore,
+            credentialStore: credentialStore,
             trustedHostStore: trustedHostStore,
             transportFactory: resolvedTransportFactory,
             sshConnectionPrewarmer: resolvedSSHConnectionPrewarmer,
@@ -2183,5 +2185,21 @@ private actor TestPasswordStore: PasswordStore {
 
     func deletePassword(for serverID: SavedServer.ID) async throws {
         passwords.removeValue(forKey: serverID)
+    }
+}
+
+private actor TestSSHCredentialStore: SSHCredentialStore {
+    private var credentials: [UUID: SSHCredential] = [:]
+
+    func loadCredential(credentialID: UUID) async throws -> SSHCredential? {
+        credentials[credentialID]
+    }
+
+    func saveCredential(_ credential: SSHCredential, credentialID: UUID) async throws {
+        credentials[credentialID] = credential
+    }
+
+    func deleteCredential(credentialID: UUID) async throws {
+        credentials.removeValue(forKey: credentialID)
     }
 }
