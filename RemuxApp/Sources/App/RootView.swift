@@ -1756,11 +1756,7 @@ private struct ConnectionSetupView: View {
 
     @ViewBuilder
     private func privateKeyInputRows() -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Private Key")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        VStack(alignment: .leading, spacing: 8) {
             if let inspection = privateKeyInspection {
                 privateKeySelectedRows(inspection)
             } else {
@@ -1811,7 +1807,7 @@ private struct ConnectionSetupView: View {
         if let inspection = privateKeyInspection {
             return "\(inspection.keyType.displayName) \(inspection.publicFingerprint)"
         }
-        return "OpenSSH private key"
+        return "Private key"
     }
 
     private var privateKeyInspection: SSHPrivateKeyInspection? {
@@ -1826,36 +1822,32 @@ private struct ConnectionSetupView: View {
     }
 
     private func privateKeyEmptyRows() -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            privateKeyInfoRow(
-                systemImage: "lock.shield",
-                title: "Use a private key to sign in",
-                subtitle: "Remux keeps the private key on this device. Add the matching public key to your server."
-            )
-
-            Divider()
-
+        VStack(alignment: .leading, spacing: 0) {
             privateKeyActionButton(
                 title: "Import private key",
-                subtitle: "Choose an OpenSSH private key file",
+                subtitle: "Choose a private key file",
                 systemImage: "square.and.arrow.down",
                 accessibilityIdentifier: "connection.private-key.import"
             ) {
                 presentPrivateKeyImporter()
             }
 
+            privateKeyActionDivider()
+
             privateKeyActionButton(
                 title: "Paste private key",
-                subtitle: "Paste a full private key block",
+                subtitle: "Paste a private key block",
                 systemImage: "doc.on.clipboard",
                 accessibilityIdentifier: "connection.private-key.paste"
             ) {
                 pastePrivateKeyFromClipboard()
             }
 
+            privateKeyActionDivider()
+
             privateKeyActionButton(
                 title: "Generate ED25519 key",
-                subtitle: "Create a new key pair on this device",
+                subtitle: "Create a key pair on this device",
                 systemImage: "key.horizontal",
                 accessibilityIdentifier: "connection.private-key.generate"
             ) {
@@ -2034,8 +2026,16 @@ private struct ConnectionSetupView: View {
             }
             .contentShape(Rectangle())
         }
+        .padding(.vertical, 6)
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private func privateKeyActionDivider() -> some View {
+        Rectangle()
+            .fill(LibraryHomePalette.separator)
+            .frame(height: 1)
+            .padding(.leading, 34)
     }
 
     private func presentPrivateKeyImporter() {
