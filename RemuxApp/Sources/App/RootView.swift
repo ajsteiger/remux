@@ -1761,50 +1761,10 @@ private struct ConnectionSetupView: View {
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            privateKeyStatusRow()
-
-            Divider()
-
-            privateKeyActionButton(
-                title: "Import private key",
-                subtitle: "Choose an OpenSSH key file",
-                systemImage: "square.and.arrow.down",
-                accessibilityIdentifier: "connection.private-key.import"
-            ) {
-                privateKeyImportError = nil
-                dismissKeyboard()
-                isPrivateKeyImporterPresented = true
-            }
-
-            privateKeyActionButton(
-                title: "Paste private key",
-                subtitle: "Read a key from the clipboard",
-                systemImage: "doc.on.clipboard",
-                accessibilityIdentifier: "connection.private-key.paste"
-            ) {
-                pastePrivateKeyFromClipboard()
-            }
-
-            privateKeyActionButton(
-                title: "Generate ED25519 key",
-                subtitle: "Create a new key pair",
-                systemImage: "key.horizontal",
-                accessibilityIdentifier: "connection.private-key.generate"
-            ) {
-                generatePrivateKey()
-            }
-
             if let inspection = privateKeyInspection {
-                Divider()
-
-                privateKeyActionButton(
-                    title: "Copy public key",
-                    subtitle: publicKeyCopyMessage ?? inspection.publicFingerprint,
-                    systemImage: "doc.on.doc",
-                    accessibilityIdentifier: "connection.private-key.copy-public"
-                ) {
-                    copyPublicKey(inspection.publicKeyLine)
-                }
+                privateKeySelectedRows(inspection)
+            } else {
+                privateKeyEmptyRows()
             }
 
             fieldValidationMessage(privateKeyImportError ?? validation.privateKey)
@@ -1878,15 +1838,120 @@ private struct ConnectionSetupView: View {
         try? SSHPrivateKeyInspector.inspect(draft.privateKeyPEM)
     }
 
-    private func privateKeyStatusRow() -> some View {
+    private func privateKeyEmptyRows() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            privateKeyInfoRow(
+                systemImage: "lock.shield",
+                title: "Use a private key to sign in",
+                subtitle: "Remux keeps the private key on this device. Add the matching public key to your server."
+            )
+
+            Divider()
+
+            privateKeyActionButton(
+                title: "Import private key",
+                subtitle: "Choose an OpenSSH private key file",
+                systemImage: "square.and.arrow.down",
+                accessibilityIdentifier: "connection.private-key.import"
+            ) {
+                presentPrivateKeyImporter()
+            }
+
+            privateKeyActionButton(
+                title: "Paste private key",
+                subtitle: "Paste a full private key block",
+                systemImage: "doc.on.clipboard",
+                accessibilityIdentifier: "connection.private-key.paste"
+            ) {
+                pastePrivateKeyFromClipboard()
+            }
+
+            privateKeyActionButton(
+                title: "Generate ED25519 key",
+                subtitle: "Create a new key pair on this device",
+                systemImage: "key.horizontal",
+                accessibilityIdentifier: "connection.private-key.generate"
+            ) {
+                generatePrivateKey()
+            }
+        }
+    }
+
+    private func privateKeySelectedRows(_ inspection: SSHPrivateKeyInspection) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            privateKeySelectedSummary()
+
+            Divider()
+
+            privateKeyInfoRow(
+                systemImage: "person.badge.key",
+                title: "Add the public key to your server",
+                subtitle: "Copy it into ~/.ssh/authorized_keys for this user before connecting."
+            )
+
+            privateKeyActionButton(
+                title: "Copy public key",
+                subtitle: publicKeyCopyMessage ?? inspection.publicFingerprint,
+                systemImage: "doc.on.doc",
+                accessibilityIdentifier: "connection.private-key.copy-public"
+            ) {
+                copyPublicKey(inspection.publicKeyLine)
+            }
+
+            Divider()
+
+            Text("Replace Key")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            privateKeyActionButton(
+                title: "Import different key",
+                subtitle: "Choose another OpenSSH key file",
+                systemImage: "square.and.arrow.down",
+                accessibilityIdentifier: "connection.private-key.import"
+            ) {
+                presentPrivateKeyImporter()
+            }
+
+            privateKeyActionButton(
+                title: "Paste different key",
+                subtitle: "Replace this key from the clipboard",
+                systemImage: "doc.on.clipboard",
+                accessibilityIdentifier: "connection.private-key.paste"
+            ) {
+                pastePrivateKeyFromClipboard()
+            }
+
+            privateKeyActionButton(
+                title: "Generate new ED25519 key",
+                subtitle: "Replace this key with a new pair",
+                systemImage: "key.horizontal",
+                accessibilityIdentifier: "connection.private-key.generate"
+            ) {
+                generatePrivateKey()
+            }
+
+            privateKeyActionButton(
+                title: "Remove private key",
+                subtitle: "Choose another key before connecting",
+                systemImage: "trash",
+                accessibilityIdentifier: "connection.private-key.remove",
+                isDestructive: true
+            ) {
+                removePrivateKey()
+            }
+        }
+    }
+
+    private func privateKeySelectedSummary() -> some View {
         HStack(spacing: 12) {
-            Image(systemName: draft.privateKeyPEM.isEmpty ? "key" : "checkmark.circle.fill")
+            Image(systemName: "checkmark.circle.fill")
                 .font(.body.weight(.semibold))
-                .foregroundStyle(draft.privateKeyPEM.isEmpty ? Color.secondary : Color.green)
+                .foregroundStyle(Color.green)
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(draft.privateKeyPEM.isEmpty ? "No private key selected" : importedPrivateKeyTitle)
+                Text(importedPrivateKeyTitle)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
@@ -1900,23 +1965,50 @@ private struct ConnectionSetupView: View {
         }
     }
 
+    private func privateKeyInfoRow(
+        systemImage: String,
+        title: String,
+        subtitle: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+        }
+    }
+
     private func privateKeyActionButton(
         title: String,
         subtitle: String,
         systemImage: String,
         accessibilityIdentifier: String,
+        isDestructive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: systemImage)
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isDestructive ? Color.red : Color.secondary)
                     .frame(width: 22)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(isDestructive ? Color.red : Color.primary)
                         .lineLimit(1)
 
                     Text(subtitle)
@@ -1931,6 +2023,12 @@ private struct ConnectionSetupView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private func presentPrivateKeyImporter() {
+        privateKeyImportError = nil
+        dismissKeyboard()
+        isPrivateKeyImporterPresented = true
     }
 
     private func handlePrivateKeyImport(_ result: Result<[URL], Error>) {
@@ -1965,6 +2063,17 @@ private struct ConnectionSetupView: View {
             } else {
                 privateKeyImportError = "Private key could not be imported."
             }
+        }
+    }
+
+    private func removePrivateKey() {
+        privateKeyImportError = nil
+        publicKeyCopyMessage = nil
+        Haptic.tap()
+        onChange { draft in
+            draft.privateKeyPEM = ""
+            draft.privateKeyFileName = ""
+            draft.privateKeyPassphrase = ""
         }
     }
 

@@ -89,6 +89,30 @@ final class RemuxAppUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Catppuccin Mocha"].waitForExistence(timeout: 2))
     }
 
+    func testPrivateKeyAuthenticationFlowExplainsPublicKeySetup() {
+        launchSimulatorApp()
+        openConnectionSetup()
+
+        if !app.buttons["Private Key"].waitForExistence(timeout: 1) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.buttons["Private Key"].waitForExistence(timeout: 2))
+        app.buttons["Private Key"].tap()
+
+        XCTAssertTrue(app.staticTexts["Use a private key to sign in"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["connection.private-key.import"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["connection.private-key.paste"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["connection.private-key.generate"].waitForExistence(timeout: 2))
+
+        app.buttons["connection.private-key.generate"].tap()
+
+        XCTAssertTrue(app.staticTexts["Generated ED25519 key"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Add the public key to your server"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["connection.private-key.copy-public"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Replace Key"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["connection.private-key.remove"].waitForExistence(timeout: 2))
+    }
+
     func testLiveSSHSeededServerOpensReadyTerminalWhenConfigured() throws {
         let sessionName = try generatedLiveLatencySessionName("render")
         defer {
