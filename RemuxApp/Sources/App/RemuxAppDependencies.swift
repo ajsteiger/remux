@@ -1,11 +1,11 @@
 @preconcurrency import Citadel
+@preconcurrency import Crypto
 import Foundation
 
 struct RemuxAppDependencies: Sendable {
     let profileRepository: any ConnectionProfileRepository
     let settingsRepository: any TerminalSettingsRepository
     let shortcutRepository: any ShortcutRepository
-    let passwordStore: any PasswordStore
     let credentialStore: any SSHCredentialStore
     let trustedHostStore: TrustedHostStore
     private let sshConnectionPool: SSHTmuxAuthenticatedConnectionPool
@@ -25,14 +25,13 @@ struct RemuxAppDependencies: Sendable {
     ) -> any GhosttyAttachmentTransferService
     private let debugConnectionSeeder: @Sendable (
         _ profileRepository: any ConnectionProfileRepository,
-        _ passwordStore: any PasswordStore
+        _ credentialStore: any SSHCredentialStore
     ) async throws -> Bool
 
     init(
         profileRepository: any ConnectionProfileRepository,
         settingsRepository: any TerminalSettingsRepository,
         shortcutRepository: any ShortcutRepository,
-        passwordStore: any PasswordStore,
         credentialStore: any SSHCredentialStore,
         trustedHostStore: TrustedHostStore,
         sshConnectionPool: SSHTmuxAuthenticatedConnectionPool = SSHTmuxAuthenticatedConnectionPool(),
@@ -52,13 +51,12 @@ struct RemuxAppDependencies: Sendable {
         ) -> any GhosttyAttachmentTransferService = RemuxAppDependencies.liveAttachmentTransferService,
         debugConnectionSeeder: @escaping @Sendable (
             _ profileRepository: any ConnectionProfileRepository,
-            _ passwordStore: any PasswordStore
+            _ credentialStore: any SSHCredentialStore
         ) async throws -> Bool = RemuxAppDependencies.liveDebugConnectionSeeder
     ) {
         self.profileRepository = profileRepository
         self.settingsRepository = settingsRepository
         self.shortcutRepository = shortcutRepository
-        self.passwordStore = passwordStore
         self.credentialStore = credentialStore
         self.trustedHostStore = trustedHostStore
         self.sshConnectionPool = sshConnectionPool
@@ -84,7 +82,6 @@ struct RemuxAppDependencies: Sendable {
         let environment = ProcessInfo.processInfo.environment
         let usesEphemeralDebugStorage = environment[DebugLiveEnvironmentKey.ephemeralStorage] == "1"
         let root: URL
-        let passwordStore: any PasswordStore
         let credentialStore: any SSHCredentialStore
         if usesEphemeralDebugStorage {
             root = try ApplicationStorage.remuxRoot(
@@ -92,23 +89,19 @@ struct RemuxAppDependencies: Sendable {
                     .appendingPathComponent("RemuxLiveDebug-\(UUID().uuidString)", isDirectory: true)
                     .path
             )
-            passwordStore = InMemoryPasswordStore()
             credentialStore = InMemorySSHCredentialStore()
         } else {
             root = try ApplicationStorage.remuxRoot()
-            passwordStore = KeychainPasswordStore()
             credentialStore = KeychainSSHCredentialStore()
         }
 #else
         let root = try ApplicationStorage.remuxRoot()
-        let passwordStore: any PasswordStore = KeychainPasswordStore()
         let credentialStore: any SSHCredentialStore = KeychainSSHCredentialStore()
 #endif
         return RemuxAppDependencies(
             profileRepository: FileBackedConnectionProfileRepository(rootURL: root),
             settingsRepository: FileBackedTerminalSettingsRepository(rootURL: root),
             shortcutRepository: FileBackedShortcutRepository(rootURL: root),
-            passwordStore: passwordStore,
             credentialStore: credentialStore,
             trustedHostStore: TrustedHostStore(rootURL: root)
         )
@@ -177,7 +170,7 @@ struct RemuxAppDependencies: Sendable {
             host: target.server.host,
             port: target.server.port,
             authenticationMethod: {
-                authenticationMethod(for: target.sshAuth)
+                try authenticationMethod(for: target.sshAuth)
             },
             hostKeyValidator: trustedHostStore.validator(for: target.server),
             sessionName: target.workspace.sessionName,
@@ -194,7 +187,7 @@ struct RemuxAppDependencies: Sendable {
             host: target.server.host,
             port: target.server.port,
             authenticationMethod: {
-                authenticationMethod(for: target.sshAuth)
+                try authenticationMethod(for: target.sshAuth)
             },
             hostKeyValidator: trustedHostStore.validator(for: target.server)
         )
@@ -202,10 +195,31 @@ struct RemuxAppDependencies: Sendable {
         return GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
     }
 
-    private static func authenticationMethod(for auth: ResolvedSSHAuth) -> SSHAuthenticationMethod {
+    private static func authenticationMethod(for auth: ResolvedSSHAuth) throws -> SSHAuthenticationMethod {
         switch auth.credential {
         case .password(let password):
-            .passwordBased(username: auth.username, password: password)
+            return .passwordBased(username: auth.username, password: password)
+        case .privateKey(let credential):
+            let inspection = try SSHPrivateKeyInspector.inspect(credential.privateKeyPEM)
+            let decryptionKey = credential.passphrase.map { Data($0.utf8) }
+            switch inspection.keyType {
+            case .ed25519:
+                return try .ed25519(
+                    username: auth.username,
+                    privateKey: Curve25519.Signing.PrivateKey(
+                        sshEd25519: inspection.normalizedPEM,
+                        decryptionKey: decryptionKey
+                    )
+                )
+            case .rsa:
+                return try .rsa(
+                    username: auth.username,
+                    privateKey: Insecure.RSA.PrivateKey(
+                        sshRsa: inspection.normalizedPEM,
+                        decryptionKey: decryptionKey
+                    )
+                )
+            }
         }
     }
 
@@ -222,7 +236,6 @@ struct RemuxAppDependencies: Sendable {
             profileRepository: InMemoryConnectionProfileRepository(),
             settingsRepository: InMemoryTerminalSettingsRepository(),
             shortcutRepository: InMemoryShortcutRepository(),
-            passwordStore: InMemoryPasswordStore(),
             credentialStore: InMemorySSHCredentialStore(),
             trustedHostStore: TrustedHostStore(rootURL: root),
             transportFactory: { _, _, _ in
@@ -237,22 +250,22 @@ struct RemuxAppDependencies: Sendable {
 #if DEBUG
     @discardableResult
     func seedDebugConnectionIfRequested() async throws -> Bool {
-        try await debugConnectionSeeder(profileRepository, passwordStore)
+        try await debugConnectionSeeder(profileRepository, credentialStore)
     }
 
     private static func liveDebugConnectionSeeder(
         profileRepository: any ConnectionProfileRepository,
-        passwordStore: any PasswordStore
+        credentialStore: any SSHCredentialStore
     ) async throws -> Bool {
         try await DebugConnectionProfileSeeder.seedIfRequested(
             profileRepository: profileRepository,
-            passwordStore: passwordStore
+            credentialStore: credentialStore
         )
     }
 #else
     private static func liveDebugConnectionSeeder(
         profileRepository: any ConnectionProfileRepository,
-        passwordStore: any PasswordStore
+        credentialStore: any SSHCredentialStore
     ) async throws -> Bool {
         false
     }
@@ -296,6 +309,16 @@ private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
 
     func saveIdentity(_ identity: SSHIdentity) async throws {
         upsert(identity, into: &identities)
+    }
+
+    func saveIdentityProfile(
+        identity: SSHIdentity,
+        server: SavedServer,
+        workspace: SavedWorkspace
+    ) async throws {
+        upsert(identity, into: &identities)
+        upsert(server, into: &servers)
+        upsert(workspace, into: &workspaces)
     }
 
     func saveProfile(server: SavedServer, workspace: SavedWorkspace) async throws {
@@ -359,35 +382,19 @@ private actor InMemoryShortcutRepository: ShortcutRepository {
     }
 }
 
-private actor InMemoryPasswordStore: PasswordStore {
-    private var passwords: [SavedServer.ID: String] = [:]
-
-    func loadPassword(for serverID: SavedServer.ID) async throws -> String? {
-        passwords[serverID]
-    }
-
-    func savePassword(_ password: String, for serverID: SavedServer.ID) async throws {
-        passwords[serverID] = password
-    }
-
-    func deletePassword(for serverID: SavedServer.ID) async throws {
-        passwords.removeValue(forKey: serverID)
-    }
-}
-
 private actor InMemorySSHCredentialStore: SSHCredentialStore {
     private var credentials: [UUID: SSHCredential] = [:]
 
-    func loadCredential(credentialID: UUID) async throws -> SSHCredential? {
-        credentials[credentialID]
+    func loadCredential(identityID: SSHIdentity.ID) async throws -> SSHCredential? {
+        credentials[identityID]
     }
 
-    func saveCredential(_ credential: SSHCredential, credentialID: UUID) async throws {
-        credentials[credentialID] = credential
+    func saveCredential(_ credential: SSHCredential, identityID: SSHIdentity.ID) async throws {
+        credentials[identityID] = credential
     }
 
-    func deleteCredential(credentialID: UUID) async throws {
-        credentials.removeValue(forKey: credentialID)
+    func deleteCredential(identityID: SSHIdentity.ID) async throws {
+        credentials.removeValue(forKey: identityID)
     }
 }
 #endif
