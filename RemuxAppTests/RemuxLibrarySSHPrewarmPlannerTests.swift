@@ -138,7 +138,7 @@ final class RemuxLibrarySSHPrewarmPlannerTests: XCTestCase {
         )
     }
 
-    func testEligibilityRejectsActiveServerAndMissingPassword() {
+    func testEligibilityRejectsActiveServerAndMissingAuth() {
         let context = makeEligibilityContext()
 
         XCTAssertEqual(
@@ -146,12 +146,8 @@ final class RemuxLibrarySSHPrewarmPlannerTests: XCTestCase {
             .skipped(.activeServer)
         )
         XCTAssertEqual(
-            context.eligibility(currentPassword: nil),
-            .skipped(.missingPassword)
-        )
-        XCTAssertEqual(
-            context.eligibility(currentPassword: ""),
-            .skipped(.missingPassword)
+            context.eligibility(hasCurrentTarget: false),
+            .skipped(.missingAuth)
         )
     }
 
@@ -164,7 +160,8 @@ final class RemuxLibrarySSHPrewarmPlannerTests: XCTestCase {
                     id: context.server.id,
                     displayName: "Renamed",
                     host: "renamed.example.test",
-                    username: context.server.username
+                    username: context.server.username,
+                    identityID: context.server.identityID
                 )
             ),
             .skipped(.staleTarget)
@@ -180,7 +177,16 @@ final class RemuxLibrarySSHPrewarmPlannerTests: XCTestCase {
             .skipped(.staleTarget)
         )
         XCTAssertEqual(
-            context.eligibility(currentPassword: "changed"),
+            context.eligibility(
+                currentTarget: context.target.replacingAuth(
+                    .password(
+                        username: context.server.username,
+                        password: "changed",
+                        identityID: context.server.identityID,
+                        displayLabel: "Build"
+                    )
+                )
+            ),
             .skipped(.staleTarget)
         )
         XCTAssertEqual(
@@ -213,19 +219,29 @@ private struct PrewarmEligibilityContext {
         isLibraryVisible: Bool = true,
         currentServer: SavedServer? = nil,
         currentWorkspace: SavedWorkspace? = nil,
-        currentPassword: String? = "secret",
+        currentTarget: TmuxConnectionTarget? = nil,
+        hasCurrentTarget: Bool = true,
         currentTerminalSettings: TerminalSettings = .default,
         hasActiveSessionOnServer: Bool = false
     ) -> RemuxLibrarySSHPrewarmEligibility {
-        RemuxLibrarySSHPrewarmPlanner.eligibility(
+        let resolvedServer = currentServer ?? server
+        let resolvedWorkspace = currentWorkspace ?? workspace
+        let resolvedTarget = currentTarget ?? TmuxConnectionTarget(
+            server: resolvedServer,
+            workspace: resolvedWorkspace,
+            sshAuth: target.sshAuth,
+            terminalSettings: currentTerminalSettings
+        )
+
+        return RemuxLibrarySSHPrewarmPlanner.eligibility(
             capturedGeneration: capturedGeneration,
             currentGeneration: currentGeneration,
             isLibraryVisible: isLibraryVisible,
             candidate: candidate,
             capturedTarget: target,
-            currentServer: currentServer ?? server,
-            currentWorkspace: currentWorkspace ?? workspace,
-            currentPassword: currentPassword,
+            currentServer: resolvedServer,
+            currentWorkspace: resolvedWorkspace,
+            currentTarget: hasCurrentTarget ? resolvedTarget : nil,
             currentTerminalSettings: currentTerminalSettings,
             hasActiveSessionOnServer: hasActiveSessionOnServer
         )
@@ -237,11 +253,22 @@ private struct PrewarmEligibilityContext {
         capturedGeneration: UInt64 = 1,
         currentGeneration: UInt64 = 1,
         isLibraryVisible: Bool = true,
-        currentPassword: String? = "secret",
+        currentTarget: TmuxConnectionTarget? = nil,
+        hasCurrentTarget: Bool = true,
         currentTerminalSettings: TerminalSettings = .default,
         hasActiveSessionOnServer: Bool = false
     ) -> RemuxLibrarySSHPrewarmEligibility {
-        RemuxLibrarySSHPrewarmPlanner.eligibility(
+        let resolvedTarget = currentTarget ?? {
+            guard let currentServer, let currentWorkspace else { return target }
+            return TmuxConnectionTarget(
+                server: currentServer,
+                workspace: currentWorkspace,
+                sshAuth: target.sshAuth,
+                terminalSettings: currentTerminalSettings
+            )
+        }()
+
+        return RemuxLibrarySSHPrewarmPlanner.eligibility(
             capturedGeneration: capturedGeneration,
             currentGeneration: currentGeneration,
             isLibraryVisible: isLibraryVisible,
@@ -249,7 +276,7 @@ private struct PrewarmEligibilityContext {
             capturedTarget: target,
             currentServer: currentServer,
             currentWorkspace: currentWorkspace,
-            currentPassword: currentPassword,
+            currentTarget: hasCurrentTarget ? resolvedTarget : nil,
             currentTerminalSettings: currentTerminalSettings,
             hasActiveSessionOnServer: hasActiveSessionOnServer
         )
@@ -262,7 +289,12 @@ private func makeEligibilityContext() -> PrewarmEligibilityContext {
     let target = TmuxConnectionTarget(
         server: server,
         workspace: workspace,
-        password: "secret"
+        sshAuth: .password(
+            username: server.username,
+            password: "secret",
+            identityID: server.identityID,
+            displayLabel: server.displayName
+        )
     )
     let candidate = RemuxLibrarySSHPrewarmCandidate(
         server: server,
@@ -284,8 +316,20 @@ private func makePrewarmServer(
         id: id,
         displayName: displayName,
         host: "\(displayName.lowercased().replacingOccurrences(of: " ", with: "-")).example.test",
-        username: "builder"
+        username: "builder",
+        identityID: UUID()
     )
+}
+
+private extension TmuxConnectionTarget {
+    func replacingAuth(_ auth: ResolvedSSHAuth) -> TmuxConnectionTarget {
+        TmuxConnectionTarget(
+            server: server,
+            workspace: workspace,
+            sshAuth: auth,
+            terminalSettings: terminalSettings
+        )
+    }
 }
 
 private func makePrewarmWorkspace(

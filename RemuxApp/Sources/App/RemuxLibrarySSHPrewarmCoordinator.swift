@@ -9,24 +9,27 @@ struct RemuxLibrarySSHPrewarmCurrentContext: Sendable {
 
 @MainActor
 final class RemuxLibrarySSHPrewarmCoordinator {
-    typealias PasswordLoader = @Sendable (SavedServer.ID) async throws -> String?
+    typealias AuthResolver = @Sendable (
+        _ server: SavedServer,
+        _ snapshot: ConnectionLibrarySnapshot
+    ) async throws -> ResolvedSSHAuth
     typealias SSHConnectionPrewarmer = @Sendable (TmuxConnectionTarget) async -> Void
     typealias CurrentContextProvider = @MainActor @Sendable () -> RemuxLibrarySSHPrewarmCurrentContext?
     typealias EligibleTargetHandler = @MainActor @Sendable (TmuxConnectionTarget) -> Void
 
     private let limit: Int
-    private let passwordLoader: PasswordLoader
+    private let authResolver: AuthResolver
     private let sshConnectionPrewarmer: SSHConnectionPrewarmer
     private var task: Task<Void, Never>?
     private var generation: UInt64 = 0
 
     init(
         limit: Int,
-        passwordLoader: @escaping PasswordLoader,
+        authResolver: @escaping AuthResolver,
         sshConnectionPrewarmer: @escaping SSHConnectionPrewarmer
     ) {
         self.limit = limit
-        self.passwordLoader = passwordLoader
+        self.authResolver = authResolver
         self.sshConnectionPrewarmer = sshConnectionPrewarmer
     }
 
@@ -53,38 +56,35 @@ final class RemuxLibrarySSHPrewarmCoordinator {
 
         cancel()
         let capturedGeneration = generation
-        let passwordLoader = passwordLoader
+        let authResolver = authResolver
         let sshConnectionPrewarmer = sshConnectionPrewarmer
         task = Task.detached(priority: .utility) { [weak self] in
             GhosttyRuntimeTrace.latency("library.prewarm scheduled count=\(candidates.count)")
             for candidate in candidates {
                 guard !Task.isCancelled else { return }
                 do {
-                    guard let password = try await passwordLoader(candidate.server.id),
-                          !password.isEmpty else {
-                        Self.traceSkippedInitialPassword(candidate: candidate)
-                        continue
-                    }
-
+                    let sshAuth = try await authResolver(candidate.server, snapshot)
                     let target = TmuxConnectionTarget(
                         server: candidate.server,
                         workspace: candidate.workspace,
-                        password: password,
+                        sshAuth: sshAuth,
                         terminalSettings: terminalSettings
                     )
                     await sshConnectionPrewarmer(target)
                     guard !Task.isCancelled else { return }
-                    let currentPassword = try await passwordLoader(candidate.server.id)
-                    guard !Task.isCancelled else { return }
+                    await self?.prepareIfStillEligible(
+                        authResolver: authResolver,
+                        candidate: candidate,
+                        target: target,
+                        capturedGeneration: capturedGeneration,
+                        currentContext: currentContext,
+                        onEligibleTarget: onEligibleTarget
+                    )
+                } catch is SSHAuthResolverError {
                     await MainActor.run {
-                        guard !Task.isCancelled else { return }
-                        self?.prepareIfStillEligible(
+                        self?.traceSkipped(
                             candidate: candidate,
-                            target: target,
-                            currentPassword: currentPassword,
-                            capturedGeneration: capturedGeneration,
-                            currentContext: currentContext,
-                            onEligibleTarget: onEligibleTarget
+                            reason: RemuxLibrarySSHPrewarmSkipReason.missingAuth.rawValue
                         )
                     }
                 } catch is CancellationError {
@@ -107,19 +107,34 @@ final class RemuxLibrarySSHPrewarmCoordinator {
     }
 
     private func prepareIfStillEligible(
+        authResolver: AuthResolver,
         candidate: RemuxLibrarySSHPrewarmCandidate,
         target: TmuxConnectionTarget,
-        currentPassword: String?,
         capturedGeneration: UInt64,
         currentContext: CurrentContextProvider,
         onEligibleTarget: EligibleTargetHandler
-    ) {
+    ) async {
         guard let context = currentContext() else { return }
         let currentServer = context.snapshot.server(id: candidate.server.id)
         let currentWorkspace = context.snapshot.workspace(id: candidate.workspace.id)
         let hasActiveSessionOnServer = currentServer.map {
             context.activeServerIDs.contains($0.id)
         } ?? false
+        let currentTarget: TmuxConnectionTarget?
+        if let currentServer, let currentWorkspace {
+            do {
+                currentTarget = TmuxConnectionTarget(
+                    server: currentServer,
+                    workspace: currentWorkspace,
+                    sshAuth: try await authResolver(currentServer, context.snapshot),
+                    terminalSettings: context.terminalSettings
+                )
+            } catch {
+                currentTarget = nil
+            }
+        } else {
+            currentTarget = nil
+        }
 
         switch RemuxLibrarySSHPrewarmPlanner.eligibility(
             capturedGeneration: capturedGeneration,
@@ -129,7 +144,7 @@ final class RemuxLibrarySSHPrewarmCoordinator {
             capturedTarget: target,
             currentServer: currentServer,
             currentWorkspace: currentWorkspace,
-            currentPassword: currentPassword,
+            currentTarget: currentTarget,
             currentTerminalSettings: context.terminalSettings,
             hasActiveSessionOnServer: hasActiveSessionOnServer
         ) {
@@ -138,14 +153,6 @@ final class RemuxLibrarySSHPrewarmCoordinator {
         case .skipped(let reason):
             traceSkipped(candidate: candidate, reason: reason.rawValue)
         }
-    }
-
-    nonisolated private static func traceSkippedInitialPassword(
-        candidate: RemuxLibrarySSHPrewarmCandidate
-    ) {
-        GhosttyRuntimeTrace.latency(
-            "library.prewarm skipped reason=\(RemuxLibrarySSHPrewarmSkipReason.missingPassword.rawValue) serverID=\(candidate.server.id.uuidString)"
-        )
     }
 
     private func traceSkipped(

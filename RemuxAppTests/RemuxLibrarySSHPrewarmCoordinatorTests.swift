@@ -26,11 +26,11 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
             servers: [firstServer, secondServer],
             workspaces: [oldFirstWorkspace, newFirstWorkspace, secondWorkspace]
         )
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("first-secret", for: firstServer.id)
-        await passwords.setPassword("second-secret", for: secondServer.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("first-secret", for: firstServer.id)
+        await auth.setPassword("second-secret", for: secondServer.id)
         let prewarmer = RecordingLibraryPrewarmer()
-        let coordinator = makePrewarmCoordinator(passwords: passwords, prewarmer: prewarmer)
+        let coordinator = makePrewarmCoordinator(auth: auth, prewarmer: prewarmer)
         var eligibleTargets: [TmuxConnectionTarget] = []
 
         coordinator.schedule(
@@ -66,11 +66,11 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
         let server = makePrewarmCoordinatorServer(displayName: "Build")
         let workspace = makePrewarmCoordinatorWorkspace(serverID: server.id, sessionName: "base")
         let snapshot = ConnectionLibrarySnapshot(servers: [server], workspaces: [workspace])
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("secret", for: server.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("secret", for: server.id)
         let prewarmer = SuspendingLibraryPrewarmer()
         let coordinator = makePrewarmCoordinator(
-            passwords: passwords,
+            auth: auth,
             sshConnectionPrewarmer: { target in
                 await prewarmer.recordAndSuspend(target)
             }
@@ -124,11 +124,11 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
         let server = makePrewarmCoordinatorServer(displayName: "Build")
         let workspace = makePrewarmCoordinatorWorkspace(serverID: server.id, sessionName: "base")
         let snapshot = ConnectionLibrarySnapshot(servers: [server], workspaces: [workspace])
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("secret", for: server.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("secret", for: server.id)
         let prewarmer = SuspendingLibraryPrewarmer()
         let coordinator = makePrewarmCoordinator(
-            passwords: passwords,
+            auth: auth,
             sshConnectionPrewarmer: { target in
                 await prewarmer.recordAndSuspend(target)
             }
@@ -170,13 +170,13 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
         let newWorkspace = makePrewarmCoordinatorWorkspace(serverID: newServer.id, sessionName: "new")
         let oldSnapshot = ConnectionLibrarySnapshot(servers: [oldServer], workspaces: [oldWorkspace])
         let newSnapshot = ConnectionLibrarySnapshot(servers: [newServer], workspaces: [newWorkspace])
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("old-secret", for: oldServer.id)
-        await passwords.setPassword("new-secret", for: newServer.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("old-secret", for: oldServer.id)
+        await auth.setPassword("new-secret", for: newServer.id)
         let suspendedPrewarmer = SuspendingLibraryPrewarmer()
         let recordingPrewarmer = RecordingLibraryPrewarmer()
         let coordinator = makePrewarmCoordinator(
-            passwords: passwords,
+            auth: auth,
             sshConnectionPrewarmer: { target in
                 if target.server.id == oldServer.id {
                     await suspendedPrewarmer.recordAndSuspend(target)
@@ -239,11 +239,11 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
         XCTAssertEqual(recordedWorkspaceIDs, [newWorkspace.id])
     }
 
-    func testMissingInitialPasswordSkipsCandidateAndContinues() async {
-        let missingPasswordServer = makePrewarmCoordinatorServer(displayName: "Missing")
+    func testMissingInitialAuthSkipsCandidateAndContinues() async {
+        let missingAuthServer = makePrewarmCoordinatorServer(displayName: "Missing")
         let eligibleServer = makePrewarmCoordinatorServer(displayName: "Eligible")
-        let missingPasswordWorkspace = makePrewarmCoordinatorWorkspace(
-            serverID: missingPasswordServer.id,
+        let missingAuthWorkspace = makePrewarmCoordinatorWorkspace(
+            serverID: missingAuthServer.id,
             sessionName: "missing",
             lastOpenedAt: Date(timeIntervalSince1970: 20)
         )
@@ -253,13 +253,13 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
             lastOpenedAt: Date(timeIntervalSince1970: 10)
         )
         let snapshot = ConnectionLibrarySnapshot(
-            servers: [missingPasswordServer, eligibleServer],
-            workspaces: [missingPasswordWorkspace, eligibleWorkspace]
+            servers: [missingAuthServer, eligibleServer],
+            workspaces: [missingAuthWorkspace, eligibleWorkspace]
         )
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("eligible-secret", for: eligibleServer.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("eligible-secret", for: eligibleServer.id)
         let prewarmer = RecordingLibraryPrewarmer()
-        let coordinator = makePrewarmCoordinator(passwords: passwords, prewarmer: prewarmer)
+        let coordinator = makePrewarmCoordinator(auth: auth, prewarmer: prewarmer)
         var eligibleTargets: [TmuxConnectionTarget] = []
 
         coordinator.schedule(
@@ -290,10 +290,10 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
         let server = makePrewarmCoordinatorServer(displayName: "Build")
         let workspace = makePrewarmCoordinatorWorkspace(serverID: server.id, sessionName: "base")
         let snapshot = ConnectionLibrarySnapshot(servers: [server], workspaces: [workspace])
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("secret", for: server.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("secret", for: server.id)
         let prewarmer = RecordingLibraryPrewarmer()
-        let coordinator = makePrewarmCoordinator(passwords: passwords, prewarmer: prewarmer)
+        let coordinator = makePrewarmCoordinator(auth: auth, prewarmer: prewarmer)
         var eligibleTargets: [TmuxConnectionTarget] = []
 
         coordinator.schedule(
@@ -325,10 +325,10 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
         let server = makePrewarmCoordinatorServer(displayName: "Build")
         let workspace = makePrewarmCoordinatorWorkspace(serverID: server.id, sessionName: "base")
         let snapshot = ConnectionLibrarySnapshot(servers: [server], workspaces: [workspace])
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("secret", for: server.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("secret", for: server.id)
         let prewarmer = RecordingLibraryPrewarmer()
-        let coordinator = makePrewarmCoordinator(passwords: passwords, prewarmer: prewarmer)
+        let coordinator = makePrewarmCoordinator(auth: auth, prewarmer: prewarmer)
         var eligibleTargets: [TmuxConnectionTarget] = []
 
         coordinator.schedule(
@@ -360,14 +360,14 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
         let server = makePrewarmCoordinatorServer(displayName: "Build")
         let workspace = makePrewarmCoordinatorWorkspace(serverID: server.id, sessionName: "base")
         let snapshot = ConnectionLibrarySnapshot(servers: [server], workspaces: [workspace])
-        let passwords = LibraryPrewarmPasswordLoader()
-        await passwords.setPassword("old-secret", for: server.id)
+        let auth = LibraryPrewarmAuthResolver()
+        await auth.setPassword("old-secret", for: server.id)
         let prewarmer = RecordingLibraryPrewarmer()
         let coordinator = makePrewarmCoordinator(
-            passwords: passwords,
+            auth: auth,
             sshConnectionPrewarmer: { target in
                 await prewarmer.record(target)
-                await passwords.setPassword("new-secret", for: target.server.id)
+                await auth.setPassword("new-secret", for: target.server.id)
             }
         )
         var eligibleTargets: [TmuxConnectionTarget] = []
@@ -401,12 +401,12 @@ final class RemuxLibrarySSHPrewarmCoordinatorTests: XCTestCase {
 @MainActor
 private func makePrewarmCoordinator(
     limit: Int = 3,
-    passwords: LibraryPrewarmPasswordLoader,
+    auth: LibraryPrewarmAuthResolver,
     prewarmer: RecordingLibraryPrewarmer
 ) -> RemuxLibrarySSHPrewarmCoordinator {
     makePrewarmCoordinator(
         limit: limit,
-        passwords: passwords,
+        auth: auth,
         sshConnectionPrewarmer: { target in
             await prewarmer.record(target)
         }
@@ -416,13 +416,21 @@ private func makePrewarmCoordinator(
 @MainActor
 private func makePrewarmCoordinator(
     limit: Int = 3,
-    passwords: LibraryPrewarmPasswordLoader,
+    auth: LibraryPrewarmAuthResolver,
     sshConnectionPrewarmer: @escaping @Sendable (TmuxConnectionTarget) async -> Void
 ) -> RemuxLibrarySSHPrewarmCoordinator {
     RemuxLibrarySSHPrewarmCoordinator(
         limit: limit,
-        passwordLoader: { serverID in
-            await passwords.loadPassword(for: serverID)
+        authResolver: { server, _ in
+            guard let password = await auth.loadPassword(for: server.id) else {
+                throw SSHAuthResolverError.missingIdentity(server.identityID)
+            }
+            return .password(
+                username: server.username,
+                password: password,
+                identityID: server.identityID,
+                displayLabel: server.displayName
+            )
         },
         sshConnectionPrewarmer: sshConnectionPrewarmer
     )
@@ -443,7 +451,7 @@ private func waitForLibraryPrewarm(
     return await condition()
 }
 
-private actor LibraryPrewarmPasswordLoader {
+private actor LibraryPrewarmAuthResolver {
     private var passwords: [SavedServer.ID: String] = [:]
 
     func setPassword(_ password: String, for serverID: SavedServer.ID) {
@@ -497,7 +505,8 @@ private func makePrewarmCoordinatorServer(
         id: id,
         displayName: displayName,
         host: "\(displayName.lowercased()).example.test",
-        username: "builder"
+        username: "builder",
+        identityID: UUID()
     )
 }
 

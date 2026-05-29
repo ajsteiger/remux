@@ -10,7 +10,7 @@ enum RemuxLibrarySSHPrewarmSkipReason: String, Equatable, Sendable {
     case staleContext = "stale_context"
     case staleCandidate = "stale_candidate"
     case activeServer = "active_server"
-    case missingPassword = "missing_password"
+    case missingAuth = "missing_auth"
     case staleTarget = "stale_target"
 }
 
@@ -58,7 +58,7 @@ enum RemuxLibrarySSHPrewarmPlanner {
         capturedTarget: TmuxConnectionTarget,
         currentServer: SavedServer?,
         currentWorkspace: SavedWorkspace?,
-        currentPassword: String?,
+        currentTarget: TmuxConnectionTarget?,
         currentTerminalSettings: TerminalSettings,
         hasActiveSessionOnServer: Bool
     ) -> RemuxLibrarySSHPrewarmEligibility {
@@ -80,16 +80,10 @@ enum RemuxLibrarySSHPrewarmPlanner {
         guard !hasActiveSessionOnServer else {
             return .skipped(.activeServer)
         }
-        guard let currentPassword, !currentPassword.isEmpty else {
-            return .skipped(.missingPassword)
+        guard let currentTarget else {
+            return .skipped(.missingAuth)
         }
 
-        let currentTarget = TmuxConnectionTarget(
-            server: currentServer,
-            workspace: currentWorkspace,
-            password: currentPassword,
-            terminalSettings: currentTerminalSettings
-        )
         guard capturedTarget.canReusePreparedTransport(for: currentTarget) else {
             return .skipped(.staleTarget)
         }
