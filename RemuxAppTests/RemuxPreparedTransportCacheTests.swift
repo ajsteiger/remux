@@ -72,7 +72,9 @@ final class RemuxPreparedTransportCacheTests: XCTestCase {
             workspaceID: target.workspace.id,
             sshAuth: .password(
                 username: "other-user",
-                password: "secret"
+                password: "secret",
+                identityID: target.server.identityID,
+                displayLabel: target.server.displayName
             )
         )
         let transport = CacheTransport()
@@ -186,7 +188,9 @@ private func makeTarget(
         workspace: workspace,
         sshAuth: sshAuth ?? .password(
             username: server.username,
-            password: password
+            password: password,
+            identityID: server.identityID,
+            displayLabel: server.displayName
         ),
         terminalSettings: terminalSettings
     )

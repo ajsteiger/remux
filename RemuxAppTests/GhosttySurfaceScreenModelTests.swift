@@ -4691,7 +4691,12 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
                 serverID: serverID,
                 sessionName: "base"
             ),
-            password: "test"
+            sshAuth: .password(
+                username: server.username,
+                password: "test",
+                identityID: server.identityID,
+                displayLabel: server.displayName
+            )
         )
     }
 

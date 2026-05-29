@@ -217,7 +217,12 @@ private func makeSession(
     let target = TmuxConnectionTarget(
         server: server,
         workspace: workspace,
-        password: "secret"
+        sshAuth: .password(
+            username: server.username,
+            password: "secret",
+            identityID: server.identityID,
+            displayLabel: server.displayName
+        )
     )
     return ActiveTerminalSession(target: target, runtimeState: runtimeState)
 }

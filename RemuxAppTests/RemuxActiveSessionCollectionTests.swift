@@ -104,7 +104,7 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
 
         XCTAssertEqual(sessions.first?.target.server, updatedServer)
         XCTAssertEqual(sessions.first?.target.workspace, target.workspace)
-        XCTAssertEqual(sessions.first?.target.password, "secret")
+        XCTAssertEqual(sessions.first?.target.sshAuth.credential, .password("secret"))
         XCTAssertEqual(sessions.first?.target.sshAuth.username, "builder")
         XCTAssertEqual(sessions.first?.target.terminalSettings, target.terminalSettings)
     }
@@ -129,7 +129,7 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
 
         XCTAssertEqual(sessions.first?.target.server, server)
         XCTAssertEqual(sessions.first?.target.workspace, updatedWorkspace)
-        XCTAssertEqual(sessions.first?.target.password, "secret")
+        XCTAssertEqual(sessions.first?.target.sshAuth.credential, .password("secret"))
         XCTAssertEqual(sessions.first?.target.terminalSettings, target.terminalSettings)
     }
 
@@ -154,7 +154,7 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
         XCTAssertEqual(sessions.first?.automaticReconnectAttemptedSources, [.transportLoss])
         XCTAssertEqual(sessions.first?.target.server, target.server)
         XCTAssertEqual(sessions.first?.target.workspace, target.workspace)
-        XCTAssertEqual(sessions.first?.target.password, "secret")
+        XCTAssertEqual(sessions.first?.target.sshAuth.credential, .password("secret"))
         XCTAssertEqual(sessions.first?.target.terminalSettings, updated)
     }
 
@@ -227,7 +227,12 @@ private func makeTarget(
     return TmuxConnectionTarget(
         server: server,
         workspace: workspace,
-        password: password,
+        sshAuth: .password(
+            username: server.username,
+            password: password,
+            identityID: server.identityID,
+            displayLabel: server.displayName
+        ),
         terminalSettings: terminalSettings
     )
 }

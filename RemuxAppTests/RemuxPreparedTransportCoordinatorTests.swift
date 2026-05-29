@@ -184,7 +184,12 @@ private func makePreparedCoordinatorTarget(
     return TmuxConnectionTarget(
         server: server,
         workspace: workspace,
-        password: password
+        sshAuth: .password(
+            username: server.username,
+            password: password,
+            identityID: server.identityID,
+            displayLabel: server.displayName
+        )
     )
 }
 

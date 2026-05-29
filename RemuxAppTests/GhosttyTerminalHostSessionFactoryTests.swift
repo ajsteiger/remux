@@ -66,18 +66,25 @@ final class GhosttyTerminalHostSessionFactoryTests: XCTestCase {
 
     private static func target() -> TmuxConnectionTarget {
         let serverID = UUID()
+        let server = SavedServer(
+            id: serverID,
+            displayName: "Factory Test Server",
+            host: "127.0.0.1",
+            username: "tester",
+            identityID: serverID
+        )
         return TmuxConnectionTarget(
-            server: SavedServer(
-                id: serverID,
-                displayName: "Factory Test Server",
-                host: "127.0.0.1",
-                username: "tester"
-            ),
+            server: server,
             workspace: SavedWorkspace(
                 serverID: serverID,
                 sessionName: "base"
             ),
-            password: "test"
+            sshAuth: .password(
+                username: server.username,
+                password: "test",
+                identityID: server.identityID,
+                displayLabel: server.displayName
+            )
         )
     }
 }

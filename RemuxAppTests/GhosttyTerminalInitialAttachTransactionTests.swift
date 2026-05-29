@@ -106,20 +106,27 @@ final class GhosttyTerminalInitialAttachTransactionTests: XCTestCase {
     private static func target() -> TmuxConnectionTarget {
         let serverID = UUID(uuidString: "00000000-0000-0000-0000-000000000321")!
         let workspaceID = UUID(uuidString: "00000000-0000-0000-0000-000000000654")!
+        let server = SavedServer(
+            id: serverID,
+            displayName: "Initial Attach Test Server",
+            host: "127.0.0.1",
+            username: "tester",
+            identityID: serverID
+        )
         return TmuxConnectionTarget(
-            server: SavedServer(
-                id: serverID,
-                displayName: "Initial Attach Test Server",
-                host: "127.0.0.1",
-                username: "tester"
-            ),
+            server: server,
             workspace: SavedWorkspace(
                 id: workspaceID,
                 serverID: serverID,
                 sessionName: "base",
                 lastOpenedAt: Date(timeIntervalSince1970: 0)
             ),
-            password: "test"
+            sshAuth: .password(
+                username: server.username,
+                password: "test",
+                identityID: server.identityID,
+                displayLabel: server.displayName
+            )
         )
     }
 }
