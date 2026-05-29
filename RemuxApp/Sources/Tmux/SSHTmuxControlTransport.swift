@@ -1,5 +1,4 @@
 @preconcurrency import Citadel
-import CryptoKit
 import Foundation
 import NIO
 import NIOConcurrencyHelpers
@@ -47,20 +46,14 @@ struct SSHTmuxAuthenticatedConnectionPoolKey: Hashable, Sendable {
     let host: String
     let port: Int
     let username: String
-    private let passwordFingerprint: String
+    private let authFingerprint: String
 
     init(target: TmuxConnectionTarget) {
         self.serverID = target.server.id
         self.host = target.server.host
         self.port = target.server.port
-        self.username = target.server.username
-        self.passwordFingerprint = Self.fingerprint(password: target.password)
-    }
-
-    private static func fingerprint(password: String) -> String {
-        SHA256.hash(data: Data(password.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+        self.username = target.sshAuth.username
+        self.authFingerprint = target.sshAuth.authFingerprint
     }
 }
 

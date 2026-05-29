@@ -83,7 +83,7 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
         XCTAssertEqual(sessions.map(\.id), [thirdTarget.workspace.id])
     }
 
-    func testRefreshServerPreservesWorkspacePasswordAndSettings() {
+    func testRefreshServerPreservesWorkspaceAuthAndSettings() {
         let server = makeServer(displayName: "Old")
         let target = makeTarget(
             server: server,
@@ -105,6 +105,7 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
         XCTAssertEqual(sessions.first?.target.server, updatedServer)
         XCTAssertEqual(sessions.first?.target.workspace, target.workspace)
         XCTAssertEqual(sessions.first?.target.password, "secret")
+        XCTAssertEqual(sessions.first?.target.sshAuth.username, "builder")
         XCTAssertEqual(sessions.first?.target.terminalSettings, target.terminalSettings)
     }
 

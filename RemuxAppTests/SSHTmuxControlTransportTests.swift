@@ -4,6 +4,45 @@ import XCTest
 @testable import Remux
 
 final class SSHTmuxControlTransportTests: XCTestCase {
+    func testPasswordResolvedAuthFingerprintChangesWithSecret() {
+        let first = ResolvedSSHAuth.password(
+            username: "deploy",
+            password: "first"
+        )
+        let second = ResolvedSSHAuth.password(
+            username: "deploy",
+            password: "second"
+        )
+
+        XCTAssertNotEqual(first.authFingerprint, second.authFingerprint)
+    }
+
+    func testPasswordResolvedAuthFingerprintDoesNotExposeSecret() {
+        let auth = ResolvedSSHAuth.password(
+            username: "deploy",
+            password: "super-secret"
+        )
+
+        XCTAssertFalse(auth.authFingerprint.contains("super-secret"))
+        XCTAssertTrue(auth.authFingerprint.hasPrefix("password:"))
+    }
+
+    func testPasswordResolvedAuthCarriesUsernameAndDisplayLabel() {
+        let identityID = UUID()
+
+        let auth = ResolvedSSHAuth.password(
+            username: "deploy",
+            password: "secret",
+            identityID: identityID,
+            displayLabel: "Work password"
+        )
+
+        XCTAssertEqual(auth.identityID, identityID)
+        XCTAssertEqual(auth.username, "deploy")
+        XCTAssertEqual(auth.displayLabel, "Work password")
+        XCTAssertEqual(auth.credential, .password("secret"))
+    }
+
     func testConfigurationStoresOptionalTraceFlowID() {
         let server = SavedServer(displayName: "Trace Host", host: "example.com", username: "tester")
         let trustedHostStore = TrustedHostStore(
@@ -57,7 +96,17 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             workspace: base,
             password: "other-test-password"
         )
-        let changedUserTarget = TmuxConnectionTarget(
+        let changedSavedUserPreservedAuthTarget = TmuxConnectionTarget(
+            server: SavedServer(
+                id: server.id,
+                displayName: server.displayName,
+                host: server.host,
+                username: "other-tester"
+            ),
+            workspace: base,
+            sshAuth: baseTarget.sshAuth
+        )
+        let changedAuthUserTarget = TmuxConnectionTarget(
             server: SavedServer(
                 id: server.id,
                 displayName: server.displayName,
@@ -76,9 +125,13 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             SSHTmuxAuthenticatedConnectionPoolKey(target: baseTarget),
             SSHTmuxAuthenticatedConnectionPoolKey(target: changedPasswordTarget)
         )
+        XCTAssertEqual(
+            SSHTmuxAuthenticatedConnectionPoolKey(target: baseTarget),
+            SSHTmuxAuthenticatedConnectionPoolKey(target: changedSavedUserPreservedAuthTarget)
+        )
         XCTAssertNotEqual(
             SSHTmuxAuthenticatedConnectionPoolKey(target: baseTarget),
-            SSHTmuxAuthenticatedConnectionPoolKey(target: changedUserTarget)
+            SSHTmuxAuthenticatedConnectionPoolKey(target: changedAuthUserTarget)
         )
     }
 

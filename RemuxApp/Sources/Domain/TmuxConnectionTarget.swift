@@ -1,4 +1,52 @@
+import CryptoKit
 import Foundation
+
+struct ResolvedSSHAuth: Equatable, Sendable {
+    enum Credential: Equatable, Sendable {
+        case password(String)
+    }
+
+    let identityID: UUID?
+    let username: String
+    let displayLabel: String
+    let authFingerprint: String
+    let credential: Credential
+
+    private init(
+        identityID: UUID?,
+        username: String,
+        displayLabel: String,
+        authFingerprint: String,
+        credential: Credential
+    ) {
+        self.identityID = identityID
+        self.username = username
+        self.displayLabel = displayLabel
+        self.authFingerprint = authFingerprint
+        self.credential = credential
+    }
+
+    static func password(
+        username: String,
+        password: String,
+        identityID: UUID? = nil,
+        displayLabel: String = "Password"
+    ) -> ResolvedSSHAuth {
+        ResolvedSSHAuth(
+            identityID: identityID,
+            username: username,
+            displayLabel: displayLabel,
+            authFingerprint: "password:\(fingerprint(password))",
+            credential: .password(password)
+        )
+    }
+
+    private static func fingerprint(_ secret: String) -> String {
+        SHA256.hash(data: Data(secret.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
 
 struct SavedServer: Identifiable, Equatable, Codable, Sendable {
     let id: UUID
@@ -44,8 +92,15 @@ struct SavedWorkspace: Identifiable, Equatable, Codable, Sendable {
 struct TmuxConnectionTarget: Equatable, Sendable {
     let server: SavedServer
     let workspace: SavedWorkspace
-    let password: String
+    let sshAuth: ResolvedSSHAuth
     let terminalSettings: TerminalSettings
+
+    var password: String {
+        switch sshAuth.credential {
+        case .password(let password):
+            password
+        }
+    }
 
     init(
         server: SavedServer,
@@ -53,9 +108,26 @@ struct TmuxConnectionTarget: Equatable, Sendable {
         password: String,
         terminalSettings: TerminalSettings = .default
     ) {
+        self.init(
+            server: server,
+            workspace: workspace,
+            sshAuth: .password(
+                username: server.username,
+                password: password
+            ),
+            terminalSettings: terminalSettings
+        )
+    }
+
+    init(
+        server: SavedServer,
+        workspace: SavedWorkspace,
+        sshAuth: ResolvedSSHAuth,
+        terminalSettings: TerminalSettings = .default
+    ) {
         self.server = server
         self.workspace = workspace
-        self.password = password
+        self.sshAuth = sshAuth
         self.terminalSettings = terminalSettings
     }
 }

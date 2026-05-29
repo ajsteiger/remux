@@ -129,7 +129,7 @@ enum RemuxActiveSessionCollection {
             activeSessions[index].target = TmuxConnectionTarget(
                 server: server,
                 workspace: target.workspace,
-                password: target.password,
+                sshAuth: target.sshAuth,
                 terminalSettings: target.terminalSettings
             )
         }
@@ -147,7 +147,7 @@ enum RemuxActiveSessionCollection {
         activeSessions[index].target = TmuxConnectionTarget(
             server: target.server,
             workspace: workspace,
-            password: target.password,
+            sshAuth: target.sshAuth,
             terminalSettings: target.terminalSettings
         )
     }
@@ -161,7 +161,7 @@ enum RemuxActiveSessionCollection {
             activeSessions[index].target = TmuxConnectionTarget(
                 server: target.server,
                 workspace: target.workspace,
-                password: target.password,
+                sshAuth: target.sshAuth,
                 terminalSettings: terminalSettings
             )
         }

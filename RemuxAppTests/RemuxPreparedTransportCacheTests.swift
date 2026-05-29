@@ -44,6 +44,48 @@ final class RemuxPreparedTransportCacheTests: XCTestCase {
         }
     }
 
+    func testClaimAllowsSavedUsernameDriftWhenResolvedAuthMatches() throws {
+        var cache = RemuxPreparedTransportCache()
+        let target = makeTarget()
+        let currentTarget = makeTarget(
+            serverID: target.server.id,
+            workspaceID: target.workspace.id,
+            serverUsername: "renamed-user",
+            sshAuth: target.sshAuth
+        )
+        let transport = CacheTransport()
+
+        XCTAssertNil(cache.store(PreparedTmuxControlTransport(target: target, transport: transport)))
+
+        guard case .claimed(let prepared) = cache.claim(for: currentTarget) else {
+            XCTFail("expected reusable prepared transport")
+            return
+        }
+        XCTAssertEqual((prepared.transport as? CacheTransport)?.id, transport.id)
+    }
+
+    func testClaimRejectsResolvedAuthUsernameDrift() throws {
+        var cache = RemuxPreparedTransportCache()
+        let target = makeTarget()
+        let currentTarget = makeTarget(
+            serverID: target.server.id,
+            workspaceID: target.workspace.id,
+            sshAuth: .password(
+                username: "other-user",
+                password: "secret"
+            )
+        )
+        let transport = CacheTransport()
+
+        XCTAssertNil(cache.store(PreparedTmuxControlTransport(target: target, transport: transport)))
+
+        guard case .discardedStale(let prepared) = cache.claim(for: currentTarget) else {
+            XCTFail("expected stale prepared transport discard")
+            return
+        }
+        XCTAssertEqual((prepared.transport as? CacheTransport)?.id, transport.id)
+    }
+
     func testStoreReplacementReturnsPreviousTransport() throws {
         var cache = RemuxPreparedTransportCache()
         let target = makeTarget()
@@ -122,14 +164,16 @@ final class RemuxPreparedTransportCacheTests: XCTestCase {
 private func makeTarget(
     serverID: SavedServer.ID = SavedServer.ID(),
     workspaceID: SavedWorkspace.ID = SavedWorkspace.ID(),
+    serverUsername: String = "builder",
     password: String = "secret",
+    sshAuth: ResolvedSSHAuth? = nil,
     terminalSettings: TerminalSettings = .default
 ) -> TmuxConnectionTarget {
     let server = SavedServer(
         id: serverID,
         displayName: "Build Host",
         host: "build.example.test",
-        username: "builder"
+        username: serverUsername
     )
     let workspace = SavedWorkspace(
         id: workspaceID,
@@ -140,7 +184,10 @@ private func makeTarget(
     return TmuxConnectionTarget(
         server: server,
         workspace: workspace,
-        password: password,
+        sshAuth: sshAuth ?? .password(
+            username: server.username,
+            password: password
+        ),
         terminalSettings: terminalSettings
     )
 }

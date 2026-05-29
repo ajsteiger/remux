@@ -169,10 +169,7 @@ struct RemuxAppDependencies: Sendable {
             host: target.server.host,
             port: target.server.port,
             authenticationMethod: {
-                .passwordBased(
-                    username: target.server.username,
-                    password: target.password
-                )
+                authenticationMethod(for: target.sshAuth)
             },
             hostKeyValidator: trustedHostStore.validator(for: target.server),
             sessionName: target.workspace.sessionName,
@@ -189,15 +186,19 @@ struct RemuxAppDependencies: Sendable {
             host: target.server.host,
             port: target.server.port,
             authenticationMethod: {
-                .passwordBased(
-                    username: target.server.username,
-                    password: target.password
-                )
+                authenticationMethod(for: target.sshAuth)
             },
             hostKeyValidator: trustedHostStore.validator(for: target.server)
         )
         let provider = GhosttyAttachmentCitadelSFTPClientProvider(configuration: configuration)
         return GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)
+    }
+
+    private static func authenticationMethod(for auth: ResolvedSSHAuth) -> SSHAuthenticationMethod {
+        switch auth.credential {
+        case .password(let password):
+            .passwordBased(username: auth.username, password: password)
+        }
     }
 
 #if DEBUG

@@ -66,11 +66,14 @@ struct RemuxPreparedTransportCache {
 
 extension TmuxConnectionTarget {
     func canReusePreparedTransport(for target: TmuxConnectionTarget) -> Bool {
-        server == target.server &&
+        server.id == target.server.id &&
+            server.host == target.server.host &&
+            server.port == target.server.port &&
             workspace.id == target.workspace.id &&
             workspace.serverID == target.workspace.serverID &&
             workspace.sessionName == target.workspace.sessionName &&
-            password == target.password &&
+            sshAuth.username == target.sshAuth.username &&
+            sshAuth.authFingerprint == target.sshAuth.authFingerprint &&
             terminalSettings == target.terminalSettings
     }
 }
