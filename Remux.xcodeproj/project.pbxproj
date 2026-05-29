@@ -21,6 +21,8 @@
 		D4E5F60718293A4B8C3D1E2F /* SSHTmuxControlCommandBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F60718293A4B8C3D1E2D /* SSHTmuxControlCommandBuilder.swift */; };
 		F1E2D3C4B5A69788796A5B4D /* SSHTmuxControlChannelDataRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E2D3C4B5A69788796A5B4C /* SSHTmuxControlChannelDataRouter.swift */; };
 		F3E4D5C6B7A89998AB8C7D6F /* SSHTmuxControlChannelRequestTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3E4D5C6B7A89998AB8C7D6E /* SSHTmuxControlChannelRequestTracker.swift */; };
+		FA0000000000000000000002 /* SSHAuthResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000001 /* SSHAuthResolver.swift */; };
+		FA0000000000000000000004 /* SSHAuthResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0000000000000000000003 /* SSHAuthResolverTests.swift */; };
 		F2E3D4C5B6A798889A7B6C5E /* SSHTmuxControlInboundStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E3D4C5B6A798889A7B6C5D /* SSHTmuxControlInboundStream.swift */; };
 		F0E1D2C3B4A5968778695A4C /* SSHTmuxControlStartupTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E1D2C3B4A5968778695A4B /* SSHTmuxControlStartupTrace.swift */; };
 		E5F60718293A4B8C4D1E2F31 /* TmuxControlViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5F60718293A4B8C4D1E2F30 /* TmuxControlViewport.swift */; };
@@ -263,6 +265,8 @@
 		A1B2C3D4E5F60718293A4B6 /* GhosttyRuntimeTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyRuntimeTrace.swift; sourceTree = "<group>"; };
 		F1E2D3C4B5A69788796A5B4C /* SSHTmuxControlChannelDataRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlChannelDataRouter.swift; sourceTree = "<group>"; };
 		F3E4D5C6B7A89998AB8C7D6E /* SSHTmuxControlChannelRequestTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlChannelRequestTracker.swift; sourceTree = "<group>"; };
+		FA0000000000000000000001 /* SSHAuthResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHAuthResolver.swift; sourceTree = "<group>"; };
+		FA0000000000000000000003 /* SSHAuthResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHAuthResolverTests.swift; sourceTree = "<group>"; };
 		D4E5F60718293A4B8C3D1E2D /* SSHTmuxControlCommandBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlCommandBuilder.swift; sourceTree = "<group>"; };
 		F2E3D4C5B6A798889A7B6C5D /* SSHTmuxControlInboundStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlInboundStream.swift; sourceTree = "<group>"; };
 		F0E1D2C3B4A5968778695A4B /* SSHTmuxControlStartupTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlStartupTrace.swift; sourceTree = "<group>"; };
@@ -475,6 +479,7 @@
 				DB62707ACD4905DCE40ECBFA /* RemuxPreparedTransportCoordinator.swift */,
 				D20F57C8C6D3F75E3E07DDC9 /* RemuxRootModel.swift */,
 				0CBF1D7B0CCEAA8D032C1DDC /* RootView.swift */,
+				FA0000000000000000000001 /* SSHAuthResolver.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -484,6 +489,7 @@
 			children = (
 				28EE543D2B247AE6C6A8C472 /* ConnectionProfileRepositoryTests.swift */,
 				DFD9AF0371D15A892B000530 /* DebugConnectionProfileSeederTests.swift */,
+				FA0000000000000000000003 /* SSHAuthResolverTests.swift */,
 				1F7D9825009B02720AC00422 /* GhosttyClipboardContentTests.swift */,
 				A2DD32BED4547276BF2B7C4E /* GhosttyControlHostSurfaceTests.swift */,
 				636A73D3AA225CCADC20F687 /* GhosttyKeyboardChromeModeTests.swift */,
@@ -948,6 +954,7 @@
 				077974905B6ABD611204F949 /* RemuxPreparedTransportCoordinator.swift in Sources */,
 				06F0AA3040EBCD8B9229B237 /* RemuxRootModel.swift in Sources */,
 				CD12942E9BEC15344DADB7BC /* RootView.swift in Sources */,
+				FA0000000000000000000002 /* SSHAuthResolver.swift in Sources */,
 				EBBDE3E254A58C4423E9D1E6 /* SSHTmuxControlTransport.swift in Sources */,
 				53AEFC2CD8D578C881DD093E /* Shortcut.swift in Sources */,
 				D3A27BCC972E451CDB6113E1 /* ShortcutCollectionIconView.swift in Sources */,
@@ -981,6 +988,7 @@
 			files = (
 				8F75231F2CF7E597F4D0347F /* ConnectionProfileRepositoryTests.swift in Sources */,
 				434C420D221F1CAF2A633602 /* DebugConnectionProfileSeederTests.swift in Sources */,
+				FA0000000000000000000004 /* SSHAuthResolverTests.swift in Sources */,
 				DA080E632F1E0AD9D4E648CB /* GhosttyClipboardContentTests.swift in Sources */,
 				6F2687A3E920D6AB65A0026A /* GhosttyControlHostSurfaceTests.swift in Sources */,
 				27A320CC1E03C85158276F1D /* GhosttyKeyboardChromeModeTests.swift in Sources */,

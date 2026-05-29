@@ -39,6 +39,15 @@ enum SSHCredential: Equatable, Codable, Sendable {
     case password(String)
     case privateKey(SSHPrivateKeyCredential)
 
+    var authenticationKind: SSHAuthenticationKind {
+        switch self {
+        case .password:
+            .password
+        case .privateKey:
+            .privateKey
+        }
+    }
+
     private enum Kind: String, Codable {
         case password
         case privateKey
