@@ -20,6 +20,7 @@ struct SSHPrivateKeyInspection: Equatable, Sendable {
     let publicFingerprint: String
     let publicKeyLine: String
     let normalizedPEM: String
+    let isEncrypted: Bool
 }
 
 struct SSHGeneratedPrivateKey: Equatable, Sendable {
@@ -70,7 +71,7 @@ enum SSHPrivateKeyInspector {
             throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
         }
 
-        _ = try reader.readSSHStringData()
+        let cipherName = try reader.readSSHString()
         _ = try reader.readSSHStringData()
         _ = try reader.readSSHStringData()
 
@@ -94,7 +95,8 @@ enum SSHPrivateKeyInspector {
             keyType: keyType,
             publicFingerprint: "SHA256:\(fingerprint)",
             publicKeyLine: "\(rawKeyType) \(publicKeyBlob.base64EncodedString())",
-            normalizedPEM: normalizedPEM
+            normalizedPEM: normalizedPEM,
+            isEncrypted: cipherName != "none"
         )
     }
 

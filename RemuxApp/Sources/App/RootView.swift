@@ -1771,28 +1771,8 @@ private struct ConnectionSetupView: View {
         }
         .padding(.vertical, 6)
 
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Passphrase")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            SecureField("Optional", text: binding(for: \.privateKeyPassphrase))
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .textContentType(.oneTimeCode)
-                .multilineTextAlignment(.leading)
-                .focused($focusedField, equals: .privateKeyPassphrase)
-                .submitLabel(showsSessionFields ? .next : .go)
-                .onSubmit { advance(from: .privateKeyPassphrase) }
-                .frame(minHeight: 28)
-                .accessibilityIdentifier("connection.private-key.passphrase")
-
-            fieldValidationMessage(validation.privateKeyPassphrase)
-        }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            focusedField = .privateKeyPassphrase
+        if shouldShowPrivateKeyPassphrase {
+            privateKeyPassphraseRow()
         }
     }
 
@@ -1836,6 +1816,13 @@ private struct ConnectionSetupView: View {
 
     private var privateKeyInspection: SSHPrivateKeyInspection? {
         try? SSHPrivateKeyInspector.inspect(draft.privateKeyPEM)
+    }
+
+    private var shouldShowPrivateKeyPassphrase: Bool {
+        guard draft.authenticationKind == .privateKey else {
+            return false
+        }
+        return privateKeyInspection?.isEncrypted == true || !draft.privateKeyPassphrase.isEmpty
     }
 
     private func privateKeyEmptyRows() -> some View {
@@ -1988,6 +1975,32 @@ private struct ConnectionSetupView: View {
             }
 
             Spacer(minLength: 12)
+        }
+    }
+
+    private func privateKeyPassphraseRow() -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Key Passphrase")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            SecureField("Required for encrypted keys", text: binding(for: \.privateKeyPassphrase))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textContentType(.oneTimeCode)
+                .multilineTextAlignment(.leading)
+                .focused($focusedField, equals: .privateKeyPassphrase)
+                .submitLabel(showsSessionFields ? .next : .go)
+                .onSubmit { advance(from: .privateKeyPassphrase) }
+                .frame(minHeight: 28)
+                .accessibilityIdentifier("connection.private-key.passphrase")
+
+            fieldValidationMessage(validation.privateKeyPassphrase)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            focusedField = .privateKeyPassphrase
         }
     }
 
