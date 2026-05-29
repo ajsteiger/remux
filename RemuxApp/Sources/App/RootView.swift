@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct RootView: View {
     private let dependencies: Result<RemuxAppDependencies, Error>
@@ -1308,9 +1309,12 @@ private struct ConnectionSetupView: View {
         case port
         case username
         case password
+        case privateKeyPassphrase
         case sessionName
     }
 
+    @State private var privateKeyImportError: String?
+    @State private var publicKeyCopyMessage: String?
     @FocusState private var focusedField: Field?
 
     var body: some View {
@@ -1379,7 +1383,19 @@ private struct ConnectionSetupView: View {
 
             if showsAuthenticationFields {
                 Section {
-                    passwordInputRow(validationMessage: validation.password)
+                    Picker("Method", selection: authenticationKindBinding) {
+                        Text("Password").tag(SSHAuthenticationKind.password)
+                        Text("Private Key").tag(SSHAuthenticationKind.privateKey)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("connection.authentication.method")
+
+                    switch draft.authenticationKind {
+                    case .password:
+                        passwordInputRow(validationMessage: validation.password)
+                    case .privateKey:
+                        privateKeyInputRows()
+                    }
                 } header: {
                     Text("Authentication")
                 }
@@ -1442,7 +1458,15 @@ private struct ConnectionSetupView: View {
                 }
             }
         }
+        .fileImporter(
+            isPresented: $isPrivateKeyImporterPresented,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false,
+            onCompletion: handlePrivateKeyImport
+        )
     }
+
+    @State private var isPrivateKeyImporterPresented = false
 
     private var keyboardAdvanceLabel: String {
         guard let focusedField, nextField(after: focusedField) != nil else {
@@ -1477,10 +1501,19 @@ private struct ConnectionSetupView: View {
         case .port:
             return .username
         case .username:
-            if showsAuthenticationFields { return .password }
+            if showsAuthenticationFields {
+                switch draft.authenticationKind {
+                case .password:
+                    return .password
+                case .privateKey:
+                    return .privateKeyPassphrase
+                }
+            }
             if showsSessionFields { return .sessionName }
             return nil
         case .password:
+            return showsSessionFields ? .sessionName : nil
+        case .privateKeyPassphrase:
             return showsSessionFields ? .sessionName : nil
         case .sessionName:
             return nil
@@ -1721,6 +1754,88 @@ private struct ConnectionSetupView: View {
         }
     }
 
+    @ViewBuilder
+    private func privateKeyInputRows() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Private Key")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            privateKeyStatusRow()
+
+            Divider()
+
+            privateKeyActionButton(
+                title: "Import private key",
+                subtitle: "Choose an OpenSSH key file",
+                systemImage: "square.and.arrow.down",
+                accessibilityIdentifier: "connection.private-key.import"
+            ) {
+                privateKeyImportError = nil
+                dismissKeyboard()
+                isPrivateKeyImporterPresented = true
+            }
+
+            privateKeyActionButton(
+                title: "Paste private key",
+                subtitle: "Read a key from the clipboard",
+                systemImage: "doc.on.clipboard",
+                accessibilityIdentifier: "connection.private-key.paste"
+            ) {
+                pastePrivateKeyFromClipboard()
+            }
+
+            privateKeyActionButton(
+                title: "Generate ED25519 key",
+                subtitle: "Create a new key pair",
+                systemImage: "key.horizontal",
+                accessibilityIdentifier: "connection.private-key.generate"
+            ) {
+                generatePrivateKey()
+            }
+
+            if let inspection = privateKeyInspection {
+                Divider()
+
+                privateKeyActionButton(
+                    title: "Copy public key",
+                    subtitle: publicKeyCopyMessage ?? inspection.publicFingerprint,
+                    systemImage: "doc.on.doc",
+                    accessibilityIdentifier: "connection.private-key.copy-public"
+                ) {
+                    copyPublicKey(inspection.publicKeyLine)
+                }
+            }
+
+            fieldValidationMessage(privateKeyImportError ?? validation.privateKey)
+        }
+        .padding(.vertical, 6)
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Passphrase")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            SecureField("Optional", text: binding(for: \.privateKeyPassphrase))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textContentType(.oneTimeCode)
+                .multilineTextAlignment(.leading)
+                .focused($focusedField, equals: .privateKeyPassphrase)
+                .submitLabel(showsSessionFields ? .next : .go)
+                .onSubmit { advance(from: .privateKeyPassphrase) }
+                .frame(minHeight: 28)
+                .accessibilityIdentifier("connection.private-key.passphrase")
+
+            fieldValidationMessage(validation.privateKeyPassphrase)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            focusedField = .privateKeyPassphrase
+        }
+    }
+
     private func binding(for keyPath: WritableKeyPath<TmuxConnectionDraft, String>) -> Binding<String> {
         Binding(
             get: { draft[keyPath: keyPath] },
@@ -1730,6 +1845,173 @@ private struct ConnectionSetupView: View {
                 }
             }
         )
+    }
+
+    private var authenticationKindBinding: Binding<SSHAuthenticationKind> {
+        Binding(
+            get: { draft.authenticationKind },
+            set: { newValue in
+                privateKeyImportError = nil
+                publicKeyCopyMessage = nil
+                onChange { draft in
+                    draft.authenticationKind = newValue
+                }
+            }
+        )
+    }
+
+    private var importedPrivateKeyTitle: String {
+        if !draft.privateKeyFileName.isEmpty {
+            return draft.privateKeyFileName
+        }
+        return privateKeyInspection?.keyType.displayName ?? "Private key"
+    }
+
+    private var importedPrivateKeySubtitle: String {
+        if let inspection = privateKeyInspection {
+            return "\(inspection.keyType.displayName) \(inspection.publicFingerprint)"
+        }
+        return "OpenSSH private key"
+    }
+
+    private var privateKeyInspection: SSHPrivateKeyInspection? {
+        try? SSHPrivateKeyInspector.inspect(draft.privateKeyPEM)
+    }
+
+    private func privateKeyStatusRow() -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: draft.privateKeyPEM.isEmpty ? "key" : "checkmark.circle.fill")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(draft.privateKeyPEM.isEmpty ? Color.secondary : Color.green)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(draft.privateKeyPEM.isEmpty ? "No private key selected" : importedPrivateKeyTitle)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(importedPrivateKeySubtitle)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+        }
+    }
+
+    private func privateKeyActionButton(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        accessibilityIdentifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text(subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 12)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    private func handlePrivateKeyImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let hasScopedAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasScopedAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard data.count <= SSHPrivateKeyInspector.maxByteCount else {
+                throw SSHPrivateKeyInspectionError.tooLarge
+            }
+            guard let pem = String(data: data, encoding: .utf8) else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+
+            let inspection = try SSHPrivateKeyInspector.inspect(pem)
+            privateKeyImportError = nil
+            publicKeyCopyMessage = nil
+            onChange { draft in
+                draft.authenticationKind = .privateKey
+                draft.privateKeyPEM = inspection.normalizedPEM
+                draft.privateKeyFileName = url.lastPathComponent
+            }
+        } catch {
+            if let error = error as? SSHPrivateKeyInspectionError {
+                privateKeyImportError = error.localizedDescription
+            } else {
+                privateKeyImportError = "Private key could not be imported."
+            }
+        }
+    }
+
+    private func pastePrivateKeyFromClipboard() {
+        guard let pem = UIPasteboard.general.string else {
+            privateKeyImportError = "Clipboard does not contain a private key."
+            Haptic.error()
+            return
+        }
+
+        do {
+            let inspection = try SSHPrivateKeyInspector.inspect(pem)
+            privateKeyImportError = nil
+            publicKeyCopyMessage = nil
+            Haptic.tap()
+            onChange { draft in
+                draft.authenticationKind = .privateKey
+                draft.privateKeyPEM = inspection.normalizedPEM
+                draft.privateKeyFileName = "Pasted private key"
+            }
+        } catch {
+            if let error = error as? SSHPrivateKeyInspectionError {
+                privateKeyImportError = error.localizedDescription
+            } else {
+                privateKeyImportError = "Clipboard private key could not be read."
+            }
+            Haptic.error()
+        }
+    }
+
+    private func generatePrivateKey() {
+        let generated = SSHPrivateKeyInspector.generateEd25519()
+        privateKeyImportError = nil
+        publicKeyCopyMessage = nil
+        Haptic.tap()
+        onChange { draft in
+            draft.authenticationKind = .privateKey
+            draft.privateKeyPEM = generated.privateKeyPEM
+            draft.privateKeyFileName = "Generated ED25519 key"
+            draft.privateKeyPassphrase = ""
+        }
+    }
+
+    private func copyPublicKey(_ publicKeyLine: String) {
+        UIPasteboard.general.string = publicKeyLine
+        publicKeyCopyMessage = "Public key copied"
+        Haptic.tap()
     }
 
     @ViewBuilder
