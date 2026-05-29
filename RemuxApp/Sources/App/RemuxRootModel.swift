@@ -167,8 +167,10 @@ final class RemuxRootModel: ObservableObject {
         }
         self.librarySSHPrewarmCoordinator = RemuxLibrarySSHPrewarmCoordinator(
             limit: Self.libraryPrewarmServerLimit,
-            passwordLoader: { serverID in
-                try await dependencies.passwordStore.loadPassword(for: serverID)
+            authResolver: { server, snapshot in
+                try await SSHAuthResolver(
+                    credentialStore: dependencies.credentialStore
+                ).resolve(server: server, in: snapshot)
             },
             sshConnectionPrewarmer: { target in
                 await dependencies.prewarmSSHConnection(for: target)
@@ -216,13 +218,12 @@ final class RemuxRootModel: ObservableObject {
     func beginNewWorkspace(for serverID: SavedServer.ID) async {
         guard let server = library.server(id: serverID) else { return }
 
-        let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
         let workspace = SavedWorkspace(
             serverID: serverID,
             sessionName: ""
         )
         state = .setup(
-            TmuxConnectionDraft(server: server, workspace: workspace, password: password),
+            TmuxConnectionDraft(server: server, workspace: workspace),
             .empty,
             .newWorkspace(serverID)
         )
@@ -231,13 +232,25 @@ final class RemuxRootModel: ObservableObject {
     func beginEditServer(serverID: SavedServer.ID) async {
         guard let server = library.server(id: serverID) else { return }
 
-        let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
+        let identity: SSHIdentity
+        let credential: SSHCredential
+        do {
+            (identity, credential) = try await loadDraftIdentityCredential(for: server)
+        } catch {
+            transitionToFailed(error)
+            return
+        }
         let workspace = library.workspaces(for: serverID).first ?? SavedWorkspace(
             serverID: serverID,
             sessionName: ""
         )
         state = .setup(
-            TmuxConnectionDraft(server: server, workspace: workspace, password: password),
+            TmuxConnectionDraft(
+                server: server,
+                workspace: workspace,
+                identity: identity,
+                credential: credential
+            ),
             .empty,
             .editServer(serverID, reconnectWorkspaceID: nil)
         )
@@ -251,9 +264,8 @@ final class RemuxRootModel: ObservableObject {
             return
         }
 
-        let password = (try? await dependencies.passwordStore.loadPassword(for: serverID)) ?? ""
         state = .setup(
-            TmuxConnectionDraft(server: server, workspace: workspace, password: password),
+            TmuxConnectionDraft(server: server, workspace: workspace),
             .empty,
             .editWorkspace(serverID, workspaceID)
         )
@@ -296,25 +308,40 @@ final class RemuxRootModel: ObservableObject {
             state = .setup(draft, validation, mode)
 
         case .valid(let submission):
+            let identityCredential: SSHIdentityCredentialPair
             do {
-                try await dependencies.profileRepository.saveProfile(
-                    server: submission.server,
+                identityCredential = try makeIdentityCredentialPair(from: submission.server)
+            } catch {
+                state = .setup(
+                    draft,
+                    privateKeyValidation(from: error),
+                    mode
+                )
+                return
+            }
+            let identity = identityCredential.identity
+            let server = submission.server.savedServer(identityID: identity.id)
+            var savedCredential = false
+            do {
+                try await dependencies.credentialStore.saveCredential(
+                    identityCredential.credential,
+                    identityID: identity.id
+                )
+                savedCredential = true
+                try await dependencies.profileRepository.saveIdentityProfile(
+                    identity: identity,
+                    server: server,
                     workspace: submission.workspace
                 )
-                try await dependencies.passwordStore.savePassword(
-                    submission.password,
-                    for: submission.server.id
-                )
                 library = try await dependencies.profileRepository.loadSnapshot()
+                let sshAuth = try await resolveSSHAuth(for: server)
                 activate(
-                    server: submission.server,
+                    server: server,
                     workspace: submission.workspace,
-                    sshAuth: .password(
-                        username: submission.server.username,
-                        password: submission.password
-                    )
+                    sshAuth: sshAuth
                 )
             } catch {
+                await cleanupCreatedCredential(identity, savedCredential: savedCredential)
                 transitionToFailed(error)
             }
         }
@@ -331,18 +358,57 @@ final class RemuxRootModel: ObservableObject {
             state = .setup(draft, validation, mode)
 
         case .valid(let submission):
+            let updatedIdentityCredential: SSHIdentityCredentialPair
             do {
-                cancelLibrarySSHPrewarm()
-                try await dependencies.profileRepository.saveServer(submission.server)
-                try await dependencies.passwordStore.savePassword(
-                    submission.password,
-                    for: submission.server.id
+                guard let existingServer = library.server(id: serverID) else {
+                    throw ConnectionProfileRepositoryError.missingServer(serverID)
+                }
+                guard let identity = library.identity(id: existingServer.identityID) else {
+                    throw SSHAuthResolverError.missingIdentity(existingServer.identityID)
+                }
+                updatedIdentityCredential = try makeUpdatedIdentityCredentialPair(
+                    from: submission,
+                    existingIdentity: identity
                 )
+            } catch let error as SSHPrivateKeyInspectionError {
+                state = .setup(draft, privateKeyValidation(from: error), mode)
+                return
+            } catch {
+                transitionToFailed(error)
+                return
+            }
+
+            do {
+                guard library.server(id: serverID) != nil else {
+                    throw ConnectionProfileRepositoryError.missingServer(serverID)
+                }
+
+                let server = submission.savedServer(identityID: updatedIdentityCredential.identity.id)
+                cancelLibrarySSHPrewarm()
+                let previousCredential = try await dependencies.credentialStore.loadCredential(
+                    identityID: updatedIdentityCredential.identity.id
+                )
+                try await dependencies.credentialStore.saveCredential(
+                    updatedIdentityCredential.credential,
+                    identityID: updatedIdentityCredential.identity.id
+                )
+                do {
+                    try await dependencies.profileRepository.saveIdentity(
+                        updatedIdentityCredential.identity
+                    )
+                    try await dependencies.profileRepository.saveServer(server)
+                } catch {
+                    await restoreCredential(
+                        previousCredential,
+                        identityID: updatedIdentityCredential.identity.id
+                    )
+                    throw error
+                }
                 library = try await dependencies.profileRepository.loadSnapshot()
-                closePreparedTransports(forServerID: submission.server.id)
-                dependencies.closeIdleSSHConnections(forServerID: submission.server.id)
+                closePreparedTransports(forServerID: server.id)
+                dependencies.closeIdleSSHConnections(forServerID: server.id)
                 RemuxActiveSessionCollection.refreshServer(
-                    submission.server,
+                    server,
                     in: &activeSessions
                 )
 
@@ -359,13 +425,11 @@ final class RemuxRootModel: ObservableObject {
                 workspace.lastOpenedAt = Date()
                 try await dependencies.profileRepository.saveWorkspace(workspace)
                 library = try await dependencies.profileRepository.loadSnapshot()
+                let sshAuth = try await resolveSSHAuth(for: server)
                 activate(
-                    server: submission.server,
+                    server: server,
                     workspace: workspace,
-                    sshAuth: .password(
-                        username: submission.server.username,
-                        password: submission.password
-                    )
+                    sshAuth: sshAuth
                 )
             } catch {
                 transitionToFailed(error)
@@ -397,21 +461,7 @@ final class RemuxRootModel: ObservableObject {
                 try await dependencies.profileRepository.saveWorkspace(submission.workspace)
                 library = try await dependencies.profileRepository.loadSnapshot()
 
-                let sshAuth: ResolvedSSHAuth
-                do {
-                    sshAuth = try await resolveSSHAuth(for: server)
-                } catch SSHAuthResolverError.missingLegacyPassword(_) {
-                    var validation = TmuxConnectionDraftValidation.empty
-                    validation.password = "Password is required."
-                    state = .setup(
-                        TmuxConnectionDraft(server: server, workspace: submission.workspace, password: ""),
-                        validation,
-                        .editServer(serverID, reconnectWorkspaceID: submission.workspace.id)
-                    )
-                    return
-                } catch {
-                    throw error
-                }
+                let sshAuth = try await resolveSSHAuth(for: server)
 
                 activate(
                     server: server,
@@ -483,21 +533,6 @@ final class RemuxRootModel: ObservableObject {
         let sshAuth: ResolvedSSHAuth
         do {
             sshAuth = try await resolveSSHAuth(for: server)
-        } catch SSHAuthResolverError.missingLegacyPassword(_) {
-            GhosttyRuntimeTrace.flowEnd(
-                flow,
-                event: "model.connect.missingPassword",
-                fields: [
-                    "workspaceID": workspaceID.uuidString,
-                    "server": server.displayName,
-                ]
-            )
-            state = .setup(
-                TmuxConnectionDraft(server: server, workspace: workspace, password: ""),
-                .empty,
-                .editServer(server.id, reconnectWorkspaceID: workspace.id)
-            )
-            return
         } catch {
             GhosttyRuntimeTrace.flowEnd(
                 flow,
@@ -657,14 +692,25 @@ final class RemuxRootModel: ObservableObject {
 
     func deleteServer(_ id: SavedServer.ID) async {
         do {
+            let deletedServer = library.server(id: id)
             try await dependencies.profileRepository.deleteServer(id: id)
-            try await dependencies.passwordStore.deletePassword(for: id)
             try dependencies.trustedHostStore.deleteIdentity(for: id)
+            var snapshot = try await dependencies.profileRepository.loadSnapshot()
+            if let identityID = deletedServer?.identityID,
+               !snapshot.servers.contains(where: { $0.identityID == identityID }) {
+                if let identity = library.identity(id: identityID) ?? snapshot.identity(id: identityID) {
+                    try await dependencies.credentialStore.deleteCredential(
+                        identityID: identity.id
+                    )
+                }
+                try await dependencies.profileRepository.deleteIdentity(id: identityID)
+                snapshot = try await dependencies.profileRepository.loadSnapshot()
+            }
             closePreparedTransports(forServerID: id)
             dependencies.closeIdleSSHConnections(forServerID: id)
             stopTerminalScreenModels(serverID: id)
             RemuxActiveSessionCollection.removeServer(id, from: &activeSessions)
-            library = try await dependencies.profileRepository.loadSnapshot()
+            library = snapshot
             state = .library
             scheduleLibrarySSHPrewarm(snapshot: library)
         } catch {
@@ -826,9 +872,140 @@ final class RemuxRootModel: ObservableObject {
 
     private func resolveSSHAuth(for server: SavedServer) async throws -> ResolvedSSHAuth {
         try await SSHAuthResolver(
-            passwordStore: dependencies.passwordStore,
             credentialStore: dependencies.credentialStore
         ).resolve(server: server, in: library)
+    }
+
+    private struct SSHIdentityCredentialPair {
+        let identity: SSHIdentity
+        let credential: SSHCredential
+    }
+
+    private func makeIdentityCredentialPair(
+        from draft: ValidatedTmuxServerDraft
+    ) throws -> SSHIdentityCredentialPair {
+        switch draft.credential {
+        case .password(let password):
+            let identity = SSHIdentity(
+                name: draft.displayName,
+                authenticationKind: .password
+            )
+            return SSHIdentityCredentialPair(
+                identity: identity,
+                credential: .password(password)
+            )
+
+        case .privateKey(let credential):
+            let inspection = try SSHPrivateKeyInspector.inspect(credential.privateKeyPEM)
+            let identity = SSHIdentity(
+                name: draft.displayName,
+                authenticationKind: .privateKey,
+                publicFingerprint: inspection.publicFingerprint
+            )
+            return SSHIdentityCredentialPair(
+                identity: identity,
+                credential: .privateKey(credential)
+            )
+        }
+    }
+
+    private func makeUpdatedIdentityCredentialPair(
+        from draft: ValidatedTmuxServerDraft,
+        existingIdentity: SSHIdentity
+    ) throws -> SSHIdentityCredentialPair {
+        switch draft.credential {
+        case .password(let password):
+            let identity = SSHIdentity(
+                id: existingIdentity.id,
+                name: draft.displayName,
+                authenticationKind: .password
+            )
+            return SSHIdentityCredentialPair(
+                identity: identity,
+                credential: .password(password)
+            )
+
+        case .privateKey(let credential):
+            let inspection = try SSHPrivateKeyInspector.inspect(credential.privateKeyPEM)
+            let identity = SSHIdentity(
+                id: existingIdentity.id,
+                name: draft.displayName,
+                authenticationKind: .privateKey,
+                publicFingerprint: inspection.publicFingerprint
+            )
+            return SSHIdentityCredentialPair(
+                identity: identity,
+                credential: .privateKey(credential)
+            )
+        }
+    }
+
+    private func privateKeyValidation(from error: Error) -> TmuxConnectionDraftValidation {
+        var validation = TmuxConnectionDraftValidation.empty
+        if let error = error as? SSHPrivateKeyInspectionError {
+            validation.privateKey = error.localizedDescription
+        } else {
+            validation.privateKey = "Private key could not be read."
+        }
+        return validation
+    }
+
+    private func loadDraftIdentityCredential(
+        for server: SavedServer
+    ) async throws -> (SSHIdentity, SSHCredential) {
+        guard let identity = library.identity(id: server.identityID) else {
+            throw SSHAuthResolverError.missingIdentity(server.identityID)
+        }
+        guard let credential = try await dependencies.credentialStore.loadCredential(
+            identityID: identity.id
+        ) else {
+            throw SSHAuthResolverError.missingCredential(identity.id)
+        }
+        guard identity.authenticationKind == credential.authenticationKind else {
+            throw SSHAuthResolverError.credentialKindMismatch(
+                identityID: identity.id,
+                expected: identity.authenticationKind,
+                actual: credential.authenticationKind
+            )
+        }
+        return (identity, credential)
+    }
+
+    private func cleanupCreatedCredential(
+        _ identity: SSHIdentity,
+        savedCredential: Bool
+    ) async {
+        if savedCredential {
+            do {
+                try await dependencies.credentialStore.deleteCredential(identityID: identity.id)
+            } catch {
+                NSLog(
+                    "Remux SSH credential cleanup failed: %@",
+                    String(describing: error)
+                )
+            }
+        }
+    }
+
+    private func restoreCredential(
+        _ credential: SSHCredential?,
+        identityID: SSHIdentity.ID
+    ) async {
+        do {
+            if let credential {
+                try await dependencies.credentialStore.saveCredential(
+                    credential,
+                    identityID: identityID
+                )
+            } else {
+                try await dependencies.credentialStore.deleteCredential(identityID: identityID)
+            }
+        } catch {
+            NSLog(
+                "Remux SSH credential restore failed: %@",
+                String(describing: error)
+            )
+        }
     }
 
     private func target(
