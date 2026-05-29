@@ -1857,117 +1857,118 @@ private struct ConnectionSetupView: View {
     }
 
     private func privateKeySelectedRows(_ inspection: SSHPrivateKeyInspection) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             privateKeySelectedSummary()
 
             Divider()
 
-            privateKeyInfoRow(
-                systemImage: "person.badge.key",
-                title: "Add the public key to your server",
-                subtitle: "Copy it into ~/.ssh/authorized_keys for this user before connecting."
-            )
-
-            privateKeyActionButton(
-                title: "Copy public key",
-                subtitle: publicKeyCopyMessage ?? inspection.publicFingerprint,
-                systemImage: "doc.on.doc",
-                accessibilityIdentifier: "connection.private-key.copy-public"
-            ) {
-                copyPublicKey(inspection.publicKeyLine)
-            }
+            privateKeyCopyPublicKeyButton(inspection)
 
             Divider()
 
-            Text("Replace Key")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            privateKeyActionButton(
-                title: "Import different key",
-                subtitle: "Choose another OpenSSH key file",
-                systemImage: "square.and.arrow.down",
-                accessibilityIdentifier: "connection.private-key.import"
-            ) {
-                presentPrivateKeyImporter()
-            }
-
-            privateKeyActionButton(
-                title: "Paste different key",
-                subtitle: "Replace this key from the clipboard",
-                systemImage: "doc.on.clipboard",
-                accessibilityIdentifier: "connection.private-key.paste"
-            ) {
-                pastePrivateKeyFromClipboard()
-            }
-
-            privateKeyActionButton(
-                title: "Generate new ED25519 key",
-                subtitle: "Replace this key with a new pair",
-                systemImage: "key.horizontal",
-                accessibilityIdentifier: "connection.private-key.generate"
-            ) {
-                generatePrivateKey()
-            }
-
-            privateKeyActionButton(
-                title: "Remove private key",
-                subtitle: "Choose another key before connecting",
-                systemImage: "trash",
-                accessibilityIdentifier: "connection.private-key.remove",
-                isDestructive: true
-            ) {
-                removePrivateKey()
-            }
+            privateKeyChangeMenu()
         }
     }
 
     private func privateKeySelectedSummary() -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(Color.green)
-                .frame(width: 22)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(importedPrivateKeyTitle)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(importedPrivateKeyTitle)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Text(importedPrivateKeySubtitle)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 12)
+            Text(importedPrivateKeySubtitle)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
-    private func privateKeyInfoRow(
-        systemImage: String,
-        title: String,
-        subtitle: String
-    ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
+    private func privateKeyCopyPublicKeyButton(_ inspection: SSHPrivateKeyInspection) -> some View {
+        Button {
+            copyPublicKey(inspection.publicKeyLine)
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: publicKeyCopyMessage == nil ? "doc.on.doc" : "checkmark")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 22)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Copy public key")
+                        .foregroundStyle(.primary)
 
-                Text(subtitle)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Add to ~/.ssh/authorized_keys on the server")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 12)
+
+                if publicKeyCopyMessage != nil {
+                    Text("Copied")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(Color.accentColor)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("connection.private-key.copy-public")
+    }
+
+    private func privateKeyChangeMenu() -> some View {
+        Menu {
+            Button {
+                presentPrivateKeyImporter()
+            } label: {
+                Label("Import Different Key", systemImage: "square.and.arrow.down")
             }
 
-            Spacer(minLength: 12)
+            Button {
+                pastePrivateKeyFromClipboard()
+            } label: {
+                Label("Paste Different Key", systemImage: "doc.on.clipboard")
+            }
+
+            Button {
+                generatePrivateKey()
+            } label: {
+                Label("Generate New ED25519 Key", systemImage: "key.horizontal")
+            }
+
+            Button(role: .destructive) {
+                removePrivateKey()
+            } label: {
+                Label("Remove Private Key", systemImage: "trash")
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "ellipsis.circle")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Change Key")
+                        .foregroundStyle(.primary)
+
+                    Text("Import, paste, generate, remove")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("connection.private-key.change")
     }
 
     private func privateKeyPassphraseRow() -> some View {
