@@ -243,6 +243,51 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         XCTAssertEqual(identity.credentialID, id)
     }
 
+    func testSSHCredentialCodablePreservesPassword() throws {
+        let credential = SSHCredential.password("secret")
+
+        let encoded = try JSONEncoder().encode(credential)
+        let decoded = try JSONDecoder().decode(SSHCredential.self, from: encoded)
+
+        XCTAssertEqual(decoded, credential)
+    }
+
+    func testSSHCredentialCodablePreservesPrivateKey() throws {
+        let credential = SSHCredential.privateKey(
+            SSHPrivateKeyCredential(
+                privateKeyPEM: "-----BEGIN OPENSSH PRIVATE KEY-----\nexample\n-----END OPENSSH PRIVATE KEY-----"
+            )
+        )
+
+        let encoded = try JSONEncoder().encode(credential)
+        let decoded = try JSONDecoder().decode(SSHCredential.self, from: encoded)
+
+        XCTAssertEqual(decoded, credential)
+    }
+
+    func testKeychainSSHCredentialStoreUsesCredentialReference() async throws {
+        let store = KeychainSSHCredentialStore(service: "dev.remux.tests.\(UUID().uuidString)")
+        let identity = SSHIdentity(
+            id: UUID(),
+            name: "Work key",
+            authenticationKind: .privateKey,
+            credentialID: UUID()
+        )
+        let credential = SSHCredential.password("secret")
+
+        XCTAssertNotEqual(identity.id, identity.credentialID)
+
+        try await store.saveCredential(credential, credentialID: identity.credentialID)
+
+        let identityIDCredential = try await store.loadCredential(credentialID: identity.id)
+        let credentialIDCredential = try await store.loadCredential(credentialID: identity.credentialID)
+
+        XCTAssertNil(identityIDCredential)
+        XCTAssertEqual(credentialIDCredential, credential)
+
+        try await store.deleteCredential(credentialID: identity.credentialID)
+    }
+
     private func temporaryRoot() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
