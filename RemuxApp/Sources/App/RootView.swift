@@ -1860,11 +1860,11 @@ private struct ConnectionSetupView: View {
         VStack(alignment: .leading, spacing: 12) {
             privateKeySelectedSummary()
 
-            Divider()
+            privateKeySectionDivider()
 
             privateKeyCopyPublicKeyButton(inspection)
 
-            Divider()
+            privateKeySectionDivider()
 
             privateKeyChangeMenu()
         }
@@ -2037,6 +2037,12 @@ private struct ConnectionSetupView: View {
             .fill(LibraryHomePalette.separator)
             .frame(height: 1)
             .padding(.leading, 34)
+    }
+
+    private func privateKeySectionDivider() -> some View {
+        Rectangle()
+            .fill(LibraryHomePalette.separator)
+            .frame(height: 1)
     }
 
     private func presentPrivateKeyImporter() {
