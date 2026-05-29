@@ -193,6 +193,23 @@ final class ConnectionProfileRepositoryTests: XCTestCase {
         XCTAssertEqual(server.host, "legacy.example.test")
         XCTAssertEqual(server.port, 22)
         XCTAssertEqual(server.username, "demo")
+        XCTAssertNil(server.identityID)
+    }
+
+    func testSavedServerCodablePreservesIdentityReference() throws {
+        let identityID = UUID()
+        let server = SavedServer(
+            displayName: "Example",
+            host: "example.test",
+            username: "deploy",
+            identityID: identityID
+        )
+
+        let encoded = try JSONEncoder().encode(server)
+        let decoded = try JSONDecoder().decode(SavedServer.self, from: encoded)
+
+        XCTAssertEqual(decoded, server)
+        XCTAssertEqual(decoded.identityID, identityID)
     }
 
     func testSSHIdentityCodableKeepsCredentialReferenceStable() throws {

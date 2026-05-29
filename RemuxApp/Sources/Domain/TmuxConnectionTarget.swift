@@ -81,19 +81,22 @@ struct SavedServer: Identifiable, Equatable, Codable, Sendable {
     var host: String
     var port: Int
     var username: String
+    var identityID: SSHIdentity.ID?
 
     init(
         id: UUID = UUID(),
         displayName: String,
         host: String,
         port: Int = 22,
-        username: String
+        username: String,
+        identityID: SSHIdentity.ID? = nil
     ) {
         self.id = id
         self.displayName = displayName
         self.host = host
         self.port = port
         self.username = username
+        self.identityID = identityID
     }
 }
 
