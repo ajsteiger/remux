@@ -107,8 +107,8 @@ enum SSHPrivateKeyInspector {
         }
 
         let cipherName = try reader.readSSHString()
-        _ = try reader.readSSHStringData()
-        _ = try reader.readSSHStringData()
+        let kdfName = try reader.readSSHString()
+        let kdfOptions = try reader.readSSHStringData()
 
         guard try reader.readUInt32() == 1 else {
             throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
@@ -124,6 +124,26 @@ enum SSHPrivateKeyInspector {
         try validatePublicKeyBlob(for: keyType, reader: &publicKeyReader)
         guard publicKeyReader.isAtEnd else {
             throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
+
+        let privateKeyBlock = try reader.readSSHStringData()
+        guard reader.isAtEnd else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
+
+        if cipherName == "none" {
+            guard kdfName == "none", kdfOptions.isEmpty else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+            try validateUnencryptedPrivateKeyBlock(
+                privateKeyBlock,
+                keyType: keyType,
+                publicKeyBlob: publicKeyBlob
+            )
+        } else {
+            guard !privateKeyBlock.isEmpty else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
         }
 
         let fingerprint = Data(SHA256.hash(data: publicKeyBlob))
@@ -169,6 +189,99 @@ enum SSHPrivateKeyInspector {
             guard point.count == expectedPointByteCount, point.first == 0x04 else {
                 throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
             }
+        }
+    }
+
+    private static func validateUnencryptedPrivateKeyBlock(
+        _ data: Data,
+        keyType: SSHPrivateKeyType,
+        publicKeyBlob: Data
+    ) throws {
+        guard data.count.isMultiple(of: 8) else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
+
+        var reader = SSHPrivateKeyPayloadReader(data: data)
+        var publicKeyReader = SSHPrivateKeyPayloadReader(data: publicKeyBlob)
+
+        guard try publicKeyReader.readSSHString() == keyType.rawValue else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
+
+        let firstCheck = try reader.readUInt32()
+        guard try reader.readUInt32() == firstCheck else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
+
+        guard try reader.readSSHString() == keyType.rawValue else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
+
+        switch keyType {
+        case .ed25519:
+            let publicKey = try publicKeyReader.readSSHStringData()
+            let privateBlockPublicKey = try reader.readSSHStringData()
+            let privateMaterial = try reader.readSSHStringData()
+            guard
+                privateBlockPublicKey == publicKey,
+                publicKey.count == 32,
+                privateMaterial.count == 64,
+                Data(privateMaterial.suffix(32)) == publicKey
+            else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+        case .rsa:
+            let publicExponent = try publicKeyReader.readSSHStringData()
+            let publicModulus = try publicKeyReader.readSSHStringData()
+            let privateBlockModulus = try reader.readSSHStringData()
+            let privateBlockExponent = try reader.readSSHStringData()
+            guard
+                privateBlockModulus == publicModulus,
+                privateBlockExponent == publicExponent
+            else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+            for _ in 0..<4 {
+                let component = try reader.readSSHStringData()
+                guard !component.isEmpty else {
+                    throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+                }
+            }
+        case .ecdsaP256, .ecdsaP384, .ecdsaP521:
+            guard
+                let expectedCurveName = keyType.ecdsaCurveName,
+                let expectedPointByteCount = keyType.ecdsaPointByteCount,
+                try publicKeyReader.readSSHString() == expectedCurveName,
+                try reader.readSSHString() == expectedCurveName
+            else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+            let publicPoint = try publicKeyReader.readSSHStringData()
+            let point = try reader.readSSHStringData()
+            let privateScalar = try reader.readSSHStringData()
+            guard
+                point == publicPoint,
+                point.count == expectedPointByteCount,
+                point.first == 0x04,
+                !privateScalar.isEmpty
+            else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+        }
+
+        _ = try reader.readSSHString()
+        let padding = try reader.readRemainingBytes()
+        guard padding.count <= 8 else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
+        for (index, byte) in padding.enumerated() {
+            guard byte == UInt8(index + 1) else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+        }
+
+        guard publicKeyReader.isAtEnd else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
         }
     }
 
@@ -286,6 +399,10 @@ private struct SSHPrivateKeyPayloadReader {
         let bytes = data[offset..<(offset + count)]
         offset += count
         return Data(bytes)
+    }
+
+    mutating func readRemainingBytes() throws -> Data {
+        try readBytes(count: data.count - offset)
     }
 
     var isAtEnd: Bool {

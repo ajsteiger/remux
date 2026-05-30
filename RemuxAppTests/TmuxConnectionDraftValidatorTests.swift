@@ -124,6 +124,95 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertEqual(submission.credential, .password("demo-password"))
     }
 
+    func testValidPrivateKeyDraftProducesPrivateKeyCredential() {
+        var draft = validServerDraft()
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "validator-test")
+        draft.authenticationKind = .privateKey
+        draft.privateKeyPEM = generated.privateKeyPEM
+        draft.password = ""
+
+        let result = TmuxConnectionDraftValidator.validateServer(
+            draft,
+            existingServerID: nil
+        )
+
+        guard case .valid(let submission) = result else {
+            XCTFail("expected valid server submission")
+            return
+        }
+
+        XCTAssertEqual(
+            submission.credential,
+            .privateKey(SSHPrivateKeyCredential(privateKeyPEM: generated.privateKeyPEM))
+        )
+    }
+
+    func testPrivateKeyDraftRejectsInvalidKeyText() {
+        var draft = validServerDraft()
+        draft.authenticationKind = .privateKey
+        draft.privateKeyPEM = "not a private key"
+        draft.password = ""
+
+        let result = TmuxConnectionDraftValidator.validateServer(
+            draft,
+            existingServerID: nil
+        )
+
+        guard case .invalid(let validation) = result else {
+            XCTFail("expected invalid server submission")
+            return
+        }
+
+        XCTAssertEqual(validation.privateKey, "Import an OpenSSH private key.")
+    }
+
+    func testEncryptedPrivateKeyDraftRequiresPassphrase() {
+        var draft = validServerDraft()
+        draft.authenticationKind = .privateKey
+        draft.privateKeyPEM = Self.encryptedEd25519Key
+        draft.password = ""
+
+        let result = TmuxConnectionDraftValidator.validateServer(
+            draft,
+            existingServerID: nil
+        )
+
+        guard case .invalid(let validation) = result else {
+            XCTFail("expected invalid server submission")
+            return
+        }
+
+        XCTAssertEqual(validation.privateKeyPassphrase, "Passphrase is required for encrypted private keys.")
+    }
+
+    func testEncryptedPrivateKeyDraftAcceptsPassphrase() {
+        var draft = validServerDraft()
+        draft.authenticationKind = .privateKey
+        draft.privateKeyPEM = Self.encryptedEd25519Key
+        draft.privateKeyPassphrase = "secret"
+        draft.password = ""
+
+        let result = TmuxConnectionDraftValidator.validateServer(
+            draft,
+            existingServerID: nil
+        )
+
+        guard case .valid(let submission) = result else {
+            XCTFail("expected valid server submission")
+            return
+        }
+
+        XCTAssertEqual(
+            submission.credential,
+            .privateKey(
+                SSHPrivateKeyCredential(
+                    privateKeyPEM: Self.encryptedEd25519Key,
+                    passphrase: "secret"
+                )
+            )
+        )
+    }
+
     func testWorkspaceDraftValidationOnlyRequiresSessionName() {
         let serverID = UUID()
         let workspaceID = UUID()
@@ -145,4 +234,25 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
         XCTAssertEqual(submission.workspace.serverID, serverID)
         XCTAssertEqual(submission.workspace.sessionName, "ops")
     }
+
+    private func validServerDraft() -> TmuxConnectionDraft {
+        var draft = TmuxConnectionDraft()
+        draft.displayName = "Laptop"
+        draft.host = "laptop.example.com"
+        draft.port = "22"
+        draft.username = "demo"
+        draft.password = "demo-password"
+        return draft
+    }
+
+    private static let encryptedEd25519Key = """
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABD87oA8AF
+    9fpLEAQtTWMZZwAAAAGAAAAAEAAAAzAAAAC3NzaC1lZDI1NTE5AAAAIIuwDbwcjxPpUNPA
+    PkZgyQ9jnCXaboZMHs+AWOqtGxO0AAAAoA9no2kroZ7q7MIpSQ6+Gs5N/KMrm/eFRfWf4K
+    iLGRTczk+WQycDp1YidTw8kH9IwJle5ulywHf+5iLCVaolx8vYErJfKsJ1DRRx0qMzZObI
+    AHd8pT6MnuDISadNzI+lZgn1dbCZ6/aWPVFO3pFpmREscRgolzFcvSOtLiT/5U1wWUhwPo
+    KGvU4Tmf5I5hGQCbKhx4g4z7aJfILg2ErdGPQ=
+    -----END OPENSSH PRIVATE KEY-----
+    """
 }

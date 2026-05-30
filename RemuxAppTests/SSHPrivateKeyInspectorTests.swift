@@ -95,6 +95,182 @@ final class SSHPrivateKeyInspectorTests: XCTestCase {
         }
     }
 
+    func testRejectsTruncatedPrivateKeyBlock() {
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "broken")
+        let truncated = Self.privateKeyPEM(generated.privateKeyPEM) { payload in
+            payload.removeLast(min(payload.count, 8))
+        }
+
+        XCTAssertThrowsError(try SSHPrivateKeyInspector.inspect(truncated)) { error in
+            XCTAssertEqual(error as? SSHPrivateKeyInspectionError, .invalidOpenSSHPrivateKey)
+        }
+    }
+
+    func testRejectsTrailingTopLevelData() {
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "trailing")
+        let trailing = Self.privateKeyPEM(generated.privateKeyPEM) { payload in
+            payload.append(0)
+        }
+
+        XCTAssertThrowsError(try SSHPrivateKeyInspector.inspect(trailing)) { error in
+            XCTAssertEqual(error as? SSHPrivateKeyInspectionError, .invalidOpenSSHPrivateKey)
+        }
+    }
+
+    func testRejectsOversizedUnencryptedPaddingWithoutTrapping() {
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "oversized-padding")
+        let oversizedPadding = Self.privateKeyPEM(generated.privateKeyPEM) { payload in
+            Self.mutatePrivateBlock(in: &payload) { block in
+                block.append(contentsOf: repeatElement(UInt8(1), count: 256))
+            }
+        }
+
+        XCTAssertThrowsError(try SSHPrivateKeyInspector.inspect(oversizedPadding)) { error in
+            XCTAssertEqual(error as? SSHPrivateKeyInspectionError, .invalidOpenSSHPrivateKey)
+        }
+    }
+
+    func testAcceptsUnencryptedKeyWithoutPadding() throws {
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "align")
+        let noPadding = Self.privateKeyPEM(generated.privateKeyPEM) { payload in
+            Self.mutatePrivateBlock(in: &payload) { block in
+                var offset = 8
+                Self.skipSSHString(in: block, offset: &offset)
+                Self.skipSSHString(in: block, offset: &offset)
+                Self.skipSSHString(in: block, offset: &offset)
+                Self.skipSSHString(in: block, offset: &offset)
+                block.removeSubrange(offset..<block.count)
+            }
+        }
+
+        let inspection = try SSHPrivateKeyInspector.inspect(noPadding)
+
+        XCTAssertEqual(inspection.keyType, .ed25519)
+    }
+
+    func testRejectsUnalignedUnencryptedPrivateBlockWithoutPadding() {
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "unaligned")
+        let unaligned = Self.privateKeyPEM(generated.privateKeyPEM) { payload in
+            Self.mutatePrivateBlock(in: &payload) { block in
+                var offset = 8
+                Self.skipSSHString(in: block, offset: &offset)
+                Self.skipSSHString(in: block, offset: &offset)
+                Self.skipSSHString(in: block, offset: &offset)
+                Self.skipSSHString(in: block, offset: &offset)
+                block.removeSubrange(offset..<block.count)
+            }
+        }
+
+        XCTAssertThrowsError(try SSHPrivateKeyInspector.inspect(unaligned)) { error in
+            XCTAssertEqual(error as? SSHPrivateKeyInspectionError, .invalidOpenSSHPrivateKey)
+        }
+    }
+
+    func testRejectsMismatchedPrivateBlockPublicKey() {
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "mismatched-public")
+        let mismatched = Self.privateKeyPEM(generated.privateKeyPEM) { payload in
+            Self.mutatePrivateBlock(in: &payload) { block in
+                var offset = 8
+                Self.skipSSHString(in: block, offset: &offset)
+                offset += 4
+                block[offset] ^= 0x01
+            }
+        }
+
+        XCTAssertThrowsError(try SSHPrivateKeyInspector.inspect(mismatched)) { error in
+            XCTAssertEqual(error as? SSHPrivateKeyInspectionError, .invalidOpenSSHPrivateKey)
+        }
+    }
+
+    func testRejectsMismatchedEd25519PrivateMaterialPublicKey() {
+        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "mismatched-private")
+        let mismatched = Self.privateKeyPEM(generated.privateKeyPEM) { payload in
+            Self.mutatePrivateBlock(in: &payload) { block in
+                var offset = 8
+                Self.skipSSHString(in: block, offset: &offset)
+                Self.skipSSHString(in: block, offset: &offset)
+                let privateMaterialLength = Int(Self.readUInt32(in: block, offset: offset))
+                offset += 4
+                block[offset + privateMaterialLength - 1] ^= 0x01
+            }
+        }
+
+        XCTAssertThrowsError(try SSHPrivateKeyInspector.inspect(mismatched)) { error in
+            XCTAssertEqual(error as? SSHPrivateKeyInspectionError, .invalidOpenSSHPrivateKey)
+        }
+    }
+
+    private static func privateKeyPEM(
+        _ pem: String,
+        mutate: (inout Data) -> Void
+    ) -> String {
+        let lines = pem
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var payload = Data(base64Encoded: lines.dropFirst().dropLast().joined())!
+        mutate(&payload)
+
+        let base64 = payload.base64EncodedString()
+        var wrappedLines: [String] = []
+        var start = base64.startIndex
+        while start < base64.endIndex {
+            let end = base64.index(start, offsetBy: 70, limitedBy: base64.endIndex) ?? base64.endIndex
+            wrappedLines.append(String(base64[start..<end]))
+            start = end
+        }
+
+        return """
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        \(wrappedLines.joined(separator: "\n"))
+        -----END OPENSSH PRIVATE KEY-----
+        """
+    }
+
+    private static func mutatePrivateBlock(
+        in payload: inout Data,
+        mutate: (inout Data) -> Void
+    ) {
+        var offset = "openssh-key-v1\0".utf8.count
+        skipSSHString(in: payload, offset: &offset)
+        skipSSHString(in: payload, offset: &offset)
+        skipSSHString(in: payload, offset: &offset)
+        offset += 4
+        skipSSHString(in: payload, offset: &offset)
+
+        let lengthOffset = offset
+        let length = Int(readUInt32(in: payload, offset: offset))
+        offset += 4
+        let blockStart = offset
+        let blockEnd = blockStart + length
+        var privateBlock = payload.subdata(in: blockStart..<blockEnd)
+        mutate(&privateBlock)
+
+        var rebuilt = payload.subdata(in: 0..<lengthOffset)
+        appendUInt32(UInt32(privateBlock.count), to: &rebuilt)
+        rebuilt.append(privateBlock)
+        rebuilt.append(payload.subdata(in: blockEnd..<payload.count))
+        payload = rebuilt
+    }
+
+    private static func skipSSHString(in data: Data, offset: inout Int) {
+        let length = Int(readUInt32(in: data, offset: offset))
+        offset += 4 + length
+    }
+
+    private static func readUInt32(in data: Data, offset: Int) -> UInt32 {
+        data[offset..<(offset + 4)].reduce(UInt32(0)) { result, byte in
+            (result << 8) | UInt32(byte)
+        }
+    }
+
+    private static func appendUInt32(_ value: UInt32, to data: inout Data) {
+        data.append(UInt8((value >> 24) & 0xff))
+        data.append(UInt8((value >> 16) & 0xff))
+        data.append(UInt8((value >> 8) & 0xff))
+        data.append(UInt8(value & 0xff))
+    }
+
     private static let ed25519Key = """
     -----BEGIN OPENSSH PRIVATE KEY-----
     b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW

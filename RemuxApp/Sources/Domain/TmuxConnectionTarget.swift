@@ -483,6 +483,19 @@ enum TmuxConnectionDraftValidator {
         case .privateKey:
             if privateKeyPEM.isEmpty {
                 validation.privateKey = "Private key is required."
+            } else {
+                do {
+                    let inspection = try SSHPrivateKeyInspector.inspect(privateKeyPEM)
+                    if inspection.isEncrypted && privateKeyPassphrase == nil {
+                        validation.privateKeyPassphrase = "Passphrase is required for encrypted private keys."
+                    }
+                } catch {
+                    if let error = error as? LocalizedError {
+                        validation.privateKey = error.errorDescription ?? "Private key could not be read."
+                    } else {
+                        validation.privateKey = "Private key could not be read."
+                    }
+                }
             }
             credential = .privateKey(
                 SSHPrivateKeyCredential(
