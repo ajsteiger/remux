@@ -219,6 +219,30 @@ struct RemuxAppDependencies: Sendable {
                         decryptionKey: decryptionKey
                     )
                 )
+            case .ecdsaP256:
+                return try .p256(
+                    username: auth.username,
+                    privateKey: P256.Signing.PrivateKey(
+                        sshEcdsaP256: inspection.normalizedPEM,
+                        decryptionKey: decryptionKey
+                    )
+                )
+            case .ecdsaP384:
+                return try .p384(
+                    username: auth.username,
+                    privateKey: P384.Signing.PrivateKey(
+                        sshEcdsaP384: inspection.normalizedPEM,
+                        decryptionKey: decryptionKey
+                    )
+                )
+            case .ecdsaP521:
+                return try .p521(
+                    username: auth.username,
+                    privateKey: P521.Signing.PrivateKey(
+                        sshEcdsaP521: inspection.normalizedPEM,
+                        decryptionKey: decryptionKey
+                    )
+                )
             }
         }
     }

@@ -27,6 +27,26 @@ final class SSHPrivateKeyInspectorTests: XCTestCase {
         XCTAssertTrue(inspection.publicKeyLine.hasPrefix("ssh-rsa "))
     }
 
+    func testInspectsUnencryptedECDSAKeys() throws {
+        let p256 = try SSHPrivateKeyInspector.inspect(Self.ecdsaP256Key)
+        XCTAssertEqual(p256.keyType, .ecdsaP256)
+        XCTAssertEqual(p256.keyType.displayName, "ECDSA P-256")
+        XCTAssertTrue(p256.publicKeyLine.hasPrefix("ecdsa-sha2-nistp256 "))
+        XCTAssertTrue(p256.publicFingerprint.hasPrefix("SHA256:"))
+
+        let p384 = try SSHPrivateKeyInspector.inspect(Self.ecdsaP384Key)
+        XCTAssertEqual(p384.keyType, .ecdsaP384)
+        XCTAssertEqual(p384.keyType.displayName, "ECDSA P-384")
+        XCTAssertTrue(p384.publicKeyLine.hasPrefix("ecdsa-sha2-nistp384 "))
+        XCTAssertTrue(p384.publicFingerprint.hasPrefix("SHA256:"))
+
+        let p521 = try SSHPrivateKeyInspector.inspect(Self.ecdsaP521Key)
+        XCTAssertEqual(p521.keyType, .ecdsaP521)
+        XCTAssertEqual(p521.keyType.displayName, "ECDSA P-521")
+        XCTAssertTrue(p521.publicKeyLine.hasPrefix("ecdsa-sha2-nistp521 "))
+        XCTAssertTrue(p521.publicFingerprint.hasPrefix("SHA256:"))
+    }
+
     func testGeneratesInspectableEd25519Key() throws {
         let generated = SSHPrivateKeyInspector.generateEd25519(comment: "remux-test")
         let inspection = try SSHPrivateKeyInspector.inspect(generated.privateKeyPEM)
@@ -47,6 +67,20 @@ final class SSHPrivateKeyInspectorTests: XCTestCase {
         )
 
         XCTAssertEqual(privateKey.publicKey.rawRepresentation.count, 32)
+    }
+
+    func testECDSAKeysLoadThroughConnectionParser() throws {
+        let p256Inspection = try SSHPrivateKeyInspector.inspect(Self.ecdsaP256Key)
+        let p256Key = try P256.Signing.PrivateKey(sshEcdsaP256: p256Inspection.normalizedPEM)
+        XCTAssertEqual(p256Key.publicKey.x963Representation.count, 65)
+
+        let p384Inspection = try SSHPrivateKeyInspector.inspect(Self.ecdsaP384Key)
+        let p384Key = try P384.Signing.PrivateKey(sshEcdsaP384: p384Inspection.normalizedPEM)
+        XCTAssertEqual(p384Key.publicKey.x963Representation.count, 97)
+
+        let p521Inspection = try SSHPrivateKeyInspector.inspect(Self.ecdsaP521Key)
+        let p521Key = try P521.Signing.PrivateKey(sshEcdsaP521: p521Inspection.normalizedPEM)
+        XCTAssertEqual(p521Key.publicKey.x963Representation.count, 133)
     }
 
     func testRejectsEmptyKey() {
@@ -109,6 +143,46 @@ final class SSHPrivateKeyInspectorTests: XCTestCase {
     SPN7VcCWbtxUggzVrJF9qmy+CF0XvoSrmPZzHM8YkdKcAfYoY6WEBpsg7WQZ7pU1CPaDEI
     Uy5fslboaiuQuwFBBnT1QDQQ0SoITS6MBvh0DFJVg76mR4vDLXGEmVo59CHxFZy7kR2GXu
     DfSvNOmwIetJ0+z9AAAADnJlbXV4LXRlc3QtcnNhAQIDBA==
+    -----END OPENSSH PRIVATE KEY-----
+    """
+
+    private static let ecdsaP256Key = """
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS
+    1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQR/G9rJovBSvdkd9XoGNURImI5vQP/2
+    w7TQNb/b8hGI5oq844XjI7V4j8XDwjqlcNfeD7gqoHf8ekpmL4EUtzYaAAAAqFZzBpBWcw
+    aQAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBH8b2smi8FK92R31
+    egY1REiYjm9A//bDtNA1v9vyEYjmirzjheMjtXiPxcPCOqVw194PuCqgd/x6SmYvgRS3Nh
+    oAAAAgPV1jW6vy45i2F3WBFirMPgiJU7FgIl4rJy264fkhPU4AAAALeW91QGV4YW1wbGUB
+    AgMEBQ==
+    -----END OPENSSH PRIVATE KEY-----
+    """
+
+    private static let ecdsaP384Key = """
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAiAAAABNlY2RzYS
+    1zaGEyLW5pc3RwMzg0AAAACG5pc3RwMzg0AAAAYQTbanVgBsim5t0MwvPHpmbupOibZFVU
+    a9Teahi4S4YZsvEob0eX9wYSEA2VF6MNKCDM0wQFtm0tk/5vgG0vqSaqjefgXCsov7mFDx
+    BW0Trg0YqULpUlRR9l9f12TyZm050AAADY3IaN69yGjesAAAATZWNkc2Etc2hhMi1uaXN0
+    cDM4NAAAAAhuaXN0cDM4NAAAAGEE22p1YAbIpubdDMLzx6Zm7qTom2RVVGvU3moYuEuGGb
+    LxKG9Hl/cGEhANlRejDSggzNMEBbZtLZP+b4BtL6kmqo3n4FwrKL+5hQ8QVtE64NGKlC6V
+    JUUfZfX9dk8mZtOdAAAAMQDtslLX7WTAyAIiTxRVtOl9WXp/GKn9agJIJ0/qOpuRaYGLtk
+    w3LPjfQfpJT1dh9CUAAAALeW91QGV4YW1wbGUBAgME
+    -----END OPENSSH PRIVATE KEY-----
+    """
+
+    private static let ecdsaP521Key = """
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAArAAAABNlY2RzYS
+    1zaGEyLW5pc3RwNTIxAAAACG5pc3RwNTIxAAAAhQQAuwrbbKlzQliuu1AmBtr9N7xG1Qic
+    MqizNJa5zWWnm9rvBvQwIl0u6NDmUMVTnLxscnk9hXARGaLnn2ufhGhrDWkBujkMnwfGy7
+    f/eIIOmWwdoMh/fbam5qMtOgNIp5QO9I70QstcHF62ankrtmcgBZtdCBsvHAuIfL6IK2ts
+    BgG7cvMAAAEQktYcEpLWHBIAAAATZWNkc2Etc2hhMi1uaXN0cDUyMQAAAAhuaXN0cDUyMQ
+    AAAIUEALsK22ypc0JYrrtQJgba/Te8RtUInDKoszSWuc1lp5va7wb0MCJdLujQ5lDFU5y8
+    bHJ5PYVwERmi559rn4Roaw1pAbo5DJ8Hxsu3/3iCDplsHaDIf322puajLToDSKeUDvSO9E
+    LLXBxetmp5K7ZnIAWbXQgbLxwLiHy+iCtrbAYBu3LzAAAAQgETL+ZErb1c9FwcOKtIuXgy
+    pS4OdBd4Il5mUSzCwJ/PKWO0L+KRTthlNrwZTRxrdGIsjonmEEoIh9kLfGM3Tpa0YQAAAA
+    t5b3VAZXhhbXBsZQECAwQFBgc=
     -----END OPENSSH PRIVATE KEY-----
     """
 }

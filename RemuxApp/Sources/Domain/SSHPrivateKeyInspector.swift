@@ -4,6 +4,9 @@ import Foundation
 enum SSHPrivateKeyType: String, Codable, Equatable, Sendable {
     case ed25519 = "ssh-ed25519"
     case rsa = "ssh-rsa"
+    case ecdsaP256 = "ecdsa-sha2-nistp256"
+    case ecdsaP384 = "ecdsa-sha2-nistp384"
+    case ecdsaP521 = "ecdsa-sha2-nistp521"
 
     var displayName: String {
         switch self {
@@ -11,6 +14,38 @@ enum SSHPrivateKeyType: String, Codable, Equatable, Sendable {
             "ED25519"
         case .rsa:
             "RSA"
+        case .ecdsaP256:
+            "ECDSA P-256"
+        case .ecdsaP384:
+            "ECDSA P-384"
+        case .ecdsaP521:
+            "ECDSA P-521"
+        }
+    }
+
+    var ecdsaCurveName: String? {
+        switch self {
+        case .ed25519, .rsa:
+            nil
+        case .ecdsaP256:
+            "nistp256"
+        case .ecdsaP384:
+            "nistp384"
+        case .ecdsaP521:
+            "nistp521"
+        }
+    }
+
+    var ecdsaPointByteCount: Int? {
+        switch self {
+        case .ed25519, .rsa:
+            nil
+        case .ecdsaP256:
+            65
+        case .ecdsaP384:
+            97
+        case .ecdsaP521:
+            133
         }
     }
 }
@@ -86,6 +121,10 @@ enum SSHPrivateKeyInspector {
         guard let keyType = SSHPrivateKeyType(rawValue: rawKeyType) else {
             throw SSHPrivateKeyInspectionError.unsupportedKeyType(rawKeyType)
         }
+        try validatePublicKeyBlob(for: keyType, reader: &publicKeyReader)
+        guard publicKeyReader.isAtEnd else {
+            throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+        }
 
         let fingerprint = Data(SHA256.hash(data: publicKeyBlob))
             .base64EncodedString()
@@ -98,6 +137,39 @@ enum SSHPrivateKeyInspector {
             normalizedPEM: normalizedPEM,
             isEncrypted: cipherName != "none"
         )
+    }
+
+    private static func validatePublicKeyBlob(
+        for keyType: SSHPrivateKeyType,
+        reader: inout SSHPrivateKeyPayloadReader
+    ) throws {
+        switch keyType {
+        case .ed25519:
+            guard try reader.readSSHStringData().count == 32 else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+        case .rsa:
+            let exponent = try reader.readSSHStringData()
+            let modulus = try reader.readSSHStringData()
+            guard
+                !exponent.isEmpty,
+                !modulus.isEmpty
+            else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+        case .ecdsaP256, .ecdsaP384, .ecdsaP521:
+            guard
+                let expectedCurveName = keyType.ecdsaCurveName,
+                let expectedPointByteCount = keyType.ecdsaPointByteCount,
+                try reader.readSSHString() == expectedCurveName
+            else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+            let point = try reader.readSSHStringData()
+            guard point.count == expectedPointByteCount, point.first == 0x04 else {
+                throw SSHPrivateKeyInspectionError.invalidOpenSSHPrivateKey
+            }
+        }
     }
 
     static func generateEd25519(comment: String = "remux") -> SSHGeneratedPrivateKey {
@@ -214,6 +286,10 @@ private struct SSHPrivateKeyPayloadReader {
         let bytes = data[offset..<(offset + count)]
         offset += count
         return Data(bytes)
+    }
+
+    var isAtEnd: Bool {
+        offset == data.count
     }
 }
 

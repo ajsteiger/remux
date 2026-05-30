@@ -1398,7 +1398,7 @@
 			repositoryURL = "https://github.com/h3nock/Citadel.git";
 			requirement = {
 				kind = revision;
-				revision = 3012655d8488b2667970b6c4b536253f2871aa2a;
+				revision = c3d5fa0d901d3fbdfeb48f009ab529f887deab81;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
