@@ -30,6 +30,8 @@ enum DebugConnectionProfileSeeder {
         static let port = "REMUX_DEBUG_SERVER_PORT"
         static let username = "REMUX_DEBUG_SERVER_USERNAME"
         static let password = "REMUX_DEBUG_SERVER_PASSWORD"
+        static let privateKey = "REMUX_DEBUG_PRIVATE_KEY"
+        static let privateKeyPassphrase = "REMUX_DEBUG_PRIVATE_KEY_PASSPHRASE"
         static let sessionName = "REMUX_DEBUG_TMUX_SESSION"
     }
 
@@ -48,6 +50,8 @@ enum DebugConnectionProfileSeeder {
             port: environment[Key.port] ?? "22",
             username: environment[Key.username] ?? "",
             password: environment[Key.password] ?? "",
+            privateKey: environment[Key.privateKey],
+            privateKeyPassphrase: environment[Key.privateKeyPassphrase],
             sessionName: environment[Key.sessionName] ?? "base"
         )
 
@@ -60,16 +64,30 @@ enum DebugConnectionProfileSeeder {
             throw DebugConnectionProfileSeederError.invalidEnvironment(validation)
 
         case .valid(let submission):
-            guard case .password(let password) = submission.server.credential else {
-                return false
+            let identity: SSHIdentity
+            let credential: SSHCredential
+            switch submission.server.credential {
+            case .password(let password):
+                identity = SSHIdentity(
+                    name: submission.server.displayName,
+                    authenticationKind: .password
+                )
+                credential = .password(password)
+
+            case .privateKey(let privateKeyCredential):
+                let inspection = try SSHPrivateKeyInspector.inspect(
+                    privateKeyCredential.privateKeyPEM
+                )
+                identity = SSHIdentity(
+                    name: submission.server.displayName,
+                    authenticationKind: .privateKey,
+                    publicFingerprint: inspection.publicFingerprint
+                )
+                credential = .privateKey(privateKeyCredential)
             }
-            let identity = SSHIdentity(
-                name: submission.server.displayName,
-                authenticationKind: .password
-            )
             let server = submission.server.savedServer(identityID: identity.id)
             try await credentialStore.saveCredential(
-                .password(password),
+                credential,
                 identityID: identity.id
             )
             try await profileRepository.saveIdentityProfile(
@@ -89,6 +107,8 @@ private extension TmuxConnectionDraft {
         port: String,
         username: String,
         password: String,
+        privateKey: String?,
+        privateKeyPassphrase: String?,
         sessionName: String
     ) {
         self.init()
@@ -96,7 +116,14 @@ private extension TmuxConnectionDraft {
         self.host = host
         self.port = port
         self.username = username
-        self.password = password
+        if let privateKey, !privateKey.isEmpty {
+            self.authenticationKind = .privateKey
+            self.privateKeyPEM = privateKey
+            self.privateKeyFileName = "Debug private key"
+            self.privateKeyPassphrase = privateKeyPassphrase ?? ""
+        } else {
+            self.password = password
+        }
         self.sessionName = sessionName
     }
 }

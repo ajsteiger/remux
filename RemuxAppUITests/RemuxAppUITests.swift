@@ -9,7 +9,9 @@ final class RemuxAppUITests: XCTestCase {
         let host: String
         var port: String?
         let username: String
-        let password: String
+        var password: String?
+        var privateKeyPEM: String?
+        var privateKeyPassphrase: String?
         var sessionName: String?
     }
 
@@ -1018,7 +1020,18 @@ final class RemuxAppUITests: XCTestCase {
         app.launchEnvironment["REMUX_DEBUG_SERVER_HOST"] = configuration.host
         app.launchEnvironment["REMUX_DEBUG_SERVER_PORT"] = configuration.port ?? "22"
         app.launchEnvironment["REMUX_DEBUG_SERVER_USERNAME"] = configuration.username
-        app.launchEnvironment["REMUX_DEBUG_SERVER_PASSWORD"] = configuration.password
+        if let privateKeyPEM = configuration.privateKeyPEM, !privateKeyPEM.isEmpty {
+            app.launchEnvironment["REMUX_DEBUG_PRIVATE_KEY"] = privateKeyPEM
+            if let passphrase = configuration.privateKeyPassphrase {
+                app.launchEnvironment["REMUX_DEBUG_PRIVATE_KEY_PASSPHRASE"] = passphrase
+            }
+        } else if let password = configuration.password, !password.isEmpty {
+            app.launchEnvironment["REMUX_DEBUG_SERVER_PASSWORD"] = password
+        } else {
+            throw LiveSSHCleanupHarnessError(
+                description: "/tmp/remux-live-ssh.json must include password or privateKeyPEM."
+            )
+        }
         app.launchEnvironment["REMUX_DEBUG_TMUX_SESSION"] = sessionName
         app.launchEnvironment["REMUX_DEBUG_EPHEMERAL_STORAGE"] = "1"
         if traceRuntime {

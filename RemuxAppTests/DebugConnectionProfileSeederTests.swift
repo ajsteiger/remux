@@ -52,6 +52,46 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
         XCTAssertEqual(credential, .password("debug-password"))
     }
 
+    func testSeedPersistsPrivateKeyProfileAndCredential() async throws {
+        let repository = InMemoryConnectionProfileRepository()
+        let credentialStore = InMemorySSHCredentialStore()
+        let generated = SSHPrivateKeyInspector.generateEd25519()
+
+        let seeded = try await DebugConnectionProfileSeeder.seedIfRequested(
+            environment: [
+                "REMUX_DEBUG_SEED_CONNECTION": "1",
+                "REMUX_DEBUG_SERVER_NAME": "Example Server",
+                "REMUX_DEBUG_SERVER_HOST": "server.example.com",
+                "REMUX_DEBUG_SERVER_PORT": "22",
+                "REMUX_DEBUG_SERVER_USERNAME": "demo",
+                "REMUX_DEBUG_PRIVATE_KEY": generated.privateKeyPEM,
+                "REMUX_DEBUG_PRIVATE_KEY_PASSPHRASE": "debug-passphrase",
+                "REMUX_DEBUG_TMUX_SESSION": "base",
+            ],
+            profileRepository: repository,
+            credentialStore: credentialStore
+        )
+
+        let profile = try await repository.loadProfile()
+        let snapshot = try await repository.loadSnapshot()
+        let server = try XCTUnwrap(profile?.0)
+        let identity = try XCTUnwrap(snapshot.identity(id: server.identityID))
+        let credential = try await credentialStore.loadCredential(identityID: identity.id)
+        XCTAssertTrue(seeded)
+        XCTAssertEqual(identity.name, "Example Server")
+        XCTAssertEqual(identity.authenticationKind, .privateKey)
+        XCTAssertEqual(identity.publicFingerprint, generated.publicFingerprint)
+        XCTAssertEqual(
+            credential,
+            .privateKey(
+                SSHPrivateKeyCredential(
+                    privateKeyPEM: generated.privateKeyPEM,
+                    passphrase: "debug-passphrase"
+                )
+            )
+        )
+    }
+
 }
 
 private actor InMemoryConnectionProfileRepository: ConnectionProfileRepository {
