@@ -97,7 +97,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
     }
 
-    var connectionTarget: TmuxConnectionTarget {
+    var runtimeConnectionTarget: TmuxConnectionTarget {
         target
     }
 

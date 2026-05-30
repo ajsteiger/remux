@@ -137,7 +137,7 @@ final class RemuxRootModel: ObservableObject {
     var activeTerminalScreenEntries: [ActiveTerminalScreenEntry] {
         activeSessions.map { session in
             let model = terminalScreenModel(for: session)
-            let attachmentTarget = model.connectionTarget
+            let attachmentTarget = model.runtimeConnectionTarget
             return ActiveTerminalScreenEntry(
                 session: session,
                 model: model,
