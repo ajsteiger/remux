@@ -2076,6 +2076,7 @@ private struct ConnectionSetupView: View {
                 draft.authenticationKind = .privateKey
                 draft.privateKeyPEM = inspection.normalizedPEM
                 draft.privateKeyFileName = url.lastPathComponent
+                draft.privateKeyPassphrase = ""
             }
         } catch {
             if let error = error as? SSHPrivateKeyInspectionError {
@@ -2113,6 +2114,7 @@ private struct ConnectionSetupView: View {
                 draft.authenticationKind = .privateKey
                 draft.privateKeyPEM = inspection.normalizedPEM
                 draft.privateKeyFileName = "Pasted private key"
+                draft.privateKeyPassphrase = ""
             }
         } catch {
             if let error = error as? SSHPrivateKeyInspectionError {
