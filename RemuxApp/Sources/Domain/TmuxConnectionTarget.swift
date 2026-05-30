@@ -459,7 +459,7 @@ enum TmuxConnectionDraftValidator {
         }
 
         if host.isEmpty {
-            validation.host = "Host is required."
+            validation.host = "IP or hostname is required."
         }
 
         guard let port = Int(draft.port), (1...65_535).contains(port) else {

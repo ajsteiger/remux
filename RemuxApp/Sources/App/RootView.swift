@@ -1333,8 +1333,8 @@ private struct ConnectionSetupView: View {
                     )
 
                     textInputRow(
-                        title: "Host",
-                        placeholder: "example.tailnet.ts.net",
+                        title: "IP or Hostname",
+                        placeholder: "server.local or 100.64.0.10",
                         keyPath: \.host,
                         field: .host,
                         validationMessage: validation.host,
