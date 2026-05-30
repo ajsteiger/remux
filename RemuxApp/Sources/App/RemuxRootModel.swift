@@ -136,11 +136,13 @@ final class RemuxRootModel: ObservableObject {
 
     var activeTerminalScreenEntries: [ActiveTerminalScreenEntry] {
         activeSessions.map { session in
-            ActiveTerminalScreenEntry(
+            let model = terminalScreenModel(for: session)
+            let attachmentTarget = model.connectionTarget
+            return ActiveTerminalScreenEntry(
                 session: session,
-                model: terminalScreenModel(for: session),
-                attachmentTransferServiceFactory: { [dependencies, target = session.target] in
-                    dependencies.makeAttachmentTransferService(for: target)
+                model: model,
+                attachmentTransferServiceFactory: { [dependencies, attachmentTarget] in
+                    dependencies.makeAttachmentTransferService(for: attachmentTarget)
                 }
             )
         }

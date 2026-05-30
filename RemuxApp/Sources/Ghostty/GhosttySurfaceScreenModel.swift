@@ -97,6 +97,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         )
     }
 
+    var connectionTarget: TmuxConnectionTarget {
+        target
+    }
+
     func makePanePreviewSession(
         leafIDs: [UUID],
         previewSizing: GhosttyPanePreviewSession.PreviewSizing

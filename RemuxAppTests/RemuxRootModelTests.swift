@@ -791,6 +791,53 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(attachedTarget.sshAuth.credential, .password("updated-demo-password"))
     }
 
+    func testEditServerKeepsRunningAttachmentTargetPinnedToVisibleTerminal() async throws {
+        let passwordBackedServer = makePasswordBackedServer()
+        let server = passwordBackedServer.server
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let attachmentFactory = RecordingAttachmentTransferServiceFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            identities: [passwordBackedServer.identity],
+            attachmentTransferServiceFactory: attachmentFactory.factory,
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.credentialStore.saveCredential(
+            .password("demo-password"),
+            identityID: passwordBackedServer.identity.id
+        )
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let originalSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let runningModel = harness.model.terminalScreenModel(for: originalSession)
+        await attachAndWaitForRunning(runningModel)
+
+        await harness.model.beginEditServer(serverID: server.id)
+        harness.model.updateDraft { draft in
+            draft.host = "updated.example.com"
+            draft.username = "deploy"
+            draft.password = "updated-demo-password"
+        }
+
+        await harness.model.saveAndConnect()
+
+        let refreshedSession = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(refreshedSession.target.server.host, "updated.example.com")
+        XCTAssertEqual(refreshedSession.target.sshAuth.username, "deploy")
+        XCTAssertTrue(runningModel === harness.model.terminalScreenModel(for: refreshedSession))
+
+        let entry = try XCTUnwrap(harness.model.activeTerminalScreenEntries.first)
+        _ = entry.attachmentTransferServiceFactory()
+
+        let attachmentTarget = try XCTUnwrap(attachmentFactory.targets.last)
+        XCTAssertEqual(attachmentTarget.server.host, server.host)
+        XCTAssertEqual(attachmentTarget.server.username, server.username)
+        XCTAssertEqual(attachmentTarget.sshAuth.username, server.username)
+        XCTAssertEqual(attachmentTarget.sshAuth.credential, .password("demo-password"))
+    }
+
     func testEditWorkspaceSavesSessionWithoutOpeningTerminalOrChangingLastOpenedTime() async throws {
         let lastOpenedAt = Date(timeIntervalSince1970: 500)
         let server = SavedServer(
@@ -1923,6 +1970,10 @@ final class RemuxRootModelTests: XCTestCase {
             TrustedHostStore,
             SSHTmuxAuthenticatedConnectionPool
         ) async -> Void)? = nil,
+        attachmentTransferServiceFactory: (@Sendable (
+            TmuxConnectionTarget,
+            TrustedHostStore
+        ) -> any GhosttyAttachmentTransferService)? = nil,
         terminalScreenModelFactory: RemuxRootModel.TerminalScreenModelFactory? = nil
     ) -> RemuxRootModelHarness {
         let profileRepository = TestConnectionProfileRepository(
@@ -1942,6 +1993,9 @@ final class RemuxRootModelTests: XCTestCase {
             DeterministicTmuxControlTransport(chunks: [])
         }
         let resolvedSSHConnectionPrewarmer = sshConnectionPrewarmer ?? { _, _, _ in }
+        let resolvedAttachmentTransferServiceFactory = attachmentTransferServiceFactory ?? { _, _ in
+            FailingGhosttyAttachmentTransferService()
+        }
         let resolvedTerminalScreenModelFactory = terminalScreenModelFactory ?? makeTestTerminalScreenModel
         let dependencies = RemuxAppDependencies(
             profileRepository: profileRepository,
@@ -1951,6 +2005,7 @@ final class RemuxRootModelTests: XCTestCase {
             trustedHostStore: trustedHostStore,
             transportFactory: resolvedTransportFactory,
             sshConnectionPrewarmer: resolvedSSHConnectionPrewarmer,
+            attachmentTransferServiceFactory: resolvedAttachmentTransferServiceFactory,
             debugConnectionSeeder: { _, _ in false }
         )
 
@@ -2083,6 +2138,28 @@ private final class RecordingTerminalScreenModelFactory: @unchecked Sendable {
         createdKeys.append(key)
         createdModels[key] = model
         return model
+    }
+}
+
+private final class RecordingAttachmentTransferServiceFactory: @unchecked Sendable {
+    private(set) var targets: [TmuxConnectionTarget] = []
+
+    var factory: @Sendable (TmuxConnectionTarget, TrustedHostStore) -> any GhosttyAttachmentTransferService {
+        { target, _ in
+            self.targets.append(target)
+            return FailingGhosttyAttachmentTransferService()
+        }
+    }
+}
+
+private struct FailingGhosttyAttachmentTransferService: GhosttyAttachmentTransferService {
+    func transfer(
+        _ job: GhosttyAttachmentTransferJob,
+        progress: @escaping GhosttyAttachmentTransferProgressHandler
+    ) async throws -> GhosttyAttachmentTransferResult {
+        _ = job
+        _ = progress
+        throw GhosttyAttachmentTransferError.noSources
     }
 }
 
