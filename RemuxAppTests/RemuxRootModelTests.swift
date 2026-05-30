@@ -735,6 +735,62 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(savedCredential, .password("updated-demo-password"))
     }
 
+    func testEditServerRefreshesIdleActiveSessionAuthBeforeAttach() async throws {
+        let passwordBackedServer = makePasswordBackedServer()
+        let server = passwordBackedServer.server
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let transportFactory = RecordingRootTransportFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            identities: [passwordBackedServer.identity],
+            transportFactory: { target, trustedHostStore, _ in
+                transportFactory.makeTransport(
+                    target: target,
+                    trustedHostStore: trustedHostStore
+                )
+            },
+            terminalScreenModelFactory: modelFactory.factory
+        )
+        try await harness.credentialStore.saveCredential(
+            .password("demo-password"),
+            identityID: passwordBackedServer.identity.id
+        )
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let originalSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let originalModel = harness.model.terminalScreenModel(for: originalSession)
+
+        await harness.model.beginEditServer(serverID: server.id)
+        harness.model.updateDraft { draft in
+            draft.host = "updated.example.com"
+            draft.username = "deploy"
+            draft.password = "updated-demo-password"
+        }
+
+        await harness.model.saveAndConnect()
+
+        let refreshedSession = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertEqual(harness.model.state, .library)
+        XCTAssertEqual(refreshedSession.instanceID, originalSession.instanceID)
+        XCTAssertEqual(refreshedSession.target.server.host, "updated.example.com")
+        XCTAssertEqual(refreshedSession.target.server.username, "deploy")
+        XCTAssertEqual(refreshedSession.target.sshAuth.username, "deploy")
+        XCTAssertEqual(refreshedSession.target.sshAuth.credential, .password("updated-demo-password"))
+        let refreshedModel = harness.model.terminalScreenModel(for: refreshedSession)
+        XCTAssertFalse(originalModel === refreshedModel)
+        XCTAssertEqual(modelFactory.createdKeys.count, 2)
+
+        transportFactory.reset()
+        await attachAndWaitForRunning(refreshedModel)
+        let attachedTarget = try XCTUnwrap(transportFactory.targets.last)
+        XCTAssertEqual(attachedTarget.server.host, "updated.example.com")
+        XCTAssertEqual(attachedTarget.server.username, "deploy")
+        XCTAssertEqual(attachedTarget.sshAuth.username, "deploy")
+        XCTAssertEqual(attachedTarget.sshAuth.credential, .password("updated-demo-password"))
+    }
+
     func testEditWorkspaceSavesSessionWithoutOpeningTerminalOrChangingLastOpenedTime() async throws {
         let lastOpenedAt = Date(timeIntervalSince1970: 500)
         let server = SavedServer(

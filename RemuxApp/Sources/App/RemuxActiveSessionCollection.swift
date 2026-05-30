@@ -122,6 +122,7 @@ enum RemuxActiveSessionCollection {
 
     static func refreshServer(
         _ server: SavedServer,
+        sshAuth: ResolvedSSHAuth,
         in activeSessions: inout [ActiveTerminalSession]
     ) {
         for index in activeSessions.indices where activeSessions[index].target.server.id == server.id {
@@ -129,7 +130,7 @@ enum RemuxActiveSessionCollection {
             activeSessions[index].target = TmuxConnectionTarget(
                 server: server,
                 workspace: target.workspace,
-                sshAuth: target.sshAuth,
+                sshAuth: sshAuth,
                 terminalSettings: target.terminalSettings
             )
         }

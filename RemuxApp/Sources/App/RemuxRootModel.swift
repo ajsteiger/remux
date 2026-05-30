@@ -405,12 +405,15 @@ final class RemuxRootModel: ObservableObject {
                     throw error
                 }
                 library = try await dependencies.profileRepository.loadSnapshot()
+                let updatedSSHAuth = try await resolveSSHAuth(for: server)
                 closePreparedTransports(forServerID: server.id)
                 dependencies.closeIdleSSHConnections(forServerID: server.id)
                 RemuxActiveSessionCollection.refreshServer(
                     server,
+                    sshAuth: updatedSSHAuth,
                     in: &activeSessions
                 )
+                refreshIdleTerminalScreenModels(serverID: server.id)
 
                 guard let reconnectWorkspaceID else {
                     state = .library
@@ -425,11 +428,10 @@ final class RemuxRootModel: ObservableObject {
                 workspace.lastOpenedAt = Date()
                 try await dependencies.profileRepository.saveWorkspace(workspace)
                 library = try await dependencies.profileRepository.loadSnapshot()
-                let sshAuth = try await resolveSSHAuth(for: server)
                 activate(
                     server: server,
                     workspace: workspace,
-                    sshAuth: sshAuth
+                    sshAuth: updatedSSHAuth
                 )
             } catch {
                 transitionToFailed(error)
@@ -758,6 +760,15 @@ final class RemuxRootModel: ObservableObject {
             let key = TerminalRuntimeAttemptKey(session: session)
             guard let model = terminalScreenModels[key] else { continue }
             try model.applyTerminalSettings(settings)
+        }
+    }
+
+    private func refreshIdleTerminalScreenModels(serverID: SavedServer.ID) {
+        for session in activeSessions where session.target.server.id == serverID {
+            let key = TerminalRuntimeAttemptKey(session: session)
+            guard terminalScreenModels[key]?.state == .idle else { continue }
+            replaceTerminalScreenModel(for: session)
+            applyCurrentAppLifecyclePhase(to: session)
         }
     }
 

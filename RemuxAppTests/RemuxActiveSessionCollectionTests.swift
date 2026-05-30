@@ -83,7 +83,7 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
         XCTAssertEqual(sessions.map(\.id), [thirdTarget.workspace.id])
     }
 
-    func testRefreshServerPreservesWorkspaceAuthAndSettings() {
+    func testRefreshServerUpdatesAuthAndPreservesWorkspaceAndSettings() {
         let server = makeServer(displayName: "Old")
         let target = makeTarget(
             server: server,
@@ -93,19 +93,29 @@ final class RemuxActiveSessionCollectionTests: XCTestCase {
         )
         let updatedServer = SavedServer(
             id: server.id,
+            identityID: server.identityID,
             displayName: "New",
             host: "new.example.test",
             port: 2200,
             username: "new-user"
         )
+        let updatedAuth = ResolvedSSHAuth.password(
+            username: "new-user",
+            password: "new-secret",
+            identityID: updatedServer.identityID,
+            displayLabel: "New"
+        )
         var sessions = [ActiveTerminalSession(target: target)]
 
-        RemuxActiveSessionCollection.refreshServer(updatedServer, in: &sessions)
+        RemuxActiveSessionCollection.refreshServer(
+            updatedServer,
+            sshAuth: updatedAuth,
+            in: &sessions
+        )
 
         XCTAssertEqual(sessions.first?.target.server, updatedServer)
         XCTAssertEqual(sessions.first?.target.workspace, target.workspace)
-        XCTAssertEqual(sessions.first?.target.sshAuth.credential, .password("secret"))
-        XCTAssertEqual(sessions.first?.target.sshAuth.username, "builder")
+        XCTAssertEqual(sessions.first?.target.sshAuth, updatedAuth)
         XCTAssertEqual(sessions.first?.target.terminalSettings, target.terminalSettings)
     }
 
