@@ -90,6 +90,21 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         }
     }
 
+    func testImageFileAttachmentSupportsMarkupByFilename() throws {
+        let url = try makeSourceFile(named: "screenshot.jpeg", data: Data([0x01]))
+        let attachment = try GhosttyPendingAttachment.securityScopedFile(url: url)
+
+        XCTAssertTrue(attachment.supportsImageMarkup)
+        XCTAssertEqual(attachment.imageMarkupFilename, "screenshot.jpeg")
+    }
+
+    func testNonImageFileAttachmentDoesNotSupportMarkup() throws {
+        let url = try makeSourceFile(named: "report.pdf", data: Data([0x01]))
+        let attachment = try GhosttyPendingAttachment.securityScopedFile(url: url)
+
+        XCTAssertFalse(attachment.supportsImageMarkup)
+    }
+
     func testPasteboardImageAttachmentKeepsOnlyPreviewPayload() {
         let imageData = Data([0x01, 0x02, 0x03])
         let attachment = GhosttyPendingAttachment.pasteboardImage(previewData: imageData)
@@ -100,6 +115,7 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.systemName, "photo")
         XCTAssertNil(attachment.payload)
         XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
+        XCTAssertFalse(attachment.supportsImageMarkup)
     }
 
     func testPasteboardImageAttachmentCanCarryStagedFilePayload() {
@@ -115,6 +131,8 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.detail, "Image")
         XCTAssertEqual(attachment.payload, .file(fileURL))
         XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
+        XCTAssertTrue(attachment.supportsImageMarkup)
+        XCTAssertEqual(attachment.imageMarkupFilename, "pasted.png")
     }
 
     func testPhotoAttachmentCanCarryStagedFilePayload() {
@@ -131,6 +149,22 @@ final class GhosttyPendingAttachmentTests: XCTestCase {
         XCTAssertEqual(attachment.detail, "Image")
         XCTAssertEqual(attachment.payload, .file(fileURL))
         XCTAssertEqual(attachment.previewPayload, .imageData(imageData))
+        XCTAssertTrue(attachment.supportsImageMarkup)
+    }
+
+    func testUpdatingAnnotatedImageReplacesPayloadWithStagedCopy() {
+        let originalURL = URL(fileURLWithPath: "/tmp/remux/original.jpeg")
+        let annotatedURL = URL(fileURLWithPath: "/tmp/remux/annotated.jpeg")
+        let previewData = Data([0x04, 0x05, 0x06])
+        let attachment = GhosttyPendingAttachment
+            .photo(title: "Photo 1", fileURL: originalURL, previewData: Data([0x01]))
+            .updatingAnnotatedImage(fileURL: annotatedURL, previewData: previewData)
+
+        XCTAssertEqual(attachment.kind, .photo)
+        XCTAssertEqual(attachment.title, "Photo 1")
+        XCTAssertEqual(attachment.detail, "Annotated image")
+        XCTAssertEqual(attachment.payload, .file(annotatedURL))
+        XCTAssertEqual(attachment.previewPayload, .imageData(previewData))
     }
 
     func testPhotoAttachmentBuildsPreviewFromStagedFile() async throws {

@@ -222,6 +222,31 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
         previewPayload != nil
     }
 
+    var supportsImageMarkup: Bool {
+        switch kind {
+        case .photo, .pasteboardImage:
+            return imageMarkupFilename != nil
+        case .file:
+            guard let filename = imageMarkupFilename else { return false }
+            return Self.isImageFilename(filename)
+        case .video, .media, .pasteboardLink, .pasteboardText:
+            return false
+        }
+    }
+
+    var imageMarkupFilename: String? {
+        switch payload {
+        case .file(let url):
+            let filename = url.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+            return filename.isEmpty ? nil : filename
+        case .securityScopedFile(let file):
+            let filename = file.filename.trimmingCharacters(in: .whitespacesAndNewlines)
+            return filename.isEmpty ? nil : filename
+        case .link, .text, nil:
+            return nil
+        }
+    }
+
     static func mediaSelections(contentTypes: [[UTType]]) -> [GhosttyPendingAttachment] {
         guard !contentTypes.isEmpty else { return [] }
 
@@ -356,6 +381,14 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
         )
     }
 
+    func updatingAnnotatedImage(fileURL: URL, previewData: Data) -> GhosttyPendingAttachment {
+        updating(
+            payload: .file(fileURL),
+            previewPayload: .imageData(previewData),
+            detail: "Annotated image"
+        )
+    }
+
     static func textDetail(_ text: String) -> String {
         let normalizedText = text
             .split(whereSeparator: \.isNewline)
@@ -391,6 +424,18 @@ struct GhosttyPendingAttachment: Identifiable, Equatable, Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !fileExtension.isEmpty else { return "File" }
         return "\(fileExtension.uppercased()) file"
+    }
+
+    private static func isImageFilename(_ filename: String) -> Bool {
+        let fileExtension = URL(fileURLWithPath: filename)
+            .pathExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fileExtension.isEmpty,
+              let contentType = UTType(filenameExtension: fileExtension) else {
+            return false
+        }
+
+        return contentType.conforms(to: .image)
     }
 
     private static func mediaKind(_ contentTypes: [UTType]) -> Kind {

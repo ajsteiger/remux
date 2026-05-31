@@ -40,7 +40,17 @@ enum GhosttyAttachmentStagingStore {
         }.value
     }
 
+    static func stageFileURL(_ sourceURL: URL, filename: String) async throws -> URL {
+        try await Task.detached(priority: .utility) {
+            try stageFileURLSynchronously(sourceURL, filename: filename)
+        }.value
+    }
+
     static func stageFileURLSynchronously(_ sourceURL: URL) throws -> URL {
+        try stageFileURLSynchronously(sourceURL, filename: sourceURL.lastPathComponent)
+    }
+
+    static func stageFileURLSynchronously(_ sourceURL: URL, filename: String) throws -> URL {
         let didAccess = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if didAccess {
@@ -52,7 +62,7 @@ enum GhosttyAttachmentStagingStore {
         let directory = stagingDirectory(fileManager: fileManager)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        let destination = directory.appendingPathComponent(stagedFilename(for: sourceURL))
+        let destination = directory.appendingPathComponent(stagedFilename(for: filename))
         do {
             try fileManager.copyItem(at: sourceURL, to: destination)
         } catch {
@@ -152,7 +162,7 @@ enum GhosttyAttachmentStagingStore {
         let root = stagingRoot(fileManager: fileManager)
 
         for url in urls {
-            guard url.path.hasPrefix(root.path) else { continue }
+            guard isStagedURL(url, root: root) else { continue }
             try? fileManager.removeItem(at: url.deletingLastPathComponent())
         }
     }
@@ -224,8 +234,11 @@ enum GhosttyAttachmentStagingStore {
 
     private static func isStagedURL(_ url: URL, root: URL) -> Bool {
         let rootPath = root.standardizedFileURL.path
-        let path = url.standardizedFileURL.path
-        return path == rootPath || path.hasPrefix(rootPath + "/")
+        let parentPath = url
+            .deletingLastPathComponent()
+            .standardizedFileURL
+            .path
+        return parentPath.hasPrefix(rootPath + "/")
     }
 }
 

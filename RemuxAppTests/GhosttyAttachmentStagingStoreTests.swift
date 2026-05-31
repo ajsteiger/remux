@@ -33,6 +33,21 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: stagedURL.path))
     }
 
+    func testStageFileURLCanUseProvidedFilename() throws {
+        let sourceURL = try makeSourceFile(named: "provider-temp-file", data: Data([0x01, 0x02]))
+
+        let stagedURL = try GhosttyAttachmentStagingStore.stageFileURLSynchronously(
+            sourceURL,
+            filename: "../screenshot.jpeg"
+        )
+
+        XCTAssertTrue(stagedURL.path.hasPrefix(GhosttyAttachmentStagingStore.stagingRoot().path))
+        XCTAssertEqual(stagedURL.lastPathComponent, "screenshot.jpeg")
+        XCTAssertEqual(try Data(contentsOf: stagedURL), Data([0x01, 0x02]))
+
+        GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+    }
+
     func testRenameStagedFileUsesRequestedSafeFilename() throws {
         let sourceURL = try makeSourceFile(named: "provider-temp-file", data: Data([0x01, 0x02]))
         let stagedURL = try GhosttyAttachmentStagingStore.stageFileURLSynchronously(sourceURL)
@@ -97,6 +112,37 @@ final class GhosttyAttachmentStagingStoreTests: XCTestCase {
         GhosttyAttachmentStagingStore.cleanupSynchronously([sourceURL])
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: sourceURL.path))
+    }
+
+    func testCleanupRejectsSiblingDirectoryWithMatchingPrefix() throws {
+        let root = GhosttyAttachmentStagingStore.stagingRoot()
+        let siblingDirectory = URL(fileURLWithPath: root.path + "-sibling", isDirectory: true)
+        try FileManager.default.createDirectory(at: siblingDirectory, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: siblingDirectory)
+        }
+
+        let siblingURL = siblingDirectory.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: siblingURL)
+
+        GhosttyAttachmentStagingStore.cleanupSynchronously([siblingURL])
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: siblingURL.path))
+    }
+
+    func testCleanupRejectsDirectRootChild() throws {
+        let root = GhosttyAttachmentStagingStore.stagingRoot()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let directChildURL = root.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: directChildURL)
+
+        GhosttyAttachmentStagingStore.cleanupSynchronously([directChildURL])
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directChildURL.path))
     }
 
     func testStageDataWritesIntoRemuxStagingDirectory() throws {
