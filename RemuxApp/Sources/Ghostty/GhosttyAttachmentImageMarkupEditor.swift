@@ -11,7 +11,6 @@ struct GhosttyAttachmentImageMarkupEditor: View {
     @State private var phase: LoadPhase = .loading
     @State private var drawing = PKDrawing()
     @State private var toolPickerVisibilityRequest = UUID()
-    @State private var canvasSize: CGSize = .zero
     @State private var isRendering = false
     @State private var saveFailureMessage: String?
 
@@ -126,36 +125,14 @@ struct GhosttyAttachmentImageMarkupEditor: View {
                 .controlSize(.large)
 
         case .loaded(let image):
-            GeometryReader { geometry in
-                let imageFrame = GhosttyAttachmentImageMarkupRenderer.aspectFitRect(
-                    imageSize: image.size,
-                    containerSize: geometry.size
-                )
-
-                ZStack {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: imageFrame.width, height: imageFrame.height)
-                        .position(x: imageFrame.midX, y: imageFrame.midY)
-                        .accessibilityHidden(true)
-
-                    GhosttyAttachmentMarkupCanvas(
-                        drawing: $drawing,
-                        toolPickerVisibilityRequest: toolPickerVisibilityRequest
-                    )
-                    .frame(width: imageFrame.width, height: imageFrame.height)
-                    .position(x: imageFrame.midX, y: imageFrame.midY)
-                    .onAppear {
-                        canvasSize = imageFrame.size
-                    }
-                    .onChange(of: imageFrame.size) { _, size in
-                        canvasSize = size
-                    }
-                    .accessibilityLabel("Annotation canvas")
-                    .accessibilityIdentifier("terminal.attachments.markup.canvas")
-                }
-            }
+            GhosttyAttachmentMarkupCanvas(
+                image: image,
+                documentSize: GhosttyAttachmentImageMarkupRenderer.documentSize(for: image.size),
+                drawing: $drawing,
+                toolPickerVisibilityRequest: toolPickerVisibilityRequest
+            )
+            .accessibilityLabel("Annotation canvas")
+            .accessibilityIdentifier("terminal.attachments.markup.canvas")
 
         case .failed:
             VStack(spacing: 12) {
@@ -174,7 +151,9 @@ struct GhosttyAttachmentImageMarkupEditor: View {
     }
 
     private var canFinish: Bool {
-        phase.loadedImage != nil && !isRendering && canvasSize.width > 0 && canvasSize.height > 0
+        guard let image = phase.loadedImage else { return false }
+        let documentSize = GhosttyAttachmentImageMarkupRenderer.documentSize(for: image.size)
+        return !isRendering && documentSize.width > 0 && documentSize.height > 0
     }
 
     private var saveFailureAlertBinding: Binding<Bool> {
@@ -210,13 +189,14 @@ struct GhosttyAttachmentImageMarkupEditor: View {
             return
         }
 
+        let documentSize = GhosttyAttachmentImageMarkupRenderer.documentSize(for: image.size)
         isRendering = true
 
         do {
             let data = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
                 baseImage: image,
                 drawing: drawing,
-                canvasSize: canvasSize
+                documentSize: documentSize
             )
             onDone(data)
         } catch {
@@ -227,8 +207,10 @@ struct GhosttyAttachmentImageMarkupEditor: View {
 }
 
 enum GhosttyAttachmentImageMarkupRenderer {
+    static let maxDocumentLongSide: CGFloat = 1_024
+
     enum RenderError: Error, Equatable {
-        case invalidCanvasSize
+        case invalidDocumentSize
         case invalidImageSize
         case encodingFailed
     }
@@ -269,14 +251,27 @@ enum GhosttyAttachmentImageMarkupRenderer {
         )
     }
 
+    static func documentSize(for imageSize: CGSize) -> CGSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return .zero
+        }
+
+        let longSide = max(imageSize.width, imageSize.height)
+        let scale = min(1, maxDocumentLongSide / longSide)
+        return CGSize(
+            width: max(1, (imageSize.width * scale).rounded()),
+            height: max(1, (imageSize.height * scale).rounded())
+        )
+    }
+
     @MainActor
     static func renderPNGData(
         baseImage: UIImage,
         drawing: PKDrawing,
-        canvasSize: CGSize
+        documentSize: CGSize
     ) throws -> Data {
-        guard canvasSize.width > 0, canvasSize.height > 0 else {
-            throw RenderError.invalidCanvasSize
+        guard documentSize.width > 0, documentSize.height > 0 else {
+            throw RenderError.invalidDocumentSize
         }
 
         let imageSize = baseImage.size
@@ -295,7 +290,7 @@ enum GhosttyAttachmentImageMarkupRenderer {
             var drawingImage: UIImage?
             UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
                 drawingImage = drawing.image(
-                    from: CGRect(origin: .zero, size: canvasSize),
+                    from: CGRect(origin: .zero, size: documentSize),
                     scale: format.scale
                 )
             }
@@ -310,60 +305,90 @@ enum GhosttyAttachmentImageMarkupRenderer {
 }
 
 private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
+    let image: UIImage
+    let documentSize: CGSize
     @Binding var drawing: PKDrawing
     let toolPickerVisibilityRequest: UUID
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(drawing: $drawing)
+        Coordinator(
+            drawing: $drawing,
+            documentSize: documentSize
+        )
     }
 
-    func makeUIView(context: Context) -> PKCanvasView {
-        let canvasView = GhosttyAttachmentMarkupCanvasView()
-        canvasView.backgroundColor = .clear
-        canvasView.isOpaque = false
-        canvasView.drawingPolicy = .anyInput
-        canvasView.overrideUserInterfaceStyle = .light
-        canvasView.isScrollEnabled = false
-        canvasView.showsHorizontalScrollIndicator = false
-        canvasView.showsVerticalScrollIndicator = false
-        canvasView.delegate = context.coordinator
-        canvasView.onWindowAttachmentChanged = { [weak coordinator = context.coordinator] canvasView in
+    func makeUIView(context: Context) -> GhosttyAttachmentMarkupSurfaceView {
+        let surfaceView = GhosttyAttachmentMarkupSurfaceView()
+        context.coordinator.attach(to: surfaceView)
+        surfaceView.configure(image: image, documentSize: documentSize)
+        surfaceView.onWindowAttachmentChanged = { [weak coordinator = context.coordinator] canvasView in
             coordinator?.canvasWindowAttachmentDidChange(canvasView)
         }
         context.coordinator.attachToolPicker(
-            to: canvasView,
+            to: surfaceView.canvasView,
             visibilityRequest: toolPickerVisibilityRequest
         )
-        return canvasView
+        return surfaceView
     }
 
-    func updateUIView(_ canvasView: PKCanvasView, context: Context) {
-        if canvasView.drawing != drawing {
-            canvasView.drawing = drawing
+    func updateUIView(_ surfaceView: GhosttyAttachmentMarkupSurfaceView, context: Context) {
+        surfaceView.configure(image: image, documentSize: documentSize)
+        if surfaceView.canvasView.drawing != drawing {
+            surfaceView.canvasView.drawing = drawing
         }
         context.coordinator.updateToolPicker(
-            for: canvasView,
+            for: surfaceView.canvasView,
             visibilityRequest: toolPickerVisibilityRequest
         )
     }
 
-    static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
-        (uiView as? GhosttyAttachmentMarkupCanvasView)?.onWindowAttachmentChanged = nil
-        coordinator.detachToolPicker(from: uiView)
+    static func dismantleUIView(_ uiView: GhosttyAttachmentMarkupSurfaceView, coordinator: Coordinator) {
+        uiView.onWindowAttachmentChanged = nil
+        coordinator.detachToolPicker(from: uiView.canvasView)
+        coordinator.detach(from: uiView)
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         @Binding private var drawing: PKDrawing
         private let toolPicker: PKToolPicker
         private var requestedVisibilityRequest: UUID?
+        private weak var surfaceView: GhosttyAttachmentMarkupSurfaceView?
 
-        init(drawing: Binding<PKDrawing>) {
+        init(drawing: Binding<PKDrawing>, documentSize: CGSize) {
             _drawing = drawing
-            toolPicker = Self.makeToolPicker()
+            toolPicker = Self.makeToolPicker(documentSize: documentSize)
+        }
+
+        func attach(to surfaceView: GhosttyAttachmentMarkupSurfaceView) {
+            self.surfaceView = surfaceView
+            surfaceView.scrollView.delegate = self
+            surfaceView.canvasView.delegate = self
+        }
+
+        func detach(from surfaceView: GhosttyAttachmentMarkupSurfaceView) {
+            if surfaceView.scrollView.delegate === self {
+                surfaceView.scrollView.delegate = nil
+            }
+            if surfaceView.canvasView.delegate === self {
+                surfaceView.canvasView.delegate = nil
+            }
+            if self.surfaceView === surfaceView {
+                self.surfaceView = nil
+            }
         }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             drawing = canvasView.drawing
+        }
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            guard scrollView === surfaceView?.scrollView else { return nil }
+            return surfaceView?.contentView
+        }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            guard scrollView === surfaceView?.scrollView else { return }
+            surfaceView?.centerDocument()
         }
 
         func attachToolPicker(
@@ -415,11 +440,12 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             toolPicker.setVisible(true, forFirstResponder: canvasView)
         }
 
-        private static func makeToolPicker() -> PKToolPicker {
+        private static func makeToolPicker(documentSize: CGSize) -> PKToolPicker {
+            let widths = toolWidths(documentSize: documentSize)
             let pen = PKToolPickerInkingItem(
                 type: .pen,
                 color: .systemBlue,
-                width: 5,
+                width: widths.pen,
                 identifier: "remux.markup.pen"
             )
             pen.allowsColorSelection = true
@@ -427,7 +453,7 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             let marker = PKToolPickerInkingItem(
                 type: .marker,
                 color: .systemYellow,
-                width: 16,
+                width: widths.marker,
                 identifier: "remux.markup.marker"
             )
             marker.allowsColorSelection = true
@@ -435,7 +461,7 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             let monoline = PKToolPickerInkingItem(
                 type: .monoline,
                 color: .white,
-                width: 7,
+                width: widths.monoline,
                 identifier: "remux.markup.monoline"
             )
             monoline.allowsColorSelection = true
@@ -459,15 +485,150 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             picker.overrideUserInterfaceStyle = .dark
             return picker
         }
+
+        private static func toolWidths(documentSize: CGSize) -> (pen: CGFloat, marker: CGFloat, monoline: CGFloat) {
+            let longSide = max(documentSize.width, documentSize.height)
+            guard longSide > 0 else {
+                return (pen: 5, marker: 16, monoline: 7)
+            }
+
+            let documentScale = min(1, longSide / GhosttyAttachmentImageMarkupRenderer.maxDocumentLongSide)
+            return (
+                pen: max(5, 12 * documentScale),
+                marker: max(16, 32 * documentScale),
+                monoline: max(7, 18 * documentScale)
+            )
+        }
+    }
+}
+
+private final class GhosttyAttachmentMarkupSurfaceView: UIView {
+    let scrollView = UIScrollView()
+    let contentView = UIView()
+    let canvasView = GhosttyAttachmentMarkupCanvasView()
+    var onWindowAttachmentChanged: ((PKCanvasView) -> Void)?
+
+    private let imageView = UIImageView()
+    private var displayedImage: UIImage?
+    private var documentSize: CGSize = .zero
+    private var needsInitialZoom = true
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setup()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(image: UIImage, documentSize: CGSize) {
+        guard documentSize.width > 0, documentSize.height > 0 else { return }
+        let imageChanged = displayedImage !== image || self.documentSize != documentSize
+        guard imageChanged else { return }
+
+        displayedImage = image
+        self.documentSize = documentSize
+        needsInitialZoom = true
+
+        imageView.image = image
+        contentView.bounds = CGRect(origin: .zero, size: documentSize)
+        contentView.frame = CGRect(origin: .zero, size: documentSize)
+        imageView.frame = contentView.bounds
+        canvasView.frame = contentView.bounds
+        canvasView.contentSize = documentSize
+        scrollView.contentSize = documentSize
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        scrollView.frame = bounds
+        updateZoomScales()
+        centerDocument()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onWindowAttachmentChanged?(canvasView)
+    }
+
+    func centerDocument() {
+        let horizontalInset = max(0, (scrollView.bounds.width - scrollView.contentSize.width) / 2)
+        let verticalInset = max(0, (scrollView.bounds.height - scrollView.contentSize.height) / 2)
+        let inset = UIEdgeInsets(
+            top: verticalInset,
+            left: horizontalInset,
+            bottom: verticalInset,
+            right: horizontalInset
+        )
+        if scrollView.contentInset != inset {
+            scrollView.contentInset = inset
+            scrollView.scrollIndicatorInsets = inset
+        }
+    }
+
+    private func setup() {
+        backgroundColor = .black
+
+        scrollView.backgroundColor = .black
+        scrollView.bouncesZoom = true
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.decelerationRate = .fast
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
+        addSubview(scrollView)
+
+        contentView.backgroundColor = .clear
+        scrollView.addSubview(contentView)
+
+        imageView.contentMode = .scaleAspectFit
+        imageView.backgroundColor = .black
+        contentView.addSubview(imageView)
+
+        canvasView.backgroundColor = .clear
+        canvasView.isOpaque = false
+        canvasView.drawingPolicy = .anyInput
+        canvasView.overrideUserInterfaceStyle = .light
+        canvasView.isScrollEnabled = false
+        canvasView.showsHorizontalScrollIndicator = false
+        canvasView.showsVerticalScrollIndicator = false
+        contentView.addSubview(canvasView)
+    }
+
+    private func updateZoomScales() {
+        guard documentSize.width > 0,
+              documentSize.height > 0,
+              bounds.width > 0,
+              bounds.height > 0 else {
+            return
+        }
+
+        let fitZoom = min(bounds.width / documentSize.width, bounds.height / documentSize.height)
+        let maximumZoom = max(fitZoom * 8, 4)
+        let previousZoom = scrollView.zoomScale
+
+        scrollView.minimumZoomScale = fitZoom
+        scrollView.maximumZoomScale = maximumZoom
+
+        if needsInitialZoom || previousZoom <= 0 {
+            scrollView.setZoomScale(fitZoom, animated: false)
+            needsInitialZoom = false
+            return
+        }
+
+        let clampedZoom = min(max(previousZoom, fitZoom), maximumZoom)
+        if abs(clampedZoom - previousZoom) > 0.001 {
+            scrollView.setZoomScale(clampedZoom, animated: false)
+        }
     }
 }
 
 private final class GhosttyAttachmentMarkupCanvasView: PKCanvasView {
-    var onWindowAttachmentChanged: ((PKCanvasView) -> Void)?
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        onWindowAttachmentChanged?(self)
+    override var canBecomeFirstResponder: Bool {
+        true
     }
 }
 

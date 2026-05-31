@@ -27,6 +27,24 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         XCTAssertEqual(rect.height, 50, accuracy: 0.001)
     }
 
+    func testDocumentSizeCapsLargeImagesPreservingAspectRatio() {
+        let size = GhosttyAttachmentImageMarkupRenderer.documentSize(
+            for: CGSize(width: 4_032, height: 3_024)
+        )
+
+        XCTAssertEqual(size.width, 1_024, accuracy: 0.001)
+        XCTAssertEqual(size.height, 768, accuracy: 0.001)
+    }
+
+    func testDocumentSizeDoesNotUpscaleSmallImages() {
+        let size = GhosttyAttachmentImageMarkupRenderer.documentSize(
+            for: CGSize(width: 320, height: 240)
+        )
+
+        XCTAssertEqual(size.width, 320, accuracy: 0.001)
+        XCTAssertEqual(size.height, 240, accuracy: 0.001)
+    }
+
     @MainActor
     func testRenderPNGDataProducesPreviewableAnnotatedImage() throws {
         let baseImage = try makeImage(width: 80, height: 60)
@@ -35,7 +53,7 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
             baseImage: baseImage,
             drawing: drawing,
-            canvasSize: CGSize(width: 80, height: 60)
+            documentSize: CGSize(width: 80, height: 60)
         )
 
         XCTAssertFalse(output.isEmpty)
@@ -51,7 +69,7 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
             baseImage: baseImage,
             drawing: drawing,
-            canvasSize: CGSize(width: 80, height: 60)
+            documentSize: CGSize(width: 80, height: 60)
         )
 
         let pixel = try brightestPixel(from: output, in: CGRect(x: 20, y: 20, width: 40, height: 20))
@@ -69,7 +87,7 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
             baseImage: baseImage,
             drawing: drawing,
-            canvasSize: CGSize(width: 80, height: 60)
+            documentSize: CGSize(width: 80, height: 60)
         )
 
         XCTAssertLessThan(try renderedPixel(from: output, x: 2, y: 2).alpha, 0.05)
@@ -79,17 +97,41 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
     }
 
     @MainActor
-    func testRenderPNGDataRejectsInvalidCanvasSize() throws {
+    func testRenderPNGDataScalesDocumentDrawingToImageSize() throws {
+        let baseImage = try makeImage(width: 100, height: 100, fill: .black)
+        let drawing = makeHorizontalDrawing(
+            color: .white,
+            width: 8,
+            y: 25,
+            startX: 10,
+            endX: 40
+        )
+
+        let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
+            baseImage: baseImage,
+            drawing: drawing,
+            documentSize: CGSize(width: 50, height: 50)
+        )
+
+        let pixel = try brightestPixel(from: output, in: CGRect(x: 25, y: 45, width: 55, height: 10))
+        XCTAssertGreaterThan(pixel.red, 0.82)
+        XCTAssertGreaterThan(pixel.green, 0.82)
+        XCTAssertGreaterThan(pixel.blue, 0.82)
+        XCTAssertGreaterThan(pixel.alpha, 0.95)
+    }
+
+    @MainActor
+    func testRenderPNGDataRejectsInvalidDocumentSize() throws {
         XCTAssertThrowsError(
             try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
                 baseImage: try makeImage(width: 80, height: 60),
                 drawing: PKDrawing(),
-                canvasSize: .zero
+                documentSize: .zero
             )
         ) { error in
             XCTAssertEqual(
                 error as? GhosttyAttachmentImageMarkupRenderer.RenderError,
-                .invalidCanvasSize
+                .invalidDocumentSize
             )
         }
     }
@@ -147,10 +189,16 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         return PKDrawing(strokes: [stroke])
     }
 
-    private func makeHorizontalDrawing(color: UIColor, width: CGFloat) -> PKDrawing {
+    private func makeHorizontalDrawing(
+        color: UIColor,
+        width: CGFloat,
+        y: CGFloat = 30,
+        startX: CGFloat = 20,
+        endX: CGFloat = 60
+    ) -> PKDrawing {
         let points = [
             PKStrokePoint(
-                location: CGPoint(x: 20, y: 30),
+                location: CGPoint(x: startX, y: y),
                 timeOffset: 0,
                 size: CGSize(width: width, height: width),
                 opacity: 1,
@@ -159,7 +207,7 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
                 altitude: .pi / 2
             ),
             PKStrokePoint(
-                location: CGPoint(x: 60, y: 30),
+                location: CGPoint(x: endX, y: y),
                 timeOffset: 0.1,
                 size: CGSize(width: width, height: width),
                 opacity: 1,
