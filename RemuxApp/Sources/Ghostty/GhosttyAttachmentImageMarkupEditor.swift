@@ -15,12 +15,14 @@ struct GhosttyAttachmentImageMarkupEditor: View {
     @State private var saveFailureMessage: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-
+        ZStack(alignment: .top) {
             editorContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.bottom, phase.loadedImage == nil ? 0 : 88)
+
+            editorChromeScrim
+
+            toolbar
         }
         .background(Color.black.ignoresSafeArea())
         .foregroundStyle(.white)
@@ -40,80 +42,87 @@ struct GhosttyAttachmentImageMarkupEditor: View {
     }
 
     private var toolbar: some View {
+        toolbarContent
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+    }
+
+    private var toolbarContent: some View {
         HStack(spacing: 12) {
             Button {
                 onCancel()
                 dismiss()
             } label: {
                 Text("Cancel")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(minWidth: 72, minHeight: 44, alignment: .leading)
+                    .frame(width: 92, height: 44)
             }
+            .ghosttyMarkupToolbarButtonStyle(.secondary)
             .disabled(isRendering)
             .accessibilityIdentifier("terminal.attachments.markup.cancel")
 
             Spacer()
 
-            if phase.loadedImage != nil {
-                toolbarIconButton(
-                    systemName: "paintpalette",
-                    accessibilityLabel: "Show annotation tools",
-                    accessibilityIdentifier: "terminal.attachments.markup.tools"
-                ) {
-                    toolPickerVisibilityRequest = UUID()
+            HStack(spacing: 8) {
+                if isRendering {
+                    ProgressView()
+                        .tint(.white)
+                        .controlSize(.small)
                 }
 
-                toolbarIconButton(
-                    systemName: "trash",
-                    accessibilityLabel: "Clear annotation",
-                    accessibilityIdentifier: "terminal.attachments.markup.clear"
-                ) {
-                    clearAnnotation()
+                if phase.loadedImage != nil, hasDrawing {
+                    Button {
+                        clearAnnotation()
+                    } label: {
+                        Image(systemName: "trash")
+                            .frame(width: 44, height: 44)
+                    }
+                    .ghosttyMarkupToolbarButtonStyle(.destructiveIcon)
+                    .disabled(isRendering)
+                    .accessibilityLabel("Clear annotation")
+                    .accessibilityIdentifier("terminal.attachments.markup.clear")
                 }
-                .disabled(drawing.bounds.isEmpty || isRendering)
-            }
 
-            if isRendering {
-                ProgressView()
-                    .tint(.white)
-                    .controlSize(.small)
+                Button {
+                    finishAnnotation()
+                } label: {
+                    Text("Done")
+                        .frame(width: 82, height: 44)
+                }
+                .ghosttyMarkupToolbarButtonStyle(.primary)
+                .disabled(!canFinish)
+                .accessibilityIdentifier("terminal.attachments.markup.done")
             }
-
-            Button {
-                finishAnnotation()
-            } label: {
-                Text("Done")
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(minWidth: 64, minHeight: 44, alignment: .trailing)
-            }
-            .disabled(!canFinish)
-            .accessibilityIdentifier("terminal.attachments.markup.done")
         }
-        .padding(.horizontal, 32)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
-        .background(.black.opacity(0.94))
     }
 
-    private func toolbarIconButton(
-        systemName: String,
-        accessibilityLabel: String,
-        accessibilityIdentifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
-                .symbolRenderingMode(.monochrome)
-                .frame(width: 40, height: 40)
-                .background(.white.opacity(0.12), in: Circle())
-                .overlay {
-                    Circle().strokeBorder(.white.opacity(0.16), lineWidth: 0.75)
-                }
+    private var editorChromeScrim: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [
+                    .black.opacity(0.82),
+                    .black.opacity(0.46),
+                    .black.opacity(0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 164)
+
+            Spacer()
+
+            LinearGradient(
+                colors: [
+                    .black.opacity(0),
+                    .black.opacity(0.42),
+                    .black.opacity(0.78),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 190)
         }
-        .disabled(isRendering)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -148,6 +157,10 @@ struct GhosttyAttachmentImageMarkupEditor: View {
     private func clearAnnotation() {
         guard !drawing.bounds.isEmpty else { return }
         drawing = PKDrawing()
+    }
+
+    private var hasDrawing: Bool {
+        !drawing.bounds.isEmpty
     }
 
     private var canFinish: Bool {
@@ -203,6 +216,75 @@ struct GhosttyAttachmentImageMarkupEditor: View {
             isRendering = false
             saveFailureMessage = "Annotation could not be saved."
         }
+    }
+}
+
+private enum GhosttyAttachmentMarkupToolbarButtonKind {
+    case secondary
+    case primary
+    case destructiveIcon
+
+    var foreground: Color {
+        .white
+    }
+
+    var fontSize: CGFloat {
+        switch self {
+        case .destructiveIcon:
+            return 17
+        case .primary, .secondary:
+            return 16
+        }
+    }
+}
+
+private struct GhosttyAttachmentMarkupToolbarButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    let kind: GhosttyAttachmentMarkupToolbarButtonKind
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: kind.fontSize, weight: .semibold))
+            .foregroundStyle(kind.foreground.opacity(isEnabled ? 1 : 0.45))
+            .ghosttyMarkupToolbarButtonSurface(
+                isPressed: configuration.isPressed,
+                isEnabled: isEnabled
+            )
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.975 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.12), value: isEnabled)
+    }
+}
+
+private extension View {
+    func ghosttyMarkupToolbarButtonStyle(_ kind: GhosttyAttachmentMarkupToolbarButtonKind) -> some View {
+        buttonStyle(GhosttyAttachmentMarkupToolbarButtonStyle(kind: kind))
+    }
+
+    @ViewBuilder
+    func ghosttyMarkupToolbarButtonSurface(
+        isPressed: Bool,
+        isEnabled: Bool
+    ) -> some View {
+        let shape = Capsule(style: .continuous)
+        let pressedOverlay = Color.primary.opacity(isPressed && isEnabled ? 0.08 : 0)
+
+        self
+            .background(
+                isPressed && isEnabled
+                    ? GhosttyShortcutSurfacePalette.embeddedPressedFill
+                    : GhosttyShortcutSurfacePalette.embeddedFill,
+                in: shape
+            )
+            .overlay {
+                shape.fill(pressedOverlay)
+            }
+            .overlay {
+                shape.strokeBorder(GhosttyShortcutSurfacePalette.contentStroke, lineWidth: 1)
+            }
+            .contentShape(shape)
+            .opacity(isEnabled ? 1 : 0.62)
     }
 }
 
@@ -482,7 +564,7 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             picker.selectedToolItem = pen
             picker.showsDrawingPolicyControls = false
             picker.colorUserInterfaceStyle = .light
-            picker.overrideUserInterfaceStyle = .dark
+            picker.stateAutosaveName = "dev.remux.markup.tool-picker"
             return picker
         }
 
