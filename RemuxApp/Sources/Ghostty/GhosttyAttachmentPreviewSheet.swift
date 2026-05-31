@@ -5,6 +5,9 @@ struct GhosttyAttachmentPreviewSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
     @State private var selectedAttachmentID: UUID?
+    @State private var markupRequest: GhosttyAttachmentMarkupRequest?
+    @State private var preparingMarkupAttachmentID: UUID?
+    @State private var markupFailureMessage: String?
     @Binding var attachments: [GhosttyPendingAttachment]
 
     var body: some View {
@@ -27,6 +30,27 @@ struct GhosttyAttachmentPreviewSheet: View {
         .onChange(of: attachments) { _, _ in
             ensureSelectedAttachment()
         }
+        .fullScreenCover(item: $markupRequest) { request in
+            GhosttyAttachmentImageMarkupEditor(
+                imageURL: request.editingURL,
+                onCancel: {
+                    cancelMarkup(request)
+                },
+                onDone: { annotatedImageData in
+                    saveMarkup(annotatedImageData, request: request)
+                }
+            )
+        }
+        .alert(
+            "Markup Unavailable",
+            isPresented: markupFailureAlertBinding,
+            actions: {
+                Button("OK", role: .cancel) {}
+            },
+            message: {
+                Text(markupFailureMessage ?? "Markup could not be opened.")
+            }
+        )
     }
 
     private var header: some View {
@@ -125,22 +149,52 @@ struct GhosttyAttachmentPreviewSheet: View {
     }
 
     private func previewOverlayActions(for attachment: GhosttyPendingAttachment) -> some View {
-        Button {
-            Haptic.chromeControlPress()
-            removeAttachment(attachment)
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .bold))
-                .symbolRenderingMode(.monochrome)
-                .frame(width: 34, height: 34)
-        }
-        .buttonStyle(
-            GhosttyAttachmentPreviewActionButtonStyle(
-                foreground: GhosttySheetPalette.primary
+        let isPreparingSelectedMarkup = preparingMarkupAttachmentID == attachment.id
+
+        return HStack(spacing: 8) {
+            if attachment.supportsImageMarkup {
+                Button {
+                    Haptic.chromeControlPress()
+                    beginMarkup(attachment)
+                } label: {
+                    if isPreparingSelectedMarkup {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 34, height: 34)
+                    } else {
+                        Image(systemName: "pencil.tip")
+                            .font(.system(size: 14, weight: .semibold))
+                            .symbolRenderingMode(.monochrome)
+                            .frame(width: 34, height: 34)
+                    }
+                }
+                .buttonStyle(
+                    GhosttyAttachmentPreviewActionButtonStyle(
+                        foreground: GhosttySheetPalette.primary
+                    )
+                )
+                .disabled(preparingMarkupAttachmentID != nil)
+                .accessibilityLabel("Markup attachment")
+                .accessibilityIdentifier("terminal.attachments.preview.markup-selected")
+            }
+
+            Button {
+                Haptic.chromeControlPress()
+                removeAttachment(attachment)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .symbolRenderingMode(.monochrome)
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(
+                GhosttyAttachmentPreviewActionButtonStyle(
+                    foreground: GhosttySheetPalette.primary
+                )
             )
-        )
-        .accessibilityLabel("Remove attachment")
-        .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
+            .accessibilityLabel("Remove attachment")
+            .accessibilityIdentifier("terminal.attachments.preview.remove-selected")
+        }
     }
 
     private func showsOverlayActions(for attachment: GhosttyPendingAttachment) -> Bool {
@@ -351,12 +405,169 @@ struct GhosttyAttachmentPreviewSheet: View {
         attachments[index] = attachments[index].updatingText(text)
     }
 
+    private var markupFailureAlertBinding: Binding<Bool> {
+        Binding {
+            markupFailureMessage != nil
+        } set: { isPresented in
+            if !isPresented {
+                markupFailureMessage = nil
+            }
+        }
+    }
+
+    private func beginMarkup(_ attachment: GhosttyPendingAttachment) {
+        guard preparingMarkupAttachmentID == nil, markupRequest == nil else { return }
+        preparingMarkupAttachmentID = attachment.id
+        markupFailureMessage = nil
+
+        Task {
+            do {
+                let request = try await makeMarkupRequest(for: attachment)
+                await MainActor.run {
+                    guard attachments.contains(where: { $0.id == attachment.id }) else {
+                        GhosttyAttachmentStagingStore.cleanupSynchronously([request.editingURL])
+                        preparingMarkupAttachmentID = nil
+                        return
+                    }
+
+                    markupRequest = request
+                    preparingMarkupAttachmentID = nil
+                }
+            } catch {
+                await MainActor.run {
+                    preparingMarkupAttachmentID = nil
+                    markupFailureMessage = "Markup could not be opened for this image."
+                }
+            }
+        }
+    }
+
+    private func makeMarkupRequest(
+        for attachment: GhosttyPendingAttachment
+    ) async throws -> GhosttyAttachmentMarkupRequest {
+        guard attachment.supportsImageMarkup,
+              let filename = attachment.imageMarkupFilename else {
+            throw GhosttyAttachmentMarkupError.unsupported
+        }
+
+        let editingURL: URL
+        switch attachment.payload {
+        case .file(let url):
+            editingURL = try await GhosttyAttachmentStagingStore.stageFileURL(
+                url,
+                filename: filename
+            )
+        case .securityScopedFile(let file):
+            editingURL = try await Task.detached(priority: .utility) {
+                try file.withAccessibleURL { accessibleURL in
+                    try GhosttyAttachmentStagingStore.stageFileURLSynchronously(
+                        accessibleURL,
+                        filename: filename
+                    )
+                }
+            }.value
+        case .link, .text, nil:
+            throw GhosttyAttachmentMarkupError.unsupported
+        }
+
+        guard await GhosttyAttachmentImagePreviewData.makePreviewData(fromFileAt: editingURL) != nil else {
+            GhosttyAttachmentStagingStore.cleanupSynchronously([editingURL])
+            throw GhosttyAttachmentMarkupError.previewUnavailable
+        }
+
+        return GhosttyAttachmentMarkupRequest(
+            attachmentID: attachment.id,
+            editingURL: editingURL,
+            outputFilename: GhosttyAttachmentImageMarkupRenderer.outputFilename(for: filename)
+        )
+    }
+
+    private func cancelMarkup(_ request: GhosttyAttachmentMarkupRequest) {
+        GhosttyAttachmentStagingStore.cleanupSynchronously([request.editingURL])
+        markupRequest = nil
+    }
+
+    private func saveMarkup(_ annotatedImageData: Data, request: GhosttyAttachmentMarkupRequest) {
+        Task {
+            do {
+                async let stagedURLTask = GhosttyAttachmentStagingStore.stageData(
+                    annotatedImageData,
+                    filename: request.outputFilename
+                )
+                async let previewDataTask = GhosttyAttachmentImagePreviewData.makePreviewData(
+                    from: annotatedImageData
+                )
+
+                let stagedURL = try await stagedURLTask
+                guard let previewData = await previewDataTask else {
+                    GhosttyAttachmentStagingStore.cleanupSynchronously([
+                        request.editingURL,
+                        stagedURL,
+                    ])
+                    throw GhosttyAttachmentMarkupError.previewUnavailable
+                }
+
+                await MainActor.run {
+                    applyMarkup(
+                        request: request,
+                        stagedURL: stagedURL,
+                        previewData: previewData
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    GhosttyAttachmentStagingStore.cleanupSynchronously([request.editingURL])
+                    markupRequest = nil
+                    markupFailureMessage = "Markup could not be saved."
+                }
+            }
+        }
+    }
+
+    private func applyMarkup(
+        request: GhosttyAttachmentMarkupRequest,
+        stagedURL: URL,
+        previewData: Data
+    ) {
+        defer {
+            markupRequest = nil
+            GhosttyAttachmentStagingStore.cleanupSynchronously([request.editingURL])
+        }
+
+        guard let index = attachments.firstIndex(where: { $0.id == request.attachmentID }) else {
+            GhosttyAttachmentStagingStore.cleanupSynchronously([stagedURL])
+            return
+        }
+
+        let previousAttachment = attachments[index]
+        attachments[index] = previousAttachment.updatingAnnotatedImage(
+            fileURL: stagedURL,
+            previewData: previewData
+        )
+        GhosttyAttachmentStagingStore.cleanup([previousAttachment])
+    }
+
     private func removeAttachment(_ attachment: GhosttyPendingAttachment) {
         withAnimation(.easeOut(duration: 0.16)) {
             attachments.removeAll { $0.id == attachment.id }
         }
         GhosttyAttachmentStagingStore.cleanup([attachment])
     }
+}
+
+private struct GhosttyAttachmentMarkupRequest: Identifiable, Equatable {
+    let attachmentID: UUID
+    let editingURL: URL
+    let outputFilename: String
+
+    var id: UUID {
+        attachmentID
+    }
+}
+
+private enum GhosttyAttachmentMarkupError: Error {
+    case unsupported
+    case previewUnavailable
 }
 
 private extension GhosttyPendingAttachment {
