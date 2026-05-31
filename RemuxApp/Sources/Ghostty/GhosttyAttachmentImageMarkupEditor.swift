@@ -318,7 +318,7 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> PKCanvasView {
-        let canvasView = PKCanvasView()
+        let canvasView = GhosttyAttachmentMarkupCanvasView()
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
         canvasView.drawingPolicy = .anyInput
@@ -327,6 +327,9 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
         canvasView.showsHorizontalScrollIndicator = false
         canvasView.showsVerticalScrollIndicator = false
         canvasView.delegate = context.coordinator
+        canvasView.onWindowAttachmentChanged = { [weak coordinator = context.coordinator] canvasView in
+            coordinator?.canvasWindowAttachmentDidChange(canvasView)
+        }
         context.coordinator.attachToolPicker(
             to: canvasView,
             visibilityRequest: toolPickerVisibilityRequest
@@ -345,13 +348,14 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
+        (uiView as? GhosttyAttachmentMarkupCanvasView)?.onWindowAttachmentChanged = nil
         coordinator.detachToolPicker(from: uiView)
     }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         @Binding private var drawing: PKDrawing
         private let toolPicker: PKToolPicker
-        private var lastVisibilityRequest: UUID?
+        private var requestedVisibilityRequest: UUID?
 
         init(drawing: Binding<PKDrawing>) {
             _drawing = drawing
@@ -367,18 +371,19 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             visibilityRequest: UUID
         ) {
             toolPicker.addObserver(canvasView)
-            showToolPicker(for: canvasView, visibilityRequest: visibilityRequest)
+            requestToolPickerVisibility(for: canvasView, visibilityRequest: visibilityRequest)
         }
 
         func updateToolPicker(
             for canvasView: PKCanvasView,
             visibilityRequest: UUID
         ) {
-            guard lastVisibilityRequest != visibilityRequest || !canvasView.isFirstResponder else {
-                return
-            }
+            requestToolPickerVisibility(for: canvasView, visibilityRequest: visibilityRequest)
+        }
 
-            showToolPicker(for: canvasView, visibilityRequest: visibilityRequest)
+        func canvasWindowAttachmentDidChange(_ canvasView: PKCanvasView) {
+            guard canvasView.window != nil else { return }
+            showToolPickerIfReady(for: canvasView)
         }
 
         func detachToolPicker(from canvasView: PKCanvasView) {
@@ -386,20 +391,23 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             toolPicker.removeObserver(canvasView)
         }
 
-        private func showToolPicker(
+        private func requestToolPickerVisibility(
             for canvasView: PKCanvasView,
             visibilityRequest: UUID
         ) {
-            lastVisibilityRequest = visibilityRequest
+            let isNewRequest = requestedVisibilityRequest != visibilityRequest
+            requestedVisibilityRequest = visibilityRequest
 
-            if canvasView.window == nil {
-                DispatchQueue.main.async { [weak self, weak canvasView] in
-                    guard let self, let canvasView, canvasView.window != nil else { return }
-                    self.showToolPicker(
-                        for: canvasView,
-                        visibilityRequest: visibilityRequest
-                    )
-                }
+            guard isNewRequest || !canvasView.isFirstResponder else {
+                return
+            }
+
+            showToolPickerIfReady(for: canvasView)
+        }
+
+        private func showToolPickerIfReady(for canvasView: PKCanvasView) {
+            guard requestedVisibilityRequest != nil,
+                  canvasView.window != nil else {
                 return
             }
 
@@ -451,6 +459,15 @@ private struct GhosttyAttachmentMarkupCanvas: UIViewRepresentable {
             picker.overrideUserInterfaceStyle = .dark
             return picker
         }
+    }
+}
+
+private final class GhosttyAttachmentMarkupCanvasView: PKCanvasView {
+    var onWindowAttachmentChanged: ((PKCanvasView) -> Void)?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onWindowAttachmentChanged?(self)
     }
 }
 
