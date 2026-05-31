@@ -39,11 +39,14 @@ struct GhosttyPendingAttachmentPreview: View {
                         .foregroundStyle(GhosttyPhoneChromePalette.chromeSecondaryForeground)
                         .opacity(canOpen ? 1 : 0)
                 }
+                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(!canOpen)
             .accessibilityLabel(openAccessibilityLabel)
             .accessibilityHint(canOpen ? "Open attachment preview." : "Preview is not available yet.")
+            .accessibilityIdentifier("terminal.attachments.pending.open")
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 7) {
