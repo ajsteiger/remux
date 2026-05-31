@@ -56,7 +56,6 @@ struct GhosttyAttachmentPreviewSheet: View {
     private var header: some View {
         HStack(spacing: 12) {
             GhosttyAttachmentPreviewHeader(
-                caption: previewCaption,
                 title: previewTitle
             )
 
@@ -346,19 +345,6 @@ struct GhosttyAttachmentPreviewSheet: View {
         return attachments.first(where: \.isPreviewable) ?? attachments.first
     }
 
-    private var previewCaption: String {
-        let readyCount = attachments.filter { $0.transferSource != nil }.count
-        guard readyCount == attachments.count else {
-            guard attachments.contains(where: \.isPreparingTransferSource) else {
-                return attachments.count == 1 ? "Unavailable" : "\(readyCount) of \(attachments.count) ready"
-            }
-
-            return attachments.count == 1 ? "Preparing" : "\(readyCount) of \(attachments.count) ready"
-        }
-
-        return attachments.count == 1 ? "Ready to send" : "\(attachments.count) ready"
-    }
-
     private var previewTitle: String {
         guard attachments.count == 1,
               let selectedAttachment else {
@@ -590,20 +576,13 @@ private extension GhosttyPendingAttachment {
 }
 
 private struct GhosttyAttachmentPreviewHeader: View {
-    let caption: String
     let title: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(caption)
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.0)
-                .foregroundStyle(GhosttySheetPalette.tertiary)
-            Text(title)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(GhosttySheetPalette.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
+        Text(title)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(GhosttySheetPalette.primary)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 }
