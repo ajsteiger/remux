@@ -1617,6 +1617,66 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(harness.model.state, .terminal(workspace.id))
     }
 
+    func testTrustChangedHostKeyUpdatesTrustAndReconnectsActiveSession() async throws {
+        let pair = makePasswordBackedServer()
+        let server = pair.server
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            identities: [pair.identity]
+        )
+        try await harness.credentialHelper.savePassword("secret", for: server.id)
+        try saveTrustedHostIdentity(
+            TrustedHostIdentity(
+                serverID: server.id,
+                host: server.host,
+                keyType: "ssh-ed25519",
+                openSSHPublicKey: "ssh-ed25519 trusted",
+                trustedAt: Date(timeIntervalSince1970: 1)
+            ),
+            root: harness.trustedHostRoot
+        )
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+
+        let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
+        let change = SSHHostKeyChange(
+            serverID: server.id,
+            host: server.host,
+            trustedKeyType: "ssh-ed25519",
+            trustedOpenSSHPublicKey: "ssh-ed25519 trusted",
+            receivedKeyType: "ecdsa-sha2-nistp256",
+            receivedOpenSSHPublicKey: "ecdsa-sha2-nistp256 received"
+        )
+        let reason = TerminalDisconnectReason(
+            kind: .hostKey,
+            message: "host key changed",
+            hostKeyChange: change
+        )
+        _ = harness.model.handleTerminalRuntimeStateUpdate(
+            TerminalRuntimeStateUpdate(
+                workspaceID: workspace.id,
+                instanceID: oldSession.instanceID,
+                state: .disconnected(reason),
+                source: .runtime
+            )
+        )
+
+        harness.model.trustChangedHostKeyAndReconnect(workspace.id)
+
+        let identities = try loadTrustedHostIdentities(root: harness.trustedHostRoot)
+        XCTAssertEqual(identities.count, 1)
+        XCTAssertEqual(identities[0].serverID, server.id)
+        XCTAssertEqual(identities[0].keyType, "ecdsa-sha2-nistp256")
+        XCTAssertEqual(identities[0].openSSHPublicKey, "ecdsa-sha2-nistp256 received")
+
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        XCTAssertNotEqual(session.instanceID, oldSession.instanceID)
+        XCTAssertEqual(session.runtimeState, .reconnecting(.manualButton))
+        XCTAssertEqual(harness.model.state, .terminal(workspace.id))
+    }
+
     func testAutomaticTransportReconnectIsBoundedUntilManualReconnect() async throws {
         let server = SavedServer(
             displayName: "Build Host",
@@ -1988,7 +2048,8 @@ final class RemuxRootModelTests: XCTestCase {
             profileRepository: profileRepository,
             credentialStore: credentialStore
         )
-        let trustedHostStore = TrustedHostStore(rootURL: temporaryRoot())
+        let trustedHostRoot = temporaryRoot()
+        let trustedHostStore = TrustedHostStore(rootURL: trustedHostRoot)
         let resolvedTransportFactory = transportFactory ?? { _, _, _ in
             DeterministicTmuxControlTransport(chunks: [])
         }
@@ -2017,7 +2078,8 @@ final class RemuxRootModelTests: XCTestCase {
             profileRepository: profileRepository,
             settingsRepository: settingsRepository,
             credentialHelper: credentialHelper,
-            credentialStore: credentialStore
+            credentialStore: credentialStore,
+            trustedHostRoot: trustedHostRoot
         )
     }
 
@@ -2039,6 +2101,17 @@ final class RemuxRootModelTests: XCTestCase {
     private func temporaryRoot() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    }
+
+    private func saveTrustedHostIdentity(_ identity: TrustedHostIdentity, root: URL) throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode([identity])
+        try data.write(to: root.appendingPathComponent("trusted-hosts.json"), options: .atomic)
+    }
+
+    private func loadTrustedHostIdentities(root: URL) throws -> [TrustedHostIdentity] {
+        let data = try Data(contentsOf: root.appendingPathComponent("trusted-hosts.json"))
+        return try JSONDecoder().decode([TrustedHostIdentity].self, from: data)
     }
 
     private func waitUntil(
@@ -2082,6 +2155,7 @@ private struct RemuxRootModelHarness {
     let settingsRepository: any TerminalSettingsRepository
     let credentialHelper: TestServerCredentialStore
     let credentialStore: TestSSHCredentialStore
+    let trustedHostRoot: URL
 }
 
 @MainActor
