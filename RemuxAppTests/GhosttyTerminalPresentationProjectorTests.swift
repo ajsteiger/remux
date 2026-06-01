@@ -366,7 +366,37 @@ final class GhosttyTerminalPresentationProjectorTests: XCTestCase {
                 debugStatus: "failed debug",
                 registryDebugSummary: "failed registry"
             ),
-            .failed("transport lost")
+            .failed(message: "transport lost", reason: nil)
+        )
+    }
+
+    func testStatusOverlayProjectionPreservesHostKeyChangeReason() {
+        let change = SSHHostKeyChange(
+            serverID: UUID(uuidString: "7b882734-5e15-48dd-a48c-40ff7b8906db")!,
+            host: "macbook.local",
+            trustedKeyType: "ssh-ed25519",
+            trustedOpenSSHPublicKey: "ssh-ed25519 trusted",
+            receivedKeyType: "ssh-ed25519",
+            receivedOpenSSHPublicKey: "ssh-ed25519 received"
+        )
+        let reason = TerminalDisconnectReason(
+            kind: .hostKey,
+            message: "Host key changed",
+            hostKeyChange: change
+        )
+
+        XCTAssertEqual(
+            GhosttyTerminalPresentationProjector.terminalStatusOverlayProjection(
+                readiness: Self.readinessSnapshot(
+                    phase: .failed(message: "Host key changed", reason: reason),
+                    topLevelCount: 1,
+                    focused: true
+                ),
+                commandFailureMessage: nil,
+                debugStatus: "failed debug",
+                registryDebugSummary: "failed registry"
+            ),
+            .failed(message: "Host key changed", reason: reason)
         )
     }
 

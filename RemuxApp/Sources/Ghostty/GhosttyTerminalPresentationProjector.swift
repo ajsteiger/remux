@@ -187,7 +187,7 @@ enum GhosttyTerminalStatusOverlayProjection: Equatable, Sendable {
     case commandFailure(String)
     case waitingForPanes(debugStatus: String, registryDebugSummary: String)
     case ready
-    case failed(String)
+    case failed(message: String, reason: TerminalDisconnectReason?)
 }
 
 struct GhosttyTerminalScreenPresentationProjection: Equatable {
@@ -332,8 +332,8 @@ enum GhosttyTerminalPresentationProjector {
         switch readiness.phase {
         case .idle, .starting:
             return .starting
-        case .failed(let message, _):
-            return .failed(message)
+        case .failed(let message, let reason):
+            return .failed(message: message, reason: reason)
         case .running:
             if let commandFailureMessage {
                 return .commandFailure(commandFailureMessage)

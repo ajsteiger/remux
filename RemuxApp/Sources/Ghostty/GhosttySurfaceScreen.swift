@@ -67,6 +67,7 @@ struct GhosttySurfaceScreen: View {
 
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
+    private let onTrustChangedHostKey: () -> Void
     private let attachmentTransferServiceFactory: @Sendable () -> any GhosttyAttachmentTransferService
     private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
     private let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
@@ -81,6 +82,7 @@ struct GhosttySurfaceScreen: View {
         attachmentTransferServiceFactory: @escaping @Sendable () -> any GhosttyAttachmentTransferService,
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void,
+        onTrustChangedHostKey: @escaping () -> Void,
         onMount: @escaping (GhosttyTerminalScreenViewComponent) -> Void,
         onDismantle: @escaping (GhosttyTerminalScreenViewComponent) -> Void
     ) {
@@ -91,6 +93,7 @@ struct GhosttySurfaceScreen: View {
         self.attachmentTransferServiceFactory = attachmentTransferServiceFactory
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
+        self.onTrustChangedHostKey = onTrustChangedHostKey
         self.onMount = onMount
         self.onDismantle = onDismantle
     }
@@ -242,7 +245,9 @@ struct GhosttySurfaceScreen: View {
                     .overlay(alignment: .topLeading) {
                         GhosttySurfaceStatusOverlay(
                             projection: screenProjection.statusOverlay,
-                            onReconnect: onReconnect
+                            onReconnect: onReconnect,
+                            onCancel: onEditConnection,
+                            onTrustChangedHostKey: onTrustChangedHostKey
                         )
                     }
                     .overlay(alignment: .topTrailing) {
@@ -2106,6 +2111,8 @@ struct GhosttySoftwareKeyboardVisibility {
 private struct GhosttySurfaceStatusOverlay: View {
     let projection: GhosttyTerminalStatusOverlayProjection
     let onReconnect: () -> Void
+    let onCancel: () -> Void
+    let onTrustChangedHostKey: () -> Void
 
     var body: some View {
         switch projection {
@@ -2153,9 +2160,9 @@ private struct GhosttySurfaceStatusOverlay: View {
                 .opacity(0.01)
                 .accessibilityIdentifier("terminal.status.ready")
 
-        case .failed(let message):
+        case .failed(let message, let reason):
             VStack(alignment: .leading, spacing: 8) {
-                Text("Disconnected")
+                Text(reason?.hostKeyChange == nil ? "Disconnected" : "Host Key Changed")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(.red)
 
@@ -2164,15 +2171,36 @@ private struct GhosttySurfaceStatusOverlay: View {
                     .foregroundStyle(Color.white.opacity(0.76))
                     .fixedSize(horizontal: false, vertical: true)
 
-                Button {
-                    onReconnect()
-                } label: {
-                    Label("Reconnect", systemImage: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                if reason?.hostKeyChange == nil {
+                    Button {
+                        onReconnect()
+                    } label: {
+                        Label("Reconnect", systemImage: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("terminal.status.reconnect")
+                } else {
+                    HStack(spacing: 8) {
+                        Button("Cancel") {
+                            onCancel()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("terminal.status.hostKey.cancel")
+
+                        Button {
+                            onTrustChangedHostKey()
+                        } label: {
+                            Label("Update Trust", systemImage: "checkmark.shield")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("terminal.status.hostKey.updateTrust")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .accessibilityIdentifier("terminal.status.reconnect")
             }
             .padding(10)
             .background(Color.black.opacity(0.72))
