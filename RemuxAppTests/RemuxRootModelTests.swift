@@ -670,6 +670,35 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: nil))
     }
 
+    func testBeginCredentialRepairCapturesReconnectWorkspace() async throws {
+        let passwordBackedServer = makePasswordBackedServer()
+        let server = passwordBackedServer.server
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            identities: [passwordBackedServer.identity]
+        )
+        try await harness.credentialStore.saveCredential(
+            .password("demo-password"),
+            identityID: passwordBackedServer.identity.id
+        )
+        await harness.model.load()
+
+        await harness.model.beginCredentialRepair(for: workspace.id)
+
+        guard case .setup(let draft, let validation, let mode) = harness.model.state else {
+            XCTFail("expected setup state")
+            return
+        }
+
+        XCTAssertEqual(draft.displayName, server.displayName)
+        XCTAssertEqual(draft.sessionName, workspace.sessionName)
+        XCTAssertEqual(draft.password, "demo-password")
+        XCTAssertEqual(validation, .empty)
+        XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: workspace.id))
+    }
+
     func testBeginEditWorkspaceUsesSessionScopedEditing() async throws {
         let passwordBackedServer = makePasswordBackedServer()
         let server = passwordBackedServer.server

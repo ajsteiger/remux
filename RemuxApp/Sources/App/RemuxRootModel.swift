@@ -258,6 +258,35 @@ final class RemuxRootModel: ObservableObject {
         )
     }
 
+    func beginCredentialRepair(for workspaceID: SavedWorkspace.ID) async {
+        guard
+            let workspace = library.workspace(id: workspaceID),
+            let server = library.server(id: workspace.serverID)
+        else {
+            return
+        }
+
+        let identity: SSHIdentity
+        let credential: SSHCredential
+        do {
+            (identity, credential) = try await loadDraftIdentityCredential(for: server)
+        } catch {
+            transitionToFailed(error)
+            return
+        }
+
+        state = .setup(
+            TmuxConnectionDraft(
+                server: server,
+                workspace: workspace,
+                identity: identity,
+                credential: credential
+            ),
+            .empty,
+            .editServer(server.id, reconnectWorkspaceID: workspaceID)
+        )
+    }
+
     func beginEditWorkspace(serverID: SavedServer.ID, workspaceID: SavedWorkspace.ID) async {
         guard
             let server = library.server(id: serverID),
