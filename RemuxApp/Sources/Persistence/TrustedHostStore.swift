@@ -12,13 +12,13 @@ struct TrustedHostIdentity: Equatable, Codable, Sendable {
 }
 
 enum TrustedHostStoreError: LocalizedError, Sendable {
-    case hostKeyChanged(host: String)
+    case hostKeyChanged(SSHHostKeyChange)
     case invalidHostKey
 
     var errorDescription: String? {
         switch self {
-        case .hostKeyChanged(let host):
-            return "The SSH host key for \(host) changed. Remux refused the connection."
+        case .hostKeyChanged(let change):
+            return "The SSH host key for \(change.host) changed. Remux refused the connection."
         case .invalidHostKey:
             return "Remux could not read the SSH host key."
         }
@@ -56,7 +56,9 @@ final class TrustedHostStore: @unchecked Sendable {
             var identities = try loadLocked()
             if let existing = identities.first(where: { $0.serverID == server.id }) {
                 guard existing.openSSHPublicKey == identity.openSSHPublicKey else {
-                    throw TrustedHostStoreError.hostKeyChanged(host: server.host)
+                    throw TrustedHostStoreError.hostKeyChanged(
+                        Self.hostKeyChange(trusted: existing, received: identity)
+                    )
                 }
                 return
             }
@@ -102,6 +104,20 @@ final class TrustedHostStore: @unchecked Sendable {
             keyType: keyType,
             openSSHPublicKey: openSSHPublicKey,
             trustedAt: Date()
+        )
+    }
+
+    private static func hostKeyChange(
+        trusted: TrustedHostIdentity,
+        received: TrustedHostIdentity
+    ) -> SSHHostKeyChange {
+        SSHHostKeyChange(
+            serverID: trusted.serverID,
+            host: received.host,
+            trustedKeyType: trusted.keyType,
+            trustedOpenSSHPublicKey: trusted.openSSHPublicKey,
+            receivedKeyType: received.keyType,
+            receivedOpenSSHPublicKey: received.openSSHPublicKey
         )
     }
 }

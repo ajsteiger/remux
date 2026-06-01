@@ -156,6 +156,15 @@ struct TmuxConnectionTarget: Equatable, Sendable {
     }
 }
 
+struct SSHHostKeyChange: Equatable, Sendable {
+    let serverID: SavedServer.ID
+    let host: String
+    let trustedKeyType: String
+    let trustedOpenSSHPublicKey: String
+    let receivedKeyType: String
+    let receivedOpenSSHPublicKey: String
+}
+
 struct TerminalDisconnectReason: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case transportIO
@@ -170,6 +179,17 @@ struct TerminalDisconnectReason: Equatable, Sendable {
 
     let kind: Kind
     let message: String
+    let hostKeyChange: SSHHostKeyChange?
+
+    init(
+        kind: Kind,
+        message: String,
+        hostKeyChange: SSHHostKeyChange? = nil
+    ) {
+        self.kind = kind
+        self.message = message
+        self.hostKeyChange = hostKeyChange
+    }
 
     var allowsAutomaticReconnect: Bool {
         switch kind {

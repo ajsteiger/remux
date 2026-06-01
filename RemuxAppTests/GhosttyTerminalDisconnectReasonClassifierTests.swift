@@ -12,12 +12,23 @@ final class GhosttyTerminalDisconnectReasonClassifierTests: XCTestCase {
     }
 
     func testTransportStartFailureMapsKnownBoundaryErrors() {
+        let hostKeyChange = SSHHostKeyChange(
+            serverID: UUID(),
+            host: "example.com",
+            trustedKeyType: "ssh-ed25519",
+            trustedOpenSSHPublicKey: "ssh-ed25519 trusted",
+            receivedKeyType: "ssh-ed25519",
+            receivedOpenSSHPublicKey: "ssh-ed25519 received"
+        )
+        let changedReason = GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(
+            TrustedHostStoreError.hostKeyChanged(hostKeyChange)
+        )
         XCTAssertEqual(
-            GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(
-                TrustedHostStoreError.hostKeyChanged(host: "example.com")
-            ).kind,
+            changedReason.kind,
             .hostKey
         )
+        XCTAssertEqual(changedReason.hostKeyChange, hostKeyChange)
+
         XCTAssertEqual(
             GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(
                 TrustedHostStoreError.invalidHostKey

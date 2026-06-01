@@ -18,7 +18,13 @@ enum GhosttyTerminalDisconnectReasonClassifier {
 
         if let trustedHostError = error as? TrustedHostStoreError {
             switch trustedHostError {
-            case .hostKeyChanged, .invalidHostKey:
+            case .hostKeyChanged(let change):
+                return TerminalDisconnectReason(
+                    kind: .hostKey,
+                    message: message,
+                    hostKeyChange: change
+                )
+            case .invalidHostKey:
                 return TerminalDisconnectReason(kind: .hostKey, message: message)
             }
         }
