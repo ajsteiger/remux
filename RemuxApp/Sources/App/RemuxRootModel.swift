@@ -232,6 +232,29 @@ final class RemuxRootModel: ObservableObject {
     }
 
     func beginEditServer(serverID: SavedServer.ID) async {
+        await beginEditServer(serverID: serverID, reconnectWorkspaceID: nil)
+    }
+
+    func beginServerRepair(for workspaceID: SavedWorkspace.ID) async {
+        guard let workspace = library.workspace(id: workspaceID) else {
+            return
+        }
+
+        await beginEditServer(serverID: workspace.serverID, reconnectWorkspaceID: workspaceID)
+    }
+
+    func beginCredentialRepair(for workspaceID: SavedWorkspace.ID) async {
+        guard let workspace = library.workspace(id: workspaceID) else {
+            return
+        }
+
+        await beginEditServer(serverID: workspace.serverID, reconnectWorkspaceID: workspaceID)
+    }
+
+    private func beginEditServer(
+        serverID: SavedServer.ID,
+        reconnectWorkspaceID: SavedWorkspace.ID?
+    ) async {
         guard let server = library.server(id: serverID) else { return }
 
         let identity: SSHIdentity
@@ -242,10 +265,9 @@ final class RemuxRootModel: ObservableObject {
             transitionToFailed(error)
             return
         }
-        let workspace = library.workspaces(for: serverID).first ?? SavedWorkspace(
-            serverID: serverID,
-            sessionName: ""
-        )
+        let workspace = reconnectWorkspaceID.flatMap { library.workspace(id: $0) }
+            ?? library.workspaces(for: serverID).first
+            ?? SavedWorkspace(serverID: serverID, sessionName: "")
         state = .setup(
             TmuxConnectionDraft(
                 server: server,
@@ -254,36 +276,7 @@ final class RemuxRootModel: ObservableObject {
                 credential: credential
             ),
             .empty,
-            .editServer(serverID, reconnectWorkspaceID: nil)
-        )
-    }
-
-    func beginCredentialRepair(for workspaceID: SavedWorkspace.ID) async {
-        guard
-            let workspace = library.workspace(id: workspaceID),
-            let server = library.server(id: workspace.serverID)
-        else {
-            return
-        }
-
-        let identity: SSHIdentity
-        let credential: SSHCredential
-        do {
-            (identity, credential) = try await loadDraftIdentityCredential(for: server)
-        } catch {
-            transitionToFailed(error)
-            return
-        }
-
-        state = .setup(
-            TmuxConnectionDraft(
-                server: server,
-                workspace: workspace,
-                identity: identity,
-                credential: credential
-            ),
-            .empty,
-            .editServer(server.id, reconnectWorkspaceID: workspaceID)
+            .editServer(serverID, reconnectWorkspaceID: reconnectWorkspaceID)
         )
     }
 
