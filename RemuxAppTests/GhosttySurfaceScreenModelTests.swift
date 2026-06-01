@@ -2426,6 +2426,56 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(message, "tmux transport resize failed: disconnected")
     }
 
+    func testModelDetachesAndRetainsHostSessionBeforePublishingRuntimeDisconnect() async {
+        let transport = ControlledScreenModelTmuxControlTransport()
+        var model: GhosttySurfaceScreenModel!
+        var observedRuntimeDisconnect = false
+        var hostSessionWasPresentAtRuntimeDisconnect = true
+        var stoppedRuntimeWasRetainedAtRuntimeDisconnect = false
+        model = Self.screenModel(
+            target: Self.target(),
+            transportFactory: { _ in transport },
+            onRuntimeStateChange: { update in
+                guard update.source == .runtime,
+                      update.state.disconnectedReason != nil else {
+                    return
+                }
+                observedRuntimeDisconnect = true
+                hostSessionWasPresentAtRuntimeDisconnect = Self.hostControlSurface(from: model) != nil
+                stoppedRuntimeWasRetainedAtRuntimeDisconnect = model.stoppedRuntimeRemovalHoldRetainedForTesting
+            },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+        XCTAssertNotNil(Self.hostControlSurface(from: model))
+
+        await transport.fail(ScreenModelTransportError.disconnected)
+
+        let didReportRuntimeDisconnect = await waitUntil(timeout: 2) {
+            observedRuntimeDisconnect
+        }
+
+        XCTAssertTrue(didReportRuntimeDisconnect)
+        XCTAssertFalse(hostSessionWasPresentAtRuntimeDisconnect)
+        XCTAssertTrue(stoppedRuntimeWasRetainedAtRuntimeDisconnect)
+        XCTAssertNil(Self.hostControlSurface(from: model))
+        XCTAssertTrue(model.stopForRemoval())
+
+        let didCloseTransport = await waitUntilAsync(timeout: 2) {
+            await transport.closeDispositions() == [.invalidated]
+        }
+        XCTAssertTrue(didCloseTransport)
+    }
+
     func testModelClassifiesSSHChannelRequestFailureAsProfileFailure() async {
         let transport = ControlledScreenModelTmuxControlTransport()
         let model = Self.screenModel(

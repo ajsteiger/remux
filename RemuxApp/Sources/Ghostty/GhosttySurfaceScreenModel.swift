@@ -1363,10 +1363,10 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         state = .failed(transition.reason.message)
         failureReason = transition.reason
         debugStatus = transition.reason.message
-        reportRuntimeStateIfNeeded(source: .runtime)
         let stoppedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
             tearDownRuntimeSurfacesBeforeRuntimeRelease()
         })
+        reportRuntimeStateIfNeeded(source: .runtime)
 
         Task { @MainActor [
             failedSession = stoppedSession.session,
@@ -1396,18 +1396,23 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         state = .failed(transition.reason.message)
         failureReason = transition.reason
         debugStatus = transition.reason.message
+        let retainStoppedRuntimeUntilModelRelease = transition.reason.allowsAutomaticReconnect
+        let stoppedSession = hostSessionSlot.stopCurrent(
+            retainingStoppedSessionFor: {
+                tearDownRuntimeSurfacesBeforeRuntimeRelease(
+                    retainingSurfaceViewsForRuntimeRemoval: retainStoppedRuntimeUntilModelRelease
+                )
+            },
+            retainingHostSurfaceUntilSessionRelease: retainStoppedRuntimeUntilModelRelease,
+            closeDisposition: transition.closeDisposition
+        )
+        let retainedStoppedRuntime = retainOrReleaseStoppedRuntime(
+            stoppedSession,
+            untilModelRelease: retainStoppedRuntimeUntilModelRelease
+        )
         reportRuntimeStateIfNeeded(source: transition.reportSource)
-        let stoppedSession = hostSessionSlot.takeCurrent(retainingSessionFor: {
-            tearDownRuntimeSurfacesBeforeRuntimeRelease()
-        })
-
-        Task { @MainActor [
-            failedSession = stoppedSession.session,
-            teardownHold = stoppedSession.teardownResult,
-            closeDisposition = transition.closeDisposition
-        ] in
-            await failedSession?.close(disposition: closeDisposition)
-            withExtendedLifetime(teardownHold) {}
+        if !retainedStoppedRuntime {
+            withExtendedLifetime(stoppedSession.teardownResult) {}
         }
     }
 
