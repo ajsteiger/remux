@@ -249,7 +249,7 @@ struct GhosttySurfaceScreen: View {
                         .allowsHitTesting(false)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .overlay(alignment: .topLeading) {
+                    .overlay {
                         GhosttySurfaceStatusOverlay(
                             projection: screenProjection.statusOverlay,
                             onReconnect: onReconnect,
@@ -2118,6 +2118,8 @@ struct GhosttySoftwareKeyboardVisibility {
 }
 
 private struct GhosttySurfaceStatusOverlay: View {
+    @Environment(\.ghosttyTerminalChromeStyle) private var chromeStyle
+
     let projection: GhosttyTerminalStatusOverlayProjection
     let onReconnect: () -> Void
     let onUpdateCredentials: () -> Void
@@ -2126,6 +2128,31 @@ private struct GhosttySurfaceStatusOverlay: View {
     let onTrustChangedHostKey: () -> Void
 
     var body: some View {
+        ZStack(alignment: overlayAlignment) {
+            overlayContent
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: overlayAlignment)
+        .allowsHitTesting(allowsHitTesting)
+    }
+
+    private var overlayAlignment: Alignment {
+        if case .failed = projection {
+            return .bottom
+        }
+
+        return .topLeading
+    }
+
+    private var allowsHitTesting: Bool {
+        if case .failed = projection {
+            return true
+        }
+
+        return false
+    }
+
+    @ViewBuilder
+    private var overlayContent: some View {
         switch projection {
         case .starting:
             Text("starting Ghostty")
@@ -2172,81 +2199,128 @@ private struct GhosttySurfaceStatusOverlay: View {
                 .accessibilityIdentifier("terminal.status.ready")
 
         case .failed(let message, let reason):
-            VStack(alignment: .leading, spacing: 8) {
+            repairPanel(message: message, reason: reason)
+        }
+    }
+
+    private func repairPanel(
+        message: String,
+        reason: TerminalDisconnectReason?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(caption(for: reason))
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1.0)
+                    .foregroundStyle(GhosttySheetPalette.tertiary)
+
                 Text(title(for: reason))
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(reason?.kind == .authentication ? .orange : .red)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(GhosttySheetPalette.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Text(displayMessage(for: reason, fallback: message))
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.white.opacity(0.76))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(GhosttySheetPalette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            }
 
-                if reason?.hostKeyChange != nil {
-                    HStack(spacing: 8) {
-                        Button("Cancel") {
-                            onCancel()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("terminal.status.hostKey.cancel")
-
-                        Button {
-                            onTrustChangedHostKey()
-                        } label: {
-                            Label("Update Trust", systemImage: "checkmark.shield")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("terminal.status.hostKey.updateTrust")
-                    }
-                } else if reason?.kind == .authentication {
-                    Button {
-                        onUpdateCredentials()
-                    } label: {
-                        Label("Update Credentials", systemImage: "key")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityIdentifier("terminal.status.auth.updateCredentials")
-                } else if reason?.kind == .serverUnreachable {
-                    HStack(spacing: 8) {
-                        Button {
-                            onReconnect()
-                        } label: {
-                            Label("Retry", systemImage: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("terminal.status.unreachable.retry")
-
-                        Button("Edit Server") {
-                            onEditServer()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityIdentifier("terminal.status.unreachable.editServer")
-                    }
-                } else {
-                    Button {
-                        onReconnect()
-                    } label: {
-                        Label("Reconnect", systemImage: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityIdentifier("terminal.status.reconnect")
+            if let hostKeyVerification = hostKeyVerification(for: reason?.hostKeyChange) {
+                Text(hostKeyVerification)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(GhosttySheetPalette.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(GhosttySheetPalette.controlFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(GhosttySheetPalette.stroke, lineWidth: 1)
                 }
             }
-            .padding(10)
-            .background(Color.black.opacity(0.72))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .padding(10)
-            .accessibilityIdentifier("terminal.status.failed")
+
+            repairActions(for: reason)
+        }
+        .padding(16)
+        .frame(maxWidth: 560, alignment: .leading)
+        .ghosttyTerminalRepairPanelSurface()
+        .padding(.horizontal, 18)
+        .padding(.bottom, 8)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .accessibilityIdentifier("terminal.status.failed")
+    }
+
+    @ViewBuilder
+    private func repairActions(for reason: TerminalDisconnectReason?) -> some View {
+        if reason?.hostKeyChange != nil {
+            HStack(spacing: 12) {
+                GhosttyRepairActionButton(
+                    title: "Cancel",
+                    systemName: "xmark",
+                    accessibilityIdentifier: "terminal.status.hostKey.cancel",
+                    chromeStyle: chromeStyle,
+                    action: onCancel
+                )
+
+                GhosttyRepairActionButton(
+                    title: "Update Trust",
+                    systemName: "checkmark.shield",
+                    accessibilityIdentifier: "terminal.status.hostKey.updateTrust",
+                    chromeStyle: chromeStyle,
+                    isPrimary: true,
+                    action: onTrustChangedHostKey
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if reason?.kind == .authentication {
+            HStack {
+                GhosttyRepairActionButton(
+                    title: "Update Credentials",
+                    systemName: "key",
+                    accessibilityIdentifier: "terminal.status.auth.updateCredentials",
+                    chromeStyle: chromeStyle,
+                    isPrimary: true,
+                    action: onUpdateCredentials
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if reason?.kind == .serverUnreachable {
+            HStack(spacing: 12) {
+                GhosttyRepairActionButton(
+                    title: "Retry",
+                    systemName: "arrow.clockwise",
+                    accessibilityIdentifier: "terminal.status.unreachable.retry",
+                    chromeStyle: chromeStyle,
+                    isPrimary: true,
+                    action: onReconnect
+                )
+
+                GhosttyRepairActionButton(
+                    title: "Edit Server",
+                    systemName: "slider.horizontal.3",
+                    accessibilityIdentifier: "terminal.status.unreachable.editServer",
+                    chromeStyle: chromeStyle,
+                    action: onEditServer
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack {
+                GhosttyRepairActionButton(
+                    title: "Reconnect",
+                    systemName: "arrow.clockwise",
+                    accessibilityIdentifier: "terminal.status.reconnect",
+                    chromeStyle: chromeStyle,
+                    isPrimary: true,
+                    action: onReconnect
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -2266,10 +2340,25 @@ private struct GhosttySurfaceStatusOverlay: View {
         return "Disconnected"
     }
 
+    private func caption(for reason: TerminalDisconnectReason?) -> String {
+        if reason?.hostKeyChange != nil {
+            return "SECURITY"
+        }
+
+        if reason?.kind == .authentication {
+            return "AUTHENTICATION"
+        }
+
+        if reason?.kind == .serverUnreachable {
+            return "CONNECTION"
+        }
+
+        return "TERMINAL"
+    }
+
     private func displayMessage(for reason: TerminalDisconnectReason?, fallback: String) -> String {
         if let change = reason?.hostKeyChange {
-            let keyDetail = hostKeyDetail(for: change)
-            return "The SSH host key for \(change.host) changed. \(keyDetail) Update trust only if this matches the server you expect."
+            return "The SSH host key for \(change.host) changed. Update trust only if this matches the server you expect."
         }
 
         if reason?.kind == .authentication {
@@ -2283,12 +2372,16 @@ private struct GhosttySurfaceStatusOverlay: View {
         return fallback
     }
 
-    private func hostKeyDetail(for change: SSHHostKeyChange) -> String {
-        guard let fingerprint = hostKeyFingerprint(change.receivedOpenSSHPublicKey) else {
-            return "Received key: \(change.receivedKeyType)."
+    private func hostKeyVerification(for change: SSHHostKeyChange?) -> String? {
+        guard let change else {
+            return nil
         }
 
-        return "Received key: \(change.receivedKeyType) \(fingerprint)."
+        guard let fingerprint = hostKeyFingerprint(change.receivedOpenSSHPublicKey) else {
+            return "Received \(change.receivedKeyType)"
+        }
+
+        return "Received \(change.receivedKeyType) \(fingerprint)"
     }
 
     private func hostKeyFingerprint(_ openSSHPublicKey: String) -> String? {
@@ -2299,6 +2392,94 @@ private struct GhosttySurfaceStatusOverlay: View {
 
         let digest = Data(SHA256.hash(data: blob))
         return "SHA256:\(digest.base64EncodedString().trimmingCharacters(in: CharacterSet(charactersIn: "=")))"
+    }
+
+}
+
+private struct GhosttyRepairActionButton: View {
+    let title: String
+    let systemName: String
+    let accessibilityIdentifier: String
+    let chromeStyle: GhosttyTerminalChromeStyle
+    var isPrimary = false
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Haptic.chromeControlPress()
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: systemName)
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .foregroundStyle(isPrimary ? chromeStyle.accent : GhosttySheetPalette.primary)
+            .padding(.horizontal, 16)
+            .frame(height: 38)
+        }
+        .buttonStyle(GhosttyRepairActionButtonStyle())
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
+private struct GhosttyRepairActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .ghosttyTerminalRepairActionSurface(isPressed: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func ghosttyTerminalRepairPanelSurface() -> some View {
+        let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
+
+        if #available(iOS 26.0, *) {
+            self
+                .glassEffect(
+                    .regular
+                        .tint(GhosttyAttachmentTrayStyle.panelGlassTint),
+                    in: shape
+                )
+                .overlay {
+                    shape.strokeBorder(GhosttyAttachmentTrayStyle.panelGlassStroke, lineWidth: 0.75)
+                }
+                .shadow(color: GhosttyAttachmentTrayStyle.panelGlassShadow, radius: 18, y: 10)
+                .contentShape(shape)
+        } else {
+            self
+                .background(.regularMaterial, in: shape)
+                .background {
+                    shape.fill(GhosttyAttachmentTrayStyle.fallbackPanelFill)
+                }
+                .overlay {
+                    shape.strokeBorder(GhosttyAttachmentTrayStyle.fallbackPanelStroke, lineWidth: 1)
+                }
+                .shadow(color: GhosttyAttachmentTrayStyle.fallbackShadow, radius: 18, y: 10)
+        }
+    }
+
+    func ghosttyTerminalRepairActionSurface(isPressed: Bool) -> some View {
+        let shape = Capsule()
+
+        return self
+            .background(
+                isPressed
+                    ? GhosttyAttachmentPreviewStyle.controlPressedFill
+                    : GhosttyAttachmentPreviewStyle.controlFill,
+                in: shape
+            )
+            .overlay {
+                shape.strokeBorder(GhosttyAttachmentPreviewStyle.controlStroke, lineWidth: 1)
+            }
+            .contentShape(shape)
     }
 }
 
