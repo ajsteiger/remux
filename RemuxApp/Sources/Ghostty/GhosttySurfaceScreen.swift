@@ -2155,15 +2155,7 @@ private struct GhosttySurfaceStatusOverlay: View {
     private var overlayContent: some View {
         switch projection {
         case .starting:
-            Text("starting Ghostty")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.72))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Color.black.opacity(0.5))
-                .clipShape(Capsule())
-                .padding(10)
-                .accessibilityIdentifier("terminal.status.starting")
+            openingSessionOverlay(accessibilityIdentifier: "terminal.status.starting")
 
         case .commandFailure(let commandFailureMessage):
             Text(commandFailureMessage)
@@ -2176,20 +2168,8 @@ private struct GhosttySurfaceStatusOverlay: View {
                 .padding(10)
                 .accessibilityIdentifier("terminal.command.failure")
 
-        case .waitingForPanes(let debugStatus, let registryDebugSummary):
-            VStack(alignment: .leading, spacing: 4) {
-                Text("waiting for tmux panes")
-                Text(debugStatus)
-                Text(registryDebugSummary)
-            }
-            .font(.system(size: 12, weight: .medium, design: .rounded))
-            .foregroundStyle(Color.white.opacity(0.72))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.black.opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .padding(10)
-            .accessibilityIdentifier("terminal.status.waiting")
+        case .waitingForPanes:
+            openingSessionOverlay(accessibilityIdentifier: "terminal.status.waiting")
 
         case .ready:
             Text("terminal ready")
@@ -2201,6 +2181,16 @@ private struct GhosttySurfaceStatusOverlay: View {
         case .failed(let message, let reason):
             repairPanel(message: message, reason: reason)
         }
+    }
+
+    private func openingSessionOverlay(accessibilityIdentifier: String) -> some View {
+        ProgressView("Opening session")
+            .font(.system(size: 15, weight: .medium, design: .rounded))
+            .foregroundStyle(GhosttySheetPalette.secondary)
+            .tint(GhosttySheetPalette.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .padding(.bottom, 84)
+            .accessibilityIdentifier(accessibilityIdentifier)
     }
 
     private func repairPanel(
