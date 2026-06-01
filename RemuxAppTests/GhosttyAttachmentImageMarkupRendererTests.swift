@@ -74,6 +74,24 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         XCTAssertEqual(size.height, 240, accuracy: 0.001)
     }
 
+    func testExportSizeCapsLargeImagesPreservingAspectRatio() {
+        let size = GhosttyAttachmentImageMarkupRenderer.exportSize(
+            for: CGSize(width: 4_032, height: 3_024)
+        )
+
+        XCTAssertEqual(size.width, 2_048, accuracy: 0.001)
+        XCTAssertEqual(size.height, 1_536, accuracy: 0.001)
+    }
+
+    func testExportSizeDoesNotUpscaleSmallImages() {
+        let size = GhosttyAttachmentImageMarkupRenderer.exportSize(
+            for: CGSize(width: 320, height: 240)
+        )
+
+        XCTAssertEqual(size.width, 320, accuracy: 0.001)
+        XCTAssertEqual(size.height, 240, accuracy: 0.001)
+    }
+
     @MainActor
     func testRenderPNGDataProducesPreviewableAnnotatedImage() throws {
         let baseImage = try makeImage(width: 80, height: 60)
@@ -166,6 +184,35 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         ).data
 
         let pixel = try brightestPixel(from: output, in: CGRect(x: 25, y: 45, width: 55, height: 10))
+        XCTAssertGreaterThan(pixel.red, 0.82)
+        XCTAssertGreaterThan(pixel.green, 0.82)
+        XCTAssertGreaterThan(pixel.blue, 0.82)
+        XCTAssertGreaterThan(pixel.alpha, 0.95)
+    }
+
+    @MainActor
+    func testRenderDataExportsCappedImageAndScalesDrawing() throws {
+        let baseImage = try makeImage(width: 4_096, height: 3_072, fill: .black)
+        let drawing = makeHorizontalDrawing(
+            color: .white,
+            width: 8,
+            y: 384,
+            startX: 128,
+            endX: 896
+        )
+
+        let output = try GhosttyAttachmentImageMarkupRenderer.renderData(
+            baseImage: baseImage,
+            drawing: drawing,
+            documentSize: CGSize(width: 1_024, height: 768),
+            outputFormat: .png
+        ).data
+
+        let image = try XCTUnwrap(UIImage(data: output))
+        XCTAssertEqual(image.size.width, 2_048, accuracy: 0.001)
+        XCTAssertEqual(image.size.height, 1_536, accuracy: 0.001)
+
+        let pixel = try brightestPixel(from: output, in: CGRect(x: 256, y: 762, width: 1_536, height: 12))
         XCTAssertGreaterThan(pixel.red, 0.82)
         XCTAssertGreaterThan(pixel.green, 0.82)
         XCTAssertGreaterThan(pixel.blue, 0.82)

@@ -345,6 +345,7 @@ struct GhosttyAttachmentImageMarkupResult {
 
 enum GhosttyAttachmentImageMarkupRenderer {
     static let maxDocumentLongSide: CGFloat = 1_024
+    static let maxExportLongSide: CGFloat = 2_048
 
     enum RenderError: Error, Equatable {
         case invalidDocumentSize
@@ -404,6 +405,19 @@ enum GhosttyAttachmentImageMarkupRenderer {
         )
     }
 
+    static func exportSize(for imageSize: CGSize) -> CGSize {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return .zero
+        }
+
+        let longSide = max(imageSize.width, imageSize.height)
+        let scale = min(1, maxExportLongSide / longSide)
+        return CGSize(
+            width: max(1, (imageSize.width * scale).rounded()),
+            height: max(1, (imageSize.height * scale).rounded())
+        )
+    }
+
     @MainActor
     static func renderData(
         baseImage: UIImage,
@@ -416,28 +430,36 @@ enum GhosttyAttachmentImageMarkupRenderer {
             throw RenderError.invalidDocumentSize
         }
 
-        let imageSize = baseImage.size
-        guard imageSize.width > 0, imageSize.height > 0 else {
+        let sourceImageSize = baseImage.size
+        guard sourceImageSize.width > 0, sourceImageSize.height > 0 else {
+            throw RenderError.invalidImageSize
+        }
+        let outputImageSize = exportSize(for: sourceImageSize)
+        guard outputImageSize.width > 0, outputImageSize.height > 0 else {
             throw RenderError.invalidImageSize
         }
 
         let format = UIGraphicsImageRendererFormat()
-        format.scale = max(baseImage.scale, 1)
+        format.scale = 1
         format.opaque = outputFormat == .jpeg
 
-        let renderer = UIGraphicsImageRenderer(size: imageSize, format: format)
+        let renderer = UIGraphicsImageRenderer(size: outputImageSize, format: format)
         let compositeStartedAt = GhosttyRuntimeTrace.nowNanos()
-        let renderedImage = renderer.image { context in
-            baseImage.draw(in: CGRect(origin: .zero, size: imageSize))
+        let renderedImage = renderer.image { _ in
+            baseImage.draw(in: CGRect(origin: .zero, size: outputImageSize))
 
+            let drawingScale = min(
+                outputImageSize.width / documentSize.width,
+                outputImageSize.height / documentSize.height
+            )
             var drawingImage: UIImage?
             UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
                 drawingImage = drawing.image(
                     from: CGRect(origin: .zero, size: documentSize),
-                    scale: format.scale
+                    scale: drawingScale
                 )
             }
-            drawingImage?.draw(in: CGRect(origin: .zero, size: imageSize))
+            drawingImage?.draw(in: CGRect(origin: .zero, size: outputImageSize))
         }
         let compositeCompletedAt = GhosttyRuntimeTrace.nowNanos()
 
@@ -458,7 +480,7 @@ enum GhosttyAttachmentImageMarkupRenderer {
         }
 
         GhosttyRuntimeTrace.perf(
-            "attachment.markup.render format=\(outputFormat.traceLabel) bytes=\(data.count) image_px=\(Int(imageSize.width))x\(Int(imageSize.height)) document_px=\(Int(documentSize.width))x\(Int(documentSize.height)) composite_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: compositeStartedAt, to: compositeCompletedAt)) encode_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: encodeStartedAt, to: encodeCompletedAt)) total_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: totalStartedAt, to: encodeCompletedAt))"
+            "attachment.markup.render format=\(outputFormat.traceLabel) bytes=\(data.count) source_px=\(Int(sourceImageSize.width))x\(Int(sourceImageSize.height)) output_px=\(Int(outputImageSize.width))x\(Int(outputImageSize.height)) document_px=\(Int(documentSize.width))x\(Int(documentSize.height)) composite_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: compositeStartedAt, to: compositeCompletedAt)) encode_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: encodeStartedAt, to: encodeCompletedAt)) total_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: totalStartedAt, to: encodeCompletedAt))"
         )
 
         return GhosttyAttachmentImageMarkupResult(
