@@ -699,6 +699,49 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: workspace.id))
     }
 
+    func testCredentialRepairReconnectsOriginalWorkspaceWithoutDuplication() async throws {
+        let passwordBackedServer = makePasswordBackedServer()
+        let server = passwordBackedServer.server
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            identities: [passwordBackedServer.identity]
+        )
+        try await harness.credentialStore.saveCredential(
+            .password("old-password"),
+            identityID: passwordBackedServer.identity.id
+        )
+        await harness.model.load()
+
+        await harness.model.beginCredentialRepair(for: workspace.id)
+        harness.model.updateDraft { draft in
+            draft.password = "new-password"
+        }
+
+        await harness.model.saveAndConnect()
+
+        guard
+            case .terminal(let activeWorkspaceID) = harness.model.state,
+            let activeSession = harness.model.activeSessions.first
+        else {
+            XCTFail("expected terminal state")
+            return
+        }
+
+        XCTAssertEqual(activeWorkspaceID, workspace.id)
+        XCTAssertEqual(activeSession.target.workspace.id, workspace.id)
+        XCTAssertEqual(activeSession.target.workspace.sessionName, workspace.sessionName)
+        XCTAssertEqual(activeSession.target.sshAuth.credential, .password("new-password"))
+
+        let snapshot = try await harness.profileRepository.loadSnapshot()
+        XCTAssertEqual(snapshot.workspaces.map(\.id), [workspace.id])
+        let savedCredential = try await harness.credentialStore.loadCredential(
+            identityID: passwordBackedServer.identity.id
+        )
+        XCTAssertEqual(savedCredential, .password("new-password"))
+    }
+
     func testBeginServerRepairCapturesReconnectWorkspace() async throws {
         let passwordBackedServer = makePasswordBackedServer()
         let server = passwordBackedServer.server
