@@ -41,6 +41,19 @@ final class GhosttySurfaceScreenModel: ObservableObject {
         case starting
         case running
         case failed(String)
+
+        var traceLabel: String {
+            switch self {
+            case .idle:
+                "idle"
+            case .starting:
+                "starting"
+            case .running:
+                "running"
+            case .failed:
+                "failed"
+            }
+        }
     }
 
     enum AppLifecyclePhase: Equatable {
@@ -1370,7 +1383,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     ) {
         guard state != .idle else { return }
 
-        var fields = ["state": "\(state)"]
+        var fields = ["state": state.traceLabel]
         if let traceErrorDescription = transition.traceErrorDescription {
             fields["error"] = traceErrorDescription
         }

@@ -176,6 +176,29 @@ struct TerminalDisconnectReason: Equatable, Sendable {
         case runtime
         case userClosed
         case unknown
+
+        var traceLabel: String {
+            switch self {
+            case .transportIO:
+                "transport_io"
+            case .serverUnreachable:
+                "server_unreachable"
+            case .authentication:
+                "authentication"
+            case .hostKey:
+                "host_key"
+            case .profile:
+                "profile"
+            case .remoteExit:
+                "remote_exit"
+            case .runtime:
+                "runtime"
+            case .userClosed:
+                "user_closed"
+            case .unknown:
+                "unknown"
+            }
+        }
     }
 
     let kind: Kind
@@ -252,6 +275,19 @@ enum TerminalRuntimeState: Equatable, Sendable {
         if case .disconnected(let reason) = self { return reason }
         return nil
     }
+
+    var traceLabel: String {
+        switch self {
+        case .connecting:
+            "connecting"
+        case .reconnecting(let source):
+            "reconnecting_\(source.traceLabel)"
+        case .connected:
+            "connected"
+        case .disconnected(let reason):
+            "disconnected_\(reason.kind.traceLabel)"
+        }
+    }
 }
 
 enum TerminalRuntimeStateProjection {
@@ -264,6 +300,17 @@ enum TerminalRuntimeStateUpdateSource: Equatable, Sendable {
     case foreground
     case readiness
     case runtime
+
+    var traceLabel: String {
+        switch self {
+        case .foreground:
+            "foreground"
+        case .readiness:
+            "readiness"
+        case .runtime:
+            "runtime"
+        }
+    }
 }
 
 struct TerminalRuntimeStateUpdate: Equatable, Sendable {

@@ -1212,8 +1212,8 @@ final class RemuxRootModel: ObservableObject {
                 event: "model.runtimeState.applied",
                 fields: [
                     "instanceID": update.instanceID.uuidString,
-                    "source": "\(update.source)",
-                    "state": "\(state)",
+                    "source": update.source.traceLabel,
+                    "state": state.traceLabel,
                     "workspaceID": update.workspaceID.uuidString,
                 ]
             )
