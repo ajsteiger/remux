@@ -12,7 +12,7 @@ remotely removes only the exact allowlisted remux-latency-* tmux sessions that
 the UI tests record in their cleanup manifest.
 
 This script reads live SSH details from /tmp/remux-live-ssh.json but does not
-store credentials in the repository or print the password.
+store credentials in the repository or print secrets.
 USAGE
 }
 
@@ -128,7 +128,9 @@ json_string() {
 
 host="$(json_string host)"
 username="$(json_string username)"
-password="$(json_string password)"
+password="$(json_string password optional)"
+private_key="$(json_string privateKeyPEM optional)"
+private_key_passphrase="$(json_string privateKeyPassphrase optional)"
 port="$(json_string port optional)"
 port="${port:-22}"
 
@@ -139,6 +141,7 @@ harness_file="/tmp/remux-live-cleanup-harness.txt"
 fixture_name_file="/tmp/remux-live-prepared-fixture.txt"
 fixture_session_file="/tmp/remux-live-session-name-override.txt"
 askpass="$work_dir/askpass.sh"
+private_key_file="$work_dir/live_ssh_key"
 log_dir=".local/logs"
 mkdir -p "$log_dir"
 stamp="$(date +%Y%m%d-%H%M%S)-$$"
@@ -155,6 +158,24 @@ cleanup_local_files() {
   rm -f "$fixture_session_file"
 }
 
+ssh_askpass_secret=""
+declare -a ssh_auth_args=()
+if [[ -n "$private_key" ]]; then
+  printf '%s\n' "$private_key" >"$private_key_file"
+  chmod 600 "$private_key_file"
+  ssh_askpass_secret="$private_key_passphrase"
+  ssh_auth_args=(
+    -i "$private_key_file"
+    -o IdentitiesOnly=yes
+    -o PreferredAuthentications=publickey
+  )
+elif [[ -n "$password" ]]; then
+  ssh_askpass_secret="$password"
+else
+  printf '%s must include password or privateKeyPEM.\n' "$config" >&2
+  exit 2
+fi
+
 finish_before_remote_cleanup() {
   local status=$?
   cleanup_local_files
@@ -163,7 +184,7 @@ finish_before_remote_cleanup() {
 
 cat >"$askpass" <<'EOF'
 #!/usr/bin/env bash
-printf '%s\n' "$REMUX_LIVE_SSH_PASSWORD"
+printf '%s\n' "$REMUX_LIVE_SSH_SECRET"
 EOF
 chmod 700 "$askpass"
 rm -f "$manifest"
@@ -202,7 +223,7 @@ prepare_dense_mixed_fixture() {
   fi
 
   printf 'Preparing dense mixed tmux fixture: %s\n' "$session"
-  REMUX_LIVE_SSH_PASSWORD="$password" \
+  REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
     SSH_ASKPASS="$askpass" \
     SSH_ASKPASS_REQUIRE=force \
     DISPLAY=remux \
@@ -211,6 +232,7 @@ prepare_dense_mixed_fixture() {
       -o BatchMode=no \
       -o NumberOfPasswordPrompts=1 \
       -o ConnectTimeout=10 \
+      "${ssh_auth_args[@]}" \
       "$username@$host" \
       sh -s -- "$session" <<'REMOTE'
 set -eu
@@ -277,7 +299,7 @@ cleanup_generated_sessions() {
     local remote_command
     remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; \"\$tmux_bin\" kill-session -t \"\$session\" 2>/dev/null || true"
 
-    if ! REMUX_LIVE_SSH_PASSWORD="$password" \
+    if ! REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
       SSH_ASKPASS="$askpass" \
       SSH_ASKPASS_REQUIRE=force \
       DISPLAY=remux \
@@ -286,6 +308,7 @@ cleanup_generated_sessions() {
         -o BatchMode=no \
         -o NumberOfPasswordPrompts=1 \
         -o ConnectTimeout=10 \
+        "${ssh_auth_args[@]}" \
         "$username@$host" \
         "$remote_command" </dev/null; then
       status=1
@@ -335,7 +358,7 @@ verify_tmux_expectations() {
         remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; \"\$tmux_bin\" list-windows -t \"\$session\" -F '#{window_id}' 2>/dev/null | wc -l | tr -d ' '"
 
         local actual
-        if ! actual="$(REMUX_LIVE_SSH_PASSWORD="$password" \
+        if ! actual="$(REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
           SSH_ASKPASS="$askpass" \
           SSH_ASKPASS_REQUIRE=force \
           DISPLAY=remux \
@@ -344,6 +367,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux window count for %s\n' "$session" >&2
@@ -375,7 +399,7 @@ verify_tmux_expectations() {
         remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; window_id=\$(\"\$tmux_bin\" list-windows -t \"\$session\" -F '#{window_id}' 2>/dev/null | sed -n '${arg1}p'); if [ -z \"\$window_id\" ]; then echo 'expected window index not found' >&2; exit 1; fi; \"\$tmux_bin\" list-panes -t \"\$window_id\" -F '#{pane_id}' 2>/dev/null | wc -l | tr -d ' '"
 
         local actual
-        if ! actual="$(REMUX_LIVE_SSH_PASSWORD="$password" \
+        if ! actual="$(REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
           SSH_ASKPASS="$askpass" \
           SSH_ASKPASS_REQUIRE=force \
           DISPLAY=remux \
@@ -384,6 +408,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux window pane count for %s window %s\n' "$session" "$arg1" >&2
@@ -415,7 +440,7 @@ verify_tmux_expectations() {
         remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; count=0; for window_id in \$(\"\$tmux_bin\" list-windows -t \"\$session\" -F '#{window_id}' 2>/dev/null); do window_count=\$(\"\$tmux_bin\" list-panes -t \"\$window_id\" -F '#{pane_id}' 2>/dev/null | wc -l | tr -d ' '); count=\$((count + window_count)); done; printf '%s\n' \"\$count\""
 
         local actual
-        if ! actual="$(REMUX_LIVE_SSH_PASSWORD="$password" \
+        if ! actual="$(REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
           SSH_ASKPASS="$askpass" \
           SSH_ASKPASS_REQUIRE=force \
           DISPLAY=remux \
@@ -424,6 +449,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux pane count for %s\n' "$session" >&2
@@ -455,7 +481,7 @@ verify_tmux_expectations() {
         remote_command="session=$session; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; pane_id=\$(\"\$tmux_bin\" list-panes -t \"\$session\" -F '#{pane_id}' 2>/dev/null | sed -n '${arg1}p'); if [ -z \"\$pane_id\" ]; then echo 'expected pane index not found' >&2; exit 1; fi; \"\$tmux_bin\" display-message -p -t \"\$pane_id\" '#{pane_in_mode}' 2>/dev/null"
 
         local actual
-        if ! actual="$(REMUX_LIVE_SSH_PASSWORD="$password" \
+        if ! actual="$(REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
           SSH_ASKPASS="$askpass" \
           SSH_ASKPASS_REQUIRE=force \
           DISPLAY=remux \
@@ -464,6 +490,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux pane mode for %s pane %s\n' "$session" "$arg1" >&2
@@ -494,7 +521,7 @@ verify_tmux_expectations() {
         local capture_command
         capture_command="session=$session; marker=$arg2; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; pane_id=\$(\"\$tmux_bin\" list-panes -t \"\$session\" -F '#{pane_id}' 2>/dev/null | sed -n '${arg1}p'); if [ -z \"\$pane_id\" ]; then echo 'expected pane index not found' >&2; exit 1; fi; \"\$tmux_bin\" capture-pane -p -e -t \"\$pane_id\" 2>/dev/null | grep -F -- \"\$marker\" >/dev/null"
 
-        if ! REMUX_LIVE_SSH_PASSWORD="$password" \
+        if ! REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
           SSH_ASKPASS="$askpass" \
           SSH_ASKPASS_REQUIRE=force \
           DISPLAY=remux \
@@ -503,6 +530,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$capture_command" </dev/null; then
           printf 'tmux pane-index-contains expectation failed for %s pane %s marker %s\n' "$session" "$arg1" "$arg2" >&2
@@ -527,7 +555,7 @@ verify_tmux_expectations() {
         local capture_command
         capture_command="session=$session; marker=$arg2; tmux_bin=\$(command -v tmux 2>/dev/null || true); if [ -z \"\$tmux_bin\" ] && [ -x /opt/homebrew/bin/tmux ]; then tmux_bin=/opt/homebrew/bin/tmux; fi; if [ -z \"\$tmux_bin\" ]; then echo 'tmux not found on remote host' >&2; exit 127; fi; window_id=\$(\"\$tmux_bin\" list-windows -t \"\$session\" -F '#{window_id}' 2>/dev/null | sed -n '${arg1}p'); if [ -z \"\$window_id\" ]; then echo 'expected window index not found' >&2; exit 1; fi; pane_id=\$(\"\$tmux_bin\" display-message -p -t \"\$window_id\" '#{pane_id}' 2>/dev/null); if [ -z \"\$pane_id\" ]; then echo 'expected window active pane not found' >&2; exit 1; fi; \"\$tmux_bin\" capture-pane -p -e -t \"\$pane_id\" 2>/dev/null | grep -F -- \"\$marker\" >/dev/null"
 
-        if ! REMUX_LIVE_SSH_PASSWORD="$password" \
+        if ! REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
           SSH_ASKPASS="$askpass" \
           SSH_ASKPASS_REQUIRE=force \
           DISPLAY=remux \
@@ -536,6 +564,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$capture_command" </dev/null; then
           printf 'tmux window-index-contains expectation failed for %s window %s marker %s\n' "$session" "$arg1" "$arg2" >&2
@@ -565,7 +594,7 @@ verify_tmux_expectations() {
           continue
         fi
 
-        if ! REMUX_LIVE_SSH_PASSWORD="$password" \
+        if ! REMUX_LIVE_SSH_SECRET="$ssh_askpass_secret" \
           SSH_ASKPASS="$askpass" \
           SSH_ASKPASS_REQUIRE=force \
           DISPLAY=remux \
@@ -574,6 +603,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             sh -s -- "$session" "$window_index" "$pane_index" "$arg2" <<'REMOTE_EXPECTATION'
 set -eu
