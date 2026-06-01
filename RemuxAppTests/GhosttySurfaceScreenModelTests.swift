@@ -494,6 +494,49 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertTrue(model.surfaceRegistry.topologySnapshot.topLevels.isEmpty)
     }
 
+    func testModelStopForRemovalBlocksDelayedAttachFromRecreatingRuntime() async {
+        let target = Self.target()
+        let transport = ControlledScreenModelTmuxControlTransport()
+        var runtimeFactoryCalls = 0
+        let model = Self.screenModel(
+            target: target,
+            transportFactory: { _ in transport },
+            runtimeFactory: { delegate in
+                runtimeFactoryCalls += 1
+                return try GhosttyKitRuntime(
+                    surfaceDelegate: delegate,
+                    terminalSettings: target.terminalSettings
+                )
+            },
+            debugLatencyProbe: nil
+        )
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        let didRun = await waitUntil(timeout: 2) {
+            model.state == .running
+        }
+        XCTAssertTrue(didRun)
+        XCTAssertEqual(runtimeFactoryCalls, 1)
+        XCTAssertNotNil(Self.hostControlSurface(from: model))
+
+        XCTAssertTrue(model.stopForRemoval())
+        XCTAssertNil(Self.hostControlSurface(from: model))
+
+        model.attach(
+            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
+            size: CGSize(width: 120, height: 80)
+        )
+
+        try? await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(runtimeFactoryCalls, 1)
+        XCTAssertNil(Self.hostControlSurface(from: model))
+    }
+
     func testModelReportsRuntimeFailureAndForegroundDisconnectedOnce() {
         enum RuntimeFailure: Error {
             case expected

@@ -184,6 +184,7 @@ final class GhosttySurfaceScreenModel: ObservableObject {
     // Root removal can precede SwiftUI dismantling the old terminal view.
     // Keep the native runtime alive until the removed view reports dismantle.
     private var stoppedRuntimeRemovalHold: GhosttyStoppedRuntimeRemovalHold?
+    private var isStoppedForRemoval = false
 
     init(
         target: TmuxConnectionTarget,
@@ -289,6 +290,12 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     func attach(view: GhosttyKitSurfaceView, size: CGSize) {
         guard size.width > 1, size.height > 1 else { return }
+        guard !isStoppedForRemoval else {
+            GhosttyRuntimeTrace.perf(
+                "model.attach route=blockedRemoval size=\(Int(size.width))x\(Int(size.height))"
+            )
+            return
+        }
 
         let repeatAttachStart = GhosttyRuntimeTrace.nowNanos()
         do {
@@ -376,10 +383,13 @@ final class GhosttySurfaceScreenModel: ObservableObject {
 
     @discardableResult
     func stopForRemoval() -> Bool {
-        stop(
+        isStoppedForRemoval = true
+        let hadRetainedStoppedRuntime = stoppedRuntimeRemovalHold?.isEmpty == false
+        let retainedStoppedRuntime = stop(
             retainStoppedRuntimeUntilModelRelease: true,
             publishModelState: false
         )
+        return hadRetainedStoppedRuntime || retainedStoppedRuntime
     }
 
     @discardableResult
