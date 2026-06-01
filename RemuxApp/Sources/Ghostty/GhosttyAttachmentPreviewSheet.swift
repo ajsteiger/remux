@@ -33,11 +33,12 @@ struct GhosttyAttachmentPreviewSheet: View {
         .fullScreenCover(item: $markupRequest) { request in
             GhosttyAttachmentImageMarkupEditor(
                 imageURL: request.editingURL,
+                outputFormat: request.outputFormat,
                 onCancel: {
                     cancelMarkup(request)
                 },
-                onDone: { annotatedImageData in
-                    saveMarkup(annotatedImageData, request: request)
+                onDone: { result in
+                    saveMarkup(result, request: request)
                 }
             )
         }
@@ -461,10 +462,16 @@ struct GhosttyAttachmentPreviewSheet: View {
             throw GhosttyAttachmentMarkupError.previewUnavailable
         }
 
+        let outputFormat = GhosttyAttachmentImageMarkupOutputFormat.preferred(forFilename: filename)
+
         return GhosttyAttachmentMarkupRequest(
             attachmentID: attachment.id,
             editingURL: editingURL,
-            outputFilename: GhosttyAttachmentImageMarkupRenderer.outputFilename(for: filename)
+            outputFilename: GhosttyAttachmentImageMarkupRenderer.outputFilename(
+                for: filename,
+                outputFormat: outputFormat
+            ),
+            outputFormat: outputFormat
         )
     }
 
@@ -473,15 +480,20 @@ struct GhosttyAttachmentPreviewSheet: View {
         markupRequest = nil
     }
 
-    private func saveMarkup(_ annotatedImageData: Data, request: GhosttyAttachmentMarkupRequest) {
+    private func saveMarkup(
+        _ result: GhosttyAttachmentImageMarkupResult,
+        request: GhosttyAttachmentMarkupRequest
+    ) {
         Task {
             do {
-                async let stagedURLTask = GhosttyAttachmentStagingStore.stageData(
-                    annotatedImageData,
+                let saveStartedAt = GhosttyRuntimeTrace.nowNanos()
+                async let stagedURLTask = stageMarkupData(
+                    result.data,
                     filename: request.outputFilename
                 )
-                async let previewDataTask = GhosttyAttachmentImagePreviewData.makePreviewData(
-                    from: annotatedImageData
+                async let previewDataTask = makeMarkupPreviewData(
+                    from: result.data,
+                    outputFormat: result.outputFormat
                 )
 
                 let stagedURL = try await stagedURLTask
@@ -493,6 +505,7 @@ struct GhosttyAttachmentPreviewSheet: View {
                     throw GhosttyAttachmentMarkupError.previewUnavailable
                 }
 
+                let applyStartedAt = GhosttyRuntimeTrace.nowNanos()
                 await MainActor.run {
                     applyMarkup(
                         request: request,
@@ -500,6 +513,10 @@ struct GhosttyAttachmentPreviewSheet: View {
                         previewData: previewData
                     )
                 }
+                let completedAt = GhosttyRuntimeTrace.nowNanos()
+                GhosttyRuntimeTrace.perf(
+                    "attachment.markup.save format=\(result.outputFormat.traceLabel) bytes=\(result.data.count) save_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: saveStartedAt, to: completedAt)) apply_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: applyStartedAt, to: completedAt)) done_total_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: result.renderStartedAt, to: completedAt)) post_render_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: result.renderCompletedAt, to: completedAt))"
+                )
             } catch {
                 await MainActor.run {
                     GhosttyAttachmentStagingStore.cleanupSynchronously([request.editingURL])
@@ -508,6 +525,27 @@ struct GhosttyAttachmentPreviewSheet: View {
                 }
             }
         }
+    }
+
+    private func stageMarkupData(_ data: Data, filename: String) async throws -> URL {
+        let startedAt = GhosttyRuntimeTrace.nowNanos()
+        let url = try await GhosttyAttachmentStagingStore.stageData(data, filename: filename)
+        GhosttyRuntimeTrace.perf(
+            "attachment.markup.stage bytes=\(data.count) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: startedAt))"
+        )
+        return url
+    }
+
+    private func makeMarkupPreviewData(
+        from data: Data,
+        outputFormat: GhosttyAttachmentImageMarkupOutputFormat
+    ) async -> Data? {
+        let startedAt = GhosttyRuntimeTrace.nowNanos()
+        let previewData = await GhosttyAttachmentImagePreviewData.makePreviewData(from: data)
+        GhosttyRuntimeTrace.perf(
+            "attachment.markup.preview format=\(outputFormat.traceLabel) source_bytes=\(data.count) preview_bytes=\(previewData?.count ?? 0) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: startedAt))"
+        )
+        return previewData
     }
 
     private func applyMarkup(
@@ -545,6 +583,7 @@ private struct GhosttyAttachmentMarkupRequest: Identifiable, Equatable {
     let attachmentID: UUID
     let editingURL: URL
     let outputFilename: String
+    let outputFormat: GhosttyAttachmentImageMarkupOutputFormat
 
     var id: UUID {
         attachmentID

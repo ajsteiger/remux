@@ -1,11 +1,13 @@
 import PencilKit
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct GhosttyAttachmentImageMarkupEditor: View {
     let imageURL: URL
+    let outputFormat: GhosttyAttachmentImageMarkupOutputFormat
     let onCancel: () -> Void
-    let onDone: (Data) -> Void
+    let onDone: (GhosttyAttachmentImageMarkupResult) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var phase: LoadPhase = .loading
@@ -206,12 +208,13 @@ struct GhosttyAttachmentImageMarkupEditor: View {
         isRendering = true
 
         do {
-            let data = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
+            let result = try GhosttyAttachmentImageMarkupRenderer.renderData(
                 baseImage: image,
                 drawing: drawing,
-                documentSize: documentSize
+                documentSize: documentSize,
+                outputFormat: outputFormat
             )
-            onDone(data)
+            onDone(result)
         } catch {
             isRendering = false
             saveFailureMessage = "Annotation could not be saved."
@@ -288,6 +291,58 @@ private extension View {
     }
 }
 
+enum GhosttyAttachmentImageMarkupOutputFormat: Equatable, Sendable {
+    case png
+    case jpeg
+
+    static let jpegCompressionQuality: CGFloat = 0.9
+
+    static func preferred(forFilename filename: String) -> Self {
+        let fileExtension = URL(fileURLWithPath: filename)
+            .pathExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        switch fileExtension {
+        case "png":
+            return .png
+        case "jpg", "jpeg", "heic", "heif":
+            return .jpeg
+        default:
+            guard let contentType = UTType(filenameExtension: fileExtension),
+                  contentType.conforms(to: .jpeg) else {
+                return .png
+            }
+            return .jpeg
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .png:
+            return "png"
+        case .jpeg:
+            return "jpeg"
+        }
+    }
+
+    var traceLabel: String {
+        switch self {
+        case .png:
+            return "png"
+        case .jpeg:
+            return "jpeg"
+        }
+    }
+}
+
+struct GhosttyAttachmentImageMarkupResult {
+    let data: Data
+    let outputFormat: GhosttyAttachmentImageMarkupOutputFormat
+    let renderStartedAt: UInt64
+    let renderCompletedAt: UInt64
+}
+
 enum GhosttyAttachmentImageMarkupRenderer {
     static let maxDocumentLongSide: CGFloat = 1_024
 
@@ -297,7 +352,10 @@ enum GhosttyAttachmentImageMarkupRenderer {
         case encodingFailed
     }
 
-    static func outputFilename(for sourceFilename: String) -> String {
+    static func outputFilename(
+        for sourceFilename: String,
+        outputFormat: GhosttyAttachmentImageMarkupOutputFormat
+    ) -> String {
         let component = sourceFilename
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .split { character in
@@ -309,7 +367,7 @@ enum GhosttyAttachmentImageMarkupRenderer {
             .deletingPathExtension()
             .lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(stem.isEmpty ? "image" : stem)-annotated.png"
+        return "\(stem.isEmpty ? "image" : stem)-annotated.\(outputFormat.fileExtension)"
     }
 
     static func aspectFitRect(imageSize: CGSize, containerSize: CGSize) -> CGRect {
@@ -347,11 +405,13 @@ enum GhosttyAttachmentImageMarkupRenderer {
     }
 
     @MainActor
-    static func renderPNGData(
+    static func renderData(
         baseImage: UIImage,
         drawing: PKDrawing,
-        documentSize: CGSize
-    ) throws -> Data {
+        documentSize: CGSize,
+        outputFormat: GhosttyAttachmentImageMarkupOutputFormat
+    ) throws -> GhosttyAttachmentImageMarkupResult {
+        let totalStartedAt = GhosttyRuntimeTrace.nowNanos()
         guard documentSize.width > 0, documentSize.height > 0 else {
             throw RenderError.invalidDocumentSize
         }
@@ -363,9 +423,10 @@ enum GhosttyAttachmentImageMarkupRenderer {
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = max(baseImage.scale, 1)
-        format.opaque = false
+        format.opaque = outputFormat == .jpeg
 
         let renderer = UIGraphicsImageRenderer(size: imageSize, format: format)
+        let compositeStartedAt = GhosttyRuntimeTrace.nowNanos()
         let renderedImage = renderer.image { context in
             baseImage.draw(in: CGRect(origin: .zero, size: imageSize))
 
@@ -378,11 +439,34 @@ enum GhosttyAttachmentImageMarkupRenderer {
             }
             drawingImage?.draw(in: CGRect(origin: .zero, size: imageSize))
         }
+        let compositeCompletedAt = GhosttyRuntimeTrace.nowNanos()
 
-        guard let data = renderedImage.pngData(), !data.isEmpty else {
+        let encodeStartedAt = GhosttyRuntimeTrace.nowNanos()
+        let data: Data?
+        switch outputFormat {
+        case .png:
+            data = renderedImage.pngData()
+        case .jpeg:
+            data = renderedImage.jpegData(
+                compressionQuality: GhosttyAttachmentImageMarkupOutputFormat.jpegCompressionQuality
+            )
+        }
+        let encodeCompletedAt = GhosttyRuntimeTrace.nowNanos()
+
+        guard let data, !data.isEmpty else {
             throw RenderError.encodingFailed
         }
-        return data
+
+        GhosttyRuntimeTrace.perf(
+            "attachment.markup.render format=\(outputFormat.traceLabel) bytes=\(data.count) image_px=\(Int(imageSize.width))x\(Int(imageSize.height)) document_px=\(Int(documentSize.width))x\(Int(documentSize.height)) composite_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: compositeStartedAt, to: compositeCompletedAt)) encode_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: encodeStartedAt, to: encodeCompletedAt)) total_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: totalStartedAt, to: encodeCompletedAt))"
+        )
+
+        return GhosttyAttachmentImageMarkupResult(
+            data: data,
+            outputFormat: outputFormat,
+            renderStartedAt: totalStartedAt,
+            renderCompletedAt: encodeCompletedAt
+        )
     }
 }
 

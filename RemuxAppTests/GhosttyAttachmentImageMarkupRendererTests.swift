@@ -4,14 +4,43 @@ import XCTest
 @testable import Remux
 
 final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
-    func testOutputFilenameUsesAnnotatedPNGName() {
+    func testOutputFilenameUsesSelectedFormatExtension() {
         XCTAssertEqual(
-            GhosttyAttachmentImageMarkupRenderer.outputFilename(for: "../Screenshot.jpeg"),
-            "Screenshot-annotated.png"
+            GhosttyAttachmentImageMarkupRenderer.outputFilename(
+                for: "../Screenshot.jpeg",
+                outputFormat: .jpeg
+            ),
+            "Screenshot-annotated.jpeg"
         )
         XCTAssertEqual(
-            GhosttyAttachmentImageMarkupRenderer.outputFilename(for: "   "),
+            GhosttyAttachmentImageMarkupRenderer.outputFilename(
+                for: "   ",
+                outputFormat: .png
+            ),
             "image-annotated.png"
+        )
+    }
+
+    func testPreferredOutputFormatPreservesPNGAndUsesJPEGForPhotoFormats() {
+        XCTAssertEqual(
+            GhosttyAttachmentImageMarkupOutputFormat.preferred(forFilename: "terminal.png"),
+            .png
+        )
+        XCTAssertEqual(
+            GhosttyAttachmentImageMarkupOutputFormat.preferred(forFilename: "photo.jpg"),
+            .jpeg
+        )
+        XCTAssertEqual(
+            GhosttyAttachmentImageMarkupOutputFormat.preferred(forFilename: "photo.jpeg"),
+            .jpeg
+        )
+        XCTAssertEqual(
+            GhosttyAttachmentImageMarkupOutputFormat.preferred(forFilename: "photo.heic"),
+            .jpeg
+        )
+        XCTAssertEqual(
+            GhosttyAttachmentImageMarkupOutputFormat.preferred(forFilename: "attachment"),
+            .png
         )
     }
 
@@ -50,13 +79,33 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         let baseImage = try makeImage(width: 80, height: 60)
         let drawing = makeDrawing(color: .red)
 
-        let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
+        let output = try GhosttyAttachmentImageMarkupRenderer.renderData(
             baseImage: baseImage,
             drawing: drawing,
-            documentSize: CGSize(width: 80, height: 60)
-        )
+            documentSize: CGSize(width: 80, height: 60),
+            outputFormat: .png
+        ).data
 
         XCTAssertFalse(output.isEmpty)
+        XCTAssertTrue(output.starts(with: Data([0x89, 0x50, 0x4E, 0x47])))
+        XCTAssertNotNil(UIImage(data: output))
+        XCTAssertNotNil(GhosttyAttachmentImagePreviewData.makePreviewDataSynchronously(from: output))
+    }
+
+    @MainActor
+    func testRenderDataCanEncodeJPEGOutput() throws {
+        let baseImage = try makeImage(width: 80, height: 60)
+        let drawing = makeDrawing(color: .red)
+
+        let output = try GhosttyAttachmentImageMarkupRenderer.renderData(
+            baseImage: baseImage,
+            drawing: drawing,
+            documentSize: CGSize(width: 80, height: 60),
+            outputFormat: .jpeg
+        ).data
+
+        XCTAssertFalse(output.isEmpty)
+        XCTAssertTrue(output.starts(with: Data([0xFF, 0xD8])))
         XCTAssertNotNil(UIImage(data: output))
         XCTAssertNotNil(GhosttyAttachmentImagePreviewData.makePreviewDataSynchronously(from: output))
     }
@@ -66,11 +115,12 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         let baseImage = try makeImage(width: 80, height: 60, fill: .black)
         let drawing = makeHorizontalDrawing(color: .white, width: 22)
 
-        let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
+        let output = try GhosttyAttachmentImageMarkupRenderer.renderData(
             baseImage: baseImage,
             drawing: drawing,
-            documentSize: CGSize(width: 80, height: 60)
-        )
+            documentSize: CGSize(width: 80, height: 60),
+            outputFormat: .png
+        ).data
 
         let pixel = try brightestPixel(from: output, in: CGRect(x: 20, y: 20, width: 40, height: 20))
         XCTAssertGreaterThan(pixel.red, 0.82)
@@ -84,11 +134,12 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
         let baseImage = try makeTransparentImage(width: 80, height: 60)
         let drawing = makeHorizontalDrawing(color: .white, width: 12)
 
-        let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
+        let output = try GhosttyAttachmentImageMarkupRenderer.renderData(
             baseImage: baseImage,
             drawing: drawing,
-            documentSize: CGSize(width: 80, height: 60)
-        )
+            documentSize: CGSize(width: 80, height: 60),
+            outputFormat: .png
+        ).data
 
         XCTAssertLessThan(try renderedPixel(from: output, x: 2, y: 2).alpha, 0.05)
         XCTAssertLessThan(try renderedPixel(from: output, x: 2, y: 57).alpha, 0.05)
@@ -107,11 +158,12 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
             endX: 40
         )
 
-        let output = try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
+        let output = try GhosttyAttachmentImageMarkupRenderer.renderData(
             baseImage: baseImage,
             drawing: drawing,
-            documentSize: CGSize(width: 50, height: 50)
-        )
+            documentSize: CGSize(width: 50, height: 50),
+            outputFormat: .png
+        ).data
 
         let pixel = try brightestPixel(from: output, in: CGRect(x: 25, y: 45, width: 55, height: 10))
         XCTAssertGreaterThan(pixel.red, 0.82)
@@ -123,10 +175,11 @@ final class GhosttyAttachmentImageMarkupRendererTests: XCTestCase {
     @MainActor
     func testRenderPNGDataRejectsInvalidDocumentSize() throws {
         XCTAssertThrowsError(
-            try GhosttyAttachmentImageMarkupRenderer.renderPNGData(
+            try GhosttyAttachmentImageMarkupRenderer.renderData(
                 baseImage: try makeImage(width: 80, height: 60),
                 drawing: PKDrawing(),
-                documentSize: .zero
+                documentSize: .zero,
+                outputFormat: .png
             )
         ) { error in
             XCTAssertEqual(
