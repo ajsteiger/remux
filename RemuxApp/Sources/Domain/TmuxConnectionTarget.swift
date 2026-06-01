@@ -168,6 +168,7 @@ struct SSHHostKeyChange: Equatable, Sendable {
 struct TerminalDisconnectReason: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
         case transportIO
+        case serverUnreachable
         case authentication
         case hostKey
         case profile
@@ -195,7 +196,8 @@ struct TerminalDisconnectReason: Equatable, Sendable {
         switch kind {
         case .transportIO:
             true
-        case .authentication,
+        case .serverUnreachable,
+             .authentication,
              .hostKey,
              .profile,
              .remoteExit,

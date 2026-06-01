@@ -1,4 +1,5 @@
 import XCTest
+import NIOCore
 @testable import Remux
 
 final class GhosttyTerminalDisconnectReasonClassifierTests: XCTestCase {
@@ -90,6 +91,14 @@ final class GhosttyTerminalDisconnectReasonClassifierTests: XCTestCase {
                 message
             )
         }
+    }
+
+    func testTransportStartFailureMapsConnectTimeoutAsServerUnreachable() {
+        let reason = GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(
+            ChannelError.connectTimeout(.seconds(30))
+        )
+
+        XCTAssertEqual(reason.kind, .serverUnreachable)
     }
 
     func testTransportStartFailureMapsUnknownFallback() {

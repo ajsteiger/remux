@@ -1,4 +1,6 @@
 import Foundation
+import NIOCore
+import NIOPosix
 
 struct GhosttyTerminalTransportCompletionClassification: Equatable, Sendable {
     let reason: TerminalDisconnectReason
@@ -15,6 +17,10 @@ enum GhosttyTerminalDisconnectReasonClassifier {
 
     static func transportStartFailure(_ error: any Error) -> TerminalDisconnectReason {
         let message = String(describing: error)
+
+        if isServerUnreachable(error) {
+            return TerminalDisconnectReason(kind: .serverUnreachable, message: message)
+        }
 
         if let trustedHostError = error as? TrustedHostStoreError {
             switch trustedHostError {
@@ -52,6 +58,19 @@ enum GhosttyTerminalDisconnectReasonClassifier {
         }
 
         return TerminalDisconnectReason(kind: .unknown, message: message)
+    }
+
+    private static func isServerUnreachable(_ error: any Error) -> Bool {
+        if error is NIOConnectionError {
+            return true
+        }
+
+        if let channelError = error as? ChannelError,
+           case .connectTimeout = channelError {
+            return true
+        }
+
+        return false
     }
 
     static func transportWriteFailure(_ error: any Error) -> TerminalDisconnectReason {
