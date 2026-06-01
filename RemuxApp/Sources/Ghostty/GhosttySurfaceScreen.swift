@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import CoreTransferable
+import Crypto
 import GhosttyKit
 import PhotosUI
 import UniformTypeIdentifiers
@@ -2176,7 +2177,7 @@ private struct GhosttySurfaceStatusOverlay: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(reason?.kind == .authentication ? .orange : .red)
 
-                Text(message)
+                Text(displayMessage(for: reason, fallback: message))
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.76))
                     .fixedSize(horizontal: false, vertical: true)
@@ -2263,6 +2264,41 @@ private struct GhosttySurfaceStatusOverlay: View {
         }
 
         return "Disconnected"
+    }
+
+    private func displayMessage(for reason: TerminalDisconnectReason?, fallback: String) -> String {
+        if let change = reason?.hostKeyChange {
+            let keyDetail = hostKeyDetail(for: change)
+            return "The SSH host key for \(change.host) changed. \(keyDetail) Update trust only if this matches the server you expect."
+        }
+
+        if reason?.kind == .authentication {
+            return "The saved credentials were rejected. Update them to retry this session."
+        }
+
+        if reason?.kind == .serverUnreachable {
+            return "Remux could not reach the server. Check the address, port, network, or VPN."
+        }
+
+        return fallback
+    }
+
+    private func hostKeyDetail(for change: SSHHostKeyChange) -> String {
+        guard let fingerprint = hostKeyFingerprint(change.receivedOpenSSHPublicKey) else {
+            return "Received key: \(change.receivedKeyType)."
+        }
+
+        return "Received key: \(change.receivedKeyType) \(fingerprint)."
+    }
+
+    private func hostKeyFingerprint(_ openSSHPublicKey: String) -> String? {
+        let parts = openSSHPublicKey.split(separator: " ", maxSplits: 2)
+        guard parts.count >= 2, let blob = Data(base64Encoded: String(parts[1])) else {
+            return nil
+        }
+
+        let digest = Data(SHA256.hash(data: blob))
+        return "SHA256:\(digest.base64EncodedString().trimmingCharacters(in: CharacterSet(charactersIn: "=")))"
     }
 }
 
