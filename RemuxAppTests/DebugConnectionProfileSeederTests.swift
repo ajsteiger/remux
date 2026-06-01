@@ -55,7 +55,7 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
     func testSeedPersistsPrivateKeyProfileAndCredential() async throws {
         let repository = InMemoryConnectionProfileRepository()
         let credentialStore = InMemorySSHCredentialStore()
-        let generated = SSHPrivateKeyInspector.generateEd25519()
+        let inspection = try SSHPrivateKeyInspector.inspect(Self.ed25519Key)
 
         let seeded = try await DebugConnectionProfileSeeder.seedIfRequested(
             environment: [
@@ -64,7 +64,7 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
                 "REMUX_DEBUG_SERVER_HOST": "server.example.com",
                 "REMUX_DEBUG_SERVER_PORT": "22",
                 "REMUX_DEBUG_SERVER_USERNAME": "demo",
-                "REMUX_DEBUG_PRIVATE_KEY": generated.privateKeyPEM,
+                "REMUX_DEBUG_PRIVATE_KEY": Self.ed25519Key,
                 "REMUX_DEBUG_PRIVATE_KEY_PASSPHRASE": "debug-passphrase",
                 "REMUX_DEBUG_TMUX_SESSION": "base",
             ],
@@ -80,17 +80,27 @@ final class DebugConnectionProfileSeederTests: XCTestCase {
         XCTAssertTrue(seeded)
         XCTAssertEqual(identity.name, "Example Server")
         XCTAssertEqual(identity.authenticationKind, .privateKey)
-        XCTAssertEqual(identity.publicFingerprint, generated.publicFingerprint)
+        XCTAssertEqual(identity.publicFingerprint, inspection.publicFingerprint)
         XCTAssertEqual(
             credential,
             .privateKey(
                 SSHPrivateKeyCredential(
-                    privateKeyPEM: generated.privateKeyPEM,
+                    privateKeyPEM: Self.ed25519Key,
                     passphrase: "debug-passphrase"
                 )
             )
         )
     }
+
+    private static let ed25519Key = """
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+    QyNTUxOQAAACA6y4Nl6dWkC0PdxZrJ6S7aYcmBpy9RytK9V0Xz7eIwVQAAAJj3zGE298xh
+    NgAAAAtzc2gtZWQyNTUxOQAAACA6y4Nl6dWkC0PdxZrJ6S7aYcmBpy9RytK9V0Xz7eIwVQ
+    AAAEB6gaBHbjL56VCVbX8Es1jVLdoaQnikXUxM3SAV105ghzrLg2Xp1aQLQ93FmsnpLtph
+    yYGnL1HK0r1XRfPt4jBVAAAAEnJlbXV4LXRlc3QtZml4dHVyZQECAw==
+    -----END OPENSSH PRIVATE KEY-----
+    """
 
 }
 

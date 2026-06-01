@@ -126,9 +126,8 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
 
     func testValidPrivateKeyDraftProducesPrivateKeyCredential() {
         var draft = validServerDraft()
-        let generated = SSHPrivateKeyInspector.generateEd25519(comment: "validator-test")
         draft.authenticationKind = .privateKey
-        draft.privateKeyPEM = generated.privateKeyPEM
+        draft.privateKeyPEM = Self.ed25519Key
         draft.password = ""
 
         let result = TmuxConnectionDraftValidator.validateServer(
@@ -143,7 +142,7 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
 
         XCTAssertEqual(
             submission.credential,
-            .privateKey(SSHPrivateKeyCredential(privateKeyPEM: generated.privateKeyPEM))
+            .privateKey(SSHPrivateKeyCredential(privateKeyPEM: Self.ed25519Key))
         )
     }
 
@@ -253,6 +252,16 @@ final class TmuxConnectionDraftValidatorTests: XCTestCase {
     iLGRTczk+WQycDp1YidTw8kH9IwJle5ulywHf+5iLCVaolx8vYErJfKsJ1DRRx0qMzZObI
     AHd8pT6MnuDISadNzI+lZgn1dbCZ6/aWPVFO3pFpmREscRgolzFcvSOtLiT/5U1wWUhwPo
     KGvU4Tmf5I5hGQCbKhx4g4z7aJfILg2ErdGPQ=
+    -----END OPENSSH PRIVATE KEY-----
+    """
+
+    private static let ed25519Key = """
+    -----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+    QyNTUxOQAAACA6y4Nl6dWkC0PdxZrJ6S7aYcmBpy9RytK9V0Xz7eIwVQAAAJj3zGE298xh
+    NgAAAAtzc2gtZWQyNTUxOQAAACA6y4Nl6dWkC0PdxZrJ6S7aYcmBpy9RytK9V0Xz7eIwVQ
+    AAAEB6gaBHbjL56VCVbX8Es1jVLdoaQnikXUxM3SAV105ghzrLg2Xp1aQLQ93FmsnpLtph
+    yYGnL1HK0r1XRfPt4jBVAAAAEnJlbXV4LXRlc3QtZml4dHVyZQECAw==
     -----END OPENSSH PRIVATE KEY-----
     """
 }
