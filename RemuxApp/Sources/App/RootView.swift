@@ -1666,7 +1666,7 @@ private struct ConnectionSetupView: View {
     private var sessionSectionFooter: String {
         switch mode {
         case .newServer:
-            "A tmux session groups your windows and panes. You can create more later."
+            "Created or attached after the connection succeeds."
         case .newWorkspace:
             "Names a tmux session on this server. Reuse a name to attach to an existing session."
         case .editWorkspace:
