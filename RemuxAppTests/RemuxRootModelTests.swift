@@ -771,6 +771,46 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(mode, .editServer(server.id, reconnectWorkspaceID: workspace.id))
     }
 
+    func testServerRepairReconnectsOriginalWorkspaceWithoutDuplication() async throws {
+        let passwordBackedServer = makePasswordBackedServer()
+        let server = passwordBackedServer.server
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            identities: [passwordBackedServer.identity]
+        )
+        try await harness.credentialStore.saveCredential(
+            .password("demo-password"),
+            identityID: passwordBackedServer.identity.id
+        )
+        await harness.model.load()
+
+        await harness.model.beginServerRepair(for: workspace.id)
+        harness.model.updateDraft { draft in
+            draft.host = "reachable.example.test"
+        }
+
+        await harness.model.saveAndConnect()
+
+        guard
+            case .terminal(let activeWorkspaceID) = harness.model.state,
+            let activeSession = harness.model.activeSessions.first
+        else {
+            XCTFail("expected terminal state")
+            return
+        }
+
+        XCTAssertEqual(activeWorkspaceID, workspace.id)
+        XCTAssertEqual(activeSession.target.workspace.id, workspace.id)
+        XCTAssertEqual(activeSession.target.workspace.sessionName, workspace.sessionName)
+        XCTAssertEqual(activeSession.target.server.host, "reachable.example.test")
+
+        let snapshot = try await harness.profileRepository.loadSnapshot()
+        XCTAssertEqual(snapshot.workspaces.map(\.id), [workspace.id])
+        XCTAssertEqual(snapshot.servers.map(\.host), ["reachable.example.test"])
+    }
+
     func testBeginEditWorkspaceUsesSessionScopedEditing() async throws {
         let passwordBackedServer = makePasswordBackedServer()
         let server = passwordBackedServer.server
