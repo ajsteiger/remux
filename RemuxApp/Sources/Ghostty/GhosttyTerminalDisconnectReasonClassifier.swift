@@ -24,7 +24,7 @@ enum GhosttyTerminalDisconnectReasonClassifier {
                     message: message,
                     hostKeyChange: change
                 )
-            case .invalidHostKey:
+            case .staleHostKeyChange, .invalidHostKey:
                 return TerminalDisconnectReason(kind: .hostKey, message: message)
             }
         }
