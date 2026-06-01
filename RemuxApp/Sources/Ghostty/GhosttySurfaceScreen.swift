@@ -68,6 +68,7 @@ struct GhosttySurfaceScreen: View {
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
     private let onUpdateCredentials: () -> Void
+    private let onEditServer: () -> Void
     private let onTrustChangedHostKey: () -> Void
     private let attachmentTransferServiceFactory: @Sendable () -> any GhosttyAttachmentTransferService
     private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
@@ -84,6 +85,7 @@ struct GhosttySurfaceScreen: View {
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void,
         onUpdateCredentials: @escaping () -> Void,
+        onEditServer: @escaping () -> Void,
         onTrustChangedHostKey: @escaping () -> Void,
         onMount: @escaping (GhosttyTerminalScreenViewComponent) -> Void,
         onDismantle: @escaping (GhosttyTerminalScreenViewComponent) -> Void
@@ -96,6 +98,7 @@ struct GhosttySurfaceScreen: View {
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
         self.onUpdateCredentials = onUpdateCredentials
+        self.onEditServer = onEditServer
         self.onTrustChangedHostKey = onTrustChangedHostKey
         self.onMount = onMount
         self.onDismantle = onDismantle
@@ -250,6 +253,7 @@ struct GhosttySurfaceScreen: View {
                             projection: screenProjection.statusOverlay,
                             onReconnect: onReconnect,
                             onUpdateCredentials: onUpdateCredentials,
+                            onEditServer: onEditServer,
                             onCancel: onEditConnection,
                             onTrustChangedHostKey: onTrustChangedHostKey
                         )
@@ -2116,6 +2120,7 @@ private struct GhosttySurfaceStatusOverlay: View {
     let projection: GhosttyTerminalStatusOverlayProjection
     let onReconnect: () -> Void
     let onUpdateCredentials: () -> Void
+    let onEditServer: () -> Void
     let onCancel: () -> Void
     let onTrustChangedHostKey: () -> Void
 
@@ -2205,6 +2210,25 @@ private struct GhosttySurfaceStatusOverlay: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .accessibilityIdentifier("terminal.status.auth.updateCredentials")
+                } else if reason?.kind == .serverUnreachable {
+                    HStack(spacing: 8) {
+                        Button {
+                            onReconnect()
+                        } label: {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("terminal.status.unreachable.retry")
+
+                        Button("Edit Server") {
+                            onEditServer()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .accessibilityIdentifier("terminal.status.unreachable.editServer")
+                    }
                 } else {
                     Button {
                         onReconnect()
@@ -2232,6 +2256,10 @@ private struct GhosttySurfaceStatusOverlay: View {
 
         if reason?.kind == .authentication {
             return "Authentication Failed"
+        }
+
+        if reason?.kind == .serverUnreachable {
+            return "Server Unreachable"
         }
 
         return "Disconnected"
