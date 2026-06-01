@@ -1470,9 +1470,9 @@ private struct ConnectionSetupView: View {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button {
-                    handleKeyboardAdvance()
+                    dismissKeyboard()
                 } label: {
-                    Text(keyboardAdvanceLabel)
+                    Text("Done")
                         .fontWeight(.semibold)
                 }
             }
@@ -1486,21 +1486,6 @@ private struct ConnectionSetupView: View {
     }
 
     @State private var isPrivateKeyImporterPresented = false
-
-    private var keyboardAdvanceLabel: String {
-        guard let focusedField, nextField(after: focusedField) != nil else {
-            return "Done"
-        }
-        return "Next"
-    }
-
-    private func handleKeyboardAdvance() {
-        if let focusedField {
-            advance(from: focusedField)
-        } else {
-            focusedField = nil
-        }
-    }
 
     private func advance(from field: Field) {
         if let next = nextField(after: field) {
