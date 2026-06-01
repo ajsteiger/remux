@@ -67,6 +67,7 @@ struct GhosttySurfaceScreen: View {
 
     private let onReconnect: () -> Void
     private let onEditConnection: () -> Void
+    private let onUpdateCredentials: () -> Void
     private let onTrustChangedHostKey: () -> Void
     private let attachmentTransferServiceFactory: @Sendable () -> any GhosttyAttachmentTransferService
     private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
@@ -82,6 +83,7 @@ struct GhosttySurfaceScreen: View {
         attachmentTransferServiceFactory: @escaping @Sendable () -> any GhosttyAttachmentTransferService,
         onReconnect: @escaping () -> Void,
         onEditConnection: @escaping () -> Void,
+        onUpdateCredentials: @escaping () -> Void,
         onTrustChangedHostKey: @escaping () -> Void,
         onMount: @escaping (GhosttyTerminalScreenViewComponent) -> Void,
         onDismantle: @escaping (GhosttyTerminalScreenViewComponent) -> Void
@@ -93,6 +95,7 @@ struct GhosttySurfaceScreen: View {
         self.attachmentTransferServiceFactory = attachmentTransferServiceFactory
         self.onReconnect = onReconnect
         self.onEditConnection = onEditConnection
+        self.onUpdateCredentials = onUpdateCredentials
         self.onTrustChangedHostKey = onTrustChangedHostKey
         self.onMount = onMount
         self.onDismantle = onDismantle
@@ -246,6 +249,7 @@ struct GhosttySurfaceScreen: View {
                         GhosttySurfaceStatusOverlay(
                             projection: screenProjection.statusOverlay,
                             onReconnect: onReconnect,
+                            onUpdateCredentials: onUpdateCredentials,
                             onCancel: onEditConnection,
                             onTrustChangedHostKey: onTrustChangedHostKey
                         )
@@ -2111,6 +2115,7 @@ struct GhosttySoftwareKeyboardVisibility {
 private struct GhosttySurfaceStatusOverlay: View {
     let projection: GhosttyTerminalStatusOverlayProjection
     let onReconnect: () -> Void
+    let onUpdateCredentials: () -> Void
     let onCancel: () -> Void
     let onTrustChangedHostKey: () -> Void
 
@@ -2162,26 +2167,16 @@ private struct GhosttySurfaceStatusOverlay: View {
 
         case .failed(let message, let reason):
             VStack(alignment: .leading, spacing: 8) {
-                Text(reason?.hostKeyChange == nil ? "Disconnected" : "Host Key Changed")
+                Text(title(for: reason))
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(reason?.kind == .authentication ? .orange : .red)
 
                 Text(message)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(Color.white.opacity(0.76))
                     .fixedSize(horizontal: false, vertical: true)
 
-                if reason?.hostKeyChange == nil {
-                    Button {
-                        onReconnect()
-                    } label: {
-                        Label("Reconnect", systemImage: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityIdentifier("terminal.status.reconnect")
-                } else {
+                if reason?.hostKeyChange != nil {
                     HStack(spacing: 8) {
                         Button("Cancel") {
                             onCancel()
@@ -2200,6 +2195,26 @@ private struct GhosttySurfaceStatusOverlay: View {
                         .controlSize(.small)
                         .accessibilityIdentifier("terminal.status.hostKey.updateTrust")
                     }
+                } else if reason?.kind == .authentication {
+                    Button {
+                        onUpdateCredentials()
+                    } label: {
+                        Label("Update Credentials", systemImage: "key")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("terminal.status.auth.updateCredentials")
+                } else {
+                    Button {
+                        onReconnect()
+                    } label: {
+                        Label("Reconnect", systemImage: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("terminal.status.reconnect")
                 }
             }
             .padding(10)
@@ -2208,6 +2223,18 @@ private struct GhosttySurfaceStatusOverlay: View {
             .padding(10)
             .accessibilityIdentifier("terminal.status.failed")
         }
+    }
+
+    private func title(for reason: TerminalDisconnectReason?) -> String {
+        if reason?.hostKeyChange != nil {
+            return "Host Key Changed"
+        }
+
+        if reason?.kind == .authentication {
+            return "Authentication Failed"
+        }
+
+        return "Disconnected"
     }
 }
 

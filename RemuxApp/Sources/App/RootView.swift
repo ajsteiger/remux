@@ -117,6 +117,11 @@ private struct RemuxWorkspaceShell: View {
                     onReconnect: {
                         model.reconnectActiveSession(entry.id, source: .manualButton)
                     },
+                    onUpdateCredentials: {
+                        Task {
+                            await model.beginCredentialRepair(for: entry.id)
+                        }
+                    },
                     onTrustChangedHostKey: {
                         model.trustChangedHostKeyAndReconnect(entry.id)
                     },
@@ -279,6 +284,7 @@ private struct ActiveTerminalSessionView: View {
     let isSelected: Bool
     let shortcutStore: ShortcutStore
     let onReconnect: () -> Void
+    let onUpdateCredentials: () -> Void
     let onTrustChangedHostKey: () -> Void
     let onShowLibrary: () -> Void
     let onMount: (GhosttyTerminalScreenViewComponent) -> Void
@@ -293,6 +299,7 @@ private struct ActiveTerminalSessionView: View {
             attachmentTransferServiceFactory: entry.attachmentTransferServiceFactory,
             onReconnect: onReconnect,
             onEditConnection: onShowLibrary,
+            onUpdateCredentials: onUpdateCredentials,
             onTrustChangedHostKey: onTrustChangedHostKey,
             onMount: onMount,
             onDismantle: onDismantle
