@@ -428,6 +428,29 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         XCTAssertEqual(surface.backingExited, [true])
     }
 
+    func testHostTransportBridgeStopCanInvalidateTransport() async {
+        let transport = RecordingTmuxControlTransport()
+        let surface = RecordingGhosttyControlSurface()
+        let bridge = GhosttyHostTransportBridge(
+            transport: transport,
+            onDebugEvent: { _ in },
+            onCompletion: { _ in },
+            onWriteFailure: { _ in }
+        )
+        bridge.bind(surface: surface)
+        bridge.startPump()
+
+        bridge.stop(closeDisposition: .invalidated)
+
+        let didClose = await waitUntilAsync {
+            await transport.closeDispositions() == [.invalidated]
+        }
+
+        XCTAssertTrue(didClose)
+        XCTAssertFalse(bridge.manualWriteHandler(Data("send-keys -t %1 a\n".utf8), false))
+        XCTAssertEqual(surface.backingExited, [true])
+    }
+
     func testHostTransportBridgeStopCanRetainHostSurfaceWithoutBackingExit() async {
         let transport = RecordingTmuxControlTransport()
         let surface = RecordingGhosttyControlSurface()

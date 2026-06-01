@@ -68,7 +68,8 @@ final class GhosttyTerminalHostSessionSlot {
     @discardableResult
     func stopCurrent<T>(
         retainingStoppedSessionFor teardown: () -> T,
-        retainingHostSurfaceUntilSessionRelease: Bool = false
+        retainingHostSurfaceUntilSessionRelease: Bool = false,
+        closeDisposition: TmuxControlTransportCloseDisposition = .reusable
     ) -> (
         session: GhosttyHostSession?,
         teardownResult: T
@@ -78,7 +79,8 @@ final class GhosttyTerminalHostSessionSlot {
         }
 
         session.stop(
-            retainingControlSurfaceUntilSessionRelease: retainingHostSurfaceUntilSessionRelease
+            retainingControlSurfaceUntilSessionRelease: retainingHostSurfaceUntilSessionRelease,
+            closeDisposition: closeDisposition
         )
         let result = teardown()
         current = nil

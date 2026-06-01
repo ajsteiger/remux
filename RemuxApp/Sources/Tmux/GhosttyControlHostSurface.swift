@@ -425,7 +425,10 @@ final class GhosttyControlHostSurface {
         complete(error: error, markBackingExited: false, notifyDebugEvent: false)
     }
 
-    func stop(markBackingExited: Bool = true) {
+    func stop(
+        markBackingExited: Bool = true,
+        closeDisposition: TmuxControlTransportCloseDisposition = .reusable
+    ) {
         pumpTask?.cancel()
         pumpTask = nil
         isRunning = false
@@ -435,7 +438,7 @@ final class GhosttyControlHostSurface {
         }
 
         Task { [transport] in
-            await transport.close(disposition: .reusable)
+            await transport.close(disposition: closeDisposition)
         }
     }
 

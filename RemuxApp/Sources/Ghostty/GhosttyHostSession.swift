@@ -102,10 +102,16 @@ final class GhosttyHostSession {
         try runtime.applyTerminalSettings(settings)
     }
 
-    func stop(retainingControlSurfaceUntilSessionRelease: Bool = false) {
+    func stop(
+        retainingControlSurfaceUntilSessionRelease: Bool = false,
+        closeDisposition: TmuxControlTransportCloseDisposition = .reusable
+    ) {
         isStopped = true
         transportStartGeneration &+= 1
-        bridge.stop(retainingHostSurfaceUntilRelease: retainingControlSurfaceUntilSessionRelease)
+        bridge.stop(
+            retainingHostSurfaceUntilRelease: retainingControlSurfaceUntilSessionRelease,
+            closeDisposition: closeDisposition
+        )
         if !retainingControlSurfaceUntilSessionRelease {
             controlSurface = nil
         }

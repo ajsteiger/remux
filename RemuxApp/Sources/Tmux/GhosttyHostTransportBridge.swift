@@ -91,9 +91,15 @@ final class GhosttyHostTransportBridge: @unchecked Sendable {
     }
 
     @MainActor
-    func stop(retainingHostSurfaceUntilRelease: Bool = false) {
+    func stop(
+        retainingHostSurfaceUntilRelease: Bool = false,
+        closeDisposition: TmuxControlTransportCloseDisposition = .reusable
+    ) {
         writeSequencer.close()
-        hostSurface?.stop(markBackingExited: !retainingHostSurfaceUntilRelease)
+        hostSurface?.stop(
+            markBackingExited: !retainingHostSurfaceUntilRelease,
+            closeDisposition: closeDisposition
+        )
         if !retainingHostSurfaceUntilRelease {
             hostSurface = nil
         }
