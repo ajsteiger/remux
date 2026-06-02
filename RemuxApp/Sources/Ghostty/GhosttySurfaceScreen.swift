@@ -950,15 +950,13 @@ struct GhosttySurfaceScreen: View {
         case .securityScopedSourceUnavailable:
             return "File needs to be selected again."
         case .remoteDirectoryCreationFailed:
-            return "Could not create upload folder."
+            return "Server could not create the upload folder."
         case .uploadFailed, .remoteRenameFailed:
-            return "Attachment upload failed."
+            return "Server could not save the attachment."
         case .remoteOperationTimedOut:
-            return "Attachment upload timed out."
-        case .remoteTemporaryCleanupFailed, .cancellationCleanupFailed:
-            return "Upload cleanup failed."
+            return "Connection stalled while uploading. Check network or VPN."
         case .remotePathResolutionFailed:
-            return "Attachment path failed."
+            return "Remux could not start the upload. Try again."
         case .cancelled:
             return "Attachment send cancelled."
         case .terminalInsertionFailed:

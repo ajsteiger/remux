@@ -151,8 +151,6 @@ enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
     case remoteOperationTimedOut
     case uploadFailed(remotePath: String)
     case remoteRenameFailed(from: String, to: String)
-    case remoteTemporaryCleanupFailed(remotePath: String)
-    case cancellationCleanupFailed(remotePath: String)
     case cancelled
     case terminalInsertionFailed
 }
@@ -515,17 +513,12 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
                 }
             )
         } catch is CancellationError {
-            try await cleanupAfterCancellation(remotePath.remoteTemporaryPath)
+            await cleanupTemporaryFileIfPossible(at: remotePath.remoteTemporaryPath)
             throw GhosttyAttachmentTransferError.cancelled
         } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
             throw GhosttyAttachmentTransferError.remoteOperationTimedOut
         } catch {
-            try await cleanupTemporaryFile(
-                at: remotePath.remoteTemporaryPath,
-                cleanupFailure: .remoteTemporaryCleanupFailed(
-                    remotePath: remotePath.remoteTemporaryPath
-                )
-            )
+            await cleanupTemporaryFileIfPossible(at: remotePath.remoteTemporaryPath)
             throw GhosttyAttachmentTransferError.uploadFailed(
                 remotePath: remotePath.remoteTemporaryPath
             )
@@ -537,17 +530,12 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
                 to: remotePath.remoteFinalPath
             )
         } catch is CancellationError {
-            try await cleanupAfterCancellation(remotePath.remoteTemporaryPath)
+            await cleanupTemporaryFileIfPossible(at: remotePath.remoteTemporaryPath)
             throw GhosttyAttachmentTransferError.cancelled
         } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
             throw GhosttyAttachmentTransferError.remoteOperationTimedOut
         } catch {
-            try await cleanupTemporaryFile(
-                at: remotePath.remoteTemporaryPath,
-                cleanupFailure: .remoteTemporaryCleanupFailed(
-                    remotePath: remotePath.remoteTemporaryPath
-                )
-            )
+            await cleanupTemporaryFileIfPossible(at: remotePath.remoteTemporaryPath)
             throw GhosttyAttachmentTransferError.remoteRenameFailed(
                 from: remotePath.remoteTemporaryPath,
                 to: remotePath.remoteFinalPath
@@ -564,23 +552,15 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         }
     }
 
-    private func cleanupAfterCancellation(_ remotePath: String) async throws {
-        try await cleanupTemporaryFile(
-            at: remotePath,
-            cleanupFailure: .cancellationCleanupFailed(remotePath: remotePath)
-        )
-    }
-
-    private func cleanupTemporaryFile(
-        at remotePath: String,
-        cleanupFailure: GhosttyAttachmentTransferError
-    ) async throws {
+    private func cleanupTemporaryFileIfPossible(at remotePath: String) async {
         do {
             try await client.removeFileIfExists(atPath: remotePath)
-        } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
-            throw GhosttyAttachmentTransferError.remoteOperationTimedOut
         } catch {
-            throw cleanupFailure
+            NSLog(
+                "Remux attachment temporary cleanup failed for %@: %@",
+                remotePath,
+                String(describing: error)
+            )
         }
     }
 }

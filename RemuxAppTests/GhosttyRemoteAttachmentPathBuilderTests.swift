@@ -1113,6 +1113,38 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         ))
     }
 
+    func testPreservesUploadFailureWhenTemporaryCleanupFails() async throws {
+        let localURL = try makeTemporaryFile(named: "cleanup-failure.txt", contents: "hello")
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    title: "Cleanup failure",
+                    payload: .file(localURL, filename: "cleanup-failure.txt")
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient(failure: .uploadAndRemove)
+        let service = GhosttyAttachmentSFTPTransferService(client: client)
+
+        do {
+            _ = try await service.transfer(job, progress: { _ in })
+            XCTFail("Expected transfer to throw")
+        } catch let error as GhosttyAttachmentTransferError {
+            XCTAssertEqual(error, .uploadFailed(
+                remotePath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/.cleanup-failure.txt.part"
+            ))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let events = await client.events
+        XCTAssertEqual(events.last, .remove(
+            ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/.cleanup-failure.txt.part"
+        ))
+    }
+
     func testStopsTransferWithoutCleanupWhenRemoteOperationTimesOut() async throws {
         let localURL = try makeTemporaryFile(named: "timeout.txt", contents: "hello")
         let job = GhosttyAttachmentTransferJob(
@@ -1263,6 +1295,7 @@ private enum FakeGhosttyAttachmentSFTPFailure: Error, Equatable, Sendable {
     case upload
     case rename
     case remove
+    case uploadAndRemove
     case uploadTimeout
 }
 
@@ -1330,7 +1363,7 @@ private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {
         if failure == .uploadTimeout {
             throw GhosttyAttachmentSFTPClientError.operationTimedOut
         }
-        if failure == .upload {
+        if failure == .upload || failure == .uploadAndRemove {
             throw FakeGhosttyAttachmentSFTPFailure.upload
         }
         let attributes = try FileManager.default.attributesOfItem(atPath: localURL.path)
@@ -1350,7 +1383,7 @@ private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {
 
     func removeFileIfExists(atPath path: String) async throws {
         events.append(.remove(path))
-        if failure == .remove {
+        if failure == .remove || failure == .uploadAndRemove {
             throw FakeGhosttyAttachmentSFTPFailure.remove
         }
     }
