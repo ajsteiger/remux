@@ -126,6 +126,39 @@ struct SSHTmuxControlChannelCompletionState: Equatable, Sendable {
     }
 }
 
+final class SSHTmuxControlFirstOutputGate: @unchecked Sendable {
+    private let lock = NIOLock()
+    private let promise: EventLoopPromise<Void>
+    private var isCompleted = false
+
+    init(promise: EventLoopPromise<Void>) {
+        self.promise = promise
+    }
+
+    func succeed() {
+        complete {
+            promise.succeed(())
+        }
+    }
+
+    func fail(_ error: Error) {
+        complete {
+            promise.fail(error)
+        }
+    }
+
+    private func complete(_ body: () -> Void) {
+        let shouldComplete = lock.withLock {
+            guard !isCompleted else { return false }
+            isCompleted = true
+            return true
+        }
+
+        guard shouldComplete else { return }
+        body()
+    }
+}
+
 enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConvertible {
     case remoteExit(Int, diagnostics: SSHTmuxStartupDiagnostics? = nil)
     case channelRequestFailed(SSHTmuxControlChannelRequestKind, diagnostics: SSHTmuxStartupDiagnostics? = nil)
@@ -1465,17 +1498,18 @@ private enum SSHTmuxControlBootstrap {
         let childChannel = preparedSession.sessionChannel
         let viewportTraceState = SSHTmuxControlViewportTraceState(viewport: viewport)
         let firstOutputPromise = childChannel.eventLoop.makePromise(of: Void.self)
+        let firstOutputGate = SSHTmuxControlFirstOutputGate(promise: firstOutputPromise)
         let firstOutputTimeout = childChannel.eventLoop.scheduleTask(
             deadline: .now() + controlNoResponseTimeout
-        ) { [firstOutputPromise] in
-            firstOutputPromise.fail(
+        ) { [firstOutputGate] in
+            firstOutputGate.fail(
                 SSHTmuxControlTransportError.controlSessionNoResponse(controlNoResponseTimeout)
             )
         }
         let handler = SSHTmuxControlChannelHandler(
             viewportTraceState: viewportTraceState,
-            onFirstOutput: { data in
-                firstOutputPromise.succeed(())
+            onFirstOutput: { [firstOutputGate] data in
+                firstOutputGate.succeed()
                 trace.event(
                     "firstOutput",
                     fields: [
@@ -1485,7 +1519,14 @@ private enum SSHTmuxControlBootstrap {
                 )
             },
             onOutput: onOutput,
-            onFinish: onFinish
+            onFinish: { [firstOutputGate] error in
+                firstOutputGate.fail(
+                    error ?? SSHTmuxControlTransportError.controlSessionNoResponse(
+                        controlNoResponseTimeout
+                    )
+                )
+                onFinish(error)
+            }
         )
 
         try await trace.stage("sessionChannel.handler.add") {

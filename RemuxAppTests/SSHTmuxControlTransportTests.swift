@@ -1,4 +1,5 @@
 @preconcurrency import Citadel
+import NIO
 @preconcurrency import NIOSSH
 import XCTest
 @testable import Remux
@@ -745,6 +746,29 @@ final class SSHTmuxControlTransportTests: XCTestCase {
 
         XCTAssertEqual(error, requestFailure)
         XCTAssertNil(completionState.finish(nil, diagnostics: diagnostics))
+    }
+
+    func testFirstOutputGateKeepsEarlyFailure() throws {
+        let promise = MultiThreadedEventLoopGroup.singleton.next().makePromise(of: Void.self)
+        let gate = SSHTmuxControlFirstOutputGate(promise: promise)
+        let failure = SSHTmuxControlTransportError.remoteExit(1)
+
+        gate.fail(failure)
+        gate.succeed()
+
+        XCTAssertThrowsError(try promise.futureResult.wait()) { error in
+            XCTAssertEqual(error as? SSHTmuxControlTransportError, failure)
+        }
+    }
+
+    func testFirstOutputGateIgnoresFinishAfterFirstOutput() throws {
+        let promise = MultiThreadedEventLoopGroup.singleton.next().makePromise(of: Void.self)
+        let gate = SSHTmuxControlFirstOutputGate(promise: promise)
+
+        gate.succeed()
+        gate.fail(SSHTmuxControlTransportError.remoteExit(1))
+
+        XCTAssertNoThrow(try promise.futureResult.wait())
     }
 
     func testControlSessionCommandAttachesOrCreatesNamedSession() {
