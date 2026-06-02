@@ -65,6 +65,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             sessionName: "base"
         )
         XCTAssertNil(defaultConfiguration.traceFlowID)
+        XCTAssertEqual(defaultConfiguration.controlNoResponseTimeout, .seconds(15))
 
         let tracedConfiguration = SSHTmuxControlConfiguration(
             host: server.host,
@@ -72,10 +73,14 @@ final class SSHTmuxControlTransportTests: XCTestCase {
                 .passwordBased(username: server.username, password: "pw")
             },
             hostKeyValidator: trustedHostStore.validator(for: server),
+            connectTimeout: .seconds(10),
+            controlNoResponseTimeout: .seconds(12),
             sessionName: "base",
             traceFlowID: "session.open.test"
         )
         XCTAssertEqual(tracedConfiguration.traceFlowID, "session.open.test")
+        XCTAssertEqual(tracedConfiguration.connectTimeout, .seconds(10))
+        XCTAssertEqual(tracedConfiguration.controlNoResponseTimeout, .seconds(12))
     }
 
     func testAuthenticatedConnectionPoolKeyIsServerAndCredentialScoped() {

@@ -1,6 +1,13 @@
 @preconcurrency import Citadel
 @preconcurrency import Crypto
 import Foundation
+import NIOCore
+
+private enum RemuxConnectionTimeouts {
+    static let terminalSSHConnect: TimeAmount = .seconds(10)
+    static let tmuxControlNoResponse: TimeAmount = .seconds(15)
+    static let sftpConnect: TimeAmount = .seconds(15)
+}
 
 struct RemuxAppDependencies: Sendable {
     let profileRepository: any ConnectionProfileRepository
@@ -173,6 +180,8 @@ struct RemuxAppDependencies: Sendable {
                 try authenticationMethod(for: target.sshAuth)
             },
             hostKeyValidator: trustedHostStore.validator(for: target.server),
+            connectTimeout: RemuxConnectionTimeouts.terminalSSHConnect,
+            controlNoResponseTimeout: RemuxConnectionTimeouts.tmuxControlNoResponse,
             sessionName: target.workspace.sessionName,
             traceFlowID: traceFlowID,
             authenticatedConnectionPoolKey: SSHTmuxAuthenticatedConnectionPoolKey(target: target)
@@ -189,7 +198,8 @@ struct RemuxAppDependencies: Sendable {
             authenticationMethod: {
                 try authenticationMethod(for: target.sshAuth)
             },
-            hostKeyValidator: trustedHostStore.validator(for: target.server)
+            hostKeyValidator: trustedHostStore.validator(for: target.server),
+            connectTimeout: RemuxConnectionTimeouts.sftpConnect
         )
         let provider = GhosttyAttachmentCitadelSFTPClientProvider(configuration: configuration)
         return GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)

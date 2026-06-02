@@ -75,6 +75,12 @@ final class GhosttyTerminalDisconnectReasonClassifierTests: XCTestCase {
             ).kind,
             .profile
         )
+        XCTAssertEqual(
+            GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(
+                SSHTmuxControlTransportError.controlSessionNoResponse(.seconds(15))
+            ).kind,
+            .profile
+        )
     }
 
     func testTransportStartFailureMapsAuthenticationTextFallbacks() {

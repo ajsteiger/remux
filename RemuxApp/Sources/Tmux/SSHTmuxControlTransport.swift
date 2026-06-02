@@ -10,6 +10,7 @@ struct SSHTmuxControlConfiguration: Sendable {
     let authenticationMethod: @Sendable () throws -> SSHAuthenticationMethod
     let hostKeyValidator: SSHHostKeyValidator
     let connectTimeout: TimeAmount
+    let controlNoResponseTimeout: TimeAmount
     let tmuxExecutable: String
     let sessionName: String
     let initialViewport: TmuxControlViewport
@@ -22,6 +23,7 @@ struct SSHTmuxControlConfiguration: Sendable {
         authenticationMethod: @escaping @Sendable () throws -> SSHAuthenticationMethod,
         hostKeyValidator: SSHHostKeyValidator,
         connectTimeout: TimeAmount = .seconds(30),
+        controlNoResponseTimeout: TimeAmount = .seconds(15),
         tmuxExecutable: String = "tmux",
         sessionName: String,
         initialViewport: TmuxControlViewport = .default,
@@ -33,6 +35,7 @@ struct SSHTmuxControlConfiguration: Sendable {
         self.authenticationMethod = authenticationMethod
         self.hostKeyValidator = hostKeyValidator
         self.connectTimeout = connectTimeout
+        self.controlNoResponseTimeout = controlNoResponseTimeout
         self.tmuxExecutable = tmuxExecutable
         self.sessionName = sessionName
         self.initialViewport = initialViewport
@@ -130,6 +133,7 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
     case alreadyStarted
     case closed
     case stalePreparedConnection
+    case controlSessionNoResponse(TimeAmount)
 
     var description: String {
         switch self {
@@ -151,6 +155,8 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
             return "closed"
         case .stalePreparedConnection:
             return "stalePreparedConnection"
+        case .controlSessionNoResponse(let timeout):
+            return "tmux control session produced no output within \(timeout)"
         }
     }
 
@@ -168,6 +174,8 @@ enum SSHTmuxControlTransportError: LocalizedError, Equatable, CustomStringConver
             return "The tmux control transport has already been closed."
         case .stalePreparedConnection:
             return "The prepared SSH root reservation is no longer valid."
+        case .controlSessionNoResponse(let timeout):
+            return "The remote tmux control session produced no output within \(timeout)."
         }
     }
 
@@ -256,6 +264,7 @@ actor SSHTmuxControlTransport: TmuxControlTransport {
                 using: claimedConnection,
                 viewport: startupViewport,
                 command: tmuxAttachCommand(viewport: startupViewport),
+                controlNoResponseTimeout: configuration.controlNoResponseTimeout,
                 trace: startupTrace,
                 onOutput: { [inboundStream] data in
                     inboundStream.yield(data)
@@ -1448,15 +1457,25 @@ private enum SSHTmuxControlBootstrap {
         using preparedSession: SSHTmuxPreparedControlSession,
         viewport: TmuxControlViewport,
         command: String,
+        controlNoResponseTimeout: TimeAmount,
         trace: SSHTmuxControlStartupTrace,
         onOutput: @escaping @Sendable (Data) -> Void,
         onFinish: @escaping @Sendable (Error?) -> Void
     ) async throws -> SSHTmuxControlConnection {
         let childChannel = preparedSession.sessionChannel
         let viewportTraceState = SSHTmuxControlViewportTraceState(viewport: viewport)
+        let firstOutputPromise = childChannel.eventLoop.makePromise(of: Void.self)
+        let firstOutputTimeout = childChannel.eventLoop.scheduleTask(
+            deadline: .now() + controlNoResponseTimeout
+        ) { [firstOutputPromise] in
+            firstOutputPromise.fail(
+                SSHTmuxControlTransportError.controlSessionNoResponse(controlNoResponseTimeout)
+            )
+        }
         let handler = SSHTmuxControlChannelHandler(
             viewportTraceState: viewportTraceState,
             onFirstOutput: { data in
+                firstOutputPromise.succeed(())
                 trace.event(
                     "firstOutput",
                     fields: [
@@ -1510,6 +1529,18 @@ private enum SSHTmuxControlBootstrap {
                 SSHChannelRequestEvent.ExecRequest(command: command, wantReply: true)
             )
         }
+        do {
+            try await trace.stage(
+                "controlSession.firstOutput",
+                fields: ["timeout": "\(controlNoResponseTimeout)"]
+            ) {
+                try await firstOutputPromise.futureResult.get()
+            }
+            firstOutputTimeout.cancel()
+        } catch {
+            firstOutputTimeout.cancel()
+            throw error
+        }
         trace.event("bootstrap.connected")
 
         return SSHTmuxControlConnection(
@@ -1524,6 +1555,7 @@ private enum SSHTmuxControlBootstrap {
         using claimedConnection: SSHTmuxClaimedAuthenticatedConnection,
         viewport: TmuxControlViewport,
         command: String,
+        controlNoResponseTimeout: TimeAmount,
         trace: SSHTmuxControlStartupTrace,
         onOutput: @escaping @Sendable (Data) -> Void,
         onFinish: @escaping @Sendable (Error?) -> Void
@@ -1544,6 +1576,7 @@ private enum SSHTmuxControlBootstrap {
                 using: session,
                 viewport: viewport,
                 command: command,
+                controlNoResponseTimeout: controlNoResponseTimeout,
                 trace: trace,
                 onOutput: onOutput,
                 onFinish: onFinish
