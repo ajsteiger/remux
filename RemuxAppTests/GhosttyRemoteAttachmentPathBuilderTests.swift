@@ -1113,6 +1113,43 @@ final class GhosttyAttachmentSFTPTransferServiceTests: XCTestCase {
         ))
     }
 
+    func testStopsTransferWithoutCleanupWhenRemoteOperationTimesOut() async throws {
+        let localURL = try makeTemporaryFile(named: "timeout.txt", contents: "hello")
+        let job = GhosttyAttachmentTransferJob(
+            workspaceID: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            transferID: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            sources: [
+                GhosttyAttachmentTransferSource(
+                    title: "Timeout",
+                    payload: .file(localURL, filename: "timeout.txt")
+                ),
+            ]
+        )
+        let client = FakeGhosttyAttachmentSFTPClient(failure: .uploadTimeout)
+        let service = GhosttyAttachmentSFTPTransferService(client: client)
+
+        do {
+            _ = try await service.transfer(job, progress: { _ in })
+            XCTFail("Expected transfer to throw")
+        } catch let error as GhosttyAttachmentTransferError {
+            XCTAssertEqual(error, .remoteOperationTimedOut)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let events = await client.events
+        XCTAssertEqual(events.last, .upload(
+            localPath: localURL.path,
+            remotePath: ".cache/remux/attachments/11111111-2222-3333-4444-555555555555/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/.timeout.txt.part"
+        ))
+        XCTAssertFalse(events.contains {
+            if case .remove = $0 {
+                return true
+            }
+            return false
+        })
+    }
+
     func testCleansTemporaryFileWhenRenameFails() async throws {
         let localURL = try makeTemporaryFile(named: "rename-failure.txt", contents: "hello")
         let job = GhosttyAttachmentTransferJob(
@@ -1226,6 +1263,7 @@ private enum FakeGhosttyAttachmentSFTPFailure: Error, Equatable, Sendable {
     case upload
     case rename
     case remove
+    case uploadTimeout
 }
 
 private enum FakeGhosttyAttachmentSFTPLeaseFailure: Error, Equatable, Sendable {
@@ -1289,6 +1327,9 @@ private actor FakeGhosttyAttachmentSFTPClient: GhosttyAttachmentSFTPClient {
         progress: @escaping GhosttyAttachmentFileUploadProgressHandler
     ) async throws {
         events.append(.upload(localPath: localURL.path, remotePath: remotePath))
+        if failure == .uploadTimeout {
+            throw GhosttyAttachmentSFTPClientError.operationTimedOut
+        }
         if failure == .upload {
             throw FakeGhosttyAttachmentSFTPFailure.upload
         }

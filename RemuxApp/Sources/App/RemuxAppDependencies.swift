@@ -7,6 +7,7 @@ private enum RemuxConnectionTimeouts {
     static let terminalSSHConnect: TimeAmount = .seconds(10)
     static let tmuxControlNoResponse: TimeAmount = .seconds(15)
     static let sftpConnect: TimeAmount = .seconds(15)
+    static let sftpOperation: TimeAmount = .seconds(15)
 }
 
 struct RemuxAppDependencies: Sendable {
@@ -199,7 +200,8 @@ struct RemuxAppDependencies: Sendable {
                 try authenticationMethod(for: target.sshAuth)
             },
             hostKeyValidator: trustedHostStore.validator(for: target.server),
-            connectTimeout: RemuxConnectionTimeouts.sftpConnect
+            connectTimeout: RemuxConnectionTimeouts.sftpConnect,
+            operationTimeout: RemuxConnectionTimeouts.sftpOperation
         )
         let provider = GhosttyAttachmentCitadelSFTPClientProvider(configuration: configuration)
         return GhosttyAttachmentSFTPClientProviderTransferService(provider: provider)

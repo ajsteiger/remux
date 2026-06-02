@@ -953,6 +953,8 @@ struct GhosttySurfaceScreen: View {
             return "Could not create upload folder."
         case .uploadFailed, .remoteRenameFailed:
             return "Attachment upload failed."
+        case .remoteOperationTimedOut:
+            return "Attachment upload timed out."
         case .remoteTemporaryCleanupFailed, .cancellationCleanupFailed:
             return "Upload cleanup failed."
         case .remotePathResolutionFailed:

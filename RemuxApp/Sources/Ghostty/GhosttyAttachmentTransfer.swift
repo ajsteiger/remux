@@ -148,12 +148,17 @@ enum GhosttyAttachmentTransferError: Error, Equatable, Sendable {
     case securityScopedSourceUnavailable(String)
     case remotePathResolutionFailed(String)
     case remoteDirectoryCreationFailed(String)
+    case remoteOperationTimedOut
     case uploadFailed(remotePath: String)
     case remoteRenameFailed(from: String, to: String)
     case remoteTemporaryCleanupFailed(remotePath: String)
     case cancellationCleanupFailed(remotePath: String)
     case cancelled
     case terminalInsertionFailed
+}
+
+enum GhosttyAttachmentSFTPClientError: Error, Equatable, Sendable {
+    case operationTimedOut
 }
 
 protocol GhosttyAttachmentTransferService: Sendable {
@@ -469,6 +474,8 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
                 try await client.ensureDirectoryExists(atPath: directory)
             } catch is CancellationError {
                 throw GhosttyAttachmentTransferError.cancelled
+            } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
+                throw GhosttyAttachmentTransferError.remoteOperationTimedOut
             } catch {
                 throw GhosttyAttachmentTransferError.remoteDirectoryCreationFailed(directory)
             }
@@ -510,6 +517,8 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         } catch is CancellationError {
             try await cleanupAfterCancellation(remotePath.remoteTemporaryPath)
             throw GhosttyAttachmentTransferError.cancelled
+        } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
+            throw GhosttyAttachmentTransferError.remoteOperationTimedOut
         } catch {
             try await cleanupTemporaryFile(
                 at: remotePath.remoteTemporaryPath,
@@ -530,6 +539,8 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         } catch is CancellationError {
             try await cleanupAfterCancellation(remotePath.remoteTemporaryPath)
             throw GhosttyAttachmentTransferError.cancelled
+        } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
+            throw GhosttyAttachmentTransferError.remoteOperationTimedOut
         } catch {
             try await cleanupTemporaryFile(
                 at: remotePath.remoteTemporaryPath,
@@ -546,6 +557,8 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
         do {
             let terminalPath = try await client.realPath(atPath: remotePath.remoteFinalPath)
             return remotePath.withTerminalPath(terminalPath)
+        } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
+            throw GhosttyAttachmentTransferError.remoteOperationTimedOut
         } catch {
             return remotePath
         }
@@ -564,6 +577,8 @@ struct GhosttyAttachmentSFTPTransferService<Client: GhosttyAttachmentSFTPClient>
     ) async throws {
         do {
             try await client.removeFileIfExists(atPath: remotePath)
+        } catch let error as GhosttyAttachmentSFTPClientError where error == .operationTimedOut {
+            throw GhosttyAttachmentTransferError.remoteOperationTimedOut
         } catch {
             throw cleanupFailure
         }
