@@ -68,11 +68,15 @@ struct GhosttyAttachmentCitadelSFTPClient: GhosttyAttachmentSFTPClient {
 
                 var buffer = ByteBufferAllocator().buffer(capacity: data.count)
                 buffer.writeBytes(data)
-                try await remoteFile.file.writePipelined(
-                    buffer,
-                    at: offset,
-                    maxInFlight: Self.pipelinedWriteMaxInFlight
-                )
+                let writeBuffer = buffer
+                let writeOffset = offset
+                try await withOperationTimeout {
+                    try await remoteFile.file.writePipelined(
+                        writeBuffer,
+                        at: writeOffset,
+                        maxInFlight: Self.pipelinedWriteMaxInFlight
+                    )
+                }
                 offset += UInt64(data.count)
                 await progress(Int64(min(offset, UInt64(Int64.max))))
             }
