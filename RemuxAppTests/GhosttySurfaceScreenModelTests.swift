@@ -2215,7 +2215,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         XCTAssertEqual(model.debugStatus, "tmux transport ended: disconnected")
     }
 
-    func testModelTransportUnavailableReleasesRuntimeSurfacesBeforeRegistryReset() async {
+    func testModelNonReconnectTransportFailureReleasesRuntimeSurfacesBeforeRegistryReset() async {
         let transport = ControlledScreenModelTmuxControlTransport()
         let model = Self.screenModel(
             target: Self.target(),
@@ -2253,7 +2253,7 @@ final class GhosttySurfaceScreenModelTests: XCTestCase {
         managed.onDisplayUpdate = { _, _, _ in }
         model.surfaceRegistry.registerManagedSurfaceForTesting(managed)
 
-        await transport.fail(ScreenModelTransportError.disconnected)
+        await transport.fail(GhosttyControlHostSurface.Failure.outputRejected)
 
         let didFail = await waitUntil(timeout: 2) {
             guard case .failed(let message) = model.state else { return false }
