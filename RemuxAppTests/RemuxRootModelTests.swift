@@ -876,6 +876,39 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(savedCredential, .password("updated-demo-password"))
     }
 
+    func testEditServerRestoresIdentityAndCredentialWhenServerSaveFails() async throws {
+        let passwordBackedServer = makePasswordBackedServer()
+        let server = passwordBackedServer.server
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [],
+            identities: [passwordBackedServer.identity]
+        )
+        try await harness.credentialStore.saveCredential(
+            .password("demo-password"),
+            identityID: passwordBackedServer.identity.id
+        )
+        await harness.model.load()
+        await harness.model.beginEditServer(serverID: server.id)
+        harness.model.updateDraft { draft in
+            draft.displayName = "Build Host Updated"
+            draft.password = "updated-demo-password"
+        }
+        await harness.profileRepository.failNextSaveServer(
+            with: ConnectionProfileRepositoryError.missingServer(server.id)
+        )
+
+        await harness.model.saveAndConnect()
+
+        let snapshot = try await harness.profileRepository.loadSnapshot()
+        let restoredIdentity = try XCTUnwrap(snapshot.identity(id: passwordBackedServer.identity.id))
+        let restoredCredential = try await harness.credentialStore.loadCredential(
+            identityID: passwordBackedServer.identity.id
+        )
+        XCTAssertEqual(restoredIdentity, passwordBackedServer.identity)
+        XCTAssertEqual(restoredCredential, .password("demo-password"))
+    }
+
     func testEditServerRefreshesIdleActiveSessionAuthBeforeAttach() async throws {
         let passwordBackedServer = makePasswordBackedServer()
         let server = passwordBackedServer.server
@@ -2586,6 +2619,7 @@ private actor TestConnectionProfileRepository: ConnectionProfileRepository {
     private var servers: [SavedServer]
     private var workspaces: [SavedWorkspace]
     private var identities: [SSHIdentity]
+    private var saveServerError: Error?
 
     init(
         servers: [SavedServer] = [],
@@ -2623,7 +2657,15 @@ private actor TestConnectionProfileRepository: ConnectionProfileRepository {
     }
 
     func saveServer(_ server: SavedServer) async throws {
+        if let saveServerError {
+            self.saveServerError = nil
+            throw saveServerError
+        }
         upsert(server, into: &servers)
+    }
+
+    func failNextSaveServer(with error: Error) {
+        saveServerError = error
     }
 
     func saveWorkspace(_ workspace: SavedWorkspace) async throws {

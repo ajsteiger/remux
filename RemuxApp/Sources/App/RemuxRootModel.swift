@@ -383,6 +383,7 @@ final class RemuxRootModel: ObservableObject {
 
         case .valid(let submission):
             let updatedIdentityCredential: SSHIdentityCredentialPair
+            let previousIdentity: SSHIdentity
             do {
                 guard let existingServer = library.server(id: serverID) else {
                     throw ConnectionProfileRepositoryError.missingServer(serverID)
@@ -390,6 +391,7 @@ final class RemuxRootModel: ObservableObject {
                 guard let identity = library.identity(id: existingServer.identityID) else {
                     throw SSHAuthResolverError.missingIdentity(existingServer.identityID)
                 }
+                previousIdentity = identity
                 updatedIdentityCredential = try makeUpdatedIdentityCredentialPair(
                     from: submission,
                     existingIdentity: identity
@@ -426,6 +428,7 @@ final class RemuxRootModel: ObservableObject {
                         previousCredential,
                         identityID: updatedIdentityCredential.identity.id
                     )
+                    await restoreIdentity(previousIdentity)
                     throw error
                 }
                 library = try await dependencies.profileRepository.loadSnapshot()
@@ -1052,6 +1055,17 @@ final class RemuxRootModel: ObservableObject {
         } catch {
             NSLog(
                 "Remux SSH credential restore failed: %@",
+                String(describing: error)
+            )
+        }
+    }
+
+    private func restoreIdentity(_ identity: SSHIdentity) async {
+        do {
+            try await dependencies.profileRepository.saveIdentity(identity)
+        } catch {
+            NSLog(
+                "Remux SSH identity restore failed: %@",
                 String(describing: error)
             )
         }
