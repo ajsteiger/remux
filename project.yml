@@ -3,6 +3,8 @@ options:
   bundleIdPrefix: dev.remux
   deploymentTarget:
     iOS: "18.0"
+  postGenCommand: >-
+    /usr/bin/perl -0pi -e 's/lastKnownFileType = wrapper\.icon;/lastKnownFileType = folder.iconcomposer.icon;/g' Remux.xcodeproj/project.pbxproj
 settings:
   base:
     PRODUCT_BUNDLE_IDENTIFIER: dev.remux.app
@@ -26,9 +28,10 @@ targets:
     sources:
       - path: RemuxApp/Sources
       - path: RemuxApp/Assets.xcassets
+      - path: RemuxApp/Remux.icon
     settings:
       base:
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: Remux
     dependencies:
       - framework: ../ghostty-remux-option-c/macos/GhosttyKit.xcframework
         embed: false
