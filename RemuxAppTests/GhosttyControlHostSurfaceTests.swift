@@ -107,18 +107,16 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
         let expectedOutput = concatenated(chunks)
 
         host.start()
-        for chunk in chunks {
-            await transport.emit(chunk)
-        }
+        await transport.emit(chunks)
 
         let processed = await waitUntil(timeout: 2) {
             self.concatenated(surface.processedOutput) == expectedOutput
         }
 
         XCTAssertTrue(processed)
-        XCTAssertLessThan(surface.processedOutput.count, chunks.count)
+        XCTAssertLessThanOrEqual(surface.processedOutput.count, 8)
         XCTAssertGreaterThan(surface.processedOutput.count, 1)
-        XCTAssertLessThanOrEqual(surface.processedOutput.map(\.count).max() ?? 0, 4 * 1024)
+        XCTAssertLessThanOrEqual(surface.processedOutput.map(\.count).max() ?? 0, 64 * 1024)
     }
 
     func testOversizedInboundTmuxChunkIsSplitBeforeGhosttySurface() async {
@@ -128,7 +126,7 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
             transport: transport,
             surface: surface
         )
-        let chunk = Data(String(repeating: "x", count: 10 * 1024).utf8)
+        let chunk = Data(String(repeating: "x", count: 150 * 1024).utf8)
 
         host.start()
         await transport.emit(chunk)
@@ -139,7 +137,7 @@ final class GhosttyControlHostSurfaceTests: XCTestCase {
 
         XCTAssertTrue(processed)
         XCTAssertEqual(surface.processedOutput.count, 3)
-        XCTAssertLessThanOrEqual(surface.processedOutput.map(\.count).max() ?? 0, 4 * 1024)
+        XCTAssertLessThanOrEqual(surface.processedOutput.map(\.count).max() ?? 0, 64 * 1024)
     }
 
     func testStopClosesTransportWithoutSendingTmuxCommand() async {
@@ -1228,6 +1226,12 @@ private actor RecordingTmuxControlTransport: TmuxControlTransport {
 
     func emit(_ data: Data) {
         continuation.yield(data)
+    }
+
+    func emit(_ data: [Data]) {
+        for chunk in data {
+            continuation.yield(chunk)
+        }
     }
 
     func fail(_ error: any Error) {

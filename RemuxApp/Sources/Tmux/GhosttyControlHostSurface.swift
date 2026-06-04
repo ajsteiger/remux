@@ -111,7 +111,6 @@ private actor TmuxControlInboundOutputSequencer {
 
     private let maxBatchBytes: Int
     private let coalescingDelay: Duration
-    private let interBatchDelay: Duration
     private let outputHandler: OutputHandler
 
     private var pendingChunks: [Data] = []
@@ -121,14 +120,12 @@ private actor TmuxControlInboundOutputSequencer {
     private var drainWaiters: [CheckedContinuation<Bool, Never>] = []
 
     init(
-        maxBatchBytes: Int = 4 * 1024,
+        maxBatchBytes: Int = 64 * 1024,
         coalescingDelay: Duration = .milliseconds(2),
-        interBatchDelay: Duration = .milliseconds(1),
         outputHandler: @escaping OutputHandler
     ) {
         self.maxBatchBytes = maxBatchBytes
         self.coalescingDelay = coalescingDelay
-        self.interBatchDelay = interBatchDelay
         self.outputHandler = outputHandler
     }
 
@@ -192,9 +189,6 @@ private actor TmuxControlInboundOutputSequencer {
                 eventPrefix: "tmux.signal.sequencer.drain"
             )
             accepted = await outputHandler(batch.data, batch.chunkCount)
-            if accepted, !pendingChunks.isEmpty {
-                try? await Task.sleep(for: interBatchDelay)
-            }
         }
 
         if !accepted {
