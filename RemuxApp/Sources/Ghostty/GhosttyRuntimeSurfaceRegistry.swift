@@ -2116,13 +2116,13 @@ final class GhosttyRuntimeSurfaceRegistry: GhosttyKitRuntimeSurfaceDelegate {
             surfaceID: surfaceID,
             reason: "display.update"
         )
-        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
         guard let surface = managedSurfaceStore.managedSurface(for: surfaceID) else { return }
         let evaluation = readinessCoordinator.recordRender(
             surfaceID: surfaceID,
             size: size,
             state: interactiveReadinessState(for: surface)
         )
+        guard GhosttyRuntimeTrace.flowTraceEnabled else { return }
         traceTopologyPresentationEvent(
             event: "ui.displayUpdate.rendered",
             surfaceID: surfaceID,
