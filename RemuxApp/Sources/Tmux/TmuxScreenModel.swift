@@ -41,6 +41,7 @@ final class TmuxScreenModel: ObservableObject {
     private let transportFactory: TransportFactory
     private let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
     private var runtime: GhosttyKitRuntime?
+    private var currentTerminalSettings: TerminalSettings
     private var reportTracker = TerminalRuntimeStateReportTracker()
     private var pendingReconnectSource: TerminalReconnectSource?
     private var stateObservation: AnyCancellable?
@@ -57,6 +58,7 @@ final class TmuxScreenModel: ObservableObject {
         self.sessionInstanceID = sessionInstanceID
         self.transportFactory = transportFactory
         self.onRuntimeStateChange = onRuntimeStateChange
+        self.currentTerminalSettings = target.terminalSettings
         start()
     }
 
@@ -81,6 +83,9 @@ final class TmuxScreenModel: ObservableObject {
             },
             baseSurfaceConfig: { [runtime] in
                 runtime.makeTmuxBaseSurfaceConfig()
+            },
+            paneViewTheme: { [weak self, target] in
+                self?.currentTerminalSettings.theme ?? target.terminalSettings.theme
             }
         )
         self.session = session
@@ -137,10 +142,13 @@ final class TmuxScreenModel: ObservableObject {
     }
 
     /// Live settings application: updates the runtime's config (which
-    /// libghostty propagates to existing surfaces) and the base config
-    /// used for surfaces bound to panes in the future.
+    /// libghostty propagates to existing surfaces), the base config used
+    /// for surfaces bound to panes in the future, and the bound pane
+    /// view's theme.
     func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        currentTerminalSettings = settings
         try runtime?.applyTerminalSettings(settings)
+        session?.paneSurface?.view.applyTerminalTheme(settings.theme)
     }
 
     func stop() async {

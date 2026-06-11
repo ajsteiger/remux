@@ -54,6 +54,7 @@ final class TmuxPaneSurface {
         controller: TmuxSessionController,
         paneID: UInt64,
         baseConfig: ghostty_surface_config_s,
+        theme: TerminalTheme,
         completion: @escaping @MainActor (Result<TmuxPaneSurface, CreateError>) -> Void
     ) {
         // The wake target doesn't exist until the surface does; bridge
@@ -81,7 +82,8 @@ final class TmuxPaneSurface {
                     controller: controller,
                     paneID: paneID,
                     binding: binding,
-                    baseConfig: configBox.value
+                    baseConfig: configBox.value,
+                    theme: theme
                 ) {
                     wakeTarget.surface = pane.surface
                     // Content may have changed between bind and
@@ -114,7 +116,8 @@ final class TmuxPaneSurface {
         controller: TmuxSessionController,
         paneID: UInt64,
         binding: TmuxSessionController.PaneBinding,
-        baseConfig: ghostty_surface_config_s
+        baseConfig: ghostty_surface_config_s,
+        theme: TerminalTheme
     ) {
         let inputBox = InputBox(controller: controller, paneID: paneID)
 
@@ -126,6 +129,7 @@ final class TmuxPaneSurface {
         let view = GhosttyKitSurfaceView(
             frame: CGRect(x: 0, y: 0, width: 400, height: 600)
         )
+        view.applyTerminalTheme(theme)
         config.platform_tag = GHOSTTY_PLATFORM_IOS
         config.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
             uiview: Unmanaged.passUnretained(view).toOpaque()

@@ -189,14 +189,17 @@ final class TmuxTerminalScreenAdapter: ObservableObject {
         let windowIDForPane = session?.topology?.panes
             .first(where: { $0.id == paneID })?.windowID
 
+        let controlSurface = GhosttyKitControlSurface(
+            surface: paneSurface.rawSurface,
+            ownership: .borrowed,
+            retainedObjects: [paneSurface]
+        )
         activeManagedSurface = GhosttyManagedSurface(
             id: managedID,
             view: paneSurface.view,
-            controlSurface: GhosttyKitControlSurface(
-                surface: paneSurface.rawSurface,
-                ownership: .borrowed,
-                retainedObjects: [paneSurface]
-            ),
+            controlSurface: controlSurface,
+            scrollState: controlSurface.scrollState(),
+            scrollRoute: controlSurface.scrollRoute(),
             tmuxFocus: { [weak controller] in
                 controller?.requestSelectPane(paneID: paneID)
                 return .queued

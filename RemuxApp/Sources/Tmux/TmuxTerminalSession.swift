@@ -29,6 +29,7 @@ final class TmuxTerminalSession: ObservableObject {
     private var link: TmuxSessionLink?
     private let makeTransport: () -> any TmuxControlTransport
     private let baseSurfaceConfig: () -> ghostty_surface_config_s
+    private let paneViewTheme: () -> TerminalTheme
 
     /// Pane-surface creation in flight; prevents duplicate binds while
     /// a swap is being prepared.
@@ -45,11 +46,13 @@ final class TmuxTerminalSession: ObservableObject {
     init(
         app: ghostty_app_t,
         makeTransport: @escaping () -> any TmuxControlTransport,
-        baseSurfaceConfig: @escaping () -> ghostty_surface_config_s
+        baseSurfaceConfig: @escaping () -> ghostty_surface_config_s,
+        paneViewTheme: @escaping () -> TerminalTheme
     ) {
         self.app = app
         self.makeTransport = makeTransport
         self.baseSurfaceConfig = baseSurfaceConfig
+        self.paneViewTheme = paneViewTheme
 
         let relay = Relay()
         self.controller = TmuxSessionController(
@@ -170,7 +173,8 @@ final class TmuxTerminalSession: ObservableObject {
             app: app,
             controller: controller,
             paneID: paneID,
-            baseConfig: baseSurfaceConfig()
+            baseConfig: baseSurfaceConfig(),
+            theme: paneViewTheme()
         ) { [weak self] result in
             guard let self else { return }
             self.presentingPaneID = nil
