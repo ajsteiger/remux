@@ -18,6 +18,12 @@ final class TmuxTerminalSession: ObservableObject {
     @Published private(set) var paneSurface: TmuxPaneSurface?
     @Published private(set) var lastFailedRequest: TmuxSessionController.Request?
 
+    /// Set when a connection attempt fails before the session ever
+    /// attaches (SSH dial, auth, host key, control-channel open). The
+    /// controller has no event for host-side failures, so this carries
+    /// the classified reason alongside the `.detached(nil)` state.
+    @Published private(set) var transportFailure: TerminalDisconnectReason?
+
     private let app: ghostty_app_t
     private(set) var controller: TmuxSessionController!
     private var link: TmuxSessionLink?
@@ -77,23 +83,28 @@ final class TmuxTerminalSession: ObservableObject {
     /// bound surface survive detaches).
     func connect(viewport: TmuxControlViewport?) {
         guard link == nil else { return }
+        transportFailure = nil
         let link = TmuxSessionLink(controller: controller, transport: makeTransport())
         self.link = link
         Task { [weak self] in
             do {
                 try await link.start(viewport: viewport)
             } catch {
-                await self?.connectFailed(link: link)
+                await self?.connectFailed(link: link, error: error)
             }
         }
     }
 
-    private func connectFailed(link failed: TmuxSessionLink) async {
+    private func connectFailed(link failed: TmuxSessionLink, error: any Error) async {
         await failed.stop()
         if link === failed { link = nil }
-        // The model never attached (transport-level failure); reflect
-        // a detach for the UI.
-        state = .detached(.channelAborted)
+        // The model never attached (transport-level failure); classify
+        // the error so the UI can offer the right repair action.
+        GhosttyRuntimeTrace.diagnostics(
+            "tmuxSession.connectFailed error=\(String(describing: error))"
+        )
+        transportFailure = GhosttyTerminalDisconnectReasonClassifier.transportStartFailure(error)
+        state = .detached(nil)
     }
 
     func disconnect() async {

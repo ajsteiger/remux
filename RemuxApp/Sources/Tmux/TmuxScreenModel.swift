@@ -44,6 +44,7 @@ final class TmuxScreenModel: ObservableObject {
     private var reportTracker = TerminalRuntimeStateReportTracker()
     private var pendingReconnectSource: TerminalReconnectSource?
     private var stateObservation: AnyCancellable?
+    private var transportFailureObservation: AnyCancellable?
     private var stopped = false
 
     init(
@@ -89,6 +90,15 @@ final class TmuxScreenModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] state in
                 self?.handleSessionState(state)
+            }
+
+        // A failed connect can leave the state unchanged (.detached(nil)
+        // before and after), which the deduplicated state stream drops;
+        // the failure itself is the report-worthy signal.
+        transportFailureObservation = session.$transportFailure
+            .compactMap { $0 }
+            .sink { [weak self] failure in
+                self?.report(.disconnected(failure))
             }
 
         connect()
@@ -137,6 +147,7 @@ final class TmuxScreenModel: ObservableObject {
         guard !stopped else { return }
         stopped = true
         stateObservation = nil
+        transportFailureObservation = nil
         terminalScreenAdapter.invalidate()
         if let session {
             await session.shutdown()
@@ -173,8 +184,11 @@ final class TmuxScreenModel: ObservableObject {
                 }
                 return .connecting
             }
+            if let reason {
+                return .disconnected(reason.terminalDisconnectReason)
+            }
             return .disconnected(
-                reason?.terminalDisconnectReason ?? TerminalDisconnectReason(
+                session?.transportFailure ?? TerminalDisconnectReason(
                     kind: .unknown,
                     message: "disconnected"
                 )

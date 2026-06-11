@@ -59,6 +59,9 @@ final class TmuxTerminalScreenAdapter: ObservableObject {
                 self?.presentCommandFailure(for: request)
             }
             .store(in: &subscriptions)
+        session.$transportFailure
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &subscriptions)
     }
 
     func invalidate() {
@@ -142,7 +145,10 @@ final class TmuxTerminalScreenAdapter: ObservableObject {
         case .ready:
             return .running
         case .detached(nil):
-            // Pre-connect or a silent detach; the next connect is imminent.
+            if let failure = session.transportFailure {
+                return .failed(message: failure.message, reason: failure)
+            }
+            // Pre-connect; the first connect is imminent.
             return .starting
         case .detached(.some(let reason)):
             let mapped = reason.terminalDisconnectReason
