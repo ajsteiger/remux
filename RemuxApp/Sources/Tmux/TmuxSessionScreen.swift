@@ -8,6 +8,7 @@ import SwiftUI
 struct TmuxSessionScreen: View {
     @ObservedObject var session: TmuxTerminalSession
     let onConnect: () -> Void
+    let onShowLibrary: () -> Void
 
     @State private var inputText: String = ""
 
@@ -23,6 +24,11 @@ struct TmuxSessionScreen: View {
 
     private var stateBanner: some View {
         HStack {
+            Button(action: onShowLibrary) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+            }
             Text(stateDescription)
                 .font(.caption.monospaced())
                 .foregroundStyle(stateColor)

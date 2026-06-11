@@ -21,6 +21,17 @@ final class TmuxScreenModel: ObservableObject {
     /// The reducer's expectations: the target this session connects to.
     var runtimeConnectionTarget: TmuxConnectionTarget { target }
 
+    /// True when no connection exists or is in progress, so the root
+    /// model may replace this model (e.g. after a server edit) without
+    /// dropping a session the user is still attached to.
+    var isDisconnected: Bool {
+        guard let session else { return true }
+        switch session.state {
+        case .detached, .closed: return true
+        case .attaching, .syncing, .ready: return false
+        }
+    }
+
     private let transportFactory: TransportFactory
     private let onRuntimeStateChange: (TerminalRuntimeStateUpdate) -> Void
     private var runtime: GhosttyKitRuntime?
@@ -50,10 +61,7 @@ final class TmuxScreenModel: ObservableObject {
             )
         } catch {
             startupFailure = String(describing: error)
-            report(.disconnected(TerminalDisconnectReason(
-                kind: .runtime,
-                message: "terminal runtime failed to initialize"
-            )))
+            report(.disconnected(Self.runtimeStartFailureReason))
             return
         }
         self.runtime = runtime
@@ -92,8 +100,29 @@ final class TmuxScreenModel: ObservableObject {
 
     func handleAppLifecyclePhase(_ phase: GhosttySurfaceScreenModel.AppLifecyclePhase) {
         // Presentation discontinuity handling lives in the renderer
-        // (visibility-resume full damage); here we only gate drawing.
+        // (visibility-resume full damage); here we gate drawing.
         session?.paneSurface?.setVisible(phase == .active)
+
+        // Foreground is a reconnect opportunity: re-surface a
+        // disconnected state with the foreground source so the root's
+        // auto-reconnect policy can act on it (the report tracker
+        // re-reports foreground disconnects even when unchanged).
+        guard phase == .active else { return }
+        let state: TerminalRuntimeState = if let session {
+            currentRuntimeState(for: session.state, connecting: false)
+        } else {
+            .disconnected(Self.runtimeStartFailureReason)
+        }
+        if state.disconnectedReason != nil {
+            report(state, source: .foreground)
+        }
+    }
+
+    /// Live settings application: updates the runtime's config (which
+    /// libghostty propagates to existing surfaces) and the base config
+    /// used for surfaces bound to panes in the future.
+    func applyTerminalSettings(_ settings: TerminalSettings) throws {
+        try runtime?.applyTerminalSettings(settings)
     }
 
     func stop() async {
@@ -141,17 +170,25 @@ final class TmuxScreenModel: ObservableObject {
         }
     }
 
-    private func report(_ state: TerminalRuntimeState) {
-        guard reportTracker.shouldReport(state: state, source: .runtime) else {
+    private func report(
+        _ state: TerminalRuntimeState,
+        source: TerminalRuntimeStateUpdateSource = .runtime
+    ) {
+        guard reportTracker.shouldReport(state: state, source: source) else {
             return
         }
         onRuntimeStateChange(TerminalRuntimeStateUpdate(
             workspaceID: target.workspace.id,
             instanceID: sessionInstanceID,
             state: state,
-            source: .runtime
+            source: source
         ))
     }
+
+    private static let runtimeStartFailureReason = TerminalDisconnectReason(
+        kind: .runtime,
+        message: "terminal runtime failed to initialize"
+    )
 
     private static func disconnectReason(
         for reason: TmuxSessionController.DetachReason?

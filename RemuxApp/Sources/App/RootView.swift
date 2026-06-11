@@ -112,39 +112,12 @@ private struct RemuxWorkspaceShell: View {
                 let isVisible = visibleTerminalID == entry.id
                 ActiveTerminalSessionView(
                     entry: entry,
-                    isSelected: isSelected,
-                    shortcutStore: shortcutStore,
                     onReconnect: {
                         model.reconnectActiveSession(entry.id, source: .manualButton)
-                    },
-                    onUpdateCredentials: {
-                        Task {
-                            await model.beginCredentialRepair(for: entry.id)
-                        }
-                    },
-                    onEditServer: {
-                        Task {
-                            await model.beginServerRepair(for: entry.id)
-                        }
-                    },
-                    onTrustChangedHostKey: {
-                        model.trustChangedHostKeyAndReconnect(entry.id)
                     },
                     onShowLibrary: {
                         dismissKeyboard()
                         Task { await model.showLibrary() }
-                    },
-                    onMount: { component in
-                        model.terminalScreenViewDidMount(
-                            runtimeAttemptKey: entry.runtimeAttemptKey,
-                            component: component
-                        )
-                    },
-                    onDismantle: { component in
-                        model.terminalScreenViewDidDismantle(
-                            runtimeAttemptKey: entry.runtimeAttemptKey,
-                            component: component
-                        )
                     }
                 )
                 .id(entry.instanceID)
@@ -286,31 +259,39 @@ struct RemuxAppLifecycleProjection: Equatable {
 
 private struct ActiveTerminalSessionView: View {
     let entry: ActiveTerminalScreenEntry
-    let isSelected: Bool
-    let shortcutStore: ShortcutStore
     let onReconnect: () -> Void
-    let onUpdateCredentials: () -> Void
-    let onEditServer: () -> Void
-    let onTrustChangedHostKey: () -> Void
     let onShowLibrary: () -> Void
-    let onMount: (GhosttyTerminalScreenViewComponent) -> Void
-    let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
 
     var body: some View {
-        GhosttySurfaceScreen(
-            model: entry.model,
-            presentation: entry.presentation,
-            isSelected: isSelected,
-            shortcutStore: shortcutStore,
-            attachmentTransferServiceFactory: entry.attachmentTransferServiceFactory,
-            onReconnect: onReconnect,
-            onEditConnection: onShowLibrary,
-            onUpdateCredentials: onUpdateCredentials,
-            onEditServer: onEditServer,
-            onTrustChangedHostKey: onTrustChangedHostKey,
-            onMount: onMount,
-            onDismantle: onDismantle
-        )
+        if let session = entry.model.session {
+            TmuxSessionScreen(
+                session: session,
+                onConnect: onReconnect,
+                onShowLibrary: onShowLibrary
+            )
+        } else {
+            startupFailureView
+        }
+    }
+
+    /// The terminal runtime could not be created (the session never
+    /// existed); the only recovery is a fresh runtime attempt or the
+    /// library.
+    private var startupFailureView: some View {
+        VStack(spacing: 12) {
+            Text("Terminal failed to start")
+                .font(.headline)
+                .foregroundStyle(.white)
+            if let failure = entry.model.startupFailure {
+                Text(failure)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.gray)
+            }
+            Button("Retry", action: onReconnect)
+            Button("Back to Library", action: onShowLibrary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.ignoresSafeArea())
     }
 }
 
