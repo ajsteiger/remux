@@ -33,7 +33,7 @@ targets:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: Remux
     dependencies:
-      - framework: ../ghostty-remux-option-c/macos/GhosttyKit.xcframework
+      - framework: ../ghostty-tmux-pane-store-refactor/macos/GhosttyKit.xcframework
         embed: false
       - package: Citadel
     info:
@@ -56,7 +56,7 @@ targets:
       - path: RemuxAppTests
     dependencies:
       - target: Remux
-      - framework: ../ghostty-remux-option-c/macos/GhosttyKit.xcframework
+      - framework: ../ghostty-tmux-pane-store-refactor/macos/GhosttyKit.xcframework
         embed: false
     settings:
       base:

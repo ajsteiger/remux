@@ -1,0 +1,558 @@
+import Foundation
+import GhosttyKit
+
+/// New-architecture tmux session: a thin, thread-disciplined wrapper of
+/// the `ghostty_tmux_session_*` C API.
+///
+/// THREADING CONTRACT (mirrors libghostty's): every call into the C
+/// session happens on `queue` — the writer thread. The SSH transport
+/// delivers inbound bytes via `pump(_:)` (dispatched onto the queue),
+/// outbound wire bytes leave via the `onOutbound` callback (invoked on
+/// the queue; the transport forwards them to the SSH channel), and all
+/// UI-initiated calls (input, requests, bind/unbind) are queue-hopped
+/// here. Events arrive synchronously on the queue and are re-published
+/// to the main actor as immutable snapshots — the UI never touches the
+/// session handle.
+final class TmuxSessionController {
+    // MARK: Public model
+
+    enum SessionState: Equatable {
+        case detached(DetachReason?)
+        case attaching
+        case syncing
+        case ready
+        case closed(CloseReason)
+    }
+
+    enum DetachReason: Equatable {
+        case serverExited(String?)
+        case channelAborted
+        case outOfMemory
+        case baselineFailed
+        case reconcileFailed
+    }
+
+    enum CloseReason: Equatable {
+        case attachFailed(String)
+        case unsupportedVersion(String)
+    }
+
+    struct WindowInfo: Equatable, Identifiable {
+        let id: UInt64
+        let name: String
+        let active: Bool
+        let zoomed: Bool
+        let width: UInt32
+        let height: UInt32
+    }
+
+    enum PaneState: Equatable {
+        case discovered
+        case bootstrapping
+        case live
+        case degraded
+    }
+
+    struct PaneInfo: Equatable, Identifiable {
+        let id: UInt64
+        let windowID: UInt64
+        let x: UInt32
+        let y: UInt32
+        let width: UInt32
+        let height: UInt32
+        let state: PaneState
+    }
+
+    struct TopologySnapshot: Equatable {
+        let sessionName: String
+        let windows: [WindowInfo]
+        let panes: [PaneInfo]
+        let activeWindowID: UInt64?
+    }
+
+    enum Request: Equatable {
+        case newWindow
+        case splitPane
+        case closePane
+        case closeWindow
+        case selectWindow
+        case selectPane
+        case zoomPane
+        case copyMode
+        case setClientSize
+    }
+
+    enum SplitDirection {
+        case left, right, up, down
+    }
+
+    /// Host-visible signals, delivered on the main queue. Snapshots are
+    /// immutable copies taken on the writer queue at the event's safe
+    /// point, so they are always internally consistent.
+    struct Callbacks {
+        var onState: (SessionState) -> Void = { _ in }
+        var onTopology: (TopologySnapshot) -> Void = { _ in }
+        var onPaneRemoved: (UInt64) -> Void = { _ in }
+        var onPaneLive: (UInt64) -> Void = { _ in }
+        var onPaneDegraded: (UInt64) -> Void = { _ in }
+        var onRequestFailed: (Request) -> Void = { _ in }
+    }
+
+    /// A live pane binding: the surface borrows the pane terminal and
+    /// render mutex for its whole lifetime. MUST be released (on the
+    /// writer queue, via `unbind`) before the owning surface is torn
+    /// down.
+    final class PaneBinding {
+        let paneID: UInt64
+        fileprivate let handle: ghostty_tmux_binding_t
+        fileprivate let wakeBox: WakeBox
+
+        fileprivate init(paneID: UInt64, handle: ghostty_tmux_binding_t, wakeBox: WakeBox) {
+            self.paneID = paneID
+            self.handle = handle
+            self.wakeBox = wakeBox
+        }
+
+        /// Passed into ghostty_surface_config_s.tmux_binding.
+        var rawHandle: UnsafeMutableRawPointer {
+            UnsafeMutableRawPointer(handle)
+        }
+    }
+
+    /// Holds the wake closure with a stable address for the C callback.
+    final class WakeBox {
+        let wake: () -> Void
+        init(_ wake: @escaping () -> Void) { self.wake = wake }
+    }
+
+    enum BindError: Error {
+        case detachedSession
+        case paneUnknown
+        case alreadyBound
+        case outOfMemory
+    }
+
+    // MARK: State
+
+    /// The writer thread. Everything that touches `session` runs here.
+    let queue: DispatchQueue
+
+    private var session: ghostty_tmux_session_t?
+    private var tick: DispatchSourceTimer?
+    private let callbacks: Callbacks
+
+    /// Outbound wire bytes, invoked on the writer queue after every
+    /// entry point that may have produced output. The transport writes
+    /// them to the SSH channel (partial writes are safe; this is the
+    /// full pending buffer each time, already consumed from the
+    /// session).
+    private let onOutbound: (Data) -> Void
+
+    init(
+        app: ghostty_app_t,
+        callbacks: Callbacks,
+        onOutbound: @escaping (Data) -> Void,
+        queue: DispatchQueue = DispatchQueue(label: "remux.tmux.session.writer")
+    ) {
+        self.queue = queue
+        self.callbacks = callbacks
+        self.onOutbound = onOutbound
+
+        var config = ghostty_tmux_session_config_s()
+        config.event_cb = { userdata, event in
+            guard let userdata else { return }
+            let controller = Unmanaged<TmuxSessionController>
+                .fromOpaque(userdata).takeUnretainedValue()
+            controller.handleEvent(event)
+        }
+        config.userdata = Unmanaged.passUnretained(self).toOpaque()
+        config.handshake_timeout_ms = 0 // library default
+        config.command_timeout_ms = 0 // library default
+        config.history_line_cap = 0 // library default
+
+        // The session must be created before any callback can fire;
+        // the event callback only runs inside pump/tick on our queue.
+        self.session = withUnsafePointer(to: &config) { configPtr in
+            ghostty_tmux_session_new(app, configPtr)
+        }
+    }
+
+    /// Tear down the session: cancel the tick and free the C session on
+    /// the writer queue (the only thread allowed to touch it). All
+    /// bindings must have been released first — the C side asserts this
+    /// in debug builds. Call before releasing the last reference.
+    func shutdown(completion: @escaping () -> Void = {}) {
+        queue.async { [self] in
+            tick?.cancel()
+            tick = nil
+            if let session {
+                ghostty_tmux_session_free(session)
+            }
+            session = nil
+            DispatchQueue.main.async(execute: completion)
+        }
+    }
+
+    deinit {
+        // shutdown() must have run: freeing here would touch the
+        // session from an arbitrary thread.
+        assert(session == nil, "TmuxSessionController deinit without shutdown()")
+    }
+
+    // MARK: Clock
+
+    /// Monotonic milliseconds for the session's deadline clock.
+    private static func nowMS() -> UInt64 {
+        DispatchTime.now().uptimeNanoseconds / 1_000_000
+    }
+
+    // MARK: Transport plumbing (writer queue)
+
+    /// Start (or restart, after a detach) a connection attempt. The
+    /// caller is responsible for having an SSH channel running
+    /// `tmux -CC new-session -A` whose bytes flow through `pump`.
+    func connect() {
+        queue.async { [self] in
+            guard let session else { return }
+            _ = ghostty_tmux_session_connect(session, Self.nowMS())
+            startTick()
+            drainOutbound()
+        }
+    }
+
+    /// Inbound SSH bytes.
+    func pump(_ data: Data) {
+        queue.async { [self] in
+            guard let session else { return }
+            data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                ghostty_tmux_session_pump(
+                    session,
+                    raw.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(raw.count),
+                    Self.nowMS()
+                )
+            }
+            drainOutbound()
+        }
+    }
+
+    private func startTick() {
+        tick?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in
+            guard let self, let session = self.session else { return }
+            ghostty_tmux_session_tick(session, Self.nowMS())
+            self.drainOutbound()
+        }
+        timer.resume()
+        tick = timer
+    }
+
+    /// Drain pending wire bytes to the transport. Called on the writer
+    /// queue after every entry point that can produce output.
+    private func drainOutbound() {
+        guard let session else { return }
+        var len: UInt = 0
+        guard let ptr = ghostty_tmux_session_outbound(session, &len), len > 0 else {
+            return
+        }
+        let data = Data(bytes: ptr, count: Int(len))
+        ghostty_tmux_session_outbound_consume(session, len)
+        onOutbound(data)
+    }
+
+    // MARK: Events (writer queue) -> main snapshots
+
+    private func handleEvent(_ event: ghostty_tmux_event_s) {
+        switch event.tag {
+        case GHOSTTY_TMUX_EVENT_STATE_CHANGED:
+            let state = readState()
+            DispatchQueue.main.async { self.callbacks.onState(state) }
+        case GHOSTTY_TMUX_EVENT_TOPOLOGY_CHANGED:
+            let snapshot = readTopology()
+            DispatchQueue.main.async { self.callbacks.onTopology(snapshot) }
+        case GHOSTTY_TMUX_EVENT_PANE_REMOVED:
+            let id = event.pane_id
+            DispatchQueue.main.async { self.callbacks.onPaneRemoved(id) }
+        case GHOSTTY_TMUX_EVENT_PANE_LIVE:
+            let id = event.pane_id
+            DispatchQueue.main.async { self.callbacks.onPaneLive(id) }
+        case GHOSTTY_TMUX_EVENT_PANE_DEGRADED:
+            let id = event.pane_id
+            DispatchQueue.main.async { self.callbacks.onPaneDegraded(id) }
+        case GHOSTTY_TMUX_EVENT_REQUEST_FAILED:
+            let request = Request(event.request)
+            DispatchQueue.main.async { self.callbacks.onRequestFailed(request) }
+        default:
+            break
+        }
+    }
+
+    private func readState() -> SessionState {
+        guard let session else { return .detached(nil) }
+        switch ghostty_tmux_session_state(session) {
+        case GHOSTTY_TMUX_SESSION_STATE_ATTACHING: return .attaching
+        case GHOSTTY_TMUX_SESSION_STATE_SYNCING: return .syncing
+        case GHOSTTY_TMUX_SESSION_STATE_READY: return .ready
+        case GHOSTTY_TMUX_SESSION_STATE_CLOSED:
+            let detail = readReasonString() ?? ""
+            switch ghostty_tmux_session_close_reason(session) {
+            case GHOSTTY_TMUX_CLOSE_REASON_UNSUPPORTED_VERSION:
+                return .closed(.unsupportedVersion(detail))
+            default:
+                return .closed(.attachFailed(detail))
+            }
+        default:
+            switch ghostty_tmux_session_detach_reason(session) {
+            case GHOSTTY_TMUX_DETACH_REASON_SERVER_EXITED:
+                return .detached(.serverExited(readReasonString()))
+            case GHOSTTY_TMUX_DETACH_REASON_CHANNEL_ABORTED:
+                return .detached(.channelAborted)
+            case GHOSTTY_TMUX_DETACH_REASON_OUT_OF_MEMORY:
+                return .detached(.outOfMemory)
+            case GHOSTTY_TMUX_DETACH_REASON_BASELINE_FAILED:
+                return .detached(.baselineFailed)
+            case GHOSTTY_TMUX_DETACH_REASON_RECONCILE_FAILED:
+                return .detached(.reconcileFailed)
+            default:
+                return .detached(nil)
+            }
+        }
+    }
+
+    private func readReasonString() -> String? {
+        guard let session else { return nil }
+        var len: UInt = 0
+        guard let ptr = ghostty_tmux_session_reason_string(session, &len), len > 0 else {
+            return nil
+        }
+        return String(decoding: UnsafeBufferPointer(start: ptr, count: Int(len)), as: UTF8.self)
+    }
+
+    private func readTopology() -> TopologySnapshot {
+        guard let session else {
+            return TopologySnapshot(sessionName: "", windows: [], panes: [], activeWindowID: nil)
+        }
+
+        var nameLen: UInt = 0
+        let namePtr = ghostty_tmux_session_name(session, &nameLen)
+        let sessionName: String = if let namePtr, nameLen > 0 {
+            String(decoding: UnsafeBufferPointer(start: namePtr, count: Int(nameLen)), as: UTF8.self)
+        } else {
+            ""
+        }
+
+        var windows: [WindowInfo] = []
+        let windowCount = ghostty_tmux_session_window_count(session)
+        windows.reserveCapacity(Int(windowCount))
+        for index in 0..<windowCount {
+            var raw = ghostty_tmux_window_s()
+            guard ghostty_tmux_session_window_at(session, index, &raw) else { continue }
+            let name: String = if let ptr = raw.name, raw.name_len > 0 {
+                String(decoding: UnsafeBufferPointer(start: ptr, count: Int(raw.name_len)), as: UTF8.self)
+            } else {
+                ""
+            }
+            windows.append(WindowInfo(
+                id: raw.id,
+                name: name,
+                active: raw.active,
+                zoomed: raw.zoomed,
+                width: raw.width,
+                height: raw.height
+            ))
+        }
+
+        var panes: [PaneInfo] = []
+        let paneCount = ghostty_tmux_session_pane_count(session)
+        panes.reserveCapacity(Int(paneCount))
+        for index in 0..<paneCount {
+            var raw = ghostty_tmux_pane_s()
+            guard ghostty_tmux_session_pane_at(session, index, &raw) else { continue }
+            panes.append(PaneInfo(
+                id: raw.id,
+                windowID: raw.window_id,
+                x: raw.x,
+                y: raw.y,
+                width: raw.width,
+                height: raw.height,
+                state: PaneState(raw.state)
+            ))
+        }
+
+        var activeWindow: UInt64 = 0
+        let hasActive = ghostty_tmux_session_active_window(session, &activeWindow)
+
+        return TopologySnapshot(
+            sessionName: sessionName,
+            windows: windows,
+            panes: panes,
+            activeWindowID: hasActive ? activeWindow : nil
+        )
+    }
+
+    // MARK: Bindings (writer queue)
+
+    /// Bind a pane for a surface about to be created. `wake` fires on
+    /// the writer queue whenever the pane's content changed; forward it
+    /// to the surface's render request (which is thread-safe).
+    func bind(
+        paneID: UInt64,
+        wake: @escaping () -> Void,
+        completion: @escaping (Result<PaneBinding, BindError>) -> Void
+    ) {
+        queue.async { [self] in
+            guard let session else {
+                DispatchQueue.main.async { completion(.failure(.detachedSession)) }
+                return
+            }
+            let box = WakeBox(wake)
+            var handle: ghostty_tmux_binding_t?
+            let result = ghostty_tmux_session_bind_pane(
+                session,
+                paneID,
+                { ctx in
+                    guard let ctx else { return }
+                    Unmanaged<WakeBox>.fromOpaque(ctx).takeUnretainedValue().wake()
+                },
+                Unmanaged.passUnretained(box).toOpaque(),
+                &handle
+            )
+            drainOutbound()
+            switch result {
+            case GHOSTTY_TMUX_RESULT_OK:
+                let binding = PaneBinding(paneID: paneID, handle: handle!, wakeBox: box)
+                DispatchQueue.main.async { completion(.success(binding)) }
+            case GHOSTTY_TMUX_RESULT_PANE_UNKNOWN:
+                DispatchQueue.main.async { completion(.failure(.paneUnknown)) }
+            case GHOSTTY_TMUX_RESULT_ALREADY_BOUND:
+                DispatchQueue.main.async { completion(.failure(.alreadyBound)) }
+            default:
+                DispatchQueue.main.async { completion(.failure(.outOfMemory)) }
+            }
+        }
+    }
+
+    /// REQUIRED before the bound surface is destroyed. `completion`
+    /// fires on the main queue once the binding is released — the
+    /// surface may be torn down after that point, not before.
+    func unbind(_ binding: PaneBinding, completion: @escaping () -> Void = {}) {
+        queue.async { [self] in
+            guard let session else {
+                DispatchQueue.main.async(execute: completion)
+                return
+            }
+            ghostty_tmux_session_unbind_pane(session, binding.handle)
+            // Keep the wake box alive until after unbind: no wake can
+            // fire past this point.
+            _ = binding.wakeBox
+            DispatchQueue.main.async(execute: completion)
+        }
+    }
+
+    // MARK: Input, size, requests (writer queue)
+
+    func sendInput(paneID: UInt64, _ bytes: Data) {
+        queue.async { [self] in
+            guard let session else { return }
+            bytes.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+                _ = ghostty_tmux_session_send_input(
+                    session,
+                    paneID,
+                    raw.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(raw.count)
+                )
+            }
+            drainOutbound()
+        }
+    }
+
+    /// Honest viewport reporting. Callable any time, including before
+    /// connect: the size is flushed into the attach's sync batch so
+    /// layouts arrive already sized for this client.
+    func setClientSize(cols: UInt32, rows: UInt32) {
+        queue.async { [self] in
+            guard let session else { return }
+            _ = ghostty_tmux_session_set_client_size(session, cols, rows)
+            drainOutbound()
+        }
+    }
+
+    func requestNewWindow() {
+        submit { ghostty_tmux_session_request_new_window($0) }
+    }
+
+    func requestSplit(paneID: UInt64, direction: SplitDirection, zoom: Bool) {
+        let cDirection: ghostty_tmux_split_direction_e = switch direction {
+        case .left: GHOSTTY_TMUX_SPLIT_DIRECTION_LEFT
+        case .right: GHOSTTY_TMUX_SPLIT_DIRECTION_RIGHT
+        case .up: GHOSTTY_TMUX_SPLIT_DIRECTION_UP
+        case .down: GHOSTTY_TMUX_SPLIT_DIRECTION_DOWN
+        }
+        submit { ghostty_tmux_session_request_split($0, paneID, cDirection, zoom) }
+    }
+
+    func requestClosePane(paneID: UInt64) {
+        submit { ghostty_tmux_session_request_close_pane($0, paneID) }
+    }
+
+    func requestCloseWindow(windowID: UInt64) {
+        submit { ghostty_tmux_session_request_close_window($0, windowID) }
+    }
+
+    func requestSelectWindow(windowID: UInt64) {
+        submit { ghostty_tmux_session_request_select_window($0, windowID) }
+    }
+
+    func requestSelectPane(paneID: UInt64) {
+        submit { ghostty_tmux_session_request_select_pane($0, paneID) }
+    }
+
+    func requestZoomPane(paneID: UInt64) {
+        submit { ghostty_tmux_session_request_zoom_pane($0, paneID) }
+    }
+
+    func requestCopyMode(paneID: UInt64) {
+        submit { ghostty_tmux_session_request_copy_mode($0, paneID) }
+    }
+
+    private func submit(
+        _ body: @escaping (ghostty_tmux_session_t) -> ghostty_tmux_result_e
+    ) {
+        queue.async { [self] in
+            guard let session else { return }
+            _ = body(session)
+            drainOutbound()
+        }
+    }
+}
+
+// MARK: - C enum bridging
+
+extension TmuxSessionController.Request {
+    init(_ raw: ghostty_tmux_request_e) {
+        switch raw {
+        case GHOSTTY_TMUX_REQUEST_SPLIT_PANE: self = .splitPane
+        case GHOSTTY_TMUX_REQUEST_CLOSE_PANE: self = .closePane
+        case GHOSTTY_TMUX_REQUEST_CLOSE_WINDOW: self = .closeWindow
+        case GHOSTTY_TMUX_REQUEST_SELECT_WINDOW: self = .selectWindow
+        case GHOSTTY_TMUX_REQUEST_SELECT_PANE: self = .selectPane
+        case GHOSTTY_TMUX_REQUEST_ZOOM_PANE: self = .zoomPane
+        case GHOSTTY_TMUX_REQUEST_COPY_MODE: self = .copyMode
+        case GHOSTTY_TMUX_REQUEST_SET_CLIENT_SIZE: self = .setClientSize
+        default: self = .newWindow
+        }
+    }
+}
+
+extension TmuxSessionController.PaneState {
+    init(_ raw: ghostty_tmux_pane_state_e) {
+        switch raw {
+        case GHOSTTY_TMUX_PANE_STATE_BOOTSTRAPPING: self = .bootstrapping
+        case GHOSTTY_TMUX_PANE_STATE_LIVE: self = .live
+        case GHOSTTY_TMUX_PANE_STATE_DEGRADED: self = .degraded
+        default: self = .discovered
+        }
+    }
+}
