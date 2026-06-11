@@ -27,6 +27,12 @@ final class TmuxScreenModel: ObservableObject {
     /// The reducer's expectations: the target this session connects to.
     var runtimeConnectionTarget: TmuxConnectionTarget { target }
 
+    /// The last viewport this session reported; the root carries it
+    /// into the replacement model on reconnect for a sized attach.
+    var lastClientSize: TmuxSessionController.ClientSize? {
+        session?.controller.lastClientSize
+    }
+
     /// True when no connection exists or is in progress, so the root
     /// model may replace this model (e.g. after a server edit) without
     /// dropping a session the user is still attached to.
@@ -48,17 +54,21 @@ final class TmuxScreenModel: ObservableObject {
     private var transportFailureObservation: AnyCancellable?
     private var stopped = false
 
+    private let initialClientSize: TmuxSessionController.ClientSize?
+
     init(
         target: TmuxConnectionTarget,
         sessionInstanceID: UUID,
         transportFactory: @escaping TransportFactory,
-        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
+        initialClientSize: TmuxSessionController.ClientSize? = nil
     ) {
         self.target = target
         self.sessionInstanceID = sessionInstanceID
         self.transportFactory = transportFactory
         self.onRuntimeStateChange = onRuntimeStateChange
         self.currentTerminalSettings = target.terminalSettings
+        self.initialClientSize = initialClientSize
         start()
     }
 
@@ -90,6 +100,15 @@ final class TmuxScreenModel: ObservableObject {
         )
         self.session = session
         terminalScreenAdapter.activate(session: session)
+
+        // Sized attach: a viewport carried from the previous runtime
+        // attempt is reported before connect, so the engine pipelines
+        // refresh-client -C ahead of the baseline and every capture
+        // lands at this client's width (no relayout churn, physical
+        // rows byte-exact).
+        if let size = initialClientSize {
+            session.controller.setClientSize(cols: size.cols, rows: size.rows)
+        }
 
         stateObservation = session.$state
             .removeDuplicates()

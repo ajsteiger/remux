@@ -235,6 +235,12 @@ final class TmuxTerminalScreenAdapter: ObservableObject {
             releaseBeforePermanentRemoval: {},
             transferRuntimeSurfaceLifetimeToAppShutdown: {}
         )
+        // The first real layout-driven display update opens viewport
+        // reporting (the placeholder frame's bogus size never reaches
+        // tmux) and reports the actual grid once.
+        activeManagedSurface?.onDisplayUpdate = { [weak paneSurface] _, _, _ in
+            paneSurface?.enableClientSizeReports()
+        }
     }
 
     private func managedSurface(for id: UUID) -> GhosttyManagedSurface? {

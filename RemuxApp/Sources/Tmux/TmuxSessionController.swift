@@ -498,7 +498,19 @@ final class TmuxSessionController: @unchecked Sendable {
     /// Honest viewport reporting. Callable any time, including before
     /// connect: the size is flushed into the attach's sync batch so
     /// layouts arrive already sized for this client.
+    /// Host-side record of the last reported viewport, carried across
+    /// model replacement so a reconnect attaches already sized (the
+    /// engine pipelines it before the baseline; captures land at this
+    /// client's width with no relayout churn).
+    struct ClientSize: Sendable, Equatable {
+        let cols: UInt32
+        let rows: UInt32
+    }
+
+    private(set) var lastClientSize: ClientSize?
+
     func setClientSize(cols: UInt32, rows: UInt32) {
+        lastClientSize = ClientSize(cols: cols, rows: rows)
         queue.async { [self] in
             guard let session else { return }
             _ = ghostty_tmux_session_set_client_size(session, cols, rows)

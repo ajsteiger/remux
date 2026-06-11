@@ -93,7 +93,8 @@ final class RemuxRootModel: ObservableObject {
         TmuxConnectionTarget,
         UUID,
         @escaping TmuxScreenModel.TransportFactory,
-        @escaping (TerminalRuntimeStateUpdate) -> Void
+        @escaping (TerminalRuntimeStateUpdate) -> Void,
+        TmuxSessionController.ClientSize?
     ) -> TmuxScreenModel
 
     enum SetupMode: Equatable {
@@ -1043,17 +1044,24 @@ final class RemuxRootModel: ObservableObject {
         target: TmuxConnectionTarget,
         sessionInstanceID: UUID,
         transportFactory: @escaping TmuxScreenModel.TransportFactory,
-        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
+        initialClientSize: TmuxSessionController.ClientSize?
     ) -> TmuxScreenModel {
         TmuxScreenModel(
             target: target,
             sessionInstanceID: sessionInstanceID,
             transportFactory: transportFactory,
-            onRuntimeStateChange: onRuntimeStateChange
+            onRuntimeStateChange: onRuntimeStateChange,
+            initialClientSize: initialClientSize
         )
     }
 
     private func replaceTerminalScreenModel(for session: ActiveTerminalSession) {
+        // Carry the previous attempt's viewport into the replacement so
+        // it attaches already sized (captures land at this width).
+        let carriedClientSize = terminalScreenModels.first(where: {
+            $0.key.workspaceID == session.id
+        })?.value.lastClientSize
         stopTerminalScreenModels(workspaceID: session.id)
         let key = TerminalRuntimeAttemptKey(session: session)
         let transportFactory: TmuxScreenModel.TransportFactory = { [preparedTransportCoordinator] target in
@@ -1066,7 +1074,8 @@ final class RemuxRootModel: ObservableObject {
             { [weak self] update in
                 guard let self else { return }
                 _ = self.handleTerminalRuntimeStateUpdate(update)
-            }
+            },
+            carriedClientSize
         )
         terminalScreenModels[key] = model
     }

@@ -27,8 +27,12 @@ final class TmuxPaneSurface {
         let controller: TmuxSessionController
         let paneID: UInt64
         /// Only the visible pane surface reports the client viewport;
-        /// in Remux's zoomed presentation that is this surface.
-        var reportsClientSize = true
+        /// in Remux's zoomed presentation that is this surface. Starts
+        /// disabled: the view is created at a placeholder frame, and a
+        /// report from it would force a server relayout at a bogus
+        /// size. The adapter enables reporting on the first real
+        /// layout-driven display update.
+        var reportsClientSize = false
 
         init(controller: TmuxSessionController, paneID: UInt64) {
             self.controller = controller
@@ -180,6 +184,20 @@ final class TmuxPaneSurface {
     }
 
     var rawSurface: ghostty_surface_t { surface }
+
+    /// Enable viewport reporting after the first real layout and report
+    /// the current grid once (the size changes the placeholder gate
+    /// swallowed are re-derived from the live surface).
+    func enableClientSizeReports() {
+        guard !inputBox.reportsClientSize else { return }
+        inputBox.reportsClientSize = true
+        let size = ghostty_surface_size(surface)
+        guard size.columns >= 2, size.rows >= 2 else { return }
+        controller.setClientSize(
+            cols: UInt32(size.columns),
+            rows: UInt32(size.rows)
+        )
+    }
 
     func setVisible(_ visible: Bool) {
         ghostty_surface_set_occlusion(surface, visible)
