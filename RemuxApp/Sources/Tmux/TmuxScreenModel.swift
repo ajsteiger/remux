@@ -15,6 +15,12 @@ final class TmuxScreenModel: ObservableObject {
     let target: TmuxConnectionTarget
     let sessionInstanceID: UUID
 
+    /// The screen-facing facet: presents this session through the
+    /// GhosttyTerminalScreenModeling boundary for GhosttySurfaceScreen.
+    /// Created before the runtime because it is the runtime's surface
+    /// delegate (scroll state delivery).
+    let terminalScreenAdapter = TmuxTerminalScreenAdapter()
+
     @Published private(set) var session: TmuxTerminalSession?
     @Published private(set) var startupFailure: String?
 
@@ -57,6 +63,7 @@ final class TmuxScreenModel: ObservableObject {
         let runtime: GhosttyKitRuntime
         do {
             runtime = try GhosttyKitRuntime(
+                surfaceDelegate: terminalScreenAdapter,
                 terminalSettings: target.terminalSettings
             )
         } catch {
@@ -76,6 +83,7 @@ final class TmuxScreenModel: ObservableObject {
             }
         )
         self.session = session
+        terminalScreenAdapter.activate(session: session)
 
         stateObservation = session.$state
             .removeDuplicates()
@@ -129,6 +137,7 @@ final class TmuxScreenModel: ObservableObject {
         guard !stopped else { return }
         stopped = true
         stateObservation = nil
+        terminalScreenAdapter.invalidate()
         if let session {
             await session.shutdown()
         }
@@ -164,9 +173,14 @@ final class TmuxScreenModel: ObservableObject {
                 }
                 return .connecting
             }
-            return .disconnected(Self.disconnectReason(for: reason))
+            return .disconnected(
+                reason?.terminalDisconnectReason ?? TerminalDisconnectReason(
+                    kind: .unknown,
+                    message: "disconnected"
+                )
+            )
         case .closed(let reason):
-            return .disconnected(Self.closeReason(for: reason))
+            return .disconnected(reason.terminalDisconnectReason)
         }
     }
 
@@ -189,53 +203,4 @@ final class TmuxScreenModel: ObservableObject {
         kind: .runtime,
         message: "terminal runtime failed to initialize"
     )
-
-    private static func disconnectReason(
-        for reason: TmuxSessionController.DetachReason?
-    ) -> TerminalDisconnectReason {
-        switch reason {
-        case .serverExited(let message):
-            TerminalDisconnectReason(
-                kind: .remoteExit,
-                message: message ?? "tmux server exited"
-            )
-        case .transportClosed:
-            TerminalDisconnectReason(
-                kind: .transportIO,
-                message: "connection lost"
-            )
-        case .channelAborted:
-            TerminalDisconnectReason(
-                kind: .runtime,
-                message: "tmux control protocol error"
-            )
-        case .outOfMemory, .baselineFailed, .reconcileFailed:
-            TerminalDisconnectReason(
-                kind: .runtime,
-                message: "tmux session sync failed"
-            )
-        case nil:
-            TerminalDisconnectReason(
-                kind: .unknown,
-                message: "disconnected"
-            )
-        }
-    }
-
-    private static func closeReason(
-        for reason: TmuxSessionController.CloseReason
-    ) -> TerminalDisconnectReason {
-        switch reason {
-        case .attachFailed(let message):
-            TerminalDisconnectReason(
-                kind: .runtime,
-                message: message.isEmpty ? "tmux attach failed" : message
-            )
-        case .unsupportedVersion(let version):
-            TerminalDisconnectReason(
-                kind: .runtime,
-                message: "unsupported tmux version \(version) (requires 3.2+)"
-            )
-        }
-    }
 }

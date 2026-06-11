@@ -120,19 +120,6 @@ final class TmuxTerminalSession: ObservableObject {
         }
     }
 
-    // MARK: User actions (thin request passthroughs)
-
-    func selectWindow(_ id: UInt64) { controller.requestSelectWindow(windowID: id) }
-    func newWindow() { controller.requestNewWindow() }
-    func closeActivePane() {
-        guard let pane = paneSurface?.paneID else { return }
-        controller.requestClosePane(paneID: pane)
-    }
-    func sendText(_ text: String) {
-        guard let pane = paneSurface?.paneID else { return }
-        controller.sendInput(paneID: pane, Data(text.utf8))
-    }
-
     // MARK: Event handling (main actor)
 
     private func handleState(_ newState: TmuxSessionController.SessionState) {

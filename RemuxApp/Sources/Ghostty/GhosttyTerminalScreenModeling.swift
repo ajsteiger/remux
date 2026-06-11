@@ -1,0 +1,143 @@
+import CoreGraphics
+import Foundation
+import GhosttyKit
+
+/// The model surface `GhosttySurfaceScreen` renders against: projections of
+/// terminal readiness/topology, focused-surface input routing, tmux topology
+/// actions, and the selection-sheet/preview plumbing.
+///
+/// Two engines implement it: the legacy host-session pipeline
+/// (`GhosttySurfaceScreenModel`) and the new tmux session stack
+/// (`TmuxTerminalScreenAdapter`). The screen owns presentation behavior only;
+/// everything engine-specific flows through this boundary.
+@MainActor
+protocol GhosttyTerminalScreenModeling: ObservableObject {
+    var terminalScreenPresentationProjection: GhosttyTerminalScreenPresentationProjection { get }
+    var terminalInteractionProjection: GhosttyTerminalInteractionProjection { get }
+    var terminalSurfaceMaterializationContext: GhosttyRuntimeSurfaceMaterializationContext { get }
+    var commandFailureEvent: GhosttyTmuxCommandFailureEvent? { get }
+    var stateTraceLabel: String { get }
+
+    /// The hidden host-session surface of the legacy pipeline. Engines
+    /// without a host session return nil and the screen renders no host
+    /// surface layer. Dies with the legacy pipeline.
+    var hostSurfaceScreenModel: GhosttySurfaceScreenModel? { get }
+
+    func reportRuntimeReadinessIfNeeded()
+
+    func makePanePreviewSession(
+        leafIDs: [UUID],
+        previewSizing: GhosttyPanePreviewSession.PreviewSizing
+    ) -> GhosttyPanePreviewSession
+
+    // MARK: Focused/targeted input routing
+
+    @discardableResult
+    func sendInputToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult
+
+    @discardableResult
+    func sendPasteToFocusedSurface(_ text: String) -> FocusedTerminalInputSubmissionResult
+
+    @discardableResult
+    func sendPaste(_ text: String, to surfaceID: UUID) -> FocusedTerminalInputSubmissionResult
+
+    @discardableResult
+    func sendKeyEventToFocusedSurface(_ event: GhosttySurfaceKeyEvent) -> FocusedTerminalInputSubmissionResult
+
+    func readSelection(from surfaceID: UUID) -> GhosttyTerminalSelectionReadOutcome
+    func selectionAvailability(for surfaceID: UUID) -> GhosttyTerminalSelectionAvailabilityOutcome
+
+    @discardableResult
+    func selectTerminalSurface(_ surfaceID: UUID, reason: String) -> GhosttySurfaceSelectionOutcome
+
+    func isMouseCaptured(for surfaceID: UUID) -> Bool
+
+    @discardableResult
+    func sendMouseButton(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMouseButtonEvent
+    ) -> GhosttyMouseInputSubmissionOutcome
+
+    @discardableResult
+    func sendMousePosition(
+        to surfaceID: UUID,
+        _ position: CGPoint,
+        mods: GhosttySurfaceKeyEvent.Mods
+    ) -> GhosttyMouseInputSubmissionOutcome
+
+    @discardableResult
+    func sendMouseScroll(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMouseScrollEvent
+    ) -> GhosttyMouseInputSubmissionOutcome
+
+    @discardableResult
+    func sendMousePressure(
+        to surfaceID: UUID,
+        _ event: GhosttySurfaceMousePressureEvent
+    ) -> GhosttyMouseInputSubmissionOutcome
+
+    // MARK: tmux topology actions
+
+    @discardableResult
+    func focusTmuxPane(_ id: UUID) -> GhosttyTmuxModelActionOutcome
+
+    @discardableResult
+    func focusTmuxTopLevel(_ id: UUID) -> GhosttyTmuxModelActionOutcome
+
+    @discardableResult
+    func focusAdjacentTmuxTopLevel(
+        _ direction: GhosttyRuntimeSelectionDirection
+    ) -> GhosttyTmuxModelActionOutcome
+
+    @discardableResult
+    func createTmuxWindow() -> GhosttyTmuxModelActionOutcome
+
+    @discardableResult
+    func splitFocusedTmuxPane(
+        _ direction: ghostty_action_split_direction_e
+    ) -> GhosttyTmuxModelActionOutcome
+
+    @discardableResult
+    func closeTmuxPane(_ id: UUID) -> GhosttyTmuxModelActionOutcome
+
+    @discardableResult
+    func closeTmuxWindow(_ id: UUID) -> GhosttyTmuxModelActionOutcome
+
+    @discardableResult
+    func enterFocusedTmuxCopyMode() -> GhosttyTmuxModelActionOutcome
+
+    // MARK: Topology action interaction effects
+
+    func createTmuxWindowInteractionEffect() -> GhosttyTmuxTopologyActionInteractionEffect
+    func splitFocusedTmuxPaneInteractionEffect() -> GhosttyTmuxTopologyActionInteractionEffect
+    func closeTmuxWindowInteractionEffect(_ id: UUID) -> GhosttyTmuxTopologyActionInteractionEffect
+    func closeTmuxPaneInteractionEffect(
+        _ id: UUID,
+        inTopLevel topLevelID: UUID
+    ) -> GhosttyTmuxTopologyActionInteractionEffect
+
+    // MARK: Selection sheets
+
+    func windowSheetPresentationProjection() -> GhosttyWindowSheetPresentationProjection?
+    func selectedPaneSheetPresentationProjection() -> GhosttyPaneSheetPresentationProjection?
+    func paneSheetDetentPaneCount(topLevelID: UUID) -> Int
+    func windowSheetDetentCellCount() -> Int
+    func paneSelectionSheetTopologyProjection(
+        topLevelID: UUID?
+    ) -> GhosttyPaneSelectionSheetTopologyProjection
+    func windowSelectionSheetRenderProjection() -> GhosttyWindowSelectionSheetRenderProjection
+    func paneSelectionSheetRenderProjection(
+        topLevelID: UUID
+    ) -> GhosttyPaneSelectionSheetRenderProjection
+}
+
+extension GhosttySurfaceScreenModel: GhosttyTerminalScreenModeling {
+    var stateTraceLabel: String {
+        state.traceLabel
+    }
+
+    var hostSurfaceScreenModel: GhosttySurfaceScreenModel? {
+        self
+    }
+}

@@ -34,9 +34,9 @@ struct GhosttyPendingAttachmentInteractionProjection: Equatable {
     }
 }
 
-struct GhosttySurfaceScreen: View {
+struct GhosttySurfaceScreen<Model: GhosttyTerminalScreenModeling>: View {
     @Environment(\.scenePhase) private var scenePhase
-    @ObservedObject private var model: GhosttySurfaceScreenModel
+    @ObservedObject private var model: Model
     private let presentation: GhosttySurfaceScreenPresentation
     private let isSelected: Bool
     private let shortcutStore: ShortcutStore
@@ -74,11 +74,11 @@ struct GhosttySurfaceScreen: View {
     private let attachmentTransferServiceFactory: @Sendable () -> any GhosttyAttachmentTransferService
     private let onMount: (GhosttyTerminalScreenViewComponent) -> Void
     private let onDismantle: (GhosttyTerminalScreenViewComponent) -> Void
-    private static let maxAttachmentPhotoSelectionCount = 10
-    private static let tmuxPrefixFlushDelay: Duration = .milliseconds(750)
+    private static var maxAttachmentPhotoSelectionCount: Int { 10 }
+    private static var tmuxPrefixFlushDelay: Duration { .milliseconds(750) }
 
     init(
-        model: GhosttySurfaceScreenModel,
+        model: Model,
         presentation: GhosttySurfaceScreenPresentation,
         isSelected: Bool,
         shortcutStore: ShortcutStore,
@@ -153,24 +153,26 @@ struct GhosttySurfaceScreen: View {
                     )
 
                     ZStack(alignment: .topLeading) {
-                        GhosttyHostSurfaceView(
-                            model: model,
-                            size: terminalViewportSize,
-                            terminalTheme: presentation.terminalTheme,
-                            onMount: {
-                                onMount(.hostSurface)
-                            },
-                            onDismantle: {
-                                onDismantle(.hostSurface)
-                            }
-                        )
-                            .frame(
-                                width: terminalViewportSize.width,
-                                height: terminalViewportSize.height,
-                                alignment: .topLeading
+                        if let hostSurfaceModel = model.hostSurfaceScreenModel {
+                            GhosttyHostSurfaceView(
+                                model: hostSurfaceModel,
+                                size: terminalViewportSize,
+                                terminalTheme: presentation.terminalTheme,
+                                onMount: {
+                                    onMount(.hostSurface)
+                                },
+                                onDismantle: {
+                                    onDismantle(.hostSurface)
+                                }
                             )
-                            .opacity(0.001)
-                            .allowsHitTesting(false)
+                                .frame(
+                                    width: terminalViewportSize.width,
+                                    height: terminalViewportSize.height,
+                                    alignment: .topLeading
+                                )
+                                .opacity(0.001)
+                                .allowsHitTesting(false)
+                        }
 
                         GhosttyRuntimePaneTreeView(
                             materializationContext: model.terminalSurfaceMaterializationContext,
@@ -1788,7 +1790,7 @@ struct GhosttySurfaceScreen: View {
             "activeLeaf": ghosttyDiagnosticShortID(interactionProjection.selectedActiveLeafID),
             "inputAvailable": "\(interactionProjection.isInputAvailable)",
             "keyboardMode": "\(inputCoordinator.keyboardMode)",
-            "state": "\(model.state)",
+            "state": model.stateTraceLabel,
             "topLevels": "\(interactionProjection.windowCount)",
             "workspaceID": presentation.workspaceID.uuidString,
         ]
