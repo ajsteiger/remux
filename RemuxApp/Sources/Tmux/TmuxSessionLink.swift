@@ -17,7 +17,7 @@ import GhosttyKit
 actor TmuxSessionLink {
     let controller: TmuxSessionController
 
-    private let transport: SSHTmuxControlTransport
+    private let transport: any TmuxControlTransport
     private var readTask: Task<Void, Never>?
     private var writeTask: Task<Void, Never>?
     private let outbound: AsyncStream<Data>
@@ -28,7 +28,7 @@ actor TmuxSessionLink {
     /// is retained across the detach.
     init(
         controller: TmuxSessionController,
-        transport: SSHTmuxControlTransport
+        transport: any TmuxControlTransport
     ) {
         self.controller = controller
         self.transport = transport
@@ -45,6 +45,10 @@ actor TmuxSessionLink {
     /// baseline. When unknown, pass nil and report the size later —
     /// never fabricate one.
     func start(viewport: TmuxControlViewport?) async throws {
+        // Idempotent transport prewarm (auth/root channel) before the
+        // session channel opens.
+        await transport.prepare()
+
         // Re-target the controller's wire bytes at this link. `yield`
         // is synchronous on the writer queue, preserving order into
         // the single consumer below.

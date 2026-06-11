@@ -21,7 +21,7 @@ final class TmuxTerminalSession: ObservableObject {
     private let app: ghostty_app_t
     private(set) var controller: TmuxSessionController!
     private var link: TmuxSessionLink?
-    private let makeTransport: () -> SSHTmuxControlTransport
+    private let makeTransport: () -> any TmuxControlTransport
     private let baseSurfaceConfig: () -> ghostty_surface_config_s
 
     /// Pane-surface creation in flight; prevents duplicate binds while
@@ -38,7 +38,7 @@ final class TmuxTerminalSession: ObservableObject {
 
     init(
         app: ghostty_app_t,
-        makeTransport: @escaping () -> SSHTmuxControlTransport,
+        makeTransport: @escaping () -> any TmuxControlTransport,
         baseSurfaceConfig: @escaping () -> ghostty_surface_config_s
     ) {
         self.app = app
