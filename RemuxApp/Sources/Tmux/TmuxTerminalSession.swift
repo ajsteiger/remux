@@ -30,7 +30,9 @@ final class TmuxTerminalSession: ObservableObject {
 
     /// Breaks the init cycle: controller callbacks are built before
     /// `self` is fully initialized.
-    private final class Relay {
+    private final class Relay: @unchecked Sendable {
+        /// Main-actor confined: written once after init, read inside
+        /// MainActor.assumeIsolated blocks only.
         weak var target: TmuxTerminalSession?
     }
 
@@ -47,11 +49,12 @@ final class TmuxTerminalSession: ObservableObject {
         self.controller = TmuxSessionController(
             app: app,
             callbacks: TmuxSessionController.Callbacks(
+                // The controller invokes these on the main queue.
                 onState: { state in
-                    relay.target?.handleState(state)
+                    MainActor.assumeIsolated { relay.target?.handleState(state) }
                 },
                 onTopology: { snapshot in
-                    relay.target?.handleTopology(snapshot)
+                    MainActor.assumeIsolated { relay.target?.handleTopology(snapshot) }
                 },
                 onPaneRemoved: { _ in
                     // The next topology snapshot names the successor;
@@ -61,7 +64,7 @@ final class TmuxTerminalSession: ObservableObject {
                 onPaneLive: { _ in },
                 onPaneDegraded: { _ in },
                 onRequestFailed: { request in
-                    relay.target?.lastFailedRequest = request
+                    MainActor.assumeIsolated { relay.target?.lastFailedRequest = request }
                 }
             )
         )

@@ -13,10 +13,12 @@ import GhosttyKit
 /// here. Events arrive synchronously on the queue and are re-published
 /// to the main actor as immutable snapshots — the UI never touches the
 /// session handle.
-final class TmuxSessionController {
+/// @unchecked Sendable: all mutable state is confined to `queue` (the
+/// writer thread) per the documented threading contract.
+final class TmuxSessionController: @unchecked Sendable {
     // MARK: Public model
 
-    enum SessionState: Equatable {
+    enum SessionState: Equatable, Sendable {
         case detached(DetachReason?)
         case attaching
         case syncing
@@ -24,7 +26,7 @@ final class TmuxSessionController {
         case closed(CloseReason)
     }
 
-    enum DetachReason: Equatable {
+    enum DetachReason: Equatable, Sendable {
         case serverExited(String?)
         case channelAborted
         case outOfMemory
@@ -32,12 +34,12 @@ final class TmuxSessionController {
         case reconcileFailed
     }
 
-    enum CloseReason: Equatable {
+    enum CloseReason: Equatable, Sendable {
         case attachFailed(String)
         case unsupportedVersion(String)
     }
 
-    struct WindowInfo: Equatable, Identifiable {
+    struct WindowInfo: Equatable, Identifiable, Sendable {
         let id: UInt64
         let name: String
         let active: Bool
@@ -47,14 +49,14 @@ final class TmuxSessionController {
         let activePaneID: UInt64?
     }
 
-    enum PaneState: Equatable {
+    enum PaneState: Equatable, Sendable {
         case discovered
         case bootstrapping
         case live
         case degraded
     }
 
-    struct PaneInfo: Equatable, Identifiable {
+    struct PaneInfo: Equatable, Identifiable, Sendable {
         let id: UInt64
         let windowID: UInt64
         let x: UInt32
@@ -64,14 +66,14 @@ final class TmuxSessionController {
         let state: PaneState
     }
 
-    struct TopologySnapshot: Equatable {
+    struct TopologySnapshot: Equatable, Sendable {
         let sessionName: String
         let windows: [WindowInfo]
         let panes: [PaneInfo]
         let activeWindowID: UInt64?
     }
 
-    enum Request: Equatable {
+    enum Request: Equatable, Sendable {
         case newWindow
         case splitPane
         case closePane
@@ -83,20 +85,20 @@ final class TmuxSessionController {
         case setClientSize
     }
 
-    enum SplitDirection {
+    enum SplitDirection: Sendable {
         case left, right, up, down
     }
 
     /// Host-visible signals, delivered on the main queue. Snapshots are
     /// immutable copies taken on the writer queue at the event's safe
     /// point, so they are always internally consistent.
-    struct Callbacks {
-        var onState: (SessionState) -> Void = { _ in }
-        var onTopology: (TopologySnapshot) -> Void = { _ in }
-        var onPaneRemoved: (UInt64) -> Void = { _ in }
-        var onPaneLive: (UInt64) -> Void = { _ in }
-        var onPaneDegraded: (UInt64) -> Void = { _ in }
-        var onRequestFailed: (Request) -> Void = { _ in }
+    struct Callbacks: Sendable {
+        var onState: @Sendable (SessionState) -> Void = { _ in }
+        var onTopology: @Sendable (TopologySnapshot) -> Void = { _ in }
+        var onPaneRemoved: @Sendable (UInt64) -> Void = { _ in }
+        var onPaneLive: @Sendable (UInt64) -> Void = { _ in }
+        var onPaneDegraded: @Sendable (UInt64) -> Void = { _ in }
+        var onRequestFailed: @Sendable (Request) -> Void = { _ in }
     }
 
     /// A live pane binding: the surface borrows the pane terminal and
@@ -104,7 +106,9 @@ final class TmuxSessionController {
     /// free the surface FIRST (its renderer stops touching the
     /// borrowed mutex), THEN `unbind` — unbind may destroy a
     /// dead-pane's engine and its mutex.
-    final class PaneBinding {
+    /// @unchecked Sendable: immutable lets; crosses from the writer
+    /// queue (creation) to the main queue (surface ownership).
+    final class PaneBinding: @unchecked Sendable {
         let paneID: UInt64
         fileprivate let handle: ghostty_tmux_binding_t
         fileprivate let wakeBox: WakeBox
@@ -116,15 +120,15 @@ final class TmuxSessionController {
         }
 
         /// Passed into ghostty_surface_config_s.tmux_binding.
-        var rawHandle: UnsafeMutableRawPointer {
-            UnsafeMutableRawPointer(handle)
+        var rawHandle: ghostty_tmux_binding_t {
+            handle
         }
     }
 
     /// Holds the wake closure with a stable address for the C callback.
-    final class WakeBox {
-        let wake: () -> Void
-        init(_ wake: @escaping () -> Void) { self.wake = wake }
+    final class WakeBox: @unchecked Sendable {
+        let wake: @Sendable () -> Void
+        init(_ wake: @escaping @Sendable () -> Void) { self.wake = wake }
     }
 
     enum BindError: Error {
@@ -148,10 +152,10 @@ final class TmuxSessionController {
     /// controller outlives connections, and each transport link
     /// re-targets it. Bytes drained while no sink is set belong to a
     /// dead connection and are dropped.
-    private var outboundSink: ((Data) -> Void)?
+    private var outboundSink: (@Sendable (Data) -> Void)?
 
     /// Re-target outbound wire bytes (writer queue).
-    func setOutboundSink(_ sink: ((Data) -> Void)?) {
+    func setOutboundSink(_ sink: (@Sendable (Data) -> Void)?) {
         queue.async { [self] in
             outboundSink = sink
         }
@@ -188,7 +192,7 @@ final class TmuxSessionController {
     /// the writer queue (the only thread allowed to touch it). All
     /// bindings must have been released first — the C side asserts this
     /// in debug builds. Call before releasing the last reference.
-    func shutdown(completion: @escaping () -> Void = {}) {
+    func shutdown(completion: @escaping @Sendable () -> Void = {}) {
         queue.async { [self] in
             tick?.cancel()
             tick = nil
@@ -418,8 +422,8 @@ final class TmuxSessionController {
     /// to the surface's render request (which is thread-safe).
     func bind(
         paneID: UInt64,
-        wake: @escaping () -> Void,
-        completion: @escaping (Result<PaneBinding, BindError>) -> Void
+        wake: @escaping @Sendable () -> Void,
+        completion: @escaping @Sendable (Result<PaneBinding, BindError>) -> Void
     ) {
         queue.async { [self] in
             guard let session else {
@@ -457,7 +461,7 @@ final class TmuxSessionController {
     /// freed (unbind may destroy a dead-pane's engine and its mutex;
     /// no renderer may still reference them). `completion` fires on
     /// the main queue once released.
-    func unbind(_ binding: PaneBinding, completion: @escaping () -> Void = {}) {
+    func unbind(_ binding: PaneBinding, completion: @escaping @Sendable () -> Void = {}) {
         queue.async { [self] in
             guard let session else {
                 DispatchQueue.main.async(execute: completion)

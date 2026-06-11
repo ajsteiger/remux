@@ -14,7 +14,7 @@ import GhosttyKit
 /// correlation. The only viewport the transport sees is the `-x -y`
 /// on the attach command line (used by tmux only when creating a new
 /// session).
-final class TmuxSessionLink {
+actor TmuxSessionLink {
     let controller: TmuxSessionController
 
     private let transport: SSHTmuxControlTransport

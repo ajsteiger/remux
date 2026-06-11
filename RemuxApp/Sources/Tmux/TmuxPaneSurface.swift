@@ -41,6 +41,12 @@ final class TmuxPaneSurface {
         case surfaceCreationFailed
     }
 
+    /// C handles/configs crossing into the @Sendable bind completion;
+    /// they are only used back on the main actor.
+    private struct UncheckedSendable<T>: @unchecked Sendable {
+        let value: T
+    }
+
     /// Create a pane surface: bind first (writer queue), then build the
     /// surface with the binding in its config. Completion on main.
     static func create(
@@ -48,11 +54,13 @@ final class TmuxPaneSurface {
         controller: TmuxSessionController,
         paneID: UInt64,
         baseConfig: ghostty_surface_config_s,
-        completion: @escaping (Result<TmuxPaneSurface, CreateError>) -> Void
+        completion: @escaping @MainActor (Result<TmuxPaneSurface, CreateError>) -> Void
     ) {
         // The wake target doesn't exist until the surface does; bridge
         // through a box the wake closure reads after creation.
         let wakeTarget = WakeTarget()
+        let appBox = UncheckedSendable(value: app)
+        let configBox = UncheckedSendable(value: baseConfig)
         controller.bind(
             paneID: paneID,
             wake: { [weak wakeTarget] in
@@ -62,16 +70,18 @@ final class TmuxPaneSurface {
                 ghostty_surface_refresh(surface)
             }
         ) { result in
+            // The controller invokes completions on the main queue.
+            MainActor.assumeIsolated {
             switch result {
             case .failure(let error):
                 completion(.failure(.bindFailed(error)))
             case .success(let binding):
                 if let pane = TmuxPaneSurface(
-                    app: app,
+                    app: appBox.value,
                     controller: controller,
                     paneID: paneID,
                     binding: binding,
-                    baseConfig: baseConfig
+                    baseConfig: configBox.value
                 ) {
                     wakeTarget.surface = pane.surface
                     // Content may have changed between bind and
@@ -83,11 +93,20 @@ final class TmuxPaneSurface {
                     completion(.failure(.surfaceCreationFailed))
                 }
             }
+            }
         }
     }
 
-    private final class WakeTarget {
-        var surface: ghostty_surface_t?
+    /// The wake fires on the writer queue while the surface is set on
+    /// the main queue: a real cross-thread handoff, guarded by a lock.
+    private final class WakeTarget: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _surface: ghostty_surface_t?
+
+        var surface: ghostty_surface_t? {
+            get { lock.withLock { _surface } }
+            set { lock.withLock { _surface = newValue } }
+        }
     }
 
     private init?(
@@ -166,7 +185,7 @@ final class TmuxPaneSurface {
     /// the borrowed mutex is no longer locked by anyone), then release
     /// the binding on the writer queue (destroying the engine if its
     /// pane already died). Completion on main.
-    func close(completion: @escaping () -> Void = {}) {
+    func close(completion: @escaping @Sendable () -> Void = {}) {
         guard !closed else {
             completion()
             return
