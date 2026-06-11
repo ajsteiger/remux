@@ -220,6 +220,17 @@ final class TmuxSessionController {
         }
     }
 
+    /// Prompt detach on transport loss (SSH EOF/error). Session state
+    /// is retained for the next connect; idempotent.
+    func disconnect() {
+        queue.async { [self] in
+            guard let session else { return }
+            ghostty_tmux_session_disconnect(session)
+            tick?.cancel()
+            tick = nil
+        }
+    }
+
     /// Inbound SSH bytes.
     func pump(_ data: Data) {
         queue.async { [self] in
