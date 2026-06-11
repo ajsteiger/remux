@@ -187,6 +187,23 @@ final class GhosttyKitRuntime {
         )
     }
 
+    /// The ghostty app handle for session-level APIs
+    /// (ghostty_tmux_session_new); main-actor like the runtime.
+    var appHandle: ghostty_app_t {
+        state.app
+    }
+
+    /// Base surface config for new-architecture tmux pane surfaces:
+    /// appearance applied from this runtime's settings; platform,
+    /// scale, and the pane binding are set by the pane surface itself.
+    func makeTmuxBaseSurfaceConfig() -> ghostty_surface_config_s {
+        var config = ghostty_surface_config_new()
+        GhosttyTerminalAppearancePolicy
+            .currentDeviceAppearance(settings: state.terminalSettings)
+            .apply(to: &config)
+        return config
+    }
+
 #if DEBUG
     var appHandleForTesting: ghostty_app_t {
         state.app

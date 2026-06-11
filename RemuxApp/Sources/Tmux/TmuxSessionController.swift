@@ -32,6 +32,7 @@ final class TmuxSessionController: @unchecked Sendable {
         case outOfMemory
         case baselineFailed
         case reconcileFailed
+        case transportClosed
     }
 
     enum CloseReason: Equatable, Sendable {
@@ -337,6 +338,8 @@ final class TmuxSessionController: @unchecked Sendable {
                 return .detached(.baselineFailed)
             case GHOSTTY_TMUX_DETACH_REASON_RECONCILE_FAILED:
                 return .detached(.reconcileFailed)
+            case GHOSTTY_TMUX_DETACH_REASON_TRANSPORT_CLOSED:
+                return .detached(.transportClosed)
             default:
                 return .detached(nil)
             }
