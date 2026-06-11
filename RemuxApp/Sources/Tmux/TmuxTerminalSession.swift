@@ -168,6 +168,17 @@ final class TmuxTerminalSession: ObservableObject {
             return
         }
 
+        // Phone presentation policy (matches the legacy pipeline): the
+        // presented pane is zoomed so it owns the full client size.
+        // Selection keeps zoom engine-side, so this fires only when an
+        // unzoomed multi-pane window becomes the presentation target;
+        // an externally unzoomed window is respected until the
+        // presented pane changes.
+        if !window.zoomed,
+           snapshot.panes.filter({ $0.windowID == windowID }).count > 1 {
+            controller.requestZoomPane(paneID: paneID)
+        }
+
         presentingPaneID = paneID
         TmuxPaneSurface.create(
             app: app,

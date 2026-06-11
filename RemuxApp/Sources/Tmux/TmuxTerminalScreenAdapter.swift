@@ -205,10 +205,12 @@ final class TmuxTerminalScreenAdapter: ObservableObject {
                 return .queued
             },
             tmuxSplit: { [weak controller] direction in
+                // Zoomed split: the new pane immediately owns the full
+                // client size (phone presentation policy).
                 controller?.requestSplit(
                     paneID: paneID,
                     direction: TmuxSessionController.SplitDirection(actionDirection: direction),
-                    zoom: false
+                    zoom: true
                 )
                 return .queued
             },
@@ -558,7 +560,7 @@ extension TmuxTerminalScreenAdapter: GhosttyTerminalScreenModeling {
         controller.requestSplit(
             paneID: paneSurface.paneID,
             direction: TmuxSessionController.SplitDirection(actionDirection: direction),
-            zoom: false
+            zoom: true
         )
         return .queued
     }
