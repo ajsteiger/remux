@@ -99,9 +99,10 @@ final class TmuxSessionController {
     }
 
     /// A live pane binding: the surface borrows the pane terminal and
-    /// render mutex for its whole lifetime. MUST be released (on the
-    /// writer queue, via `unbind`) before the owning surface is torn
-    /// down.
+    /// render mutex for its whole lifetime. Release order is strict:
+    /// free the surface FIRST (its renderer stops touching the
+    /// borrowed mutex), THEN `unbind` — unbind may destroy a
+    /// dead-pane's engine and its mutex.
     final class PaneBinding {
         let paneID: UInt64
         fileprivate let handle: ghostty_tmux_binding_t
@@ -445,9 +446,10 @@ final class TmuxSessionController {
         }
     }
 
-    /// REQUIRED before the bound surface is destroyed. `completion`
-    /// fires on the main queue once the binding is released — the
-    /// surface may be torn down after that point, not before.
+    /// REQUIRED for every binding, AFTER the bound surface has been
+    /// freed (unbind may destroy a dead-pane's engine and its mutex;
+    /// no renderer may still reference them). `completion` fires on
+    /// the main queue once released.
     func unbind(_ binding: PaneBinding, completion: @escaping () -> Void = {}) {
         queue.async { [self] in
             guard let session else {
