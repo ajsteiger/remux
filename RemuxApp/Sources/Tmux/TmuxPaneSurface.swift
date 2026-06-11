@@ -154,7 +154,6 @@ final class TmuxPaneSurface {
         self.binding = binding
         self.controller = controller
         self.inputBox = inputBox
-        view.attach(surface: surface)
     }
 
     var rawSurface: ghostty_surface_t { surface }

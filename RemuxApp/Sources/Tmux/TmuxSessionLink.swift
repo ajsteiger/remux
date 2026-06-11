@@ -23,26 +23,19 @@ final class TmuxSessionLink {
     private let outbound: AsyncStream<Data>
     private let outboundContinuation: AsyncStream<Data>.Continuation
 
+    /// The controller outlives links: reconnecting builds a new link
+    /// (new transport) around the same controller, whose session state
+    /// is retained across the detach.
     init(
-        app: ghostty_app_t,
-        transport: SSHTmuxControlTransport,
-        callbacks: TmuxSessionController.Callbacks
+        controller: TmuxSessionController,
+        transport: SSHTmuxControlTransport
     ) {
+        self.controller = controller
         self.transport = transport
 
         var continuation: AsyncStream<Data>.Continuation!
         self.outbound = AsyncStream { continuation = $0 }
         self.outboundContinuation = continuation
-
-        // `yield` is synchronous and called from the controller's
-        // serial writer queue, so wire order is preserved end to end.
-        self.controller = TmuxSessionController(
-            app: app,
-            callbacks: callbacks,
-            onOutbound: { [outboundContinuation = continuation!] data in
-                outboundContinuation.yield(data)
-            }
-        )
     }
 
     /// Establish the SSH control channel and attach the session.
@@ -52,6 +45,13 @@ final class TmuxSessionLink {
     /// baseline. When unknown, pass nil and report the size later —
     /// never fabricate one.
     func start(viewport: TmuxControlViewport?) async throws {
+        // Re-target the controller's wire bytes at this link. `yield`
+        // is synchronous on the writer queue, preserving order into
+        // the single consumer below.
+        controller.setOutboundSink { [outboundContinuation] data in
+            outboundContinuation.yield(data)
+        }
+
         // Single ordered writer for the session's wire bytes.
         writeTask = Task { [transport, outbound] in
             for await data in outbound {
@@ -90,6 +90,7 @@ final class TmuxSessionLink {
     /// is retained for a future link); bindings stay valid per the
     /// session contract.
     func stop() async {
+        controller.setOutboundSink(nil)
         readTask?.cancel()
         readTask = nil
         outboundContinuation.finish()

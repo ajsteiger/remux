@@ -44,6 +44,7 @@ final class TmuxSessionController {
         let zoomed: Bool
         let width: UInt32
         let height: UInt32
+        let activePaneID: UInt64?
     }
 
     enum PaneState: Equatable {
@@ -142,22 +143,27 @@ final class TmuxSessionController {
     private var tick: DispatchSourceTimer?
     private let callbacks: Callbacks
 
-    /// Outbound wire bytes, invoked on the writer queue after every
-    /// entry point that may have produced output. The transport writes
-    /// them to the SSH channel (partial writes are safe; this is the
-    /// full pending buffer each time, already consumed from the
-    /// session).
-    private let onOutbound: (Data) -> Void
+    /// Outbound wire bytes sink, invoked on the writer queue after
+    /// every entry point that may have produced output. Settable: the
+    /// controller outlives connections, and each transport link
+    /// re-targets it. Bytes drained while no sink is set belong to a
+    /// dead connection and are dropped.
+    private var outboundSink: ((Data) -> Void)?
+
+    /// Re-target outbound wire bytes (writer queue).
+    func setOutboundSink(_ sink: ((Data) -> Void)?) {
+        queue.async { [self] in
+            outboundSink = sink
+        }
+    }
 
     init(
         app: ghostty_app_t,
         callbacks: Callbacks,
-        onOutbound: @escaping (Data) -> Void,
         queue: DispatchQueue = DispatchQueue(label: "remux.tmux.session.writer")
     ) {
         self.queue = queue
         self.callbacks = callbacks
-        self.onOutbound = onOutbound
 
         var config = ghostty_tmux_session_config_s()
         config.event_cb = { userdata, event in
@@ -271,7 +277,7 @@ final class TmuxSessionController {
         }
         let data = Data(bytes: ptr, count: Int(len))
         ghostty_tmux_session_outbound_consume(session, len)
-        onOutbound(data)
+        outboundSink?(data)
     }
 
     // MARK: Events (writer queue) -> main snapshots
@@ -372,7 +378,8 @@ final class TmuxSessionController {
                 active: raw.active,
                 zoomed: raw.zoomed,
                 width: raw.width,
-                height: raw.height
+                height: raw.height,
+                activePaneID: raw.has_active_pane ? raw.active_pane_id : nil
             ))
         }
 
