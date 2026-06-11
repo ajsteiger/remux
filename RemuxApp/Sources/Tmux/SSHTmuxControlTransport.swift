@@ -1533,31 +1533,14 @@ private enum SSHTmuxControlBootstrap {
             try await childChannel.pipeline.addHandler(handler).get()
         }
 
-        try await trace.stage(
-            "pty.request",
-            fields: [
-                "columns": "\(viewport.columns)",
-                "rows": "\(viewport.rows)",
-                "pixelHeight": "\(viewport.pixelHeight)",
-                "pixelWidth": "\(viewport.pixelWidth)",
-            ]
-        ) {
-            GhosttyRuntimeTrace.tmuxViewport(
-                "startup.pty.request viewport=\(GhosttyRuntimeTrace.viewportDescription(viewport))"
-            )
-            handler.expectReply(for: .pseudoTerminal)
-            try await childChannel.triggerUserOutboundEvent(
-                SSHChannelRequestEvent.PseudoTerminalRequest(
-                    wantReply: true,
-                    term: "xterm-256color",
-                    terminalCharacterWidth: Int(viewport.columns),
-                    terminalRowHeight: Int(viewport.rows),
-                    terminalPixelWidth: Int(viewport.pixelWidth),
-                    terminalPixelHeight: Int(viewport.pixelHeight),
-                    terminalModes: .init([.ECHO: 0])
-                )
-            )
-        }
+        // Deliberately NO pseudo-terminal: the control-mode protocol is a
+        // plain byte stream pumped straight into the session parser. A PTY
+        // would force `tmux -CC` (which demands a tty and wraps the stream
+        // in a DCS 1000p envelope the parser must not see) and adds echo and
+        // CRLF line-discipline hazards. `tmux -C` over a bare exec channel
+        // emits exactly the verified wire contract; TERM is exported by the
+        // remote command line and the client size is owned by the session's
+        // refresh-client reporting.
         try await trace.stage(
             "exec.request",
             fields: ["commandBytes": "\(command.lengthOfBytes(using: .utf8))"]
