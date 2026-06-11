@@ -332,6 +332,51 @@ final class RemuxAppUITests: XCTestCase {
         )
     }
 
+    func testLiveMouseReportScrollTraceWhenConfigured() throws {
+        let sessionName = try generatedLiveLatencySessionName("mousescroll")
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        // A full-screen app with mouse reporting enabled (the opencode
+        // scroll case): wheel gestures forward to the app instead of
+        // scrolling local scrollback.
+        sendTerminalCommand(
+            "seq -f 'REMUX_MOUSE_LINE_%g' 300 > /tmp/remux-scroll.txt; vim --clean -c 'set mouse=a' /tmp/remux-scroll.txt"
+        )
+        hideKeyboardIfPresent()
+        guard let before = waitForStableLiveTerminalScreenshot(
+            minNonBackgroundPixels: 30_000,
+            attachmentName: "live-terminal-mousescroll-before"
+        ) else {
+            return
+        }
+
+        let terminal = app.otherElements["terminal.screen"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        terminal.swipeUp(velocity: .slow)
+        terminal.swipeUp(velocity: .fast)
+        terminal.swipeDown(velocity: .slow)
+        guard let after = waitForStableLiveTerminalScreenshot(
+            minNonBackgroundPixels: 30_000,
+            attachmentName: "live-terminal-mousescroll-after"
+        ) else {
+            return
+        }
+
+        let changedPixels = liveTerminalPixelDifference(before: before, after: after)
+        XCTAssertNotNil(changedPixels)
+        XCTAssertGreaterThan(
+            changedPixels ?? 0,
+            8_000,
+            "Mouse-report swipe should move content inside the full-screen app."
+        )
+    }
+
     func testLiveSSHTmuxActionCycleWhenConfigured() throws {
         let sessionName = try generatedLiveLatencySessionName("action")
         defer {

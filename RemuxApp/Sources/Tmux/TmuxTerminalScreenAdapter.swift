@@ -729,6 +729,9 @@ extension TmuxTerminalScreenAdapter: GhosttyKitRuntimeSurfaceDelegate {
             managed.updateScrollState(state)
             return true
         case .scrollRoute(let route):
+            GhosttyRuntimeTrace.diagnostics(
+                "tmuxAdapter.scrollRoute surface=\(ghosttyDiagnosticShortID(managed.id)) route=\(route)"
+            )
             managed.updateScrollRoute(route)
             return true
         case .render, .ignored:

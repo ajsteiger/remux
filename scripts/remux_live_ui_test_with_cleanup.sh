@@ -681,7 +681,7 @@ trap finish EXIT
 declare -a xcode_args=(
   test
   -project Remux.xcodeproj
-  -scheme Remux
+  -scheme RemuxUIOnly
   -destination "$destination"
   -resultBundlePath "$result_bundle"
 )

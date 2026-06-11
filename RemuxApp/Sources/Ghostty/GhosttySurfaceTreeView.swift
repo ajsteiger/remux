@@ -553,7 +553,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             let didChangeContainer = container.update(
                 surface: surface,
                 displayScale: effectiveScale,
-                submitRouteForwardedMouseScroll: submitMouseScroll
+                submitRouteForwardedMouseScroll: submitMouseScroll,
+                submitRouteForwardedMousePosition: submitMousePosition
             )
             if container.superview !== self {
                 container.removeFromSuperview()
@@ -681,7 +682,8 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
             let didChangeContainer = container.update(
                 surface: surface,
                 displayScale: effectiveScale,
-                submitRouteForwardedMouseScroll: submitMouseScroll
+                submitRouteForwardedMouseScroll: submitMouseScroll,
+                submitRouteForwardedMousePosition: submitMousePosition
             )
             GhosttyRuntimeTrace.tmuxViewport(
                 "tree.layout leaf=\(ghosttyDiagnosticShortID(surfaceID)) rect=\(diagnosticRect(rect)) targetFrame=\(diagnosticRect(targetFrame)) didFrame=\(didChangeFrame) didContainer=\(didChangeContainer) focused=\(surfaceID == focusedSurfaceID) before=\(ghosttyDiagnosticSurfaceSize(surface.controlSurface.currentSize()))"

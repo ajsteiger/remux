@@ -95,6 +95,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var lastSentViewportScrollPosition: GhosttyPaneScrollPosition?
     private var routeForwardingGesture = GhosttyRouteForwardingScrollGesture()
     private var submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
+    private var submitRouteForwardedMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
 
     private lazy var routeForwardingPanRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleRouteForwardingPan(_:)))
@@ -123,12 +124,14 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     func update(
         surface: GhosttyManagedSurface,
         displayScale: CGFloat,
-        submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
+        submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?,
+        submitRouteForwardedMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
     ) -> Bool {
         let normalizedDisplayScale = max(displayScale, 1)
         let didChangeScale = self.displayScale != normalizedDisplayScale
         self.displayScale = normalizedDisplayScale
         self.submitRouteForwardedMouseScroll = submitRouteForwardedMouseScroll
+        self.submitRouteForwardedMousePosition = submitRouteForwardedMousePosition
 
         var needsLayout = didChangeScale
         if self.surface !== surface {
@@ -173,6 +176,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         surface.onScrollStateChange = nil
         self.surface = nil
         submitRouteForwardedMouseScroll = nil
+        submitRouteForwardedMousePosition = nil
         lastAppliedScrollRoute = nil
         resetViewportScrollInteractionState()
         surface.view.isHidden = true
@@ -190,6 +194,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         surface?.onScrollStateChange = nil
         self.surface = nil
         submitRouteForwardedMouseScroll = nil
+        submitRouteForwardedMousePosition = nil
         lastAppliedScrollRoute = nil
         resetViewportScrollInteractionState()
     }
@@ -465,6 +470,19 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         guard let surface, surface.scrollRoute != .viewport else { return }
         guard let submitRouteForwardedMouseScroll else { return }
         guard let phase = GhosttySurfacePanGesture.Phase(recognizer.state) else { return }
+
+        // Wheel reports encode at the pointer position, and touch UIs
+        // never report one: the surface's cursor position stays at its
+        // out-of-viewport initial value and the encoder drops every
+        // wheel event (mouse_encode.zig out-of-viewport rule). Anchor
+        // the pointer at the gesture's touch point before forwarding.
+        if phase == .began {
+            let location = recognizer.location(in: surface.view)
+            GhosttyRuntimeTrace.diagnostics(
+                "scroll.routePan begin surface=\(ghosttyDiagnosticShortID(surface.id)) route=\(surface.scrollRoute) location=\(location.x),\(location.y)"
+            )
+            _ = submitRouteForwardedMousePosition?(surface.id, location, [])
+        }
 
         let translation = recognizer.translation(in: self)
         let events = routeForwardingGesture.events(
