@@ -404,6 +404,13 @@ final class RemuxAppUITests: XCTestCase {
 
         let terminal = app.otherElements["terminal.screen"].firstMatch
         XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        // Chained same-direction flicks with no settle between them:
+        // the physics view never goes idle, so this exercises virtual
+        // offset drift across consecutive gestures.
+        terminal.swipeUp(velocity: .fast)
+        terminal.swipeUp(velocity: .fast)
+        terminal.swipeUp(velocity: .fast)
+        terminal.swipeUp(velocity: .fast)
         terminal.swipeUp(velocity: .fast)
         guard let after = waitForStableLiveTerminalScreenshot(
             minNonBackgroundPixels: 30_000,

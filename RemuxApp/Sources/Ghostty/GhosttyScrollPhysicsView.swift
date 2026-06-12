@@ -66,6 +66,51 @@ final class GhosttyScrollPhysicsView: UIScrollView {
     }
 }
 
+/// Detects when a deceleration has slowed below the cell-quantization
+/// floor. Native scrolling coasts to sub-pixel speeds, but forwarded
+/// scrolling emits whole cells: below a couple of cells per second the
+/// tail degenerates into isolated ticks hundreds of milliseconds apart
+/// — perceived as jitter, not motion. Velocity is smoothed with an
+/// exponential moving average so a single short frame cannot trigger
+/// a premature stop.
+struct GhosttyScrollTailCutoff {
+    /// Smoothed speed below which the coast is pure noise, in cells
+    /// per second. Discrete whole-cell steps read as motion at ~6+
+    /// ticks/s; slower than that the tail is stutter, not glide.
+    static let minimumCellsPerSecond: Double = 6
+
+    private let smoothing: Double
+    private var smoothedSpeed: Double?
+    private var lastSampleTime: TimeInterval?
+
+    init(smoothing: Double = 0.3) {
+        self.smoothing = min(max(smoothing, 0.01), 1)
+    }
+
+    /// Feed one offset delta (points) observed at `now`; returns true
+    /// when the smoothed speed has fallen below the floor.
+    mutating func shouldStop(
+        delta: Double,
+        at now: TimeInterval,
+        cellHeightPoints: Double
+    ) -> Bool {
+        defer { lastSampleTime = now }
+        guard let lastSampleTime else { return false }
+        let dt = now - lastSampleTime
+        guard dt > 0, cellHeightPoints > 0 else { return false }
+
+        let speed = abs(delta) / dt
+        let smoothed = (smoothedSpeed ?? speed) * (1 - smoothing) + speed * smoothing
+        smoothedSpeed = smoothed
+        return smoothed < Self.minimumCellsPerSecond * cellHeightPoints
+    }
+
+    mutating func reset() {
+        smoothedSpeed = nil
+        lastSampleTime = nil
+    }
+}
+
 /// Token-bucket cap on route-forwarded scroll throughput, in gesture
 /// translation units (points). A violent fling decelerates from very
 /// high velocity; without a cap one gesture could enqueue an unbounded

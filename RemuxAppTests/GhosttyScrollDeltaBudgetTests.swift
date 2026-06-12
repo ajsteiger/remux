@@ -75,6 +75,45 @@ final class GhosttyScrollDeltaBudgetTests: XCTestCase {
         XCTAssertEqual(budget.clamp(1_000, at: 0), 50)
     }
 
+    func testTailCutoffStopsBelowQuantizationFloor() {
+        var cutoff = GhosttyScrollTailCutoff(smoothing: 1)
+        let cell = 20.0
+
+        // 10 cells/s: well above the floor, keep coasting.
+        XCTAssertFalse(cutoff.shouldStop(delta: 0, at: 0, cellHeightPoints: cell))
+        XCTAssertFalse(cutoff.shouldStop(delta: 3.33, at: 1.0 / 60, cellHeightPoints: cell))
+
+        // Decayed to ~1 cell/s: below the 2.5 cells/s floor.
+        XCTAssertTrue(cutoff.shouldStop(delta: 0.33, at: 2.0 / 60, cellHeightPoints: cell))
+    }
+
+    func testTailCutoffSmoothingIgnoresSingleShortFrame() {
+        var cutoff = GhosttyScrollTailCutoff(smoothing: 0.3)
+        let cell = 20.0
+
+        _ = cutoff.shouldStop(delta: 0, at: 0, cellHeightPoints: cell)
+        // Sustained fast coast builds a high smoothed speed.
+        var now = 0.0
+        for _ in 0..<10 {
+            now += 1.0 / 60
+            XCTAssertFalse(cutoff.shouldStop(delta: 10, at: now, cellHeightPoints: cell))
+        }
+        // One near-zero frame (display-link hiccup) must not stop it.
+        now += 1.0 / 60
+        XCTAssertFalse(cutoff.shouldStop(delta: 0.2, at: now, cellHeightPoints: cell))
+    }
+
+    func testTailCutoffResetForgetsHistory() {
+        var cutoff = GhosttyScrollTailCutoff(smoothing: 1)
+        let cell = 20.0
+        _ = cutoff.shouldStop(delta: 0, at: 0, cellHeightPoints: cell)
+        XCTAssertTrue(cutoff.shouldStop(delta: 0.1, at: 1.0 / 60, cellHeightPoints: cell))
+
+        cutoff.reset()
+        // After reset the first sample only seeds the clock.
+        XCTAssertFalse(cutoff.shouldStop(delta: 0.1, at: 1, cellHeightPoints: cell))
+    }
+
     func testZeroRateBudgetBlocksEverything() {
         var budget = GhosttyScrollDeltaBudget(unitsPerSecond: 0)
 

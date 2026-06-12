@@ -111,6 +111,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         preciseScale: GhosttyScrollTuning.routeForwardedGain
     )
     private var physicsDeltaBudget = GhosttyScrollDeltaBudget(unitsPerSecond: 0)
+    private var physicsTailCutoff = GhosttyScrollTailCutoff()
     private var physicsReportedOffsetY: CGFloat?
     private var isPhysicsGestureActive = false
     private var isRecenteringPhysicsScroll = false
@@ -544,11 +545,14 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         _ = submitRouteForwardedMousePosition?(surface.id, location, [])
 
         let cellHeightPixels = max(cellHeight(for: surface), 1) * displayScale
-        physicsDeltaBudget.rearm(
-            unitsPerSecond: Self.maxRouteForwardedTicksPerSecond
-                * cellHeightPixels
-                / physicsForwardingGesture.preciseScale
+        let budgetUnitsPerSecond = Self.maxRouteForwardedTicksPerSecond
+            * cellHeightPixels
+            / physicsForwardingGesture.preciseScale
+        GhosttyRuntimeTrace.diagnostics(
+            "scroll.physics budget cellPts=\(cellHeight(for: surface)) scale=\(displayScale) cellPx=\(cellHeightPixels) unitsPerSec=\(budgetUnitsPerSecond)"
         )
+        physicsDeltaBudget.rearm(unitsPerSecond: budgetUnitsPerSecond)
+        physicsTailCutoff.reset()
         physicsReportedOffsetY = physicsScrollView.contentOffset.y
         isPhysicsGestureActive = true
     }
@@ -575,7 +579,29 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         // Finger moving down drags the virtual offset down; positive
         // translation means scroll up, matching the contact pan.
         let delta = Double(reported - offsetY)
-        let budgeted = physicsDeltaBudget.clamp(delta, at: CACurrentMediaTime())
+        let now = CACurrentMediaTime()
+
+        // While decelerating (finger up), stop once the coast falls
+        // below the cell-quantization floor: the remaining tail would
+        // emit isolated whole-cell ticks hundreds of milliseconds
+        // apart — jitter, not motion. Never cuts off an active drag.
+        if physicsScrollView.isDecelerating,
+           physicsTailCutoff.shouldStop(
+               delta: delta,
+               at: now,
+               cellHeightPoints: Double(max(cellHeight(for: surface), 1))
+           ) {
+            GhosttyRuntimeTrace.diagnostics(
+                "scroll.physics tailCutoff surface=\(ghosttyDiagnosticShortID(surface.id))"
+            )
+            haltPhysicsScroll()
+            return
+        }
+        if !physicsScrollView.isDecelerating {
+            physicsTailCutoff.reset()
+        }
+
+        let budgeted = physicsDeltaBudget.clamp(delta, at: now)
         guard budgeted != 0 else { return }
 
         let events = physicsForwardingGesture.events(
