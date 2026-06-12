@@ -241,6 +241,12 @@ final class TmuxTerminalScreenAdapter: ObservableObject {
         activeManagedSurface?.onDisplayUpdate = { [weak paneSurface] _, _, _ in
             paneSurface?.enableClientSizeReports()
         }
+        // The session frees the pane surface on pane changes while the
+        // tree may still hold this wrapper in an inactive container;
+        // invalidate the borrowed handle the moment the close starts.
+        paneSurface.onClose = { [weak controlSurface] in
+            controlSurface?.invalidate()
+        }
     }
 
     private func managedSurface(for id: UUID) -> GhosttyManagedSurface? {

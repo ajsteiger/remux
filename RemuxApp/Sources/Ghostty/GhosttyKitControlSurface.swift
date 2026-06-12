@@ -135,8 +135,26 @@ enum GhosttyKitControlSurfaceOwnership {
 final class GhosttyKitControlSurface: GhosttyControlSurface {
     private let storage: GhosttyKitControlSurfaceStorage
 
+    /// The raw handle for identity comparisons only. May be stale
+    /// after invalidation — never dereference without `liveSurface`.
     var handle: ghostty_surface_t {
         storage.surface
+    }
+
+    /// The pane surface's owner (TmuxTerminalSession) frees borrowed
+    /// surfaces on pane changes while tree containers may still hold
+    /// the wrapper; invalidation makes every late call a no-op
+    /// instead of a use-after-free.
+    func invalidate() {
+        storage.invalidate()
+    }
+
+    var isInvalidated: Bool {
+        storage.isInvalidated
+    }
+
+    private var liveSurface: ghostty_surface_t? {
+        storage.isInvalidated ? nil : storage.surface
     }
 
     init(
@@ -154,18 +172,20 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @discardableResult
     @MainActor
     func processOutput(_ data: Data) -> Bool {
+        guard let surface = liveSurface else { return false }
         guard !data.isEmpty else { return true }
 
         return data.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.baseAddress else { return true }
             let pointer = baseAddress.assumingMemoryBound(to: CChar.self)
-            return ghostty_surface_process_output(storage.surface, pointer, rawBuffer.count)
+            return ghostty_surface_process_output(surface, pointer, rawBuffer.count)
         }
     }
 
     @MainActor
     func setBackingExited(_ exited: Bool) {
-        ghostty_surface_set_backing_exited(storage.surface, exited)
+        guard let surface = liveSurface else { return }
+        ghostty_surface_set_backing_exited(surface, exited)
     }
 
     @MainActor
@@ -181,18 +201,19 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     @discardableResult
     func sendInput(_ text: String) -> Bool {
+        guard let surface = liveSurface else { return false }
         guard !text.isEmpty else { return true }
 
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.diagnostics(
-            "control.sendInput handle=\(String(describing: storage.surface)) bytes=\(text.lengthOfBytes(using: .utf8)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+            "control.sendInput handle=\(String(describing: surface)) bytes=\(text.lengthOfBytes(using: .utf8)) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
         GhosttyRuntimeTrace.latency(
-            "control.sendInput begin handle=\(String(describing: storage.surface)) bytes=\(text.lengthOfBytes(using: .utf8)) size=\(ghosttyDiagnosticSurfaceSize(currentSize())) preview=\(text.debugDescription)"
+            "control.sendInput begin handle=\(String(describing: surface)) bytes=\(text.lengthOfBytes(using: .utf8)) size=\(ghosttyDiagnosticSurfaceSize(currentSize())) preview=\(text.debugDescription)"
         )
         let accepted = text.withCString { pointer in
             let byteCount = text.lengthOfBytes(using: .utf8)
-            return ghostty_surface_input(storage.surface, pointer, UInt(byteCount))
+            return ghostty_surface_input(surface, pointer, UInt(byteCount))
         }
         GhosttyRuntimeTrace.latency(
             "control.sendInput end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
@@ -202,15 +223,16 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func sendText(_ text: String) {
+        guard let surface = liveSurface else { return }
         guard !text.isEmpty else { return }
 
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(
-            "control.sendText begin handle=\(String(describing: storage.surface)) bytes=\(text.lengthOfBytes(using: .utf8)) preview=\(text.debugDescription)"
+            "control.sendText begin handle=\(String(describing: surface)) bytes=\(text.lengthOfBytes(using: .utf8)) preview=\(text.debugDescription)"
         )
         text.withCString { pointer in
             let byteCount = text.lengthOfBytes(using: .utf8)
-            ghostty_surface_text(storage.surface, pointer, UInt(byteCount))
+            ghostty_surface_text(surface, pointer, UInt(byteCount))
         }
         GhosttyRuntimeTrace.latency(
             "control.sendText end elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
@@ -220,6 +242,7 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     @discardableResult
     func sendPaste(_ text: String) -> Bool {
+        guard let surface = liveSurface else { return false }
         sendText(text)
         return true
     }
@@ -228,11 +251,12 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
     @MainActor
     @discardableResult
     func sendKeyEvent(_ event: GhosttySurfaceKeyEvent) -> Bool {
+        guard let surface = liveSurface else { return false }
         let start = GhosttyRuntimeTrace.nowNanos()
         GhosttyRuntimeTrace.latency(
-            "control.sendKey begin handle=\(String(describing: storage.surface)) event=\(event)"
+            "control.sendKey begin handle=\(String(describing: surface)) event=\(event)"
         )
-        let accepted = event.withCValue { ghostty_surface_key(storage.surface, $0) }
+        let accepted = event.withCValue { ghostty_surface_key(surface, $0) }
         GhosttyRuntimeTrace.latency(
             "control.sendKey end accepted=\(accepted) elapsed_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: start))"
         )
@@ -241,21 +265,24 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func isMouseCaptured() -> Bool {
-        ghostty_surface_mouse_captured(storage.surface)
+        guard let surface = liveSurface else { return false }
+        return ghostty_surface_mouse_captured(surface)
     }
 
     @MainActor
     @discardableResult
     func sendMouseButton(_ event: GhosttySurfaceMouseButtonEvent) -> Bool {
-        event.withCValues {
-            ghostty_surface_mouse_button(storage.surface, $0, $1, $2)
+        guard let surface = liveSurface else { return false }
+        return event.withCValues {
+            ghostty_surface_mouse_button(surface, $0, $1, $2)
         }
     }
 
     @MainActor
     func sendMousePosition(_ position: CGPoint, mods: GhosttySurfaceKeyEvent.Mods = []) {
+        guard let surface = liveSurface else { return }
         ghostty_surface_mouse_pos(
-            storage.surface,
+            surface,
             position.x,
             position.y,
             ghostty_input_mods_e(mods.rawValue)
@@ -264,8 +291,9 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func sendMouseScroll(_ event: GhosttySurfaceMouseScrollEvent) {
+        guard let surface = liveSurface else { return }
         ghostty_surface_mouse_scroll(
-            storage.surface,
+            surface,
             event.deltaX,
             event.deltaY,
             ghostty_input_scroll_mods_t(event.mods.rawValue)
@@ -274,58 +302,68 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func scrollState() -> GhosttySurfaceScrollState {
-        GhosttySurfaceScrollState(cValue: ghostty_surface_scrollbar(storage.surface))
+        guard let surface = liveSurface else { return .empty }
+        return GhosttySurfaceScrollState(cValue: ghostty_surface_scrollbar(surface))
     }
 
     @MainActor
     func scrollRoute() -> GhosttySurfaceScrollRoute {
-        GhosttySurfaceScrollRoute(cValue: ghostty_surface_scroll_route(storage.surface))
+        guard let surface = liveSurface else { return .viewport }
+        return GhosttySurfaceScrollRoute(cValue: ghostty_surface_scroll_route(surface))
     }
 
     @MainActor
     func scrollToPosition(row: UInt64, cellOffset: Double) {
-        ghostty_surface_scroll_to_position(storage.surface, row, cellOffset)
+        guard let surface = liveSurface else { return }
+        ghostty_surface_scroll_to_position(surface, row, cellOffset)
     }
 
     @MainActor
     func scrollToRow(_ row: UInt64) {
-        ghostty_surface_scroll_to_row(storage.surface, row)
+        guard let surface = liveSurface else { return }
+        ghostty_surface_scroll_to_row(surface, row)
     }
 
     @MainActor
     func scrollByLines(_ delta: Int64) {
-        ghostty_surface_scroll_by_lines(storage.surface, delta)
+        guard let surface = liveSurface else { return }
+        ghostty_surface_scroll_by_lines(surface, delta)
     }
 
     @MainActor
     func scrollToTop() {
-        ghostty_surface_scroll_to_top(storage.surface)
+        guard let surface = liveSurface else { return }
+        ghostty_surface_scroll_to_top(surface)
     }
 
     @MainActor
     func scrollToBottom() {
-        ghostty_surface_scroll_to_bottom(storage.surface)
+        guard let surface = liveSurface else { return }
+        ghostty_surface_scroll_to_bottom(surface)
     }
 
     @MainActor
     func sendMousePressure(_ event: GhosttySurfaceMousePressureEvent) {
+        guard let surface = liveSurface else { return }
         event.withCValues {
-            ghostty_surface_mouse_pressure(storage.surface, $0, $1)
+            ghostty_surface_mouse_pressure(surface, $0, $1)
         }
     }
 
     @MainActor
     func hasSelection() -> Bool {
-        ghostty_surface_has_selection(storage.surface)
+        guard let surface = liveSurface else { return false }
+        return ghostty_surface_has_selection(surface)
     }
 
     @MainActor
     func readSelection() -> String? {
+        guard let surface = liveSurface else { return nil }
         var text = ghostty_text_s()
-        guard ghostty_surface_read_selection(storage.surface, &text) else {
+        guard ghostty_surface_read_selection(surface, &text) else {
             return nil
         }
-        defer { ghostty_surface_free_text(storage.surface, &text) }
+        defer { ghostty_surface_free_text(surface, &text) }
         return Self.decodeGhosttyText(text)
     }
 
@@ -337,20 +375,21 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func updateDisplay(metrics: GhosttySurfaceDisplayMetrics) {
+        guard let surface = liveSurface else { return }
         let before = currentSize()
         GhosttyRuntimeTrace.tmuxViewport(
-            "control.updateDisplay begin handle=\(String(describing: storage.surface)) before=\(ghosttyDiagnosticSurfaceSize(before)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(metrics.contentScale)"
+            "control.updateDisplay begin handle=\(String(describing: surface)) before=\(ghosttyDiagnosticSurfaceSize(before)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(metrics.contentScale)"
         )
         GhosttyRuntimeTrace.diagnostics(
-            "control.updateDisplay handle=\(String(describing: storage.surface)) before=\(ghosttyDiagnosticSurfaceSize(before)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(metrics.contentScale)"
+            "control.updateDisplay handle=\(String(describing: surface)) before=\(ghosttyDiagnosticSurfaceSize(before)) metrics=\(metrics.pixelWidth)x\(metrics.pixelHeight) scale=\(metrics.contentScale)"
         )
-        ghostty_surface_set_content_scale(storage.surface, metrics.contentScale, metrics.contentScale)
-        ghostty_surface_set_size(storage.surface, metrics.pixelWidth, metrics.pixelHeight)
+        ghostty_surface_set_content_scale(surface, metrics.contentScale, metrics.contentScale)
+        ghostty_surface_set_size(surface, metrics.pixelWidth, metrics.pixelHeight)
         GhosttyRuntimeTrace.tmuxViewport(
-            "control.updateDisplay end handle=\(String(describing: storage.surface)) after=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+            "control.updateDisplay end handle=\(String(describing: surface)) after=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
         GhosttyRuntimeTrace.diagnostics(
-            "control.updateDisplay applied handle=\(String(describing: storage.surface)) after=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+            "control.updateDisplay applied handle=\(String(describing: surface)) after=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
     }
 
@@ -366,8 +405,9 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
         userdata: UnsafeMutableRawPointer?,
         callback: ghostty_surface_preview_image_callback_f
     ) -> ghostty_surface_preview_request_t? {
-        ghostty_surface_render_preview_image_async(
-            storage.surface,
+        guard let surface = liveSurface else { return nil }
+        return ghostty_surface_render_preview_image_async(
+            surface,
             options,
             userdata,
             callback
@@ -398,23 +438,26 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
     @MainActor
     func setFocused(_ focused: Bool) {
+        guard let surface = liveSurface else { return }
         GhosttyRuntimeTrace.diagnostics(
-            "control.setFocused handle=\(String(describing: storage.surface)) focused=\(focused) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+            "control.setFocused handle=\(String(describing: surface)) focused=\(focused) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
-        ghostty_surface_set_focus(storage.surface, focused)
+        ghostty_surface_set_focus(surface, focused)
     }
 
     @MainActor
     func setVisible(_ visible: Bool) {
+        guard let surface = liveSurface else { return }
         GhosttyRuntimeTrace.diagnostics(
-            "control.setVisible handle=\(String(describing: storage.surface)) visible=\(visible) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
+            "control.setVisible handle=\(String(describing: surface)) visible=\(visible) size=\(ghosttyDiagnosticSurfaceSize(currentSize()))"
         )
-        ghostty_surface_set_occlusion(storage.surface, visible)
+        ghostty_surface_set_occlusion(surface, visible)
     }
 
     @MainActor
     func currentSize() -> ghostty_surface_size_s {
-        ghostty_surface_size(storage.surface)
+        guard let surface = liveSurface else { return ghostty_surface_size_s() }
+        return ghostty_surface_size(surface)
     }
 
     static func decodeGhosttyText(_ text: ghostty_text_s) -> String {
@@ -435,6 +478,19 @@ final class GhosttyKitControlSurface: GhosttyControlSurface {
 
 private final class GhosttyKitControlSurfaceStorage: @unchecked Sendable {
     let surface: ghostty_surface_t
+
+    private let invalidationLock = NSLock()
+    private var _isInvalidated = false
+
+    var isInvalidated: Bool {
+        invalidationLock.withLock { _isInvalidated }
+    }
+
+    /// Borrowed handles dangle once their owner frees the surface;
+    /// after this, every wrapper call is a benign no-op.
+    func invalidate() {
+        invalidationLock.withLock { _isInvalidated = true }
+    }
 
     private let ownership: GhosttyKitControlSurfaceOwnership
     private let retainedObjects: [AnyObject]

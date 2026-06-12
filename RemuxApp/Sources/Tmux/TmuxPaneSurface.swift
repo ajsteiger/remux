@@ -20,6 +20,13 @@ final class TmuxPaneSurface {
     private let inputBox: InputBox
     private var closed = false
 
+    /// Invoked synchronously at the start of `close()`, before the
+    /// surface is freed: host-side wrappers borrowing the surface
+    /// handle (GhosttyKitControlSurface) invalidate themselves here so
+    /// late calls from view teardown become no-ops instead of
+    /// use-after-free.
+    var onClose: (() -> Void)?
+
     /// Routes the manual backend's host callbacks (input writes and
     /// resize reports) to the session controller. Held with a stable
     /// address for the C callbacks.
@@ -213,6 +220,8 @@ final class TmuxPaneSurface {
             return
         }
         closed = true
+        onClose?()
+        onClose = nil
         ghostty_surface_free(surface)
         controller.unbind(binding) {
             completion()

@@ -210,4 +210,29 @@ final class GhosttyKitControlSurfaceTests: XCTestCase {
 
         XCTAssertEqual(decoded, value)
     }
+    @MainActor
+    func testInvalidatedControlSurfaceNoOpsSafely() throws {
+        let runtime = try GhosttyKitRuntime()
+        let view = GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let surface = try runtime.makeManualHostSurface(view: view)
+
+        surface.invalidate()
+
+        // Every call must be a benign no-op (the real hazard is a
+        // borrowed handle freed by its owner; here the surface is
+        // still alive, which proves the guard path, not UIKit luck).
+        XCTAssertFalse(surface.processOutput(Data("x".utf8)))
+        XCTAssertFalse(surface.sendInput("q"))
+        XCTAssertFalse(surface.isMouseCaptured())
+        XCTAssertFalse(surface.hasSelection())
+        XCTAssertNil(surface.readSelection())
+        surface.setFocused(true)
+        surface.setVisible(true)
+        surface.scrollToTop()
+        let size = surface.currentSize()
+        XCTAssertEqual(size.columns, 0)
+        XCTAssertEqual(surface.scrollState(), .empty)
+        XCTAssertTrue(surface.isInvalidated)
+    }
+
 }
