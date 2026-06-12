@@ -373,6 +373,10 @@ extension TmuxTerminalScreenAdapter: GhosttyTerminalScreenModeling {
         // domain runtime states straight from the session model.
     }
 
+    func setViewportStabilityHint(stable: Bool) {
+        controller?.setViewportStability(stable)
+    }
+
     func makePanePreviewSession(
         leafIDs: [UUID],
         previewSizing: GhosttyPanePreviewSession.PreviewSizing

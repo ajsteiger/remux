@@ -26,10 +26,13 @@ final class TmuxScreenModel: ObservableObject {
     /// The reducer's expectations: the target this session connects to.
     var runtimeConnectionTarget: TmuxConnectionTarget { target }
 
-    /// The last viewport this session reported; the root carries it
-    /// into the replacement model on reconnect for a sized attach.
-    var lastClientSize: TmuxSessionController.ClientSize? {
-        session?.controller.lastClientSize
+    /// The viewport the root carries into the replacement model on
+    /// reconnect for a sized attach. Prefers the last size reported
+    /// with the viewport in its settled shape, so disconnecting while
+    /// the keyboard is up does not make the next attach first-paint
+    /// at the keyboard-shrunken size.
+    var carriedClientSize: TmuxSessionController.ClientSize? {
+        session?.controller.carriedClientSize
     }
 
     /// True when no connection exists or is in progress, so the root

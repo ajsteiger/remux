@@ -1061,7 +1061,7 @@ final class RemuxRootModel: ObservableObject {
         // it attaches already sized (captures land at this width).
         let carriedClientSize = terminalScreenModels.first(where: {
             $0.key.workspaceID == session.id
-        })?.value.lastClientSize
+        })?.value.carriedClientSize
         stopTerminalScreenModels(workspaceID: session.id)
         let key = TerminalRuntimeAttemptKey(session: session)
         let transportFactory: TmuxScreenModel.TransportFactory = { [preparedTransportCoordinator] target in

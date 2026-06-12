@@ -438,6 +438,13 @@ struct GhosttySurfaceScreen<Model: GhosttyTerminalScreenModeling>: View {
             .onChange(of: interactionProjection.selectedActiveLeafID) { _, activeLeafID in
                 handleActiveLeafChange(activeLeafID)
             }
+            .onChange(of: inputCoordinator.keyboardMode) { _, mode in
+                // Sizes reported while the software keyboard is up are
+                // transient; flag them so reconnects carry the settled
+                // viewport (the mode flips before the layout changes,
+                // so the hint always precedes the affected report).
+                model.setViewportStabilityHint(stable: mode == .hidden)
+            }
             .onChange(of: model.commandFailureEvent) { _, event in
                 handleTmuxCommandFailureEvent(event)
             }

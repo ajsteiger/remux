@@ -516,8 +516,35 @@ final class TmuxSessionController: @unchecked Sendable {
 
     private(set) var lastClientSize: ClientSize?
 
+    /// The last size reported while the host viewport was in its
+    /// settled shape (no transient overlay such as the software
+    /// keyboard). Reconnects carry this one: a size captured
+    /// mid-transient would make the next attach first-paint at the
+    /// wrong shape for ~a round trip.
+    private(set) var lastStableClientSize: ClientSize?
+    private var isViewportStable = true
+
+    /// The viewport to carry into a replacement session.
+    var carriedClientSize: ClientSize? {
+        lastStableClientSize ?? lastClientSize
+    }
+
+    /// Host hint that the viewport is (not) in its settled shape.
+    /// Ordering makes this race-free without coordination: the host
+    /// flips to unstable before the overlay changes layout, so the
+    /// shrunken report that follows is never recorded as stable; it
+    /// flips back to stable before the restored layout reports, and
+    /// the stable record keeps its previous settled value until that
+    /// report arrives.
+    func setViewportStability(_ stable: Bool) {
+        isViewportStable = stable
+    }
+
     func setClientSize(cols: UInt32, rows: UInt32) {
         lastClientSize = ClientSize(cols: cols, rows: rows)
+        if isViewportStable {
+            lastStableClientSize = lastClientSize
+        }
         queue.async { [self] in
             guard let session else { return }
             _ = ghostty_tmux_session_set_client_size(session, cols, rows)

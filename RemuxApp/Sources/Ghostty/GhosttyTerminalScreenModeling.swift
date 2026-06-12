@@ -68,6 +68,12 @@ protocol GhosttyTerminalScreenModeling: ObservableObject {
 
     func reportRuntimeReadinessIfNeeded()
 
+    /// Host hint that the terminal viewport is (not) in its settled
+    /// shape — false while a transient overlay (software keyboard) is
+    /// changing the layout. Engines use it to decide which reported
+    /// viewport is safe to carry into a reconnect.
+    func setViewportStabilityHint(stable: Bool)
+
     func makePanePreviewSession(
         leafIDs: [UUID],
         previewSizing: GhosttyPanePreviewSession.PreviewSizing
