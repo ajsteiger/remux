@@ -93,16 +93,19 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var lastAppliedScrollRoute: GhosttySurfaceScrollRoute?
     private var isUserViewportScrolling = false
     private var lastSentViewportScrollPosition: GhosttyPaneScrollPosition?
-    private var routeForwardingGesture = GhosttyRouteForwardingScrollGesture()
     private var submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
     private var submitRouteForwardedMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
 
-    /// UIKit-native scroll physics for the mouse-report route: pan and
-    /// deceleration of this hidden scroll view produce the offset
-    /// deltas forwarded as precise scroll events, so flicks coast on
-    /// Apple's deceleration curve exactly like a trackpad. The
-    /// alt-screen-cursor route intentionally stays on the contact-only
-    /// pan path until momentum-as-arrow-keys is validated separately.
+    /// UIKit-native scroll physics for the forwarded scroll routes:
+    /// pan and deceleration of this hidden scroll view produce the
+    /// offset deltas forwarded as precise scroll events, so flicks
+    /// coast on Apple's deceleration curve exactly like a trackpad.
+    /// On the mouse-report route the events become wheel reports; on
+    /// the alt-screen-cursor route the engine converts them to cursor
+    /// keys (the same wheel-with-inertia semantics desktop terminals
+    /// give alternate-scroll apps). The route is revalidated on every
+    /// delta, so leftover momentum never becomes input for whatever
+    /// mode comes next.
     private let physicsScrollView = GhosttyScrollPhysicsView()
     private var physicsForwardingGesture = GhosttyRouteForwardingScrollGesture(
         preciseScale: GhosttyScrollTuning.routeForwardedGain
@@ -117,12 +120,6 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     /// showed ~45/s sustained is comfortable, so allow modest headroom.
     private static let maxRouteForwardedTicksPerSecond: Double = 60
 
-    private lazy var routeForwardingPanRecognizer: UIPanGestureRecognizer = {
-        let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleRouteForwardingPan(_:)))
-        recognizer.maximumNumberOfTouches = 1
-        recognizer.delegate = self
-        return recognizer
-    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -273,34 +270,16 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        if gestureRecognizer === physicsScrollView.panGestureRecognizer {
-            guard surface?.scrollRoute == .mouseReport else { return false }
-            let pan = physicsScrollView.panGestureRecognizer
-            return GhosttySurfacePanGesture.routeForwardingScrollShouldBegin(
-                forVelocity: pan.velocity(in: self),
-                translation: pan.translation(in: self)
-            )
-        }
+        guard gestureRecognizer === physicsScrollView.panGestureRecognizer else { return true }
+        guard surface?.scrollRoute != .viewport else { return false }
 
-        guard gestureRecognizer === routeForwardingPanRecognizer else { return true }
-        guard surface?.scrollRoute == .altScreenCursor else { return false }
-
+        let pan = physicsScrollView.panGestureRecognizer
         return GhosttySurfacePanGesture.routeForwardingScrollShouldBegin(
-            forVelocity: routeForwardingPanRecognizer.velocity(in: self),
-            translation: routeForwardingPanRecognizer.translation(in: self)
+            forVelocity: pan.velocity(in: self),
+            translation: pan.translation(in: self)
         )
     }
 
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        guard gestureRecognizer === routeForwardingPanRecognizer || otherGestureRecognizer === routeForwardingPanRecognizer else {
-            return false
-        }
-
-        return gestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer is UIPanGestureRecognizer
-    }
 
     private func configure() {
         clipsToBounds = true
@@ -336,8 +315,6 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         // touches on the container while driving the scroll view's
         // native deceleration.
         addGestureRecognizer(physicsScrollView.panGestureRecognizer)
-
-        addGestureRecognizer(routeForwardingPanRecognizer)
     }
 
     @discardableResult
@@ -348,14 +325,14 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         let usesNativeViewportScroll = route == .viewport
         scrollView.isScrollEnabled = usesNativeViewportScroll
         scrollView.showsVerticalScrollIndicator = usesNativeViewportScroll
-        physicsScrollView.panGestureRecognizer.isEnabled = route == .mouseReport
-        routeForwardingPanRecognizer.isEnabled = route == .altScreenCursor
-        if route != .mouseReport {
-            haltPhysicsScroll()
-        }
+        physicsScrollView.panGestureRecognizer.isEnabled = !usesNativeViewportScroll
         if usesNativeViewportScroll {
-            routeForwardingGesture.reset()
+            haltPhysicsScroll()
         } else if didChangeRoute {
+            // Route changed between forwarded modes (e.g. the app
+            // toggled mouse reporting): momentum for the old mode must
+            // not become input for the new one.
+            haltPhysicsScroll()
             resetViewportScrollInteractionState()
         }
         return didChangeRoute
@@ -549,7 +526,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
             endPhysicsGesture(phase: .cancelled)
         }
 
-        guard let surface, surface.scrollRoute == .mouseReport,
+        guard let surface, surface.scrollRoute != .viewport,
               submitRouteForwardedMouseScroll != nil
         else {
             haltPhysicsScroll()
@@ -584,7 +561,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private func forwardPhysicsScrollDelta() {
         guard !isRecenteringPhysicsScroll, isPhysicsGestureActive else { return }
 
-        guard let surface, surface.scrollRoute == .mouseReport,
+        guard let surface, surface.scrollRoute != .viewport,
               let submitRouteForwardedMouseScroll
         else {
             haltPhysicsScroll()
@@ -665,33 +642,4 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         physicsReportedOffsetY = nil
     }
 
-    @objc
-    private func handleRouteForwardingPan(_ recognizer: UIPanGestureRecognizer) {
-        guard let surface, surface.scrollRoute == .altScreenCursor else { return }
-        guard let submitRouteForwardedMouseScroll else { return }
-        guard let phase = GhosttySurfacePanGesture.Phase(recognizer.state) else { return }
-
-        // Wheel reports encode at the pointer position, and touch UIs
-        // never report one: the surface's cursor position stays at its
-        // out-of-viewport initial value and the encoder drops every
-        // wheel event (mouse_encode.zig out-of-viewport rule). Anchor
-        // the pointer at the gesture's touch point before forwarding.
-        if phase == .began {
-            let location = recognizer.location(in: surface.view)
-            GhosttyRuntimeTrace.diagnostics(
-                "scroll.routePan begin surface=\(ghosttyDiagnosticShortID(surface.id)) route=\(surface.scrollRoute) location=\(location.x),\(location.y)"
-            )
-            _ = submitRouteForwardedMousePosition?(surface.id, location, [])
-        }
-
-        let translation = recognizer.translation(in: self)
-        let events = routeForwardingGesture.events(
-            forTranslation: translation,
-            phase: phase
-        )
-        for event in events {
-            _ = submitRouteForwardedMouseScroll(surface.id, event)
-        }
-        recognizer.setTranslation(.zero, in: self)
-    }
 }

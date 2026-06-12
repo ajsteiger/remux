@@ -377,6 +377,50 @@ final class RemuxAppUITests: XCTestCase {
         )
     }
 
+    func testLiveAltScreenCursorScrollWhenConfigured() throws {
+        let sessionName = try generatedLiveLatencySessionName("altscroll")
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        // A full-screen app WITHOUT mouse reporting (less): scrolling
+        // takes the alt-screen-cursor route, where the engine converts
+        // wheel deltas to cursor keys. Physics momentum applies there
+        // exactly as on the mouse-report route.
+        sendTerminalCommand(
+            "seq -f 'REMUX_ALT_LINE_%g' 400 > /tmp/remux-altscroll.txt; less /tmp/remux-altscroll.txt"
+        )
+        hideKeyboardIfPresent()
+        guard let before = waitForStableLiveTerminalScreenshot(
+            minNonBackgroundPixels: 30_000,
+            attachmentName: "live-terminal-altscroll-before"
+        ) else {
+            return
+        }
+
+        let terminal = app.otherElements["terminal.screen"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+        terminal.swipeUp(velocity: .fast)
+        guard let after = waitForStableLiveTerminalScreenshot(
+            minNonBackgroundPixels: 30_000,
+            attachmentName: "live-terminal-altscroll-after"
+        ) else {
+            return
+        }
+
+        let changedPixels = liveTerminalPixelDifference(before: before, after: after)
+        XCTAssertNotNil(changedPixels)
+        XCTAssertGreaterThan(
+            changedPixels ?? 0,
+            8_000,
+            "Alt-screen-cursor swipe should scroll the pager via cursor keys."
+        )
+    }
+
     func testLiveSSHTmuxActionCycleWhenConfigured() throws {
         let sessionName = try generatedLiveLatencySessionName("action")
         defer {
