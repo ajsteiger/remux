@@ -112,6 +112,8 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     )
     private var physicsDeltaBudget = GhosttyScrollDeltaBudget(unitsPerSecond: 0)
     private var physicsTailCutoff = GhosttyScrollTailCutoff()
+    private var physicsVelocityGain = GhosttyScrollVelocityGain()
+    private var physicsPeakMultiplier: Double = 1
     private var physicsReportedOffsetY: CGFloat?
     private var isPhysicsGestureActive = false
     private var isRecenteringPhysicsScroll = false
@@ -123,10 +125,15 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var lastMomentumCatchAt: TimeInterval?
     private static let momentumCatchTapWindow: TimeInterval = 0.4
 
-    /// Cap on wheel reports one gesture may produce per second. Each
-    /// report costs the remote TUI a repaint; the old-pipeline traces
-    /// showed ~45/s sustained is comfortable, so allow modest headroom.
-    private static let maxRouteForwardedTicksPerSecond: Double = 60
+    /// Caps on reports one gesture may produce per second, per route.
+    /// On the mouse-report route each tick costs the remote TUI a
+    /// full repaint (opencode: ~6KB/frame), so headroom over the
+    /// proven-comfortable ~45/s is modest. On the alt-screen-cursor
+    /// route a tick is one cursor key and pagers repaint ~one line
+    /// (~100B), so the ceiling is set by feel, not cost — and one
+    /// tick is a single line, so fast flicks need the rate.
+    private static let maxMouseReportTicksPerSecond: Double = 60
+    private static let maxAltScreenTicksPerSecond: Double = 150
 
 
     override init(frame: CGRect) {
@@ -560,7 +567,10 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         _ = submitRouteForwardedMousePosition?(surface.id, location, [])
 
         let cellHeightPixels = max(cellHeight(for: surface), 1) * displayScale
-        let budgetUnitsPerSecond = Self.maxRouteForwardedTicksPerSecond
+        let ticksPerSecond = surface.scrollRoute == .altScreenCursor
+            ? Self.maxAltScreenTicksPerSecond
+            : Self.maxMouseReportTicksPerSecond
+        let budgetUnitsPerSecond = ticksPerSecond
             * cellHeightPixels
             / physicsForwardingGesture.preciseScale
         GhosttyRuntimeTrace.diagnostics(
@@ -568,6 +578,8 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         )
         physicsDeltaBudget.rearm(unitsPerSecond: budgetUnitsPerSecond)
         physicsTailCutoff.reset()
+        physicsVelocityGain.reset()
+        physicsPeakMultiplier = 1
         physicsReportedOffsetY = physicsScrollView.contentOffset.y
         isPhysicsGestureActive = true
     }
@@ -616,7 +628,12 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
             physicsTailCutoff.reset()
         }
 
-        let budgeted = physicsDeltaBudget.clamp(delta, at: now)
+        // Velocity acceleration before the budget, so the per-route
+        // tick cap bounds the effective output.
+        let multiplier = physicsVelocityGain.multiplier(delta: delta, at: now)
+        physicsPeakMultiplier = max(physicsPeakMultiplier, multiplier)
+        let accelerated = delta * multiplier
+        let budgeted = physicsDeltaBudget.clamp(accelerated, at: now)
         guard budgeted != 0 else { return }
 
         let events = physicsForwardingGesture.events(
@@ -646,7 +663,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         }
 
         GhosttyRuntimeTrace.diagnostics(
-            "scroll.physics end surface=\(ghosttyDiagnosticShortID(surface?.id)) phase=\(phase)"
+            "scroll.physics end surface=\(ghosttyDiagnosticShortID(surface?.id)) phase=\(phase) peakGain=\(String(format: "%.2f", physicsPeakMultiplier))"
         )
         recenterPhysicsScrollIfIdle()
     }
