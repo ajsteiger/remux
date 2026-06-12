@@ -1101,6 +1101,7 @@ final class RemuxAppUITests: XCTestCase {
             "GHOSTTY_TRACE_SURFACE_INIT",
             "REMUX_DEBUG_LATENCY_PROBE",
             "REMUX_DEBUG_LATENCY_PROBE_DELAY_MS",
+            "REMUX_SCROLL_PRECISE_GAIN",
         ] {
             guard let value = ProcessInfo.processInfo.environment[key] else {
                 continue

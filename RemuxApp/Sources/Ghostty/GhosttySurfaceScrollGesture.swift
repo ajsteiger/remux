@@ -140,14 +140,23 @@ struct GhosttySurfacePanGesture {
 }
 
 struct GhosttyRouteForwardingScrollGesture {
-    /// Multiplier from gesture translation points to precise scroll
-    /// units. Visible so callers feeding this gesture can convert
-    /// tick-rate budgets into translation units.
-    static let preciseScale: CGFloat = 2
+    /// Default multiplier from gesture translation points to precise
+    /// scroll units.
+    static let defaultPreciseScale: CGFloat = 2
     private static let minimumPreciseDelta: Double = 1
+
+    /// Multiplier from gesture translation points to precise scroll
+    /// units. Fixed for the gesture's lifetime: a gain that varies
+    /// mid-gesture would make the same drag distance scroll different
+    /// amounts depending on speed history.
+    let preciseScale: CGFloat
 
     private var pendingTranslation = CGPoint.zero
     private var hasBegun = false
+
+    init(preciseScale: CGFloat = Self.defaultPreciseScale) {
+        self.preciseScale = preciseScale
+    }
 
     mutating func events(
         forTranslation translation: CGPoint,
@@ -156,7 +165,7 @@ struct GhosttyRouteForwardingScrollGesture {
         pendingTranslation.x += translation.x
         pendingTranslation.y += translation.y
 
-        let deltaY = Double(pendingTranslation.y * Self.preciseScale)
+        let deltaY = Double(pendingTranslation.y * preciseScale)
         let isTerminalPhase = phase == .ended || phase == .cancelled
         let hasDispatchableDelta = abs(deltaY) >= Self.minimumPreciseDelta
 

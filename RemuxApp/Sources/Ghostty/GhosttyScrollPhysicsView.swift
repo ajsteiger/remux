@@ -1,6 +1,27 @@
 import QuartzCore
 import UIKit
 
+/// Tuning for route-forwarded scrolling, resolved once at startup.
+enum GhosttyScrollTuning {
+    /// Gain from finger travel to precise scroll units on the
+    /// mouse-report route. `REMUX_SCROLL_PRECISE_GAIN` overrides for
+    /// on-device feel experiments (clamped; same read-once pattern as
+    /// the REMUX_TRACE_* flags). The shipped default is the gesture's
+    /// long-standing value.
+    static let routeForwardedGain: CGFloat = {
+        let fallback = GhosttyRouteForwardingScrollGesture.defaultPreciseScale
+        guard
+            let raw = ProcessInfo.processInfo.environment["REMUX_SCROLL_PRECISE_GAIN"],
+            let value = Double(raw), value.isFinite
+        else {
+            return fallback
+        }
+        let clamped = CGFloat(min(max(value, 0.5), 4))
+        NSLog("Remux scrollTuning preciseGain=%.2f (env override)", clamped)
+        return clamped
+    }()
+}
+
 /// Physics engine for route-forwarded (mouse-report) scrolling.
 ///
 /// A hit-test transparent `UIScrollView` with a large virtual content

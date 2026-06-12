@@ -104,7 +104,9 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     /// alt-screen-cursor route intentionally stays on the contact-only
     /// pan path until momentum-as-arrow-keys is validated separately.
     private let physicsScrollView = GhosttyScrollPhysicsView()
-    private var physicsForwardingGesture = GhosttyRouteForwardingScrollGesture()
+    private var physicsForwardingGesture = GhosttyRouteForwardingScrollGesture(
+        preciseScale: GhosttyScrollTuning.routeForwardedGain
+    )
     private var physicsDeltaBudget = GhosttyScrollDeltaBudget(unitsPerSecond: 0)
     private var physicsReportedOffsetY: CGFloat?
     private var isPhysicsGestureActive = false
@@ -568,7 +570,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         physicsDeltaBudget.rearm(
             unitsPerSecond: Self.maxRouteForwardedTicksPerSecond
                 * cellHeightPixels
-                / GhosttyRouteForwardingScrollGesture.preciseScale
+                / physicsForwardingGesture.preciseScale
         )
         physicsReportedOffsetY = physicsScrollView.contentOffset.y
         isPhysicsGestureActive = true

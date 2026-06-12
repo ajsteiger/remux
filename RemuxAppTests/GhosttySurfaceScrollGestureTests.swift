@@ -137,6 +137,22 @@ final class GhosttySurfaceScrollGestureTests: XCTestCase {
         XCTAssertEqual(event?.mods, .init(precision: true, momentum: .began))
     }
 
+    func testCustomPreciseScaleAppliesToEmittedDeltas() {
+        var gesture = GhosttyRouteForwardingScrollGesture(preciseScale: 1)
+
+        let events = gesture.events(
+            forTranslation: CGPoint(x: 0, y: 12)
+        )
+
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.deltaY, 12)
+    }
+
+    func testDefaultPreciseScaleMatchesLongStandingValue() {
+        XCTAssertEqual(GhosttyRouteForwardingScrollGesture().preciseScale, 2)
+        XCTAssertEqual(GhosttyRouteForwardingScrollGesture.defaultPreciseScale, 2)
+    }
+
     func testSecondVerticalDragContinuesPreciseScrollSession() {
         var gesture = GhosttyRouteForwardingScrollGesture()
 
