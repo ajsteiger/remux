@@ -41,7 +41,8 @@ final class GhosttyRuntimeSurfaceMaterializationContextTests: XCTestCase {
         _ = container.update(
             surface: managed,
             displayScale: 2,
-            submitRouteForwardedMouseScroll: nil
+            submitRouteForwardedMouseScroll: nil,
+            submitRouteForwardedMousePosition: nil
         )
 
         XCTAssertTrue(managed.view.superview != nil)

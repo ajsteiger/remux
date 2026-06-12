@@ -785,7 +785,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
 
         XCTAssertEqual(
             command,
-            "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm-256color; exec 'tmux' -CC new-session -A -s 'base' -x 45 -y 37"
+            "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm-256color; exec 'tmux' -C new-session -A -s 'base' -x 45 -y 37"
         )
     }
 
@@ -803,7 +803,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
 
         XCTAssertEqual(
             command,
-            "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm-256color; exec '/opt/homebrew/bin/tmux' -CC new-session -A -s 'owner'\"'\"'s base' -x 120 -y 40"
+            "export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin TERM=xterm-256color; exec '/opt/homebrew/bin/tmux' -C new-session -A -s 'owner'\"'\"'s base' -x 120 -y 40"
         )
     }
 

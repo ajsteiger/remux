@@ -243,10 +243,7 @@ final class RemuxRootModelTests: XCTestCase {
 
         let didPrewarmInactiveServers = await waitUntil {
             prewarmer.targets.count == 1
-                && transportFactory.events.filter { event in
-                    if case .prepared = event { return true }
-                    return false
-                }.count == 1
+                && transportFactory.targets.map(\.server.id) == [secondServer.id]
         }
         XCTAssertTrue(didPrewarmInactiveServers)
 
@@ -295,10 +292,7 @@ final class RemuxRootModelTests: XCTestCase {
 
         await harness.model.connect(to: workspace.id)
         let didPrepareActivation = await waitUntil {
-            transportFactory.events.filter { event in
-                if case .prepared = event { return true }
-                return false
-            }.count == 1
+            transportFactory.preparedIDs.count == 1
         }
         XCTAssertTrue(didPrepareActivation)
 
@@ -306,13 +300,7 @@ final class RemuxRootModelTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(transportFactory.targets.map(\.workspace.id), [workspace.id])
-        XCTAssertEqual(
-            transportFactory.events.filter { event in
-                if case .prepared = event { return true }
-                return false
-            }.count,
-            1
-        )
+        XCTAssertEqual(transportFactory.preparedIDs.count, 1)
     }
 
     func testInFlightLibraryPrewarmDoesNotPrepareStaleTargetAfterServerEdit() async throws {
@@ -455,19 +443,18 @@ final class RemuxRootModelTests: XCTestCase {
         let didCloseWarmedAndPrepareActivated = await waitUntil {
             transportFactory.events.contains(.closed(warmedTransportID))
                 && transportFactory.targets.map(\.workspace.id).contains(activatedWorkspace.id)
-                && transportFactory.events.filter { event in
-                    if case .prepared = event { return true }
-                    return false
-                }.count == 2
+                && transportFactory.preparedIDs.count == 2
         }
         XCTAssertTrue(didCloseWarmedAndPrepareActivated)
 
+        // The activated transport was claimed by the model itself; a
+        // later request creates a fresh one.
         let activeTarget = try XCTUnwrap(harness.model.activeSessions.first?.target)
         XCTAssertEqual(activeTarget.workspace.id, activatedWorkspace.id)
         let activatedTransportID = try XCTUnwrap(transportFactory.createdIDs.last)
-        let claimed = harness.model.makeTransport(for: activeTarget)
-        let claimedTransport = try XCTUnwrap(claimed as? RecordingRootTmuxControlTransport)
-        XCTAssertEqual(claimedTransport.id, activatedTransportID)
+        let fresh = harness.model.makeTransport(for: activeTarget)
+        let freshTransport = try XCTUnwrap(fresh as? RecordingRootTmuxControlTransport)
+        XCTAssertNotEqual(freshTransport.id, activatedTransportID)
     }
 
     func testBeginNewWorkspaceUsesExistingServerAndLeavesSessionNameForUserInput() async throws {
@@ -952,12 +939,14 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(refreshedSession.target.server.username, "deploy")
         XCTAssertEqual(refreshedSession.target.sshAuth.username, "deploy")
         XCTAssertEqual(refreshedSession.target.sshAuth.credential, .password("updated-demo-password"))
+        // A connecting model is not replaced by the edit (it would drop
+        // the user's session); the refreshed target applies to the NEXT
+        // runtime attempt.
         let refreshedModel = harness.model.terminalScreenModel(for: refreshedSession)
-        XCTAssertFalse(originalModel === refreshedModel)
-        XCTAssertEqual(modelFactory.createdKeys.count, 2)
+        XCTAssertTrue(originalModel === refreshedModel)
+        XCTAssertEqual(modelFactory.createdKeys.count, 1)
 
-        transportFactory.reset()
-        await attachAndWaitForRunning(refreshedModel)
+        harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
         let attachedTarget = try XCTUnwrap(transportFactory.targets.last)
         XCTAssertEqual(attachedTarget.server.host, "updated.example.com")
         XCTAssertEqual(attachedTarget.server.username, "deploy")
@@ -986,7 +975,7 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.connect(to: workspace.id)
         let originalSession = try XCTUnwrap(harness.model.activeSessions.first)
         let runningModel = harness.model.terminalScreenModel(for: originalSession)
-        await attachAndWaitForRunning(runningModel)
+        await waitForConnecting(runningModel)
 
         await harness.model.beginEditServer(serverID: server.id)
         harness.model.updateDraft { draft in
@@ -1255,25 +1244,17 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertTrue(harness.model.terminalScreenModel(for: session) === terminalModel)
     }
 
-    func testCloseActiveSessionRetainsStoppedRuntimeUntilTerminalViewsDismantle() async throws {
+    func testCloseActiveSessionStopsOwnedTerminalModel() async throws {
         let server = SavedServer(
             displayName: "Build Host",
             host: "build.example.test",
             username: "builder"
         )
         let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let transportFactory = RecordingRootTransportFactory()
         let modelFactory = RecordingTerminalScreenModelFactory()
         let harness = makeHarness(
             servers: [server],
             workspaces: [workspace],
-            transportFactory: { target, trustedHostStore, sshConnectionPool in
-                _ = sshConnectionPool
-                return transportFactory.makeTransport(
-                    target: target,
-                    trustedHostStore: trustedHostStore
-                )
-            },
             terminalScreenModelFactory: modelFactory.factory
         )
         try await harness.credentialHelper.savePassword("secret", for: server.id)
@@ -1281,169 +1262,86 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.load()
         await harness.model.connect(to: workspace.id)
         let session = try XCTUnwrap(harness.model.activeSessions.first)
-        let key = TerminalRuntimeAttemptKey(session: session)
         let terminalModel = harness.model.terminalScreenModel(for: session)
-        await attachAndWaitForRunning(terminalModel)
-        harness.model.terminalScreenViewDidMount(
-            runtimeAttemptKey: key,
-            component: .hostSurface
-        )
-        harness.model.terminalScreenViewDidMount(
-            runtimeAttemptKey: key,
-            component: .hostSurface
-        )
-        harness.model.terminalScreenViewDidMount(
-            runtimeAttemptKey: key,
-            component: .surfaceTree
-        )
+        await waitForConnecting(terminalModel)
 
         harness.model.closeActiveSession(workspace.id)
 
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
-        XCTAssertTrue(terminalModel.surfaceRegistry.materializationContext.isRuntimeRemovalInProgress)
-        XCTAssertFalse(terminalModel.surfaceRegistry.materializationContext.isAvailable)
-        XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
-        harness.model.terminalScreenViewDidDismantle(
-            runtimeAttemptKey: key,
-            component: .hostSurface
-        )
-        XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
-        harness.model.terminalScreenViewDidDismantle(
-            runtimeAttemptKey: key,
-            component: .surfaceTree
-        )
-        XCTAssertTrue(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
-        harness.model.terminalScreenViewDidDismantle(
-            runtimeAttemptKey: key,
-            component: .hostSurface
-        )
-        XCTAssertFalse(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
-        let didClose = await waitUntil {
-            transportFactory.events.contains { event in
-                if case .closed = event { return true }
-                return false
-            }
-        }
-        XCTAssertTrue(didClose)
+        // Teardown ordering (surface -> link -> controller) is owned by
+        // the model's async stop; completion nils the session.
+        await waitForStopped(terminalModel)
     }
 
-    func testCloseActiveSessionReleasesStoppedRuntimeImmediatelyWhenTerminalViewsNeverMounted() async throws {
+    func testAppLifecyclePhaseForegroundReportsDisconnectedModel() async throws {
         let server = SavedServer(
             displayName: "Build Host",
             host: "build.example.test",
             username: "builder"
         )
         let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let harness = makeHarness(servers: [server], workspaces: [workspace])
-        try await harness.credentialHelper.savePassword("secret", for: server.id)
-
-        await harness.model.load()
-        await harness.model.connect(to: workspace.id)
-        let session = try XCTUnwrap(harness.model.activeSessions.first)
-        let terminalModel = harness.model.terminalScreenModel(for: session)
-        await attachAndWaitForRunning(terminalModel)
-
-        harness.model.closeActiveSession(workspace.id)
-
-        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
-        XCTAssertFalse(terminalModel.stoppedRuntimeRemovalHoldRetainedForTesting)
-    }
-
-    func testAppLifecyclePhaseForwardsToOwnedTerminalModel() async throws {
-        let server = SavedServer(
-            displayName: "Build Host",
-            host: "build.example.test",
-            username: "builder"
-        )
-        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let harness = makeHarness(servers: [server], workspaces: [workspace])
-        try await harness.credentialHelper.savePassword("secret", for: server.id)
-
-        await harness.model.load()
-        await harness.model.connect(to: workspace.id)
-        let session = try XCTUnwrap(harness.model.activeSessions.first)
-        let terminalModel = harness.model.terminalScreenModel(for: session)
-        await attachAndWaitForRunning(terminalModel)
-
-        harness.model.handleAppLifecyclePhase(.active)
-
-        XCTAssertEqual(terminalModel.debugStatus, "transport active after foreground")
-    }
-
-    func testAppLifecyclePhaseForwardsToAllOwnedTerminalModels() async throws {
-        let server = SavedServer(
-            displayName: "Build Host",
-            host: "build.example.test",
-            username: "builder"
-        )
-        let base = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let logs = SavedWorkspace(serverID: server.id, sessionName: "logs")
-        let harness = makeHarness(servers: [server], workspaces: [base, logs])
-        try await harness.credentialHelper.savePassword("secret", for: server.id)
-
-        await harness.model.load()
-        await harness.model.connect(to: base.id)
-        await harness.model.connect(to: logs.id)
-
-        let models = harness.model.activeSessions.map { session in
-            harness.model.terminalScreenModel(for: session)
-        }
-        for model in models {
-            await attachAndWaitForRunning(model)
-        }
-
-        harness.model.handleAppLifecyclePhase(.active)
-
-        XCTAssertEqual(
-            models.map(\.debugStatus),
-            Array(repeating: "transport active after foreground", count: models.count)
-        )
-    }
-
-    func testObservedAppLifecyclePhaseDoesNotInventForegroundStateForIdleNewModel() async throws {
-        let server = SavedServer(
-            displayName: "Build Host",
-            host: "build.example.test",
-            username: "builder"
-        )
-        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let harness = makeHarness(servers: [server], workspaces: [workspace])
-        try await harness.credentialHelper.savePassword("secret", for: server.id)
-
-        await harness.model.load()
-        harness.model.handleAppLifecyclePhase(.active)
-        await harness.model.connect(to: workspace.id)
-        let session = try XCTUnwrap(harness.model.activeSessions.first)
-        let terminalModel = harness.model.terminalScreenModel(for: session)
-
-        XCTAssertEqual(terminalModel.debugStatus, "not started")
-
-        await attachAndWaitForRunning(terminalModel)
-
-        XCTAssertEqual(terminalModel.debugStatus, "transport started")
-    }
-
-    func testObservedAppLifecyclePhaseAppliesAfterNewSessionIsInstalled() async throws {
-        let server = SavedServer(
-            displayName: "Build Host",
-            host: "build.example.test",
-            username: "builder"
-        )
-        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
-        let modelFactory = LifecycleRuntimeUpdateSessionPresenceRecorder()
+        let modelFactory = RecordingTerminalScreenModelFactory()
         let harness = makeHarness(
             servers: [server],
             workspaces: [workspace],
             terminalScreenModelFactory: modelFactory.factory
         )
-        modelFactory.rootModel = harness.model
+        try await harness.credentialHelper.savePassword("secret", for: server.id)
+
+        await harness.model.load()
+        await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+        await waitForConnecting(terminalModel)
+
+        // Disconnect outside the terminal screen so the root's
+        // auto-reconnect policy does not replace the model.
+        await harness.model.showLibrary()
+        await terminalModel.session?.disconnect()
+        let didDetach = await waitUntil(timeout: 5) {
+            if case .detached = terminalModel.session?.state { return true }
+            return false
+        }
+        XCTAssertTrue(didDetach)
+
+        // Foreground re-reports the disconnected state with the
+        // foreground source so the root's policy can act on it.
+        modelFactory.clearRecordedUpdates()
+        harness.model.handleAppLifecyclePhase(.active)
+        let foregroundReports = modelFactory.recordedUpdates.filter {
+            $0.source == .foreground
+        }
+        XCTAssertEqual(foregroundReports.count, 1)
+        XCTAssertNotNil(foregroundReports.first?.state.disconnectedReason)
+    }
+
+    func testAppLifecyclePhaseDoesNotInventForegroundStateForConnectingModel() async throws {
+        let server = SavedServer(
+            displayName: "Build Host",
+            host: "build.example.test",
+            username: "builder"
+        )
+        let workspace = SavedWorkspace(serverID: server.id, sessionName: "base")
+        let modelFactory = RecordingTerminalScreenModelFactory()
+        let harness = makeHarness(
+            servers: [server],
+            workspaces: [workspace],
+            terminalScreenModelFactory: modelFactory.factory
+        )
         try await harness.credentialHelper.savePassword("secret", for: server.id)
 
         await harness.model.load()
         harness.model.handleAppLifecyclePhase(.active)
         await harness.model.connect(to: workspace.id)
+        let session = try XCTUnwrap(harness.model.activeSessions.first)
+        let terminalModel = harness.model.terminalScreenModel(for: session)
+        await waitForConnecting(terminalModel)
 
-        XCTAssertEqual(modelFactory.foregroundReportsSawInstalledSession, [true])
+        modelFactory.clearRecordedUpdates()
+        harness.model.handleAppLifecyclePhase(.active)
+        XCTAssertTrue(modelFactory.recordedUpdates.allSatisfy {
+            $0.source != .foreground
+        })
     }
 
     func testAppLifecyclePhaseDoesNotForwardToReplacedTerminalModel() async throws {
@@ -1465,19 +1363,18 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.connect(to: workspace.id)
         let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
         let oldModel = harness.model.terminalScreenModel(for: oldSession)
-        await attachAndWaitForRunning(oldModel)
+        await waitForConnecting(oldModel)
 
         harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
         let newSession = try XCTUnwrap(harness.model.activeSessions.first)
-        let newModel = harness.model.terminalScreenModel(for: newSession)
-        await attachAndWaitForRunning(newModel)
-        let oldDebugStatusAfterReconnect = oldModel.debugStatus
+        XCTAssertNotEqual(newSession.instanceID, oldSession.instanceID)
+        await waitForStopped(oldModel)
 
+        modelFactory.clearRecordedUpdates()
         harness.model.handleAppLifecyclePhase(.active)
-
-        XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
-        XCTAssertEqual(oldModel.debugStatus, oldDebugStatusAfterReconnect)
-        XCTAssertEqual(newModel.debugStatus, "transport active after foreground")
+        XCTAssertTrue(modelFactory.recordedUpdates.allSatisfy {
+            $0.instanceID != oldSession.instanceID
+        })
     }
 
     func testReconnectStopsOldAttemptModelAndInstallsNewAttemptModel() async throws {
@@ -1498,20 +1395,8 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.load()
         await harness.model.connect(to: workspace.id)
         let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
-        let oldKey = TerminalRuntimeAttemptKey(session: oldSession)
         let oldModel = harness.model.terminalScreenModel(for: oldSession)
-        oldModel.attach(
-            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
-            size: CGSize(width: 120, height: 80)
-        )
-        harness.model.terminalScreenViewDidMount(
-            runtimeAttemptKey: oldKey,
-            component: .hostSurface
-        )
-        harness.model.terminalScreenViewDidMount(
-            runtimeAttemptKey: oldKey,
-            component: .surfaceTree
-        )
+        await waitForConnecting(oldModel)
 
         harness.model.reconnectActiveSession(workspace.id, source: .manualButton)
 
@@ -1519,16 +1404,7 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertNotEqual(newSession.instanceID, oldSession.instanceID)
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
         XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
-        XCTAssertTrue(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)
-        harness.model.terminalScreenViewDidDismantle(
-            runtimeAttemptKey: oldKey,
-            component: .hostSurface
-        )
-        harness.model.terminalScreenViewDidDismantle(
-            runtimeAttemptKey: oldKey,
-            component: .surfaceTree
-        )
-        XCTAssertFalse(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)
+        await waitForStopped(oldModel)
         XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
         XCTAssertEqual(
             modelFactory.createdKeys,
@@ -1555,10 +1431,7 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.connect(to: workspace.id)
         let oldSession = try XCTUnwrap(harness.model.activeSessions.first)
         let oldModel = harness.model.terminalScreenModel(for: oldSession)
-        oldModel.attach(
-            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
-            size: CGSize(width: 120, height: 80)
-        )
+        await waitForConnecting(oldModel)
 
         await harness.model.connect(to: workspace.id)
 
@@ -1566,7 +1439,7 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertNotEqual(newSession.instanceID, oldSession.instanceID)
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: oldSession))
         XCTAssertTrue(harness.model.hasTerminalScreenModel(for: newSession))
-        XCTAssertFalse(oldModel.stoppedRuntimeRemovalHoldRetainedForTesting)
+        await waitForStopped(oldModel)
     }
 
     func testDeleteWorkspaceStopsOwnedTerminalModel() async throws {
@@ -1588,17 +1461,13 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.connect(to: workspace.id)
         let session = try XCTUnwrap(harness.model.activeSessions.first)
         let terminalModel = harness.model.terminalScreenModel(for: session)
-        terminalModel.attach(
-            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
-            size: CGSize(width: 120, height: 80)
-        )
+        await waitForConnecting(terminalModel)
 
         await harness.model.deleteWorkspace(workspace.id)
 
         XCTAssertEqual(harness.model.state, .library)
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
-        XCTAssertTrue(terminalModel.surfaceRegistry.materializationContext.isRuntimeRemovalInProgress)
-        XCTAssertFalse(terminalModel.surfaceRegistry.materializationContext.isAvailable)
+        await waitForStopped(terminalModel)
     }
 
     func testDeleteServerStopsAssociatedTerminalModels() async throws {
@@ -1664,7 +1533,7 @@ final class RemuxRootModelTests: XCTestCase {
         await harness.model.connect(to: workspace.id)
         let session = try XCTUnwrap(harness.model.activeSessions.first)
         let terminalModel = harness.model.terminalScreenModel(for: session)
-        await attachAndWaitForRunning(terminalModel)
+        await waitForConnecting(terminalModel)
 
         await harness.model.updateTerminalSettings { settings in
             settings.fontSize = 19
@@ -1675,8 +1544,7 @@ final class RemuxRootModelTests: XCTestCase {
             return
         }
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
-        XCTAssertTrue(terminalModel.surfaceRegistry.materializationContext.isRuntimeRemovalInProgress)
-        XCTAssertFalse(terminalModel.surfaceRegistry.materializationContext.isAvailable)
+        await waitForStopped(terminalModel)
     }
 
     func testRuntimeDisconnectMarksActiveSessionDisconnected() async throws {
@@ -2101,11 +1969,13 @@ final class RemuxRootModelTests: XCTestCase {
         }
         XCTAssertTrue(prepared)
 
+        // The activation's model claimed the prepared transport (eager
+        // connect): exactly one transport exists, and a later request
+        // for the same target must create a fresh one because the pool
+        // was consumed.
         let target = try XCTUnwrap(harness.model.activeSessions.first?.target)
         let createdID = try XCTUnwrap(transportFactory.createdIDs.last)
-        let claimed = harness.model.makeTransport(for: target)
-        let claimedTransport = try XCTUnwrap(claimed as? RecordingRootTmuxControlTransport)
-        XCTAssertEqual(claimedTransport.id, createdID)
+        XCTAssertEqual(transportFactory.createdIDs.count, 1)
 
         let fresh = harness.model.makeTransport(for: target)
         let freshTransport = try XCTUnwrap(fresh as? RecordingRootTmuxControlTransport)
@@ -2180,8 +2050,6 @@ final class RemuxRootModelTests: XCTestCase {
         XCTAssertEqual(refreshedSession.target.terminalSettings, updated)
         XCTAssertTrue(harness.model.hasTerminalScreenModel(for: refreshedSession))
         XCTAssertTrue(originalModel === harness.model.terminalScreenModel(for: refreshedSession))
-        XCTAssertEqual(originalModel.terminalSettingsForTesting, updated)
-        XCTAssertEqual(originalModel.terminalSettingsApplyCountForTesting, 1)
         XCTAssertEqual(
             harness.model.activeTerminalScreenEntries.first?.presentation.terminalTheme,
             updated.theme
@@ -2257,19 +2125,33 @@ final class RemuxRootModelTests: XCTestCase {
         )
     }
 
-    private func attachAndWaitForRunning(
-        _ model: GhosttySurfaceScreenModel,
+    /// The new model connects eagerly at creation; "running" for tests
+    /// means the transport started and the session began attaching.
+    private func waitForConnecting(
+        _ model: TmuxScreenModel,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
-        model.attach(
-            view: GhosttyKitSurfaceView(frame: CGRect(x: 0, y: 0, width: 120, height: 80)),
-            size: CGSize(width: 120, height: 80)
-        )
-        let didRun = await waitUntil(timeout: 2) {
-            model.state == .running
+        let didConnect = await waitUntil(timeout: 5) {
+            switch model.session?.state {
+            case .attaching, .syncing, .ready: return true
+            default: return false
+            }
         }
-        XCTAssertTrue(didRun, file: file, line: line)
+        XCTAssertTrue(didConnect, file: file, line: line)
+    }
+
+    /// stop() is async (surface -> link -> controller teardown); the
+    /// session is nilled when it completes.
+    private func waitForStopped(
+        _ model: TmuxScreenModel,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let didStop = await waitUntil(timeout: 5) {
+            model.session == nil
+        }
+        XCTAssertTrue(didStop, file: file, line: line)
     }
 
     private func temporaryRoot() -> URL {
@@ -2336,52 +2218,61 @@ private struct RemuxRootModelHarness {
 private func makeTestTerminalScreenModel(
     target: TmuxConnectionTarget,
     sessionInstanceID: UUID,
-    transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
-    onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
-) -> GhosttySurfaceScreenModel {
-    GhosttySurfaceScreenModel(
+    transportFactory: @escaping TmuxScreenModel.TransportFactory,
+    onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
+    initialClientSize: TmuxSessionController.ClientSize?
+) -> TmuxScreenModel {
+    TmuxScreenModel(
         target: target,
         sessionInstanceID: sessionInstanceID,
         transportFactory: transportFactory,
         onRuntimeStateChange: onRuntimeStateChange,
-        precreateRuntime: false,
-        debugLatencyProbe: nil
+        initialClientSize: initialClientSize
     )
 }
 
 @MainActor
 private final class RecordingTerminalScreenModelFactory: @unchecked Sendable {
     private(set) var createdKeys: [TerminalRuntimeAttemptKey] = []
-    private(set) var createdModels: [TerminalRuntimeAttemptKey: GhosttySurfaceScreenModel] = [:]
+    private(set) var createdModels: [TerminalRuntimeAttemptKey: TmuxScreenModel] = [:]
+    private(set) var recordedUpdates: [TerminalRuntimeStateUpdate] = []
 
     var factory: RemuxRootModel.TerminalScreenModelFactory {
-        { target, sessionInstanceID, transportFactory, onRuntimeStateChange in
+        { target, sessionInstanceID, transportFactory, onRuntimeStateChange, initialClientSize in
             self.makeModel(
                 target: target,
                 sessionInstanceID: sessionInstanceID,
                 transportFactory: transportFactory,
-                onRuntimeStateChange: onRuntimeStateChange
+                onRuntimeStateChange: onRuntimeStateChange,
+                initialClientSize: initialClientSize
             )
         }
+    }
+
+    func clearRecordedUpdates() {
+        recordedUpdates.removeAll()
     }
 
     func makeModel(
         target: TmuxConnectionTarget,
         sessionInstanceID: UUID,
-        transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
-        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
-    ) -> GhosttySurfaceScreenModel {
+        transportFactory: @escaping TmuxScreenModel.TransportFactory,
+        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void,
+        initialClientSize: TmuxSessionController.ClientSize?
+    ) -> TmuxScreenModel {
         let key = TerminalRuntimeAttemptKey(
             workspaceID: target.workspace.id,
             instanceID: sessionInstanceID
         )
-        let model = GhosttySurfaceScreenModel(
+        let model = TmuxScreenModel(
             target: target,
             sessionInstanceID: sessionInstanceID,
             transportFactory: transportFactory,
-            onRuntimeStateChange: onRuntimeStateChange,
-            precreateRuntime: false,
-            debugLatencyProbe: nil
+            onRuntimeStateChange: { update in
+                self.recordedUpdates.append(update)
+                onRuntimeStateChange(update)
+            },
+            initialClientSize: initialClientSize
         )
         createdKeys.append(key)
         createdModels[key] = model
@@ -2408,51 +2299,6 @@ private struct FailingGhosttyAttachmentTransferService: GhosttyAttachmentTransfe
         _ = job
         _ = progress
         throw GhosttyAttachmentTransferError.noSources
-    }
-}
-
-@MainActor
-private final class LifecycleRuntimeUpdateSessionPresenceRecorder: @unchecked Sendable {
-    weak var rootModel: RemuxRootModel?
-    private(set) var foregroundReportsSawInstalledSession: [Bool] = []
-
-    var factory: RemuxRootModel.TerminalScreenModelFactory {
-        { target, sessionInstanceID, transportFactory, onRuntimeStateChange in
-            self.makeModel(
-                target: target,
-                sessionInstanceID: sessionInstanceID,
-                transportFactory: transportFactory,
-                onRuntimeStateChange: onRuntimeStateChange
-            )
-        }
-    }
-
-    func makeModel(
-        target: TmuxConnectionTarget,
-        sessionInstanceID: UUID,
-        transportFactory: @escaping GhosttySurfaceScreenModel.TransportFactory,
-        onRuntimeStateChange: @escaping (TerminalRuntimeStateUpdate) -> Void
-    ) -> GhosttySurfaceScreenModel {
-        GhosttySurfaceScreenModel(
-            target: target,
-            sessionInstanceID: sessionInstanceID,
-            transportFactory: transportFactory,
-            onRuntimeStateChange: { update in
-                self.record(update)
-                onRuntimeStateChange(update)
-            },
-            precreateRuntime: false,
-            debugLatencyProbe: nil
-        )
-    }
-
-    private func record(_ update: TerminalRuntimeStateUpdate) {
-        guard update.source == .foreground else { return }
-        foregroundReportsSawInstalledSession.append(
-            rootModel?.activeSessions.contains {
-                $0.id == update.workspaceID && $0.instanceID == update.instanceID
-            } == true
-        )
     }
 }
 
@@ -2533,6 +2379,16 @@ private final class RecordingRootTransportFactory: @unchecked Sendable {
             if case .created(let id) = event { return id }
             return nil
         }
+    }
+
+    /// Transports prepared at least once. The link re-prepares its
+    /// claimed transport (contractually idempotent), so raw prepared
+    /// EVENT counts over-count; identity is what the pool tests mean.
+    var preparedIDs: Set<UUID> {
+        Set(events.compactMap { event in
+            if case .prepared(let id) = event { return id }
+            return nil
+        })
     }
 
     var targets: [TmuxConnectionTarget] {
