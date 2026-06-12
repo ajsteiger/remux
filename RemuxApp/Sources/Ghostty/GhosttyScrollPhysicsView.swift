@@ -173,12 +173,19 @@ struct GhosttyScrollTailCutoff {
 /// repaint. Excess delta is dropped, not deferred: flicks saturate at
 /// the cap instead of stretching the scroll out in time.
 struct GhosttyScrollDeltaBudget {
+    /// Default burst window. Device traces (2026-06-12) showed 0.25s
+    /// lets a violent flick dump ~37 one-line ticks instantly — a
+    /// near-full-screen teleport before steady-rate pacing kicks in.
+    /// ~0.08s bounds the initial dump to a few lines while leaving
+    /// gesture-start latency imperceptible.
+    static let defaultBurstSeconds: Double = 0.08
+
     private(set) var unitsPerSecond: Double
     private let burstSeconds: Double
     private var available: Double
     private var lastRefill: TimeInterval?
 
-    init(unitsPerSecond: Double, burstSeconds: Double = 0.25) {
+    init(unitsPerSecond: Double, burstSeconds: Double = Self.defaultBurstSeconds) {
         self.unitsPerSecond = max(unitsPerSecond, 0)
         self.burstSeconds = max(burstSeconds, 0)
         self.available = self.unitsPerSecond * self.burstSeconds

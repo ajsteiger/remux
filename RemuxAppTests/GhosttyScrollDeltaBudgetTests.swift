@@ -2,6 +2,14 @@ import XCTest
 @testable import Remux
 
 final class GhosttyScrollDeltaBudgetTests: XCTestCase {
+    func testDefaultBurstBoundsInstantDump() {
+        // At the pager cap (150 ticks/s equivalent) the default burst
+        // must not allow a screenful teleport at gesture start.
+        var budget = GhosttyScrollDeltaBudget(unitsPerSecond: 150)
+        let instantDump = budget.clamp(10_000, at: 0)
+        XCTAssertLessThanOrEqual(instantDump, 150 * 0.1)
+    }
+
     func testRouteForwardedGainDefaultsToDeviceTunedValue() {
         // No env override in the test process: the resolved gain is
         // the shipped default.
