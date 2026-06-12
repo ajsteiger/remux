@@ -116,6 +116,13 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var isPhysicsGestureActive = false
     private var isRecenteringPhysicsScroll = false
 
+    /// Set when a touch catches a live deceleration. The tap that
+    /// lands from that touch is the catch itself, not an intentional
+    /// click — native scroll views swallow it. The tree view's tap
+    /// handler consumes this before forwarding mouse actions.
+    private var lastMomentumCatchAt: TimeInterval?
+    private static let momentumCatchTapWindow: TimeInterval = 0.4
+
     /// Cap on wheel reports one gesture may produce per second. Each
     /// report costs the remote TUI a repaint; the old-pipeline traces
     /// showed ~45/s sustained is comfortable, so allow modest headroom.
@@ -239,6 +246,9 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         if scrollView === physicsScrollView {
+            if physicsScrollView.isDecelerating {
+                lastMomentumCatchAt = CACurrentMediaTime()
+            }
             beginPhysicsGesture()
             return
         }
@@ -262,6 +272,11 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         if scrollView === physicsScrollView {
+            // Deceleration ending while a touch is tracking means that
+            // touch caught the fling (a natural end has no touch).
+            if physicsScrollView.isTracking {
+                lastMomentumCatchAt = CACurrentMediaTime()
+            }
             endPhysicsGesture(phase: .ended)
             return
         }
@@ -652,6 +667,14 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         } else if wasMoving {
             recenterPhysicsScrollIfIdle()
         }
+    }
+
+    /// True exactly once for the tap produced by a fling-catch touch;
+    /// consuming keeps an immediate deliberate follow-up tap clickable.
+    func consumeMomentumCatchTap(at now: TimeInterval = CACurrentMediaTime()) -> Bool {
+        guard let caughtAt = lastMomentumCatchAt else { return false }
+        lastMomentumCatchAt = nil
+        return now - caughtAt < Self.momentumCatchTapWindow
     }
 
     private func recenterPhysicsScrollIfIdle() {

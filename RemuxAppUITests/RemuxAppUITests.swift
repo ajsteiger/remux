@@ -377,6 +377,60 @@ final class RemuxAppUITests: XCTestCase {
         )
     }
 
+    func testLiveMouseReportFlingCatchWhenConfigured() throws {
+        let sessionName = try generatedLiveLatencySessionName("flingcatch")
+        defer {
+            cleanupGeneratedLiveLatencySessionIfPossible(sessionName)
+        }
+
+        try launchLiveSSHAppIfConfigured(traceRuntime: true, sessionNameOverride: sessionName)
+        openFirstSavedSession()
+        waitForLiveTerminalReady(timeout: 90)
+
+        sendTerminalCommand(
+            "seq -f 'REMUX_CATCH_LINE_%g' 300 > /tmp/remux-catch.txt; vim --clean -c 'set mouse=a' -c 'normal G' /tmp/remux-catch.txt"
+        )
+        hideKeyboardIfPresent()
+        guard waitForStableLiveTerminalScreenshot(
+            minNonBackgroundPixels: 30_000,
+            attachmentName: "live-terminal-catch-before"
+        ) != nil else {
+            return
+        }
+
+        let terminal = app.otherElements["terminal.screen"].firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 10))
+
+        // Fling, then immediately touch down: the catch must stop the
+        // deceleration AND swallow the touch (a leaked tap would emit
+        // an SGR button press into vim — asserted on the wire by the
+        // harness trace analysis).
+        terminal.swipeUp(velocity: .fast)
+        terminal.tap()
+
+        // Catch proof: motion has stopped — two screenshots a second
+        // apart must be identical while the (cancelled) deceleration
+        // window would still have been running.
+        let first = app.screenshot()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+        let second = app.screenshot()
+        let residualMotion = liveTerminalPixelDifference(before: first, after: second)
+        XCTAssertNotNil(residualMotion)
+        XCTAssertLessThan(
+            residualMotion ?? .max,
+            2_000,
+            "Touching mid-fling should catch the scroll dead; content must not keep moving."
+        )
+
+        // Control: a deliberate tap after everything settles must still
+        // reach the app as a click (the swallow is catch-scoped). The
+        // harness wire analysis asserts exactly this tap's press and
+        // release reach vim, and nothing from the catch tap.
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        terminal.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.0))
+    }
+
     func testLiveAltScreenCursorScrollWhenConfigured() throws {
         let sessionName = try generatedLiveLatencySessionName("altscroll")
         defer {

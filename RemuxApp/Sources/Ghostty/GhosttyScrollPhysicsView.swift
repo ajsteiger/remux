@@ -3,11 +3,13 @@ import UIKit
 
 /// Tuning for route-forwarded scrolling, resolved once at startup.
 enum GhosttyScrollTuning {
-    /// Device-tuned gain for the mouse-report route (2026-06-12 A/B
-    /// on iPhone 14 Pro Max): at the legacy 2.0, slow controlled
-    /// drags jump ahead of the finger; 1.0 and 1.5 felt equally calm,
-    /// and 1.5 preserves more momentum reach per flick. The
-    /// alt-screen-cursor route keeps the gesture's legacy default.
+    /// Device-tuned gain for both forwarded scroll routes
+    /// (2026-06-12 A/B on iPhone 14 Pro Max): at the legacy 2.0, slow
+    /// controlled drags jump ahead of the finger; 1.0 and 1.5 felt
+    /// equally calm, and 1.5 preserves more momentum reach per flick.
+    /// The alt-screen-cursor route was folded onto the same physics
+    /// path afterwards and validated at this gain (man/less on
+    /// device), so it shares the value deliberately.
     static let routeForwardedDefaultGain: CGFloat = 1.5
 
     /// Gain from finger travel to precise scroll units on the

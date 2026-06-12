@@ -905,6 +905,17 @@ private final class GhosttySurfaceTreeContainerUIView: UIView, UIGestureRecogniz
         let mouseCaptured = isMouseCaptured(surfaceID)
         _ = selectSurface(surfaceID, "tree.handleSurfaceTap")
 
+        // A tap that caught a scroll fling is the catch, not a click:
+        // native scroll views swallow it. Selection above still applies.
+        if let container = scrollContainersBySurfaceID[surfaceID],
+           container.consumeMomentumCatchTap() {
+            GhosttyRuntimeTrace.diagnostics(
+                "tree.handleSurfaceTap swallowed momentum-catch tap surface=\(ghosttyDiagnosticShortID(surfaceID))"
+            )
+            setNeedsLayout()
+            return
+        }
+
         for action in GhosttySurfaceTapGesture.actions(
             forLocalPoint: recognizer.location(in: view),
             mouseCaptured: mouseCaptured
