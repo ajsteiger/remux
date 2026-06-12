@@ -3,13 +3,19 @@ import UIKit
 
 /// Tuning for route-forwarded scrolling, resolved once at startup.
 enum GhosttyScrollTuning {
+    /// Device-tuned gain for the mouse-report route (2026-06-12 A/B
+    /// on iPhone 14 Pro Max): at the legacy 2.0, slow controlled
+    /// drags jump ahead of the finger; 1.0 and 1.5 felt equally calm,
+    /// and 1.5 preserves more momentum reach per flick. The
+    /// alt-screen-cursor route keeps the gesture's legacy default.
+    static let routeForwardedDefaultGain: CGFloat = 1.5
+
     /// Gain from finger travel to precise scroll units on the
     /// mouse-report route. `REMUX_SCROLL_PRECISE_GAIN` overrides for
     /// on-device feel experiments (clamped; same read-once pattern as
-    /// the REMUX_TRACE_* flags). The shipped default is the gesture's
-    /// long-standing value.
+    /// the REMUX_TRACE_* flags).
     static let routeForwardedGain: CGFloat = {
-        let fallback = GhosttyRouteForwardingScrollGesture.defaultPreciseScale
+        let fallback = routeForwardedDefaultGain
         guard
             let raw = ProcessInfo.processInfo.environment["REMUX_SCROLL_PRECISE_GAIN"],
             let value = Double(raw), value.isFinite

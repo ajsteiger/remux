@@ -2,6 +2,13 @@ import XCTest
 @testable import Remux
 
 final class GhosttyScrollDeltaBudgetTests: XCTestCase {
+    func testRouteForwardedGainDefaultsToDeviceTunedValue() {
+        // No env override in the test process: the resolved gain is
+        // the shipped default.
+        XCTAssertEqual(GhosttyScrollTuning.routeForwardedGain, 1.5)
+        XCTAssertEqual(GhosttyScrollTuning.routeForwardedDefaultGain, 1.5)
+    }
+
     func testClampPassesDeltaWithinBudget() {
         var budget = GhosttyScrollDeltaBudget(unitsPerSecond: 100, burstSeconds: 0.5)
 
