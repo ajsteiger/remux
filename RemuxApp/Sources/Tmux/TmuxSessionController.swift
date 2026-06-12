@@ -245,8 +245,10 @@ final class TmuxSessionController: @unchecked Sendable {
 
     /// Inbound SSH bytes.
     func pump(_ data: Data) {
+        let enqueuedAt = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : 0
         queue.async { [self] in
             guard let session else { return }
+            let applyStart = GhosttyRuntimeTrace.perfEnabled ? GhosttyRuntimeTrace.nowNanos() : 0
             data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
                 ghostty_tmux_session_pump(
                     session,
@@ -255,6 +257,11 @@ final class TmuxSessionController: @unchecked Sendable {
                     Self.nowMS()
                 )
             }
+            // The pump applies %output to pane terminals while holding the
+            // render mutex; its duration is the renderer-blocking hazard.
+            GhosttyRuntimeTrace.perf(
+                "tmuxPump bytes=\(data.count) wait_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: enqueuedAt, to: applyStart)) apply_ms=\(GhosttyRuntimeTrace.elapsedMilliseconds(from: applyStart))"
+            )
             drainOutbound()
         }
     }
