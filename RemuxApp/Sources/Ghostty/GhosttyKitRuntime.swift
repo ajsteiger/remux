@@ -23,14 +23,6 @@ struct GhosttyTerminalAppearance: Equatable {
     }
 }
 
-enum GhosttyTmuxHistoryCapturePolicy {
-    static let initialLimit = 1000
-
-    static func apply(to config: inout ghostty_surface_config_s) {
-        config.tmux_history_capture_limit = initialLimit
-    }
-}
-
 enum GhosttyTerminalDeviceClass {
     case phone
     case pad
@@ -208,10 +200,6 @@ final class GhosttyKitRuntime {
     var appHandleForTesting: ghostty_app_t {
         state.app
     }
-
-    func deliverTmuxProtocolErrorForTesting(_ error: ghostty_tmux_protocol_error_s) {
-        GhosttyKitRuntimeCallbacks.tmuxProtocolError(state.app, error: error)
-    }
 #endif
 
     func makeManualHostSurface(
@@ -231,7 +219,6 @@ final class GhosttyKitRuntime {
         GhosttyTerminalAppearancePolicy
             .currentDeviceAppearance(settings: state.terminalSettings)
             .apply(to: &surfaceConfig)
-        GhosttyTmuxHistoryCapturePolicy.apply(to: &surfaceConfig)
         surfaceConfig.platform_tag = GHOSTTY_PLATFORM_IOS
         surfaceConfig.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
             uiview: Unmanaged.passUnretained(view).toOpaque()
@@ -345,15 +332,13 @@ private final class GhosttyKitRuntimeState {
             supports_selection_clipboard: false,
             wakeup_cb: GhosttyKitRuntimeCallbacks.wakeupCallback,
             action_cb: GhosttyKitRuntimeCallbacks.actionCallback,
-            read_clipboard_cb: GhosttyKitRuntimeCallbacks.readClipboardCallback,
-            confirm_read_clipboard_cb: GhosttyKitRuntimeCallbacks.confirmReadClipboardCallback,
-            write_clipboard_cb: GhosttyKitRuntimeCallbacks.writeClipboardCallback,
-            close_surface_cb: GhosttyKitRuntimeCallbacks.closeSurfaceCallback,
+            read_clipboard_cb: nil,
+            confirm_read_clipboard_cb: nil,
+            write_clipboard_cb: nil,
+            close_surface_cb: nil,
             select_surface_cb: GhosttyKitRuntimeCallbacks.selectSurfaceCallback,
             create_surface_cb: GhosttyKitRuntimeCallbacks.createSurfaceCallback,
-            create_surface_tree_cb: GhosttyKitRuntimeCallbacks.createSurfaceTreeCallback,
-            tmux_command_failure_cb: GhosttyKitRuntimeCallbacks.tmuxCommandFailureCallback,
-            tmux_protocol_error_cb: GhosttyKitRuntimeCallbacks.tmuxProtocolErrorCallback
+            create_surface_tree_cb: GhosttyKitRuntimeCallbacks.createSurfaceTreeCallback
         )
 
         guard let app = ghostty_app_new(&runtimeConfig, config) else {
@@ -516,40 +501,6 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         }
     }
 
-    static var readClipboardCallback: ghostty_runtime_read_clipboard_cb {
-        { userdata, clipboard, request in
-            GhosttyKitRuntimeCallbacks.readClipboard(userdata, clipboard: clipboard, request: request)
-        }
-    }
-
-    static var confirmReadClipboardCallback: ghostty_runtime_confirm_read_clipboard_cb {
-        { userdata, string, request, kind in
-            GhosttyKitRuntimeCallbacks.confirmReadClipboard(
-                userdata,
-                string: string,
-                request: request,
-                kind: kind
-            )
-        }
-    }
-
-    static var writeClipboardCallback: ghostty_runtime_write_clipboard_cb {
-        { userdata, clipboard, contents, count, confirm in
-            GhosttyKitRuntimeCallbacks.writeClipboard(
-                userdata,
-                clipboard: clipboard,
-                contents: contents,
-                count: count,
-                confirm: confirm
-            )
-        }
-    }
-
-    static var closeSurfaceCallback: ghostty_runtime_close_surface_cb {
-        { userdata, processAlive in
-            GhosttyKitRuntimeCallbacks.closeSurface(userdata, processAlive: processAlive)
-        }
-    }
 
     static var selectSurfaceCallback: ghostty_runtime_select_surface_cb {
         { app, surface in
@@ -569,17 +520,6 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         }
     }
 
-    static var tmuxCommandFailureCallback: ghostty_runtime_tmux_command_failure_cb {
-        { app, failure in
-            GhosttyKitRuntimeCallbacks.tmuxCommandFailure(app, failure: failure)
-        }
-    }
-
-    static var tmuxProtocolErrorCallback: ghostty_runtime_tmux_protocol_error_cb {
-        { app, error in
-            GhosttyKitRuntimeCallbacks.tmuxProtocolError(app, error: error)
-        }
-    }
 
     static func wakeup(_ userdata: UnsafeMutableRawPointer?) {
         guard let callbacks = from(userdata: userdata) else { return }
@@ -659,130 +599,6 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         }
     }
 
-    static func readClipboard(
-        _ userdata: UnsafeMutableRawPointer?,
-        clipboard: ghostty_clipboard_e,
-        request: UnsafeMutableRawPointer?
-    ) -> Bool {
-        guard clipboard == GHOSTTY_CLIPBOARD_STANDARD else { return false }
-        guard let request else { return false }
-        guard
-            let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
-            let surface = lifecycle.surfaceHandle
-        else {
-            return false
-        }
-        guard lifecycle.acceptsRuntimeCallback() else { return false }
-        guard let text = readPasteboardString(for: lifecycle) else { return false }
-
-        completeClipboardRequest(surface: surface, text: text, request: request, confirmed: false)
-        return true
-    }
-
-    static func confirmReadClipboard(
-        _ userdata: UnsafeMutableRawPointer?,
-        string: UnsafePointer<CChar>?,
-        request: UnsafeMutableRawPointer?,
-        kind: ghostty_clipboard_request_e
-    ) {
-        guard let request else { return }
-        guard let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
-              let surface = lifecycle.surfaceHandle
-        else { return }
-        guard lifecycle.acceptsRuntimeCallback() else {
-            completeClipboardRequest(surface: surface, text: "", request: request, confirmed: true)
-            return
-        }
-
-        let text: String
-        switch kind {
-        case GHOSTTY_CLIPBOARD_REQUEST_PASTE, GHOSTTY_CLIPBOARD_REQUEST_OSC_52_WRITE:
-            text = string.map(String.init(cString:)) ?? ""
-        default:
-            // Do not expose the iOS pasteboard to terminal-initiated OSC 52
-            // reads until Remux has a user-facing confirmation path.
-            text = ""
-        }
-
-        completeClipboardRequest(surface: surface, text: text, request: request, confirmed: true)
-    }
-
-    static func writeClipboard(
-        _ userdata: UnsafeMutableRawPointer?,
-        clipboard: ghostty_clipboard_e,
-        contents: UnsafePointer<ghostty_clipboard_content_s>?,
-        count: Int,
-        confirm: Bool
-    ) {
-        guard clipboard == GHOSTTY_CLIPBOARD_STANDARD else { return }
-        guard !confirm else { return }
-        guard
-            let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata),
-            lifecycle.acceptsRuntimeCallback()
-        else {
-            return
-        }
-        guard let text = GhosttyClipboardContentDecoder.plainText(
-            contents: contents,
-            count: count
-        ) else {
-            return
-        }
-
-        DispatchQueue.main.async {
-            guard lifecycle.acceptsRuntimeCallback() else { return }
-            UIPasteboard.general.string = text
-        }
-    }
-
-    private static func completeClipboardRequest(
-        surface: ghostty_surface_t,
-        text: String,
-        request: UnsafeMutableRawPointer,
-        confirmed: Bool
-    ) {
-        text.withCString { pointer in
-            ghostty_surface_complete_clipboard_request(
-                surface,
-                pointer,
-                request,
-                confirmed
-            )
-        }
-    }
-
-    private static func readPasteboardString(for lifecycle: GhosttyRuntimeSurfaceLifecycle) -> String? {
-        if Thread.isMainThread {
-            GhosttyRuntimeTrace.perf("runtime.readPasteboard route=main")
-            guard lifecycle.acceptsRuntimeCallback() else { return nil }
-            return UIPasteboard.general.string
-        }
-
-        return GhosttyRuntimeTrace.perfMeasure("runtime.readPasteboard route=sync") {
-            DispatchQueue.main.sync {
-                guard lifecycle.acceptsRuntimeCallback() else { return nil }
-                return UIPasteboard.general.string
-            }
-        }
-    }
-
-    static func closeSurface(
-        _ userdata: UnsafeMutableRawPointer?,
-        processAlive: Bool
-    ) {
-        guard let lifecycle = GhosttyRuntimeSurfaceLifecycle.from(userdata) else {
-            return
-        }
-        guard lifecycle.acceptsRuntimeCallback() else { return }
-
-        Task { @MainActor [weak registry = lifecycle.registry] in
-            registry?.runtimeCloseSurface(
-                id: lifecycle.surfaceID,
-                processAlive: processAlive,
-                lease: lifecycle.callbackLease
-            )
-        }
-    }
 
     static func createSurface(
         _ app: ghostty_app_t?,
@@ -941,79 +757,6 @@ private final class GhosttyKitRuntimeCallbacks: @unchecked Sendable {
         }
     }
 
-    static func tmuxCommandFailure(
-        _ app: ghostty_app_t?,
-        failure: ghostty_tmux_command_failure_s
-    ) {
-        guard let callbacks = from(app: app) else { return }
-        guard let lease = callbacks.callbackLease,
-              callbacks.acceptsRuntimeCallback()
-        else {
-            return
-        }
-        let appBox = UnsafeSendable(app)
-        let typedFailure = TmuxControlCommandFailure(native: failure)
-        let leaseBox = UnsafeSendable(lease)
-        if Thread.isMainThread {
-            GhosttyRuntimeTrace.perf("runtime.tmuxCommandFailure route=main")
-            MainActor.assumeIsolated {
-                callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
-                    app: appBox.value,
-                    failure: typedFailure,
-                    lease: leaseBox.value
-                )
-            }
-        } else {
-            GhosttyRuntimeTrace.perfMeasure("runtime.tmuxCommandFailure route=sync") {
-                DispatchQueue.main.sync {
-                    MainActor.assumeIsolated {
-                        callbacks.surfaceDelegate?.runtimeTmuxCommandFailure(
-                            app: appBox.value,
-                            failure: typedFailure,
-                            lease: leaseBox.value
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    static func tmuxProtocolError(
-        _ app: ghostty_app_t?,
-        error: ghostty_tmux_protocol_error_s
-    ) {
-        guard let callbacks = from(app: app) else { return }
-        guard let lease = callbacks.callbackLease,
-              callbacks.acceptsRuntimeCallback()
-        else {
-            return
-        }
-        let appBox = UnsafeSendable(app)
-        let typedError = TmuxControlProtocolError(native: error)
-        let leaseBox = UnsafeSendable(lease)
-        if Thread.isMainThread {
-            GhosttyRuntimeTrace.perf("runtime.tmuxProtocolError route=main")
-            MainActor.assumeIsolated {
-                callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
-                    app: appBox.value,
-                    error: typedError,
-                    lease: leaseBox.value
-                )
-            }
-        } else {
-            GhosttyRuntimeTrace.perfMeasure("runtime.tmuxProtocolError route=sync") {
-                DispatchQueue.main.sync {
-                    MainActor.assumeIsolated {
-                        callbacks.surfaceDelegate?.runtimeTmuxProtocolError(
-                            app: appBox.value,
-                            error: typedError,
-                            lease: leaseBox.value
-                        )
-                    }
-                }
-            }
-        }
-    }
 
     private static func from(app: ghostty_app_t?) -> GhosttyKitRuntimeCallbacks? {
         guard let app else { return nil }

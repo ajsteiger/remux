@@ -255,7 +255,7 @@ private struct RemuxWorkspaceShell: View {
 
 struct RemuxAppLifecycleProjection: Equatable {
     let scenePhase: ScenePhase
-    let appLifecyclePhase: GhosttySurfaceScreenModel.AppLifecyclePhase
+    let appLifecyclePhase: GhosttyAppLifecyclePhase
 
     init(scenePhase: ScenePhase) {
         self.scenePhase = scenePhase

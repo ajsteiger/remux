@@ -65,6 +65,40 @@ final class GhosttyRuntimeCallbackLeaseStore: @unchecked Sendable {
     }
 }
 
+enum GhosttyRuntimeSurfaceAction: Equatable {
+    case render
+    case scrollbar(GhosttySurfaceScrollState)
+    case scrollRoute(GhosttySurfaceScrollRoute)
+    case ignored
+
+    init(native action: ghostty_action_s) {
+        switch action.tag {
+        case GHOSTTY_ACTION_RENDER:
+            self = .render
+        case GHOSTTY_ACTION_SCROLLBAR:
+            self = .scrollbar(GhosttySurfaceScrollState(cValue: action.action.scrollbar))
+        case GHOSTTY_ACTION_SCROLL_ROUTE:
+            self = .scrollRoute(GhosttySurfaceScrollRoute(cValue: action.action.scroll_route))
+        default:
+            self = .ignored
+        }
+    }
+}
+
+enum GhosttyRuntimeSurfaceActionTarget: Equatable {
+    case surface(ghostty_surface_t?)
+    case ignored
+
+    init(native target: ghostty_target_s) {
+        switch target.tag {
+        case GHOSTTY_TARGET_SURFACE:
+            self = .surface(target.target.surface)
+        default:
+            self = .ignored
+        }
+    }
+}
+
 protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
     @MainActor
     func makeRuntimeCallbackLease() -> GhosttyRuntimeCallbackLease?
@@ -107,20 +141,6 @@ protocol GhosttyKitRuntimeSurfaceDelegate: AnyObject {
         action: GhosttyRuntimeSurfaceAction,
         lease: GhosttyRuntimeCallbackLease
     ) -> Bool
-
-    @MainActor
-    func runtimeTmuxCommandFailure(
-        app: ghostty_app_t?,
-        failure: TmuxControlCommandFailure,
-        lease: GhosttyRuntimeCallbackLease
-    )
-
-    @MainActor
-    func runtimeTmuxProtocolError(
-        app: ghostty_app_t?,
-        error: TmuxControlProtocolError,
-        lease: GhosttyRuntimeCallbackLease
-    )
 }
 
 extension GhosttyKitRuntimeSurfaceDelegate {

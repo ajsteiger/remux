@@ -6,10 +6,58 @@ import GhosttyKit
 /// terminal readiness/topology, focused-surface input routing, tmux topology
 /// actions, and the selection-sheet/preview plumbing.
 ///
-/// Two engines implement it: the legacy host-session pipeline
-/// (`GhosttySurfaceScreenModel`) and the new tmux session stack
-/// (`TmuxTerminalScreenAdapter`). The screen owns presentation behavior only;
-/// everything engine-specific flows through this boundary.
+/// The tmux session stack implements it (`TmuxTerminalScreenAdapter`). The
+/// screen owns presentation behavior only; everything engine-specific flows
+/// through this boundary.
+enum GhosttyTmuxModelActionOutcome: Equatable, Sendable {
+    case queued
+    case localSelectionOnly(TmuxActionSubmissionResult)
+    case missingTarget(GhosttyTmuxActionMissingTarget)
+    case rejected(TmuxActionSubmissionResult)
+
+    var isHandled: Bool {
+        switch self {
+        case .queued, .localSelectionOnly:
+            true
+        case .missingTarget, .rejected:
+            false
+        }
+    }
+
+    var isQueued: Bool {
+        self == .queued
+    }
+}
+
+struct GhosttyTmuxCommandFailureEvent: Equatable {
+    let token: UInt64
+    let kind: TmuxControlCommandFailureKind
+    let reason: TmuxControlCommandFailureReason
+    let message: String
+}
+
+enum GhosttySurfaceSelectionOutcome: Equatable, Sendable {
+    case selected
+    case alreadySelected
+    case missingSurface(UUID)
+
+    var isSelected: Bool {
+        switch self {
+        case .selected, .alreadySelected:
+            true
+        case .missingSurface:
+            false
+        }
+    }
+}
+
+/// App-level scene lifecycle phases forwarded into terminal screen models.
+enum GhosttyAppLifecyclePhase: Equatable {
+    case active
+    case inactive
+    case background
+}
+
 @MainActor
 protocol GhosttyTerminalScreenModeling: ObservableObject {
     var terminalScreenPresentationProjection: GhosttyTerminalScreenPresentationProjection { get }
@@ -17,11 +65,6 @@ protocol GhosttyTerminalScreenModeling: ObservableObject {
     var terminalSurfaceMaterializationContext: GhosttyRuntimeSurfaceMaterializationContext { get }
     var commandFailureEvent: GhosttyTmuxCommandFailureEvent? { get }
     var stateTraceLabel: String { get }
-
-    /// The hidden host-session surface of the legacy pipeline. Engines
-    /// without a host session return nil and the screen renders no host
-    /// surface layer. Dies with the legacy pipeline.
-    var hostSurfaceScreenModel: GhosttySurfaceScreenModel? { get }
 
     func reportRuntimeReadinessIfNeeded()
 
@@ -132,12 +175,3 @@ protocol GhosttyTerminalScreenModeling: ObservableObject {
     ) -> GhosttyPaneSelectionSheetRenderProjection
 }
 
-extension GhosttySurfaceScreenModel: GhosttyTerminalScreenModeling {
-    var stateTraceLabel: String {
-        state.traceLabel
-    }
-
-    var hostSurfaceScreenModel: GhosttySurfaceScreenModel? {
-        self
-    }
-}

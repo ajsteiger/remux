@@ -368,10 +368,6 @@ extension TmuxTerminalScreenAdapter: GhosttyTerminalScreenModeling {
         }
     }
 
-    var hostSurfaceScreenModel: GhosttySurfaceScreenModel? {
-        nil
-    }
-
     func reportRuntimeReadinessIfNeeded() {
         // Readiness is structural in the new stack: the root model receives
         // domain runtime states straight from the session model.
@@ -738,21 +734,6 @@ extension TmuxTerminalScreenAdapter: GhosttyKitRuntimeSurfaceDelegate {
             return false
         }
     }
-
-    func runtimeTmuxCommandFailure(
-        app: ghostty_app_t?,
-        failure: TmuxControlCommandFailure,
-        lease: GhosttyRuntimeCallbackLease
-    ) {
-        // Legacy host-session path; the new stack reports request failures
-        // through the session model's host events.
-    }
-
-    func runtimeTmuxProtocolError(
-        app: ghostty_app_t?,
-        error: TmuxControlProtocolError,
-        lease: GhosttyRuntimeCallbackLease
-    ) {}
 }
 
 // MARK: - Shared reason mapping

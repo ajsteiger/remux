@@ -134,54 +134,6 @@ final class GhosttyTerminalDisconnectReasonClassifierTests: XCTestCase {
         XCTAssertEqual(reason.message, "tmux transport resize failed: resize failed")
     }
 
-    func testTransportCompletionWithoutErrorIsTransportIOAndInvalidates() {
-        let classification = GhosttyTerminalDisconnectReasonClassifier.transportCompletion(
-            GhosttyControlHostSurface.Completion(error: nil, receivedByteCount: 42)
-        )
-
-        XCTAssertEqual(classification.reason.kind, .transportIO)
-        XCTAssertEqual(classification.reason.message, "tmux transport disconnected after 42 bytes")
-        XCTAssertEqual(classification.closeDisposition, .invalidated)
-    }
-
-    func testTransportCompletionOutputRejectedIsRuntimeAndReusable() {
-        let classification = GhosttyTerminalDisconnectReasonClassifier.transportCompletion(
-            GhosttyControlHostSurface.Completion(
-                error: GhosttyControlHostSurface.Failure.outputRejected,
-                receivedByteCount: 42
-            )
-        )
-
-        XCTAssertEqual(classification.reason.kind, .runtime)
-        XCTAssertEqual(classification.reason.message, "tmux transport ended: outputRejected")
-        XCTAssertEqual(classification.closeDisposition, .reusable)
-    }
-
-    func testTransportCompletionChannelRequestFailureIsProfileAndInvalidates() {
-        let classification = GhosttyTerminalDisconnectReasonClassifier.transportCompletion(
-            GhosttyControlHostSurface.Completion(
-                error: SSHTmuxControlTransportError.channelRequestFailed(.exec),
-                receivedByteCount: 42
-            )
-        )
-
-        XCTAssertEqual(classification.reason.kind, .profile)
-        XCTAssertEqual(classification.reason.message, "tmux transport ended: SSH exec request failed")
-        XCTAssertEqual(classification.closeDisposition, .invalidated)
-    }
-
-    func testTransportCompletionOtherErrorIsTransportIOAndInvalidates() {
-        let classification = GhosttyTerminalDisconnectReasonClassifier.transportCompletion(
-            GhosttyControlHostSurface.Completion(
-                error: DescribedError("socket closed"),
-                receivedByteCount: 42
-            )
-        )
-
-        XCTAssertEqual(classification.reason.kind, .transportIO)
-        XCTAssertEqual(classification.reason.message, "tmux transport ended: socket closed")
-        XCTAssertEqual(classification.closeDisposition, .invalidated)
-    }
 
     func testForegroundReasonBuildersUseCurrentMessages() {
         XCTAssertEqual(

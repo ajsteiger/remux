@@ -154,7 +154,7 @@ final class RemuxRootModel: ObservableObject {
     private let librarySSHPrewarmCoordinator: RemuxLibrarySSHPrewarmCoordinator
     private let terminalScreenModelFactory: TerminalScreenModelFactory
     private var terminalScreenModels: [TerminalRuntimeAttemptKey: TmuxScreenModel] = [:]
-    private var currentAppLifecyclePhase: GhosttySurfaceScreenModel.AppLifecyclePhase?
+    private var currentAppLifecyclePhase: GhosttyAppLifecyclePhase?
 
     init(
         dependencies: RemuxAppDependencies,
@@ -709,7 +709,7 @@ final class RemuxRootModel: ObservableObject {
         return outcome
     }
 
-    func handleAppLifecyclePhase(_ phase: GhosttySurfaceScreenModel.AppLifecyclePhase) {
+    func handleAppLifecyclePhase(_ phase: GhosttyAppLifecyclePhase) {
         currentAppLifecyclePhase = phase
         let models = Array(terminalScreenModels.values)
         for model in models {

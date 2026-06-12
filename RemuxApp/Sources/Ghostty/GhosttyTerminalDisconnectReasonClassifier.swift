@@ -87,41 +87,6 @@ enum GhosttyTerminalDisconnectReasonClassifier {
         )
     }
 
-    static func transportCompletion(
-        _ completion: GhosttyControlHostSurface.Completion
-    ) -> GhosttyTerminalTransportCompletionClassification {
-        guard let error = completion.error else {
-            return GhosttyTerminalTransportCompletionClassification(
-                reason: TerminalDisconnectReason(
-                    kind: .transportIO,
-                    message: "tmux transport disconnected after \(completion.receivedByteCount) bytes"
-                ),
-                closeDisposition: .invalidated
-            )
-        }
-
-        let message = "tmux transport ended: \(String(describing: error))"
-        if let hostFailure = error as? GhosttyControlHostSurface.Failure,
-           hostFailure == .outputRejected {
-            return GhosttyTerminalTransportCompletionClassification(
-                reason: TerminalDisconnectReason(kind: .runtime, message: message),
-                closeDisposition: .reusable
-            )
-        }
-
-        if let sshError = error as? SSHTmuxControlTransportError,
-           case .channelRequestFailed = sshError {
-            return GhosttyTerminalTransportCompletionClassification(
-                reason: TerminalDisconnectReason(kind: .profile, message: message),
-                closeDisposition: .invalidated
-            )
-        }
-
-        return GhosttyTerminalTransportCompletionClassification(
-            reason: TerminalDisconnectReason(kind: .transportIO, message: message),
-            closeDisposition: .invalidated
-        )
-    }
 
     static func foregroundMissingHost() -> TerminalDisconnectReason {
         TerminalDisconnectReason(

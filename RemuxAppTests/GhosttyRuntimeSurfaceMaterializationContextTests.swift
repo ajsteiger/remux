@@ -4,35 +4,7 @@ import XCTest
 
 @MainActor
 final class GhosttyRuntimeSurfaceMaterializationContextTests: XCTestCase {
-    func testRegistryContextVendsManagedSurfaceCapabilities() {
-        let registry = GhosttyRuntimeSurfaceRegistry()
-        let managed = Self.managedSurface()
-        registry.registerManagedSurfaceForTesting(managed)
 
-        let context = registry.materializationContext
-
-        XCTAssertTrue(context.isAvailable)
-        XCTAssertEqual(context.allManagedSurfaces().map(\.id), [managed.id])
-        XCTAssertEqual(context.managedSurfaceCount(), 1)
-        XCTAssertTrue(context.managedSurface(for: managed.id) === managed)
-        XCTAssertNil(context.managedSurface(for: UUID()))
-    }
-
-    func testRegistryContextDoesNotRetainRegistry() {
-        var registry: GhosttyRuntimeSurfaceRegistry? = GhosttyRuntimeSurfaceRegistry()
-        let weakRegistry = WeakBox(registry)
-        let context = registry!.materializationContext
-
-        registry = nil
-
-        XCTAssertNil(weakRegistry.value)
-        XCTAssertFalse(context.isAvailable)
-        XCTAssertTrue(context.allManagedSurfaces().isEmpty)
-        XCTAssertEqual(context.managedSurfaceCount(), 0)
-        XCTAssertNil(context.managedSurface(for: UUID()))
-        XCTAssertEqual(context.diagnosticSelectionSummary(), "runtime surface registry released")
-        context.recordSurfacePresentation(UUID(), reason: "releasedRegistry")
-    }
 
     func testScrollContainerDetachCurrentSurfaceForRemovalClearsAttachedSurface() {
         let container = GhosttyPaneScrollContainerView(frame: CGRect(x: 0, y: 0, width: 320, height: 240))

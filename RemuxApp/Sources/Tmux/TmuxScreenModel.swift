@@ -2,12 +2,11 @@ import Combine
 import Foundation
 import GhosttyKit
 
-/// The production screen model for the new-architecture tmux stack:
-/// owns one GhosttyKitRuntime (per session, as before) and one
+/// The production screen model for tmux workspaces: owns one
+/// GhosttyKitRuntime (per session, as before) and one
 /// TmuxTerminalSession, connects through the app's prepared-transport
 /// pooling, and reports the domain `TerminalRuntimeState` vocabulary
-/// the root model already reduces (badges, auto-reconnect). Replaces
-/// GhosttySurfaceScreenModel for tmux workspaces.
+/// the root model already reduces (badges, auto-reconnect).
 @MainActor
 final class TmuxScreenModel: ObservableObject {
     typealias TransportFactory = @MainActor (TmuxConnectionTarget) -> any TmuxControlTransport
@@ -140,7 +139,7 @@ final class TmuxScreenModel: ObservableObject {
         connect()
     }
 
-    func handleAppLifecyclePhase(_ phase: GhosttySurfaceScreenModel.AppLifecyclePhase) {
+    func handleAppLifecyclePhase(_ phase: GhosttyAppLifecyclePhase) {
         // Presentation discontinuity handling lives in the renderer
         // (visibility-resume full damage); here we gate drawing.
         session?.paneSurface?.setVisible(phase == .active)

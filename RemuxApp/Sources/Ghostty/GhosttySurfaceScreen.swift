@@ -153,27 +153,6 @@ struct GhosttySurfaceScreen<Model: GhosttyTerminalScreenModeling>: View {
                     )
 
                     ZStack(alignment: .topLeading) {
-                        if let hostSurfaceModel = model.hostSurfaceScreenModel {
-                            GhosttyHostSurfaceView(
-                                model: hostSurfaceModel,
-                                size: terminalViewportSize,
-                                terminalTheme: presentation.terminalTheme,
-                                onMount: {
-                                    onMount(.hostSurface)
-                                },
-                                onDismantle: {
-                                    onDismantle(.hostSurface)
-                                }
-                            )
-                                .frame(
-                                    width: terminalViewportSize.width,
-                                    height: terminalViewportSize.height,
-                                    alignment: .topLeading
-                                )
-                                .opacity(0.001)
-                                .allowsHitTesting(false)
-                        }
-
                         GhosttyRuntimePaneTreeView(
                             materializationContext: model.terminalSurfaceMaterializationContext,
                             projection: screenProjection.tree,
@@ -2475,102 +2454,6 @@ private extension View {
     }
 }
 
-@MainActor
-final class GhosttyHostAttachmentScheduler {
-    private var scheduledTask: Task<Void, Never>?
-
-    func schedule(_ action: @escaping @MainActor () -> Void) {
-        scheduledTask?.cancel()
-        scheduledTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            self?.scheduledTask = nil
-            action()
-        }
-    }
-
-    func cancel() {
-        scheduledTask?.cancel()
-        scheduledTask = nil
-    }
-}
-
-private struct GhosttyHostSurfaceView: UIViewRepresentable {
-    @ObservedObject var model: GhosttySurfaceScreenModel
-    let size: CGSize
-    let terminalTheme: TerminalTheme
-    let onMount: () -> Void
-    let onDismantle: () -> Void
-
-    final class Coordinator {
-        private let attachmentScheduler = GhosttyHostAttachmentScheduler()
-        private var didDismantle = false
-        var onMount: () -> Void
-        var onDismantle: () -> Void
-
-        init(
-            onMount: @escaping () -> Void,
-            onDismantle: @escaping () -> Void
-        ) {
-            self.onMount = onMount
-            self.onDismantle = onDismantle
-        }
-
-        @MainActor
-        func scheduleAttach(
-            model: GhosttySurfaceScreenModel,
-            view: GhosttyKitSurfaceView,
-            size: CGSize
-        ) {
-            attachmentScheduler.schedule { [weak model, weak view] in
-                guard let model, let view else { return }
-                model.attach(view: view, size: size)
-            }
-        }
-
-        @MainActor
-        func cancelPendingAttach() {
-            attachmentScheduler.cancel()
-        }
-
-        @MainActor
-        func dismantle() {
-            guard !didDismantle else { return }
-            didDismantle = true
-            cancelPendingAttach()
-            onDismantle()
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onMount: onMount, onDismantle: onDismantle)
-    }
-
-    func makeUIView(context: Context) -> GhosttyKitSurfaceView {
-        let initialSize = CGSize(
-            width: max(size.width, 1),
-            height: max(size.height, 1)
-        )
-        let view = GhosttyKitSurfaceView(frame: CGRect(origin: .zero, size: initialSize))
-        view.applyTerminalTheme(terminalTheme)
-        view.isOpaque = true
-        view.isHidden = true
-        context.coordinator.onMount()
-        return view
-    }
-
-    func updateUIView(_ uiView: GhosttyKitSurfaceView, context: Context) {
-        context.coordinator.onMount = onMount
-        context.coordinator.onDismantle = onDismantle
-        uiView.applyTerminalTheme(terminalTheme)
-        uiView.isHidden = true
-        context.coordinator.scheduleAttach(model: model, view: uiView, size: size)
-    }
-
-    static func dismantleUIView(_: GhosttyKitSurfaceView, coordinator: Coordinator) {
-        coordinator.dismantle()
-    }
-}
 
 private extension TerminalTheme {
     var terminalSurfaceBackground: Color {
