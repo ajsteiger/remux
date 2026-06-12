@@ -140,7 +140,10 @@ struct GhosttySurfacePanGesture {
 }
 
 struct GhosttyRouteForwardingScrollGesture {
-    private static let preciseScale: CGFloat = 2
+    /// Multiplier from gesture translation points to precise scroll
+    /// units. Visible so callers feeding this gesture can convert
+    /// tick-rate budgets into translation units.
+    static let preciseScale: CGFloat = 2
     private static let minimumPreciseDelta: Double = 1
 
     private var pendingTranslation = CGPoint.zero

@@ -97,6 +97,24 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     private var submitRouteForwardedMouseScroll: ((UUID, GhosttySurfaceMouseScrollEvent) -> GhosttyMouseInputSubmissionOutcome)?
     private var submitRouteForwardedMousePosition: ((UUID, CGPoint, GhosttySurfaceKeyEvent.Mods) -> GhosttyMouseInputSubmissionOutcome)?
 
+    /// UIKit-native scroll physics for the mouse-report route: pan and
+    /// deceleration of this hidden scroll view produce the offset
+    /// deltas forwarded as precise scroll events, so flicks coast on
+    /// Apple's deceleration curve exactly like a trackpad. The
+    /// alt-screen-cursor route intentionally stays on the contact-only
+    /// pan path until momentum-as-arrow-keys is validated separately.
+    private let physicsScrollView = GhosttyScrollPhysicsView()
+    private var physicsForwardingGesture = GhosttyRouteForwardingScrollGesture()
+    private var physicsDeltaBudget = GhosttyScrollDeltaBudget(unitsPerSecond: 0)
+    private var physicsReportedOffsetY: CGFloat?
+    private var isPhysicsGestureActive = false
+    private var isRecenteringPhysicsScroll = false
+
+    /// Cap on wheel reports one gesture may produce per second. Each
+    /// report costs the remote TUI a repaint; the old-pipeline traces
+    /// showed ~45/s sustained is comfortable, so allow modest headroom.
+    private static let maxRouteForwardedTicksPerSecond: Double = 60
+
     private lazy var routeForwardingPanRecognizer: UIPanGestureRecognizer = {
         let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handleRouteForwardingPan(_:)))
         recognizer.maximumNumberOfTouches = 1
@@ -138,6 +156,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
             GhosttyRuntimeTrace.diagnostics(
                 "scroll.update attach old=\(ghosttyDiagnosticShortID(self.surface?.id)) new=\(ghosttyDiagnosticShortID(surface.id)) bounds=\(ghosttyDiagnosticRect(bounds)) surface={\(surface.diagnosticSummary())}"
             )
+            haltPhysicsScroll()
             self.surface?.onScrollStateChange = nil
             resetViewportScrollInteractionState()
             self.surface = surface
@@ -167,12 +186,16 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     override func layoutSubviews() {
         super.layoutSubviews()
         scrollView.frame = bounds
+        physicsScrollView.frame = bounds
+        physicsScrollView.synchronizeVirtualContent()
+        recenterPhysicsScrollIfIdle()
         synchronizeFromSurface()
         synchronizeSurfaceFrame()
     }
 
     func detachSurfaceIfNeeded(_ surface: GhosttyManagedSurface) {
         guard self.surface === surface else { return }
+        haltPhysicsScroll()
         surface.onScrollStateChange = nil
         self.surface = nil
         submitRouteForwardedMouseScroll = nil
@@ -191,6 +214,7 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     }
 
     func prepareForRuntimeTeardown() {
+        haltPhysicsScroll()
         surface?.onScrollStateChange = nil
         self.surface = nil
         submitRouteForwardedMouseScroll = nil
@@ -200,6 +224,11 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if scrollView === physicsScrollView {
+            forwardPhysicsScrollDelta()
+            return
+        }
+
         pinSurfaceToVisibleBounds()
         guard !isApplyingProgrammaticUpdate else { return }
         guard surface?.scrollRoute == .viewport else { return }
@@ -209,24 +238,50 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        if scrollView === physicsScrollView {
+            beginPhysicsGesture()
+            return
+        }
+
         guard surface?.scrollRoute == .viewport else { return }
         isUserViewportScrolling = true
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if scrollView === physicsScrollView {
+            if !decelerate {
+                endPhysicsGesture(phase: .ended)
+            }
+            return
+        }
+
         guard surface?.scrollRoute == .viewport else { return }
         guard !decelerate else { return }
         finishUserViewportScroll()
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        if scrollView === physicsScrollView {
+            endPhysicsGesture(phase: .ended)
+            return
+        }
+
         guard surface?.scrollRoute == .viewport else { return }
         finishUserViewportScroll()
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === physicsScrollView.panGestureRecognizer {
+            guard surface?.scrollRoute == .mouseReport else { return false }
+            let pan = physicsScrollView.panGestureRecognizer
+            return GhosttySurfacePanGesture.routeForwardingScrollShouldBegin(
+                forVelocity: pan.velocity(in: self),
+                translation: pan.translation(in: self)
+            )
+        }
+
         guard gestureRecognizer === routeForwardingPanRecognizer else { return true }
-        guard surface?.scrollRoute != .viewport else { return false }
+        guard surface?.scrollRoute == .altScreenCursor else { return false }
 
         return GhosttySurfacePanGesture.routeForwardingScrollShouldBegin(
             forVelocity: routeForwardingPanRecognizer.velocity(in: self),
@@ -266,6 +321,20 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         contentView.backgroundColor = .clear
         scrollView.addSubview(contentView)
 
+        physicsScrollView.delegate = self
+        physicsScrollView.backgroundColor = .clear
+        physicsScrollView.contentInsetAdjustmentBehavior = .never
+        physicsScrollView.isDirectionalLockEnabled = true
+        physicsScrollView.showsVerticalScrollIndicator = false
+        physicsScrollView.showsHorizontalScrollIndicator = false
+        physicsScrollView.alwaysBounceVertical = false
+        physicsScrollView.alwaysBounceHorizontal = false
+        addSubview(physicsScrollView)
+        // The physics view is hit-test transparent; its pan tracks
+        // touches on the container while driving the scroll view's
+        // native deceleration.
+        addGestureRecognizer(physicsScrollView.panGestureRecognizer)
+
         addGestureRecognizer(routeForwardingPanRecognizer)
     }
 
@@ -277,7 +346,11 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         let usesNativeViewportScroll = route == .viewport
         scrollView.isScrollEnabled = usesNativeViewportScroll
         scrollView.showsVerticalScrollIndicator = usesNativeViewportScroll
-        routeForwardingPanRecognizer.isEnabled = !usesNativeViewportScroll
+        physicsScrollView.panGestureRecognizer.isEnabled = route == .mouseReport
+        routeForwardingPanRecognizer.isEnabled = route == .altScreenCursor
+        if route != .mouseReport {
+            haltPhysicsScroll()
+        }
         if usesNativeViewportScroll {
             routeForwardingGesture.reset()
         } else if didChangeRoute {
@@ -465,9 +538,134 @@ final class GhosttyPaneScrollContainerView: UIView, UIScrollViewDelegate, UIGest
         return true
     }
 
+    // MARK: Mouse-report scroll physics
+
+    /// A new drag, including catching a live deceleration. Closing any
+    /// previous stream first keeps the event phases well-formed.
+    private func beginPhysicsGesture() {
+        if isPhysicsGestureActive {
+            endPhysicsGesture(phase: .cancelled)
+        }
+
+        guard let surface, surface.scrollRoute == .mouseReport,
+              submitRouteForwardedMouseScroll != nil
+        else {
+            haltPhysicsScroll()
+            return
+        }
+
+        // Wheel reports encode at the pointer position, and touch UIs
+        // never report one: anchor the pointer at the gesture's touch
+        // point so the encoder does not drop the events
+        // (mouse_encode.zig out-of-viewport rule).
+        let location = physicsScrollView.panGestureRecognizer.location(in: surface.view)
+        GhosttyRuntimeTrace.diagnostics(
+            "scroll.physics begin surface=\(ghosttyDiagnosticShortID(surface.id)) location=\(location.x),\(location.y) offset=\(physicsScrollView.contentOffset.y)"
+        )
+        _ = submitRouteForwardedMousePosition?(surface.id, location, [])
+
+        let cellHeightPixels = max(cellHeight(for: surface), 1) * displayScale
+        physicsDeltaBudget.rearm(
+            unitsPerSecond: Self.maxRouteForwardedTicksPerSecond
+                * cellHeightPixels
+                / GhosttyRouteForwardingScrollGesture.preciseScale
+        )
+        physicsReportedOffsetY = physicsScrollView.contentOffset.y
+        isPhysicsGestureActive = true
+    }
+
+    /// Convert the offset delta since the last callback into the same
+    /// precise scroll events the contact pan produces. The route is
+    /// revalidated on every delta: the remote app can change terminal
+    /// modes mid-deceleration, and leftover momentum must not turn
+    /// into input for whatever mode comes next.
+    private func forwardPhysicsScrollDelta() {
+        guard !isRecenteringPhysicsScroll, isPhysicsGestureActive else { return }
+
+        guard let surface, surface.scrollRoute == .mouseReport,
+              let submitRouteForwardedMouseScroll
+        else {
+            haltPhysicsScroll()
+            return
+        }
+
+        let offsetY = physicsScrollView.contentOffset.y
+        let reported = physicsReportedOffsetY ?? offsetY
+        physicsReportedOffsetY = offsetY
+
+        // Finger moving down drags the virtual offset down; positive
+        // translation means scroll up, matching the contact pan.
+        let delta = Double(reported - offsetY)
+        let budgeted = physicsDeltaBudget.clamp(delta, at: CACurrentMediaTime())
+        guard budgeted != 0 else { return }
+
+        let events = physicsForwardingGesture.events(
+            forTranslation: CGPoint(x: 0, y: budgeted),
+            phase: .changed
+        )
+        for event in events {
+            _ = submitRouteForwardedMouseScroll(surface.id, event)
+        }
+    }
+
+    private func endPhysicsGesture(phase: GhosttySurfacePanGesture.Phase) {
+        guard isPhysicsGestureActive else { return }
+        isPhysicsGestureActive = false
+        physicsReportedOffsetY = nil
+
+        if let surface, let submitRouteForwardedMouseScroll {
+            let events = physicsForwardingGesture.events(
+                forTranslation: .zero,
+                phase: phase
+            )
+            for event in events {
+                _ = submitRouteForwardedMouseScroll(surface.id, event)
+            }
+        } else {
+            physicsForwardingGesture.reset()
+        }
+
+        GhosttyRuntimeTrace.diagnostics(
+            "scroll.physics end surface=\(ghosttyDiagnosticShortID(surface?.id)) phase=\(phase)"
+        )
+        recenterPhysicsScrollIfIdle()
+    }
+
+    /// Stop any tracking or deceleration immediately (route flips,
+    /// surface detach, teardown) and close the local event stream.
+    private func haltPhysicsScroll() {
+        let wasMoving = physicsScrollView.isTracking ||
+            physicsScrollView.isDragging ||
+            physicsScrollView.isDecelerating
+        if wasMoving {
+            isRecenteringPhysicsScroll = true
+            physicsScrollView.setContentOffset(physicsScrollView.contentOffset, animated: false)
+            isRecenteringPhysicsScroll = false
+        }
+        if isPhysicsGestureActive {
+            endPhysicsGesture(phase: .cancelled)
+        } else if wasMoving {
+            recenterPhysicsScrollIfIdle()
+        }
+    }
+
+    private func recenterPhysicsScrollIfIdle() {
+        guard !physicsScrollView.isTracking,
+              !physicsScrollView.isDragging,
+              !physicsScrollView.isDecelerating
+        else { return }
+
+        let centered = CGPoint(x: 0, y: physicsScrollView.centeredContentOffsetY)
+        guard physicsScrollView.contentOffset != centered else { return }
+        isRecenteringPhysicsScroll = true
+        physicsScrollView.setContentOffset(centered, animated: false)
+        isRecenteringPhysicsScroll = false
+        physicsReportedOffsetY = nil
+    }
+
     @objc
     private func handleRouteForwardingPan(_ recognizer: UIPanGestureRecognizer) {
-        guard let surface, surface.scrollRoute != .viewport else { return }
+        guard let surface, surface.scrollRoute == .altScreenCursor else { return }
         guard let submitRouteForwardedMouseScroll else { return }
         guard let phase = GhosttySurfacePanGesture.Phase(recognizer.state) else { return }
 
