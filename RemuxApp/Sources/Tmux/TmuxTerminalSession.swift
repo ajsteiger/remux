@@ -35,6 +35,46 @@ final class TmuxTerminalSession: ObservableObject {
     /// a swap is being prepared.
     private var presentingPaneID: UInt64?
 
+    /// Number of `TmuxPaneSurface.create` calls whose completion has not
+    /// yet run. Pane-surface creation is asynchronous (it binds on the
+    /// controller's writer queue), so a create can still be in flight
+    /// when teardown begins. `shutdown()` drains these to zero before
+    /// freeing the controller, because a late completion closes its
+    /// surface — and `ghostty_surface_free` on a surface borrowing an
+    /// already-freed session is a use-after-free.
+    private var inFlightCreateCount = 0
+
+    /// Set once teardown has begun. Gates new connects and new pane
+    /// presentation, and makes any late create completion discard its
+    /// surface instead of binding it to a dying session.
+    private var isShutDown = false
+
+    /// Resumed when the last in-flight create completes during shutdown.
+    private var shutdownDrainContinuation: CheckedContinuation<Void, Never>?
+
+    /// What to do with the result of an in-flight pane-surface creation.
+    /// Pure so the shutdown-race rule (a surface created after teardown
+    /// begins must be closed, never presented) is unit-testable without
+    /// a live tmux binding.
+    enum CreatedSurfaceDisposition: Equatable {
+        /// Bind it as the live surface.
+        case present
+        /// Close it: the session shut down, or the desired pane moved on.
+        case discard
+        /// Creation failed; nothing was allocated.
+        case ignoreFailure
+    }
+
+    static func createdSurfaceDisposition(
+        isShutDown: Bool,
+        creationSucceeded: Bool,
+        stillDesired: Bool
+    ) -> CreatedSurfaceDisposition {
+        guard creationSucceeded else { return .ignoreFailure }
+        guard !isShutDown else { return .discard }
+        return stillDesired ? .present : .discard
+    }
+
     /// Breaks the init cycle: controller callbacks are built before
     /// `self` is fully initialized.
     private final class Relay: @unchecked Sendable {
@@ -85,11 +125,20 @@ final class TmuxTerminalSession: ObservableObject {
     /// Connect (or reconnect — the session state, engines, and any
     /// bound surface survive detaches).
     func connect(viewport: TmuxControlViewport?) {
+        guard !isShutDown else { return }
         guard link == nil else { return }
         transportFailure = nil
         let link = TmuxSessionLink(controller: controller, transport: makeTransport())
         self.link = link
-        Task { [weak self] in
+        // Detached so transport startup is not serialized behind the
+        // main actor: a Task inheriting this @MainActor context could
+        // not begin until the main actor drains, and on session open the
+        // main actor is busy with the SwiftUI navigation push for tens
+        // of milliseconds while an already authenticated SSH root sits
+        // idle (device trace 2026-06-12: root ready at ~5ms, transport
+        // start at 81ms with the inherited task). Late teardown is safe:
+        // shutdown() fences and drains in-flight work.
+        Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 try await link.start(viewport: viewport)
             } catch {
@@ -116,9 +165,22 @@ final class TmuxTerminalSession: ObservableObject {
         await link.stop()
     }
 
-    /// Full teardown, in contract order: pane surface (surface free →
-    /// unbind), then the link, then the controller.
+    /// Full teardown, in contract order: fence new work, drain any
+    /// in-flight pane-surface creation, then pane surface (surface free →
+    /// unbind), then the link, then the controller. Idempotent.
     func shutdown() async {
+        guard !isShutDown else { return }
+        isShutDown = true
+
+        // Drain in-flight creation before freeing the controller: a late
+        // completion closes its surface (`ghostty_surface_free` +
+        // `unbind`), which is only safe while the session is alive.
+        if inFlightCreateCount > 0 {
+            await withCheckedContinuation { continuation in
+                shutdownDrainContinuation = continuation
+            }
+        }
+
         let surface = paneSurface
         paneSurface = nil
         await withCheckedContinuation { continuation in
@@ -132,6 +194,14 @@ final class TmuxTerminalSession: ObservableObject {
         await withCheckedContinuation { continuation in
             controller.shutdown { continuation.resume() }
         }
+    }
+
+    private func resumeShutdownDrainIfQuiescent() {
+        guard inFlightCreateCount == 0, let continuation = shutdownDrainContinuation else {
+            return
+        }
+        shutdownDrainContinuation = nil
+        continuation.resume()
     }
 
     // MARK: Event handling (main actor)
@@ -158,6 +228,7 @@ final class TmuxTerminalSession: ObservableObject {
     /// The presentation rule, recomputed from every snapshot: show the
     /// active window's active pane.
     private func presentActivePane(from snapshot: TmuxSessionController.TopologySnapshot) {
+        guard !isShutDown else { return }
         guard
             let windowID = snapshot.activeWindowID,
             let window = snapshot.windows.first(where: { $0.id == windowID }),
@@ -180,6 +251,7 @@ final class TmuxTerminalSession: ObservableObject {
         }
 
         presentingPaneID = paneID
+        inFlightCreateCount += 1
         TmuxPaneSurface.create(
             app: app,
             controller: controller,
@@ -187,27 +259,47 @@ final class TmuxTerminalSession: ObservableObject {
             baseConfig: baseSurfaceConfig(),
             theme: paneViewTheme()
         ) { [weak self] result in
-            guard let self else { return }
-            self.presentingPaneID = nil
+            let createdSurface: TmuxPaneSurface?
             switch result {
-            case .failure:
+            case .success(let surface): createdSurface = surface
+            case .failure: createdSurface = nil
+            }
+
+            guard let self else {
+                // The session was deallocated while this create was in
+                // flight: close any surface so it is not released without
+                // close() (the borrowed-handle contract).
+                createdSurface?.close()
+                return
+            }
+            self.inFlightCreateCount -= 1
+            self.presentingPaneID = nil
+            defer { self.resumeShutdownDrainIfQuiescent() }
+
+            // The desired pane may have moved on while binding; re-check
+            // against the LATEST snapshot before showing.
+            let stillDesired = self.topology.flatMap { snapshot in
+                snapshot.activeWindowID.flatMap { windowID in
+                    snapshot.windows.first(where: { $0.id == windowID })?.activePaneID
+                }
+            } == paneID
+
+            switch Self.createdSurfaceDisposition(
+                isShutDown: self.isShutDown,
+                creationSucceeded: createdSurface != nil,
+                stillDesired: stillDesired
+            ) {
+            case .ignoreFailure:
                 // AlreadyBound/unknown: a newer snapshot will retry;
                 // nothing to roll back.
                 break
-            case .success(let surface):
-                // The desired pane may have moved on while binding;
-                // re-check against the LATEST snapshot before showing.
-                let stillDesired = self.topology.flatMap { snapshot in
-                    snapshot.activeWindowID.flatMap { windowID in
-                        snapshot.windows.first(where: { $0.id == windowID })?.activePaneID
-                    }
-                } == paneID
-                guard stillDesired else {
-                    surface.close()
-                    return
-                }
+            case .discard:
+                // Shut down mid-flight, or the desired pane moved on:
+                // close the orphan instead of binding it.
+                createdSurface?.close()
+            case .present:
                 let previous = self.paneSurface
-                self.paneSurface = surface
+                self.paneSurface = createdSurface
                 previous?.close()
             }
         }
