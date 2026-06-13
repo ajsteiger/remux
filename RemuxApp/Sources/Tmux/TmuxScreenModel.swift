@@ -75,6 +75,8 @@ final class TmuxScreenModel: ObservableObject {
     }
 
     private func start() {
+        let flow = "session.open.\(target.workspace.id.uuidString)"
+        let runtimeInitStart = GhosttyRuntimeTrace.nowNanos()
         let runtime: GhosttyKitRuntime
         do {
             runtime = try GhosttyKitRuntime(
@@ -87,6 +89,11 @@ final class TmuxScreenModel: ObservableObject {
             return
         }
         self.runtime = runtime
+        GhosttyRuntimeTrace.flowEventIfActive(
+            flow,
+            event: "model.runtime.init",
+            fields: ["elapsed_ms": GhosttyRuntimeTrace.elapsedMilliseconds(from: runtimeInitStart)]
+        )
 
         let session = TmuxTerminalSession(
             app: runtime.appHandle,
@@ -127,6 +134,7 @@ final class TmuxScreenModel: ObservableObject {
                 self?.report(.disconnected(failure))
             }
 
+        GhosttyRuntimeTrace.flowEventIfActive(flow, event: "model.session.created")
         connect()
     }
 

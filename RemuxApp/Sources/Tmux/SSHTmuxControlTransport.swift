@@ -1537,7 +1537,12 @@ private enum SSHTmuxControlBootstrap {
 
                     return channel.eventLoop.makeSucceededFuture(())
                 }
-                return promise.futureResult
+                return promise.futureResult.always { _ in
+                    // Recorded on the event loop the instant the open
+                    // completes: the gap to sessionChannel.open.end is
+                    // Swift-concurrency resume lag, not wire time.
+                    trace.event("sessionChannel.open.wireComplete")
+                }
             }.get()
         }
     }

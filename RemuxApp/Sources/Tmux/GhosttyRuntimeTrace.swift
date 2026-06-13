@@ -130,6 +130,22 @@ enum GhosttyRuntimeTrace {
         logFlow(flow, event: event, startedAt: startedAt, at: eventTimestamp, fields: fields())
     }
 
+    /// Like `flowEventIfActive`, but logs only the first occurrence of
+    /// `event` per flow lifetime — for emission sites that fire
+    /// repeatedly (SwiftUI view init, layout passes) where only the
+    /// first occurrence is the milestone.
+    static func flowEventOnce(
+        _ flow: String,
+        event: String,
+        fields: @autoclosure () -> [String: String] = [:],
+        at timestamp: UInt64? = nil
+    ) {
+        guard flowTraceEnabled else { return }
+        guard let start = flowTraceStore.markOnce(flow: flow, event: event) else { return }
+        let eventTimestamp = timestamp ?? nowNanos()
+        logFlow(flow, event: event, startedAt: start, at: eventTimestamp, fields: fields())
+    }
+
     static func flowEnd(
         _ flow: String,
         event: String,
@@ -836,10 +852,12 @@ struct GhosttyTmuxControlResponseParser {
 final class GhosttyFlowTraceStore: @unchecked Sendable {
     private let lock = NSLock()
     private var starts: [String: UInt64] = [:]
+    private var onceEvents: Set<String> = []
 
     func begin(flow: String, at timestamp: UInt64) {
         lock.withLock {
             starts[flow] = timestamp
+            clearOnceEventsLocked(flow: flow)
         }
     }
 
@@ -851,8 +869,25 @@ final class GhosttyFlowTraceStore: @unchecked Sendable {
 
     func end(flow: String) -> UInt64? {
         lock.withLock {
-            starts.removeValue(forKey: flow)
+            clearOnceEventsLocked(flow: flow)
+            return starts.removeValue(forKey: flow)
         }
+    }
+
+    /// First occurrence of `event` for an active flow: returns the
+    /// flow's start time exactly once per flow lifetime, nil after
+    /// (and always nil for inactive flows). A new `begin` re-arms.
+    func markOnce(flow: String, event: String) -> UInt64? {
+        lock.withLock {
+            guard let start = starts[flow] else { return nil }
+            guard onceEvents.insert("\(flow)#\(event)").inserted else { return nil }
+            return start
+        }
+    }
+
+    private func clearOnceEventsLocked(flow: String) {
+        let prefix = "\(flow)#"
+        onceEvents = onceEvents.filter { !$0.hasPrefix(prefix) }
     }
 }
 

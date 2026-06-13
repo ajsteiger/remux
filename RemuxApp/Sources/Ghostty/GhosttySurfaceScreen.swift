@@ -103,6 +103,13 @@ struct GhosttySurfaceScreen<Model: GhosttyTerminalScreenModeling>: View {
         self.onTrustChangedHostKey = onTrustChangedHostKey
         self.onMount = onMount
         self.onDismantle = onDismantle
+        // First struct init marks when SwiftUI starts building the
+        // pushed screen (SwiftUI re-inits view values repeatedly;
+        // only the first is the milestone).
+        GhosttyRuntimeTrace.flowEventOnce(
+            "session.open.\(presentation.workspaceID.uuidString)",
+            event: "ui.terminalScreen.init"
+        )
     }
 
     private var isAwaitingSystemKeyboardPresentation: Bool {
@@ -187,6 +194,10 @@ struct GhosttySurfaceScreen<Model: GhosttyTerminalScreenModeling>: View {
                                 onDismantle(.surfaceTree)
                             },
                             onMount: {
+                                GhosttyRuntimeTrace.flowEventOnce(
+                                    sessionOpenFlowID,
+                                    event: "ui.surfaceTree.mount"
+                                )
                                 onMount(.surfaceTree)
                             }
                         )
