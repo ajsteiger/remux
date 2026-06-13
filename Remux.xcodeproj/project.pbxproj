@@ -122,6 +122,7 @@
 		AB2DBE12494A327FBC54FF9D /* GhosttyScrollDeltaBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09E9400D2638AE72F1CEBFB /* GhosttyScrollDeltaBudgetTests.swift */; };
 		417AD3852FDB488ABBCF0E99 /* GhosttyFlowTraceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF7EA443849848998403A2F5 /* GhosttyFlowTraceStoreTests.swift */; };
 		7EE2D10EB158433A9F802A73 /* TmuxTerminalSessionDispositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FE4FEEA02D407DACFDEEAC /* TmuxTerminalSessionDispositionTests.swift */; };
+		79D1CFB213514E288C4B1256 /* TmuxTerminalSessionShutdownDrainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B191DD11A3433BA67F9AAB /* TmuxTerminalSessionShutdownDrainTests.swift */; };
 		B02E37F04D99AAD051508ED2 /* GhosttySurfaceTreeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A2F0BE3A6E14902F1890EF5 /* GhosttySurfaceTreeView.swift */; };
 		B20983C9A2795264A09DE6BA /* ControlByteLineTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3220CE62EACBAA5E7C025A9 /* ControlByteLineTrace.swift */; };
 		B3BF6CDA8110A71C8BDF0F85 /* GhosttyTmuxPrefixInputBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A510F3E8FC22231ACA4A8A99 /* GhosttyTmuxPrefixInputBuffer.swift */; };
@@ -313,6 +314,7 @@
 		C09E9400D2638AE72F1CEBFB /* GhosttyScrollDeltaBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyScrollDeltaBudgetTests.swift; sourceTree = "<group>"; };
 		EF7EA443849848998403A2F5 /* GhosttyFlowTraceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyFlowTraceStoreTests.swift; sourceTree = "<group>"; };
 		35FE4FEEA02D407DACFDEEAC /* TmuxTerminalSessionDispositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxTerminalSessionDispositionTests.swift; sourceTree = "<group>"; };
+		52B191DD11A3433BA67F9AAB /* TmuxTerminalSessionShutdownDrainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxTerminalSessionShutdownDrainTests.swift; sourceTree = "<group>"; };
 		C278E39F3479557BA84AEF81 /* SSHTmuxControlChannelRequestTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHTmuxControlChannelRequestTracker.swift; sourceTree = "<group>"; };
 		C6233E6291A38BAAE86C727D /* Remux.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Remux.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C6958616F9B9DFD9E0E38E6B /* GhosttySurfaceKeyEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttySurfaceKeyEvent.swift; sourceTree = "<group>"; };
@@ -453,6 +455,7 @@
 				C09E9400D2638AE72F1CEBFB /* GhosttyScrollDeltaBudgetTests.swift */,
 				EF7EA443849848998403A2F5 /* GhosttyFlowTraceStoreTests.swift */,
 				35FE4FEEA02D407DACFDEEAC /* TmuxTerminalSessionDispositionTests.swift */,
+				52B191DD11A3433BA67F9AAB /* TmuxTerminalSessionShutdownDrainTests.swift */,
 				4E84F774C17B5C4DB6B715A9 /* GhosttySurfaceKeyEventTests.swift */,
 				A88FBFD7D50B9817DC09FED6 /* GhosttySurfaceMouseEventTests.swift */,
 				451C5235FD50DD80CBC53CCC /* GhosttySurfaceScrollGestureTests.swift */,
@@ -898,6 +901,7 @@
 				AB2DBE12494A327FBC54FF9D /* GhosttyScrollDeltaBudgetTests.swift in Sources */,
 				417AD3852FDB488ABBCF0E99 /* GhosttyFlowTraceStoreTests.swift in Sources */,
 				7EE2D10EB158433A9F802A73 /* TmuxTerminalSessionDispositionTests.swift in Sources */,
+				79D1CFB213514E288C4B1256 /* TmuxTerminalSessionShutdownDrainTests.swift in Sources */,
 				14890862E5A8BFE9BE759DB0 /* GhosttySurfaceKeyEventTests.swift in Sources */,
 				93E74D57BD69427AFBA8674D /* GhosttySurfaceMouseEventTests.swift in Sources */,
 				21D804DB6768A5474BAB4DA2 /* GhosttySurfaceScrollGestureTests.swift in Sources */,

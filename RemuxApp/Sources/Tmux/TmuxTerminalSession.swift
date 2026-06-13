@@ -31,6 +31,20 @@ final class TmuxTerminalSession: ObservableObject {
     private let baseSurfaceConfig: () -> ghostty_surface_config_s
     private let paneViewTheme: () -> TerminalTheme
 
+    /// The asynchronous pane-surface creator. Injectable so the
+    /// in-flight-create vs `shutdown()` drain ordering can be tested
+    /// deterministically without a live pane binding; defaults to the
+    /// real creator.
+    typealias PaneSurfaceCreator = (
+        ghostty_app_t,
+        TmuxSessionController,
+        UInt64,
+        ghostty_surface_config_s,
+        TerminalTheme,
+        @escaping @MainActor (Result<TmuxPaneSurface, TmuxPaneSurface.CreateError>) -> Void
+    ) -> Void
+    private let createPaneSurface: PaneSurfaceCreator
+
     /// Pane-surface creation in flight; prevents duplicate binds while
     /// a swap is being prepared.
     private var presentingPaneID: UInt64?
@@ -87,12 +101,14 @@ final class TmuxTerminalSession: ObservableObject {
         app: ghostty_app_t,
         makeTransport: @escaping () -> any TmuxControlTransport,
         baseSurfaceConfig: @escaping () -> ghostty_surface_config_s,
-        paneViewTheme: @escaping () -> TerminalTheme
+        paneViewTheme: @escaping () -> TerminalTheme,
+        createPaneSurface: @escaping PaneSurfaceCreator = TmuxPaneSurface.create
     ) {
         self.app = app
         self.makeTransport = makeTransport
         self.baseSurfaceConfig = baseSurfaceConfig
         self.paneViewTheme = paneViewTheme
+        self.createPaneSurface = createPaneSurface
 
         let relay = Relay()
         self.controller = TmuxSessionController(
@@ -220,7 +236,9 @@ final class TmuxTerminalSession: ObservableObject {
         }
     }
 
-    private func handleTopology(_ snapshot: TmuxSessionController.TopologySnapshot) {
+    /// Internal (not private) so a test can drive pane presentation —
+    /// and therefore an in-flight create — without a live tmux session.
+    func handleTopology(_ snapshot: TmuxSessionController.TopologySnapshot) {
         topology = snapshot
         presentActivePane(from: snapshot)
     }
@@ -252,12 +270,12 @@ final class TmuxTerminalSession: ObservableObject {
 
         presentingPaneID = paneID
         inFlightCreateCount += 1
-        TmuxPaneSurface.create(
-            app: app,
-            controller: controller,
-            paneID: paneID,
-            baseConfig: baseSurfaceConfig(),
-            theme: paneViewTheme()
+        createPaneSurface(
+            app,
+            controller,
+            paneID,
+            baseSurfaceConfig(),
+            paneViewTheme()
         ) { [weak self] result in
             let createdSurface: TmuxPaneSurface?
             switch result {
