@@ -213,25 +213,46 @@ final class SSHTmuxControlTransportTests: XCTestCase {
 
         let entry = await pool.snapshot().entry(for: key)
         XCTAssertEqual(entry?.activeLeaseCount, 1)
-        XCTAssertNil(entry?.reservationID)
+        XCTAssertEqual(entry?.reservationCount, 0)
         XCTAssertEqual(entry?.isIdleCloseScheduled, false)
         await pool.closeAllConnections()
     }
 
-    func testAuthenticatedConnectionPoolReservationPreventsSecondReservation() async throws {
+    func testAuthenticatedConnectionPoolSecondReservationSharesRoot() async throws {
         let pool = SSHTmuxAuthenticatedConnectionPool()
         let key = makeAuthenticatedConnectionPoolKey()
         let generation = await pool.insertEntryForTesting(for: key)
 
-        let reservedID = await pool.reserveEntryForTesting(for: key)
-        let reservationID = try XCTUnwrap(reservedID)
+        // SSH multiplexes session channels over one authenticated
+        // connection: concurrent opens to the same server share the
+        // root (and its in-flight authentication) instead of paying
+        // a full TCP + auth handshake each.
+        let first = await pool.reserveEntryForTesting(for: key)
+        let second = await pool.reserveEntryForTesting(for: key)
+        XCTAssertNotNil(first)
+        XCTAssertNotNil(second)
 
-        let secondReservedID = await pool.reserveEntryForTesting(for: key)
-        XCTAssertNil(secondReservedID)
         let entry = await pool.snapshot().entry(for: key)
         XCTAssertEqual(entry?.generation, generation)
-        XCTAssertEqual(entry?.reservationID, reservationID)
+        XCTAssertEqual(entry?.reservationCount, 2)
         XCTAssertEqual(entry?.activeLeaseCount, 0)
+        await pool.closeAllConnections()
+    }
+
+    func testAuthenticatedConnectionPoolCapacityBoundsSharedRoot() async throws {
+        let pool = SSHTmuxAuthenticatedConnectionPool()
+        let key = makeAuthenticatedConnectionPoolKey()
+        _ = await pool.insertEntryForTesting(
+            for: key,
+            activeLeaseCount: SSHTmuxAuthenticatedConnectionPool.maxConcurrentLeases - 1
+        )
+
+        // One slot left: a reservation takes it, the next must fall
+        // back to a dedicated connection (nil = pool refuses).
+        let last = await pool.reserveEntryForTesting(for: key)
+        XCTAssertNotNil(last)
+        let overflow = await pool.reserveEntryForTesting(for: key)
+        XCTAssertNil(overflow)
         await pool.closeAllConnections()
     }
 
@@ -256,7 +277,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         }
 
         var entry = await pool.snapshot().entry(for: key)
-        XCTAssertEqual(entry?.reservationID, reservationID)
+        XCTAssertEqual(entry?.reservationCount, 1)
         XCTAssertEqual(entry?.activeLeaseCount, 0)
 
         try await pool.leaseEntryForTesting(
@@ -266,7 +287,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         )
 
         entry = await pool.snapshot().entry(for: key)
-        XCTAssertNil(entry?.reservationID)
+        XCTAssertEqual(entry?.reservationCount, 0)
         XCTAssertEqual(entry?.activeLeaseCount, 1)
         await pool.closeAllConnections()
     }
@@ -285,7 +306,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         )
 
         let entry = await pool.snapshot().entry(for: key)
-        XCTAssertNil(entry?.reservationID)
+        XCTAssertEqual(entry?.reservationCount, 0)
         XCTAssertEqual(entry?.activeLeaseCount, 0)
         XCTAssertEqual(entry?.isIdleCloseScheduled, true)
         await pool.closeAllConnections()
@@ -321,7 +342,7 @@ final class SSHTmuxControlTransportTests: XCTestCase {
         await pool.closeAllConnections()
     }
 
-    func testAuthenticatedConnectionPoolInvalidatingOneLeaseEvictsSharedRoot() async {
+    func testAuthenticatedConnectionPoolInvalidationRetiresSharedRootUntilLastLease() async {
         let pool = SSHTmuxAuthenticatedConnectionPool()
         let key = makeAuthenticatedConnectionPoolKey()
         let generation = await pool.insertEntryForTesting(
@@ -329,14 +350,26 @@ final class SSHTmuxControlTransportTests: XCTestCase {
             activeLeaseCount: 2
         )
 
+        // One session invalidates: the root leaves the pool (no new
+        // leases) but must NOT close under the sibling still using it.
         await pool.releaseEntryForTesting(
             for: key,
             generation: generation,
             disposition: .invalidated
         )
 
-        let snapshot = await pool.snapshot()
+        var snapshot = await pool.snapshot()
         XCTAssertNil(snapshot.entry(for: key))
+        XCTAssertEqual(snapshot.retiredCount, 1)
+
+        // The sibling's release drains the retired root.
+        await pool.releaseEntryForTesting(
+            for: key,
+            generation: generation,
+            disposition: .reusable
+        )
+        snapshot = await pool.snapshot()
+        XCTAssertEqual(snapshot.retiredCount, 0)
     }
 
     func testAuthenticatedConnectionPoolCloseIdleConnectionsPreservesActiveEntries() async {
@@ -438,9 +471,10 @@ final class SSHTmuxControlTransportTests: XCTestCase {
 
         await pool.markAuthenticationSucceededForTesting(for: key, generation: generation)
 
+        _ = reservationID
         let entry = await pool.snapshot().entry(for: key)
         XCTAssertEqual(entry?.readiness, .ready)
-        XCTAssertEqual(entry?.reservationID, reservationID)
+        XCTAssertEqual(entry?.reservationCount, 1)
         XCTAssertEqual(entry?.isIdleCloseScheduled, false)
         await pool.closeAllConnections()
     }

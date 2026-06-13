@@ -79,9 +79,13 @@ struct SSHTmuxAuthenticatedConnectionPoolSnapshot: Equatable, Sendable {
         let generation: UUID
         let readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
         let activeLeaseCount: Int
-        let reservationID: UUID?
+        let reservationCount: Int
         let isIdleCloseScheduled: Bool
     }
+
+    /// Roots evicted from the pool that still have live leases
+    /// draining (multi-lease invalidation).
+    let retiredCount: Int
 
     fileprivate let entries: [SSHTmuxAuthenticatedConnectionPoolKey: Entry]
 
@@ -810,9 +814,20 @@ actor SSHTmuxAuthenticatedConnectionPool {
         let generation: UUID
         let task: Task<SSHTmuxAuthenticatedConnection, Error>
         var activeLeaseCount: Int
-        var reservationID: UUID?
+        var reservationIDs: Set<UUID>
         var idleCloseTask: Task<Void, Never>?
         var readiness: SSHTmuxAuthenticatedConnectionPoolEntryReadiness
+    }
+
+    /// A root removed from the pool while sessions still lease it: no
+    /// new leases, and the underlying connection closes only when the
+    /// last lease releases. Closing immediately on invalidation would
+    /// let one session's channel-level failure kill healthy sibling
+    /// sessions sharing the root; a genuinely dead root drains fast
+    /// because every sibling errors out and releases.
+    private struct RetiredEntry {
+        let task: Task<SSHTmuxAuthenticatedConnection, Error>
+        var activeLeaseCount: Int
     }
 
     private struct EntrySnapshot: Sendable {
@@ -829,8 +844,22 @@ actor SSHTmuxAuthenticatedConnectionPool {
         case stale
     }
 
+    private enum ReleaseEntryResult {
+        /// Lease returned; the connection stays pooled.
+        case retained
+        /// Caller owns closing the connection (last lease of a retired
+        /// root, or a root the pool no longer tracks).
+        case close
+    }
+
+    /// SSH multiplexes channels over one authenticated connection;
+    /// each session needs exactly one exec channel. Bounding the
+    /// share keeps the blast radius of a dying root modest.
+    static let maxConcurrentLeases = 4
+
     private let idleTimeout: Duration
     private var entries: [SSHTmuxAuthenticatedConnectionPoolKey: Entry] = [:]
+    private var retiredEntries: [UUID: RetiredEntry] = [:]
 
     init(idleTimeout: Duration = .seconds(120)) {
         self.idleTimeout = idleTimeout
@@ -838,12 +867,13 @@ actor SSHTmuxAuthenticatedConnectionPool {
 
     func snapshot() -> SSHTmuxAuthenticatedConnectionPoolSnapshot {
         SSHTmuxAuthenticatedConnectionPoolSnapshot(
+            retiredCount: retiredEntries.count,
             entries: entries.mapValues { entry in
                 SSHTmuxAuthenticatedConnectionPoolSnapshot.Entry(
                     generation: entry.generation,
                     readiness: entry.readiness,
                     activeLeaseCount: entry.activeLeaseCount,
-                    reservationID: entry.reservationID,
+                    reservationCount: entry.reservationIDs.count,
                     isIdleCloseScheduled: entry.idleCloseTask != nil
                 )
             }
@@ -970,11 +1000,10 @@ actor SSHTmuxAuthenticatedConnectionPool {
         generation: UUID,
         disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition
     ) async {
-        guard releaseEntry(for: key, generation: generation, disposition: disposition) else {
-            await connection.close()
-            return
-        }
-        if disposition == .invalidated {
+        switch releaseEntry(for: key, generation: generation, disposition: disposition) {
+        case .retained:
+            break
+        case .close:
             await connection.close()
         }
     }
@@ -988,13 +1017,13 @@ actor SSHTmuxAuthenticatedConnectionPool {
         guard var entry = entries[key], entry.generation == generation else {
             return .stale
         }
-        guard entry.activeLeaseCount == 0, entry.reservationID == reservationID else {
+        guard entry.reservationIDs.contains(reservationID) else {
             return .busy
         }
 
         entry.idleCloseTask?.cancel()
         entry.idleCloseTask = nil
-        entry.reservationID = nil
+        entry.reservationIDs.remove(reservationID)
         entry.activeLeaseCount += 1
         entries[key] = entry
         return .leased
@@ -1005,9 +1034,21 @@ actor SSHTmuxAuthenticatedConnectionPool {
         for key: SSHTmuxAuthenticatedConnectionPoolKey,
         generation: UUID,
         disposition: SSHTmuxAuthenticatedConnectionLeaseDisposition
-    ) -> Bool {
+    ) -> ReleaseEntryResult {
         guard var entry = entries[key], entry.generation == generation else {
-            return false
+            // A retired root: drain, close with the last lease.
+            if var retired = retiredEntries[generation] {
+                retired.activeLeaseCount = max(0, retired.activeLeaseCount - 1)
+                if retired.activeLeaseCount == 0 {
+                    retiredEntries.removeValue(forKey: generation)
+                    return .close
+                }
+                retiredEntries[generation] = retired
+                return .retained
+            }
+            // Unknown to the pool (dedicated or already evicted):
+            // the caller owns the close.
+            return .close
         }
 
         switch disposition {
@@ -1015,13 +1056,21 @@ actor SSHTmuxAuthenticatedConnectionPool {
             entry.activeLeaseCount = max(0, entry.activeLeaseCount - 1)
             entries[key] = entry
             scheduleIdleCloseIfNeeded(for: key, generation: generation)
+            return .retained
 
         case .invalidated:
             entry.idleCloseTask?.cancel()
             entries.removeValue(forKey: key)
+            let remaining = max(0, entry.activeLeaseCount - 1)
+            guard remaining > 0 else {
+                return .close
+            }
+            retiredEntries[generation] = RetiredEntry(
+                task: entry.task,
+                activeLeaseCount: remaining
+            )
+            return .retained
         }
-
-        return true
     }
 
     fileprivate func releaseReservation(
@@ -1031,11 +1080,11 @@ actor SSHTmuxAuthenticatedConnectionPool {
     ) {
         guard var entry = entries[key],
               entry.generation == generation,
-              entry.reservationID == reservationID else {
+              entry.reservationIDs.contains(reservationID) else {
             return
         }
 
-        entry.reservationID = nil
+        entry.reservationIDs.remove(reservationID)
         entries[key] = entry
         scheduleIdleCloseIfNeeded(for: key, generation: generation)
     }
@@ -1045,7 +1094,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
             .filter { key, entry in
                 key.serverID == serverID
                     && entry.activeLeaseCount == 0
-                    && entry.reservationID == nil
+                    && entry.reservationIDs.isEmpty
             }
 
         for (key, entry) in closing {
@@ -1063,6 +1112,12 @@ actor SSHTmuxAuthenticatedConnectionPool {
             entry.idleCloseTask?.cancel()
             closeEntryTask(entry.task, reason: "pool_closed")
         }
+
+        let retired = Array(retiredEntries.values)
+        retiredEntries.removeAll()
+        for entry in retired {
+            closeEntryTask(entry.task, reason: "pool_closed")
+        }
     }
 
     private func entrySnapshot(
@@ -1076,7 +1131,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
                 task: existing.task,
                 didReuse: true,
                 readiness: existing.readiness,
-                reservationID: existing.reservationID
+                reservationID: nil
             )
         }
 
@@ -1086,7 +1141,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
             generation: generation,
             task: task,
             activeLeaseCount: 0,
-            reservationID: nil,
+            reservationIDs: [],
             idleCloseTask: nil,
             readiness: .connecting
         )
@@ -1121,7 +1176,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
             generation: generation,
             task: task,
             activeLeaseCount: 0,
-            reservationID: reservationID,
+            reservationIDs: [reservationID],
             idleCloseTask: nil,
             readiness: .connecting
         )
@@ -1142,14 +1197,15 @@ actor SSHTmuxAuthenticatedConnectionPool {
         reservationID: UUID
     ) -> EntrySnapshot? {
         guard var existing = entries[key],
-              existing.activeLeaseCount == 0,
-              existing.reservationID == nil else {
+              existing.activeLeaseCount + existing.reservationIDs.count
+                  < Self.maxConcurrentLeases
+        else {
             return nil
         }
 
         existing.idleCloseTask?.cancel()
         existing.idleCloseTask = nil
-        existing.reservationID = reservationID
+        existing.reservationIDs.insert(reservationID)
         entries[key] = existing
         return EntrySnapshot(
             generation: existing.generation,
@@ -1223,7 +1279,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
         generation: UUID
     ) {
         guard var entry = entries[key], entry.generation == generation else { return }
-        guard entry.activeLeaseCount == 0, entry.reservationID == nil else { return }
+        guard entry.activeLeaseCount == 0, entry.reservationIDs.isEmpty else { return }
 
         entry.idleCloseTask?.cancel()
         entry.idleCloseTask = Task {
@@ -1244,7 +1300,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
         generation: UUID
     ) {
         guard let entry = entries[key], entry.generation == generation else { return }
-        guard entry.activeLeaseCount == 0, entry.reservationID == nil else { return }
+        guard entry.activeLeaseCount == 0, entry.reservationIDs.isEmpty else { return }
 
         entry.idleCloseTask?.cancel()
         entries.removeValue(forKey: key)
@@ -1268,7 +1324,7 @@ actor SSHTmuxAuthenticatedConnectionPool {
                 throw CancellationError()
             },
             activeLeaseCount: activeLeaseCount,
-            reservationID: reservationID,
+            reservationIDs: reservationID.map { [$0] } ?? [],
             idleCloseTask: idleCloseScheduled ? Self.testingIdleCloseTask() : nil,
             readiness: readiness
         )
