@@ -573,9 +573,18 @@ final class RemuxRootModel: ObservableObject {
             return
         }
 
+        var openedWorkspace = workspace
+        openedWorkspace.lastOpenedAt = Date()
+
+        // Activate before the bookkeeping: persisting lastOpenedAt and
+        // refreshing the library ordering measured 16-23ms of disk work
+        // on the open critical path. Activating first lets the screen
+        // build while the save runs; the awaits stay sequential in this
+        // call so later mutations (delete, edit) cannot interleave with
+        // a dangling save and resurrect a removed profile.
+        activate(server: server, workspace: openedWorkspace, sshAuth: sshAuth)
+
         do {
-            var openedWorkspace = workspace
-            openedWorkspace.lastOpenedAt = Date()
             try await dependencies.profileRepository.saveProfile(server: server, workspace: openedWorkspace)
             GhosttyRuntimeTrace.flowEvent(
                 flow,
@@ -587,14 +596,14 @@ final class RemuxRootModel: ObservableObject {
             )
             library = try await dependencies.profileRepository.loadSnapshot()
             GhosttyRuntimeTrace.flowEvent(flow, event: "model.connect.libraryReloaded")
-            activate(server: server, workspace: openedWorkspace, sshAuth: sshAuth)
         } catch {
-            GhosttyRuntimeTrace.flowEnd(
+            // The session is already active; failing to persist
+            // bookkeeping must not tear it down.
+            GhosttyRuntimeTrace.flowEvent(
                 flow,
-                event: "model.connect.failed",
+                event: "model.connect.profileSaveFailed",
                 fields: ["error": String(describing: error)]
             )
-            transitionToFailed(error)
         }
     }
 
