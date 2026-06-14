@@ -52,6 +52,47 @@ final class TmuxTerminalSessionShutdownDrainTests: XCTestCase {
         )
     }
 
+    private func splitSnapshot(
+        activePaneID: UInt64,
+        zoomed: Bool
+    ) -> TmuxSessionController.TopologySnapshot {
+        TmuxSessionController.TopologySnapshot(
+            sessionName: "zoom-test",
+            windows: [
+                TmuxSessionController.WindowInfo(
+                    id: 1,
+                    name: "w",
+                    active: true,
+                    zoomed: zoomed,
+                    width: 80,
+                    height: 24,
+                    activePaneID: activePaneID
+                )
+            ],
+            panes: [
+                TmuxSessionController.PaneInfo(
+                    id: 10,
+                    windowID: 1,
+                    x: 0,
+                    y: 0,
+                    width: zoomed && activePaneID == 10 ? 80 : 40,
+                    height: 24,
+                    state: .live
+                ),
+                TmuxSessionController.PaneInfo(
+                    id: 11,
+                    windowID: 1,
+                    x: 40,
+                    y: 0,
+                    width: zoomed && activePaneID == 11 ? 80 : 40,
+                    height: 24,
+                    state: .live
+                )
+            ],
+            activeWindowID: 1
+        )
+    }
+
     func testShutdownBlocksUntilInFlightCreateResolves() throws {
         let runtime = try GhosttyKitRuntime()
         var capturedCompletion: (@MainActor (Result<TmuxPaneSurface, TmuxPaneSurface.CreateError>) -> Void)?
@@ -101,5 +142,66 @@ final class TmuxTerminalSessionShutdownDrainTests: XCTestCase {
             shutdownFinished.fulfill()
         }
         wait(for: [shutdownFinished], timeout: 2.0)
+    }
+
+    func testUnzoomedSplitWaitsForZoomBeforeCreatingPaneSurface() async throws {
+        let runtime = try GhosttyKitRuntime()
+        var createCount = 0
+        let session = makeSession(runtime: runtime) { _, _, _, _, _, completion in
+            createCount += 1
+            completion(.failure(.surfaceCreationFailed))
+        }
+
+        session.handleTopology(splitSnapshot(activePaneID: 10, zoomed: false))
+        XCTAssertEqual(createCount, 0, "unzoomed split should request zoom and delay bind")
+
+        session.handleTopology(splitSnapshot(activePaneID: 10, zoomed: true))
+        XCTAssertEqual(createCount, 1, "confirmed zoom topology should allow bind/create")
+        await session.shutdown()
+    }
+
+    func testZoomFailureFallsBackToCurrentGeometry() async throws {
+        let runtime = try GhosttyKitRuntime()
+        var createCount = 0
+        let session = makeSession(runtime: runtime) { _, _, _, _, _, completion in
+            createCount += 1
+            completion(.failure(.surfaceCreationFailed))
+        }
+
+        session.handleTopology(splitSnapshot(activePaneID: 10, zoomed: false))
+        XCTAssertEqual(createCount, 0, "unzoomed split should wait for zoom before bind")
+
+        session.handleRequestFailedForTesting(.zoomPane)
+        XCTAssertEqual(createCount, 1, "zoom rejection should bind current server geometry")
+        await session.shutdown()
+    }
+
+    func testDetachDuringZoomWaitAllowsReconnectToRetryZoom() async throws {
+        let runtime = try GhosttyKitRuntime()
+        var createCount = 0
+        let session = makeSession(runtime: runtime) { _, _, _, _, _, completion in
+            createCount += 1
+            completion(.failure(.surfaceCreationFailed))
+        }
+
+        let unzoomed = splitSnapshot(activePaneID: 10, zoomed: false)
+        session.handleTopology(unzoomed)
+        XCTAssertEqual(createCount, 0, "first unzoomed snapshot should wait for zoom")
+
+        session.handleStateForTesting(.detached(.transportClosed))
+        session.handleTopology(unzoomed)
+        XCTAssertEqual(
+            createCount,
+            0,
+            "reconnect with unzoomed topology should not bind before zoom confirmation"
+        )
+
+        session.handleTopology(splitSnapshot(activePaneID: 10, zoomed: true))
+        XCTAssertEqual(
+            createCount,
+            1,
+            "confirmed zoom after reconnect should allow bind instead of staying stuck"
+        )
+        await session.shutdown()
     }
 }

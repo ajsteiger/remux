@@ -49,6 +49,16 @@ final class TmuxTerminalSession: ObservableObject {
     /// a swap is being prepared.
     private var presentingPaneID: UInt64?
 
+    /// Remux phone policy presents the active pane at full viewport
+    /// size. When tmux reports an unzoomed split window, request zoom
+    /// and wait for the confirming topology before binding/capturing.
+    private var awaitingZoomPaneID: UInt64?
+
+    /// If tmux rejects the zoom request, do not spin forever. Present
+    /// the pane at the server's current geometry until the active pane
+    /// changes or a later topology reports it zoomed.
+    private var zoomFailedPaneID: UInt64?
+
     /// Number of `TmuxPaneSurface.create` calls whose completion has not
     /// yet run. Pane-surface creation is asynchronous (it binds on the
     /// controller's writer queue), so a create can still be in flight
@@ -129,7 +139,7 @@ final class TmuxTerminalSession: ObservableObject {
                 onPaneLive: { _ in },
                 onPaneDegraded: { _ in },
                 onRequestFailed: { request in
-                    MainActor.assumeIsolated { relay.target?.lastFailedRequest = request }
+                    MainActor.assumeIsolated { relay.target?.handleRequestFailed(request) }
                 }
             )
         )
@@ -225,6 +235,8 @@ final class TmuxTerminalSession: ObservableObject {
     private func handleState(_ newState: TmuxSessionController.SessionState) {
         state = newState
         if case .detached = newState {
+            awaitingZoomPaneID = nil
+            zoomFailedPaneID = nil
             // Transport links don't outlive the connection; drop ours
             // so a reconnect builds a fresh one. The pane surface
             // stays: its binding (and frozen content) survive the
@@ -236,11 +248,32 @@ final class TmuxTerminalSession: ObservableObject {
         }
     }
 
+    #if DEBUG
+    func handleStateForTesting(_ newState: TmuxSessionController.SessionState) {
+        handleState(newState)
+    }
+
+    func handleRequestFailedForTesting(_ request: TmuxSessionController.Request) {
+        handleRequestFailed(request)
+    }
+    #endif
+
     /// Internal (not private) so a test can drive pane presentation —
     /// and therefore an in-flight create — without a live tmux session.
     func handleTopology(_ snapshot: TmuxSessionController.TopologySnapshot) {
         topology = snapshot
         presentActivePane(from: snapshot)
+    }
+
+    private func handleRequestFailed(_ request: TmuxSessionController.Request) {
+        lastFailedRequest = request
+        guard request == .zoomPane else { return }
+        guard let paneID = awaitingZoomPaneID else { return }
+        awaitingZoomPaneID = nil
+        zoomFailedPaneID = paneID
+        if let topology {
+            presentActivePane(from: topology)
+        }
     }
 
     /// The presentation rule, recomputed from every snapshot: show the
@@ -257,6 +290,13 @@ final class TmuxTerminalSession: ObservableObject {
             return
         }
 
+        if awaitingZoomPaneID != paneID {
+            awaitingZoomPaneID = nil
+        }
+        if zoomFailedPaneID != paneID {
+            zoomFailedPaneID = nil
+        }
+
         // Phone presentation policy (matches the legacy pipeline): the
         // presented pane is zoomed so it owns the full client size.
         // Selection keeps zoom engine-side, so this fires only when an
@@ -264,8 +304,18 @@ final class TmuxTerminalSession: ObservableObject {
         // an externally unzoomed window is respected until the
         // presented pane changes.
         if !window.zoomed,
-           snapshot.panes.filter({ $0.windowID == windowID }).count > 1 {
+           snapshot.panes.filter({ $0.windowID == windowID }).count > 1,
+           zoomFailedPaneID != paneID {
+            if awaitingZoomPaneID == paneID {
+                return
+            }
+            awaitingZoomPaneID = paneID
             controller.requestZoomPane(paneID: paneID)
+            return
+        }
+        awaitingZoomPaneID = nil
+        if window.zoomed {
+            zoomFailedPaneID = nil
         }
 
         presentingPaneID = paneID

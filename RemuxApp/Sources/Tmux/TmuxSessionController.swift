@@ -461,6 +461,8 @@ final class TmuxSessionController: @unchecked Sendable {
                 DispatchQueue.main.async { completion(.failure(.paneUnknown)) }
             case GHOSTTY_TMUX_RESULT_ALREADY_BOUND:
                 DispatchQueue.main.async { completion(.failure(.alreadyBound)) }
+            case GHOSTTY_TMUX_RESULT_DETACHED:
+                DispatchQueue.main.async { completion(.failure(.detachedSession)) }
             default:
                 DispatchQueue.main.async { completion(.failure(.outOfMemory)) }
             }
