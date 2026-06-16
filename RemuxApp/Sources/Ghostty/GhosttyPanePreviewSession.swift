@@ -47,6 +47,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
         typealias Start = @MainActor (
             UUID,
             ghostty_surface_preview_image_options_s,
+            PreviewGrid?,
             UnsafeMutableRawPointer?,
             ghostty_surface_preview_image_callback_f
         ) -> PreviewStartResult
@@ -71,6 +72,11 @@ final class GhosttyPanePreviewSession: ObservableObject {
         }
     }
 
+    struct PreviewGrid: Equatable {
+        let cols: UInt32
+        let rows: UInt32
+    }
+
     /// Per-pane preview state observed by the panes sheet. The `failed` case
     /// preserves the raw Ghostty status so future UI can disambiguate
     /// surface-closed vs invalid-options vs render-failed.
@@ -86,6 +92,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
 
     private let displayScale: CGFloat
     private let previewSizing: PreviewSizing
+    private let previewGrid: PreviewGrid?
     private let previewRequestClient: PreviewRequestClient
     private let retryDelay: Duration
     private var pendingRequests: [UUID: GhosttyPreviewRequestLease] = [:]
@@ -96,11 +103,13 @@ final class GhosttyPanePreviewSession: ObservableObject {
         leafIDs: [UUID],
         scale: CGFloat = PanePreviewLayout.currentScale(),
         previewSizing: PreviewSizing? = nil,
+        previewGrid: PreviewGrid? = nil,
         retryDelay: Duration? = nil,
         previewRequestClient: PreviewRequestClient
     ) {
         self.displayScale = scale
         self.previewSizing = previewSizing ?? .paneGridForCurrentScreen
+        self.previewGrid = previewGrid
         self.previewRequestClient = previewRequestClient
         self.retryDelay = retryDelay ?? Self.transientRetryDelay
         startInitialRequests(leafIDs: leafIDs)
@@ -347,7 +356,7 @@ final class GhosttyPanePreviewSession: ObservableObject {
         options: ghostty_surface_preview_image_options_s,
         userdata: UnsafeMutableRawPointer?
     ) -> PreviewStartResult {
-        previewRequestClient.start(paneID, options, userdata, previewImageCallback)
+        previewRequestClient.start(paneID, options, previewGrid, userdata, previewImageCallback)
     }
 }
 
