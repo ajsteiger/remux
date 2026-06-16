@@ -232,7 +232,7 @@ prepare_dense_mixed_fixture() {
       -o BatchMode=no \
       -o NumberOfPasswordPrompts=1 \
       -o ConnectTimeout=10 \
-      "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+      "${ssh_auth_args[@]}" \
       "$username@$host" \
       sh -s -- "$session" <<'REMOTE'
 set -eu
@@ -308,7 +308,7 @@ cleanup_generated_sessions() {
         -o BatchMode=no \
         -o NumberOfPasswordPrompts=1 \
         -o ConnectTimeout=10 \
-        "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+        "${ssh_auth_args[@]}" \
         "$username@$host" \
         "$remote_command" </dev/null; then
       status=1
@@ -367,7 +367,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
-            "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux window count for %s\n' "$session" >&2
@@ -408,7 +408,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
-            "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux window pane count for %s window %s\n' "$session" "$arg1" >&2
@@ -449,7 +449,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
-            "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux pane count for %s\n' "$session" >&2
@@ -490,7 +490,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
-            "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$remote_command" </dev/null)"; then
           printf 'failed to verify tmux pane mode for %s pane %s\n' "$session" "$arg1" >&2
@@ -530,7 +530,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
-            "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$capture_command" </dev/null; then
           printf 'tmux pane-index-contains expectation failed for %s pane %s marker %s\n' "$session" "$arg1" "$arg2" >&2
@@ -564,7 +564,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
-            "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             "$capture_command" </dev/null; then
           printf 'tmux window-index-contains expectation failed for %s window %s marker %s\n' "$session" "$arg1" "$arg2" >&2
@@ -603,7 +603,7 @@ verify_tmux_expectations() {
             -o BatchMode=no \
             -o NumberOfPasswordPrompts=1 \
             -o ConnectTimeout=10 \
-            "${ssh_auth_args[@]+"${ssh_auth_args[@]}"}" \
+            "${ssh_auth_args[@]}" \
             "$username@$host" \
             sh -s -- "$session" "$window_index" "$pane_index" "$arg2" <<'REMOTE_EXPECTATION'
 set -eu
