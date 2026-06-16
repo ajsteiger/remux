@@ -387,16 +387,32 @@ extension TmuxTerminalScreenAdapter: GhosttyTerminalScreenModeling {
         leafIDs: [UUID],
         previewSizing: GhosttyPanePreviewSession.PreviewSizing
     ) -> GhosttyPanePreviewSession {
-        GhosttyPanePreviewSession(
+        let previewGrid = previewGrid(
+            for: previewSizing,
+            previewItemCount: max(1, leafIDs.count)
+        )
+        return GhosttyPanePreviewSession(
             leafIDs: leafIDs,
             previewSizing: previewSizing,
+            previewGrid: previewGrid,
             previewRequestClient: GhosttyPanePreviewSession.PreviewRequestClient(
-                start: { [weak self] leafID, options, userdata, callback in
-                    guard let managed = self?.managedSurface(for: leafID) else {
+                start: { [weak self] leafID, options, previewGrid, userdata, callback in
+                    guard let self else {
                         return .surfaceUnavailable
                     }
-                    guard let request = managed.controlSurface.renderPreviewImageAsync(
+                    guard let paneID = self.paneIDsByUUID[leafID] else {
+                        return .surfaceUnavailable
+                    }
+                    guard let styleSurface = self.activeManagedSurface?.controlSurface.handle else {
+                        return .surfaceUnavailable
+                    }
+                    guard let request = self.controller?.renderPanePreviewImageAsync(
+                        paneID: paneID,
+                        styleSurface: styleSurface,
                         options: options,
+                        previewGrid: previewGrid.map {
+                            TmuxSessionController.ClientSize(cols: $0.cols, rows: $0.rows)
+                        },
                         userdata: userdata,
                         callback: callback
                     ) else {
@@ -407,6 +423,45 @@ extension TmuxTerminalScreenAdapter: GhosttyTerminalScreenModeling {
                 cancel: { GhosttyKitControlSurface.cancelPreviewRequest($0) },
                 release: { GhosttyKitControlSurface.releasePreviewRequest($0) }
             )
+        )
+    }
+
+    private func previewGrid(
+        for previewSizing: GhosttyPanePreviewSession.PreviewSizing,
+        previewItemCount: Int
+    ) -> GhosttyPanePreviewSession.PreviewGrid? {
+        guard let clientSize = controller?.lastClientSize, clientSize.cols > 0 else {
+            return nil
+        }
+        guard let surfaceSize = activeManagedSurface?.controlSurface.currentSize(),
+              surfaceSize.cell_width_px > 0,
+              surfaceSize.cell_height_px > 0
+        else {
+            return nil
+        }
+
+        let budget: (width: UInt32, height: UInt32) = switch previewSizing {
+        case .paneGrid(let availableWidth):
+            PanePreviewLayout.physicalPixelBudget(
+                paneCount: previewItemCount,
+                availableWidth: availableWidth,
+                scale: PanePreviewLayout.currentScale()
+            )
+        case .windowGrid(let availableWidth):
+            PanePreviewLayout.windowPhysicalPixelBudget(
+                availableWidth: availableWidth,
+                scale: PanePreviewLayout.currentScale()
+            )
+        }
+        guard budget.width > 0, budget.height > 0 else { return nil }
+
+        let rows = Double(clientSize.cols) *
+            Double(budget.height) *
+            Double(surfaceSize.cell_width_px) /
+            (Double(budget.width) * Double(surfaceSize.cell_height_px))
+        return GhosttyPanePreviewSession.PreviewGrid(
+            cols: clientSize.cols,
+            rows: max(1, UInt32(rows.rounded()))
         )
     }
 

@@ -592,6 +592,36 @@ final class TmuxSessionController: @unchecked Sendable {
         submit { ghostty_tmux_session_request_copy_mode($0, paneID) }
     }
 
+    func renderPanePreviewImageAsync(
+        paneID: UInt64,
+        styleSurface: ghostty_surface_t?,
+        options: ghostty_surface_preview_image_options_s,
+        previewGrid: ClientSize?,
+        userdata: UnsafeMutableRawPointer?,
+        callback: ghostty_surface_preview_image_callback_f
+    ) -> ghostty_surface_preview_request_t? {
+        func perform() -> ghostty_surface_preview_request_t? {
+            guard let session, let styleSurface else { return nil }
+            let tmuxOptions = ghostty_tmux_pane_preview_image_options_s(
+                image: options,
+                preview_cols: previewGrid?.cols ?? 0,
+                preview_rows: previewGrid?.rows ?? 0
+            )
+            let request = ghostty_tmux_session_render_pane_preview_image_async(
+                session,
+                styleSurface,
+                paneID,
+                tmuxOptions,
+                userdata,
+                callback
+            )
+            drainOutbound()
+            return request
+        }
+
+        return queue.sync(execute: perform)
+    }
+
     private func submit(
         _ body: @escaping (ghostty_tmux_session_t) -> ghostty_tmux_result_e
     ) {
