@@ -181,6 +181,7 @@ final class TmuxSessionController: @unchecked Sendable {
         config.handshake_timeout_ms = 0 // library default
         config.command_timeout_ms = 0 // library default
         config.history_line_cap = 0 // library default
+        config.materialization_policy = GHOSTTY_TMUX_MATERIALIZATION_POLICY_ALL_PANES
 
         // The session must be created before any callback can fire;
         // the event callback only runs inside pump/tick on our queue.
