@@ -319,6 +319,24 @@ final class GhosttySurfaceScrollGestureTests: XCTestCase {
         )
     }
 
+    func testPaneScrollGeometryMapsBottomStateToUIKitBottomOffset() {
+        let state = GhosttySurfaceScrollState(
+            total: 100,
+            offset: 80,
+            len: 20,
+            cellOffset: 0
+        )
+
+        XCTAssertEqual(
+            GhosttyPaneScrollGeometry.contentOffsetY(
+                for: state,
+                cellHeight: 10,
+                maxContentOffsetY: 900
+            ),
+            900
+        )
+    }
+
     func testPaneScrollGeometryMapsScrollbarStateToScrollPosition() {
         let state = GhosttySurfaceScrollState(
             total: 100,

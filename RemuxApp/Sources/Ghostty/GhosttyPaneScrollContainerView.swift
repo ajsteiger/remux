@@ -49,6 +49,9 @@ enum GhosttyPaneScrollGeometry {
         guard cellHeight.isFinite, cellHeight > 0 else { return 0 }
 
         let row = min(state.offset, state.maxRow)
+        if row == state.maxRow {
+            return max(maxContentOffsetY, 0)
+        }
         let cellOffset = row == state.maxRow
             ? 0
             : min(max(state.cellOffset, 0), 0.999_999_999)
