@@ -1131,6 +1131,7 @@ final class RemuxRootModel: ObservableObject {
 
     private func transitionToFailed(_ error: any Error) {
         stopAllTerminalScreenModels()
+        activeSessions.removeAll()
         state = .failed(String(describing: error))
     }
 

@@ -1543,6 +1543,8 @@ final class RemuxRootModelTests: XCTestCase {
             XCTFail("expected failed state")
             return
         }
+        XCTAssertTrue(harness.model.activeSessions.isEmpty)
+        XCTAssertTrue(harness.model.activeTerminalScreenEntries.isEmpty)
         XCTAssertFalse(harness.model.hasTerminalScreenModel(for: session))
         await waitForStopped(terminalModel)
     }
