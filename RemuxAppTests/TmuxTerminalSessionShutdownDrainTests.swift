@@ -160,6 +160,30 @@ final class TmuxTerminalSessionShutdownDrainTests: XCTestCase {
         await session.shutdown()
     }
 
+    func testPresentedSamePaneRequestsZoomWhenWindowBecomesUnzoomed() async throws {
+        let runtime = try GhosttyKitRuntime()
+        var createCount = 0
+        var capturedCompletion: (@MainActor (Result<TmuxPaneSurface, TmuxPaneSurface.CreateError>) -> Void)?
+        let session = makeSession(runtime: runtime) { _, _, _, _, _, completion in
+            createCount += 1
+            capturedCompletion = completion
+        }
+
+        session.handleTopology(splitSnapshot(activePaneID: 10, zoomed: true))
+        XCTAssertEqual(createCount, 1, "zoomed topology should start presenting the active pane")
+
+        session.handleTopology(splitSnapshot(activePaneID: 10, zoomed: false))
+        XCTAssertEqual(
+            session.requestedZoomPaneIDsForTesting,
+            [10],
+            "the mobile zoom policy must run even when the active pane is already being presented"
+        )
+        XCTAssertEqual(createCount, 1, "requesting zoom should keep the existing presentation in place")
+
+        capturedCompletion?(.failure(.surfaceCreationFailed))
+        await session.shutdown()
+    }
+
     func testZoomFailureFallsBackToCurrentGeometry() async throws {
         let runtime = try GhosttyKitRuntime()
         var createCount = 0

@@ -249,6 +249,8 @@ final class TmuxTerminalSession: ObservableObject {
     }
 
     #if DEBUG
+    private(set) var requestedZoomPaneIDsForTesting: [UInt64] = []
+
     func handleStateForTesting(_ newState: TmuxSessionController.SessionState) {
         handleState(newState)
     }
@@ -286,10 +288,6 @@ final class TmuxTerminalSession: ObservableObject {
             let paneID = window.activePaneID
         else { return }
 
-        if paneSurface?.paneID == paneID || presentingPaneID == paneID {
-            return
-        }
-
         if awaitingZoomPaneID != paneID {
             awaitingZoomPaneID = nil
         }
@@ -299,23 +297,31 @@ final class TmuxTerminalSession: ObservableObject {
 
         // Phone presentation policy (matches the legacy pipeline): the
         // presented pane is zoomed so it owns the full client size.
-        // Selection keeps zoom engine-side, so this fires only when an
-        // unzoomed multi-pane window becomes the presentation target;
-        // an externally unzoomed window is respected until the
-        // presented pane changes.
-        if !window.zoomed,
-           snapshot.panes.filter({ $0.windowID == windowID }).count > 1,
-           zoomFailedPaneID != paneID {
+        // Run this before the same-pane early return: another tmux
+        // client can split/unzoom the currently presented window without
+        // changing the active pane, and Remux still must restore the
+        // full-screen mobile presentation.
+        let hasSiblingPane = snapshot.panes.contains {
+            $0.windowID == windowID && $0.id != paneID
+        }
+        if !window.zoomed, hasSiblingPane, zoomFailedPaneID != paneID {
             if awaitingZoomPaneID == paneID {
                 return
             }
             awaitingZoomPaneID = paneID
+            #if DEBUG
+            requestedZoomPaneIDsForTesting.append(paneID)
+            #endif
             controller.requestZoomPane(paneID: paneID)
             return
         }
         awaitingZoomPaneID = nil
         if window.zoomed {
             zoomFailedPaneID = nil
+        }
+
+        if paneSurface?.paneID == paneID || presentingPaneID == paneID {
+            return
         }
 
         presentingPaneID = paneID
