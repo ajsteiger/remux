@@ -321,7 +321,12 @@ private final class GhosttyKitRuntimeState {
         guard let config = ghostty_config_new() else {
             throw GhosttyKitRuntimeError.configCreationFailed
         }
-        try Self.loadSettings(terminalSettings, into: config, effectiveFontSize: nil)
+        let appearance = GhosttyTerminalAppearancePolicy.currentDeviceAppearance(settings: terminalSettings)
+        try Self.loadSettings(
+            terminalSettings,
+            into: config,
+            effectiveFontSize: appearance.fontSize
+        )
         ghostty_config_finalize(config)
 
         let callbackLease = surfaceDelegate?.makeRuntimeCallbackLease()
