@@ -532,14 +532,14 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
     }
 
     @MainActor
-    func testResponderCanStayEligibleWithoutRequestingFirstResponder() {
+    func testResponderDefersBecomeWhenWanted() async {
         let view = GhosttyTerminalResponderUIView()
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
         window.rootViewController = UIViewController()
         window.rootViewController?.view.addSubview(view)
         window.makeKeyAndVisible()
         defer {
-            view.resignFirstResponder()
+            _ = view.resignFirstResponder()
             view.removeFromSuperview()
             window.isHidden = true
             window.rootViewController = nil
@@ -568,7 +568,9 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
             onTrackpadStateChange: { _ in }
         )
 
-        XCTAssertTrue(view.isFirstResponder)
+        XCTAssertFalse(view.isFirstResponder)
+        let becameFirstResponder = await waitUntil { view.isFirstResponder }
+        XCTAssertTrue(becameFirstResponder)
     }
 
     @MainActor
@@ -613,6 +615,47 @@ final class GhosttyTerminalResponderViewTests: XCTestCase {
 
         let recoveredFirstResponder = await waitUntil { view.isFirstResponder }
         XCTAssertTrue(recoveredFirstResponder)
+    }
+
+    @MainActor
+    func testResponderDefersResignWhenNoLongerWanted() async {
+        let view = GhosttyTerminalResponderUIView()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        window.rootViewController = UIViewController()
+        window.rootViewController?.view.addSubview(view)
+        window.makeKeyAndVisible()
+        defer {
+            _ = view.resignFirstResponder()
+            view.removeFromSuperview()
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+
+        view.update(
+            isEnabled: true,
+            wantsFirstResponder: true,
+            activationToken: 3,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true },
+            onTrackpadStateChange: { _ in }
+        )
+        let initiallyBecameFirstResponder = await waitUntil { view.isFirstResponder }
+        XCTAssertTrue(initiallyBecameFirstResponder)
+
+        view.update(
+            isEnabled: true,
+            wantsFirstResponder: false,
+            activationToken: 3,
+            sendText: { _ in true },
+            sendPaste: { _ in true },
+            sendKeyEvent: { _ in true },
+            onTrackpadStateChange: { _ in }
+        )
+
+        XCTAssertTrue(view.isFirstResponder)
+        let didResignFirstResponder = await waitUntil { !view.isFirstResponder }
+        XCTAssertTrue(didResignFirstResponder)
     }
 
     @MainActor

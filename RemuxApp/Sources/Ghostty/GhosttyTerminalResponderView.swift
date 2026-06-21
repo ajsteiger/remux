@@ -86,6 +86,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
     private var wantsFirstResponder = false
     private var activationToken = -1
     private var pendingFirstResponderRequest = false
+    private var responderReconciliationScheduled = false
     private var sendTextHandler: ((String) -> Bool)?
     private var sendPasteHandler: ((String) -> Bool)?
     private var sendKeyEventHandler: ((GhosttySurfaceKeyEvent) -> Bool)?
@@ -139,22 +140,16 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
 
         if !isEnabled {
             cancelTrackpadGestureIfActive(reason: "disabled")
-            if isFirstResponder {
-                GhosttyRuntimeTrace.diagnostics("responder.update resign disabled token=\(activationToken)")
-                resignFirstResponder()
-            }
             pendingFirstResponderRequest = false
             self.activationToken = activationToken
+            scheduleResponderReconciliationIfNeeded(reason: "disabled")
             return
         }
 
         guard wantsFirstResponder else {
-            if isFirstResponder {
-                GhosttyRuntimeTrace.diagnostics("responder.update resign not-wanted token=\(activationToken)")
-                resignFirstResponder()
-            }
             pendingFirstResponderRequest = false
             self.activationToken = activationToken
+            scheduleResponderReconciliationIfNeeded(reason: "not-wanted")
             return
         }
 
@@ -166,7 +161,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
 
         self.activationToken = activationToken
         pendingFirstResponderRequest = true
-        requestFirstResponderIfNeeded()
+        scheduleResponderReconciliationIfNeeded(reason: "request")
     }
 
     func insertText(_ text: String) {
@@ -202,7 +197,7 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
             // visible after the surface this responder belonged to is gone.
             cancelTrackpadGestureIfActive(reason: "didMoveToWindow.nil")
         }
-        requestFirstResponderIfNeeded()
+        scheduleResponderReconciliationIfNeeded(reason: "didMoveToWindow")
     }
 
     override func becomeFirstResponder() -> Bool {
@@ -407,53 +402,70 @@ final class GhosttyTerminalResponderUIView: UIView, UIKeyInput, UITextInputTrait
         }
     }
 
-    private func requestFirstResponderIfNeeded() {
-        guard pendingFirstResponderRequest else { return }
+    private func scheduleResponderReconciliationIfNeeded(reason: String) {
+        guard needsResponderReconciliation else { return }
+        guard !responderReconciliationScheduled else { return }
+
+        responderReconciliationScheduled = true
+        GhosttyRuntimeTrace.flowEventIfActive(
+            "terminal.input",
+            event: "responder.reconcile.scheduled",
+            fields: [
+                "reason": reason,
+                "token": "\(activationToken)",
+            ]
+        )
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.reconcileResponderState()
+        }
+    }
+
+    private var needsResponderReconciliation: Bool {
+        if isFirstResponder {
+            return !isInputEnabled || !wantsFirstResponder || pendingFirstResponderRequest
+        }
+
+        return isInputEnabled && wantsFirstResponder && pendingFirstResponderRequest
+    }
+
+    private func reconcileResponderState() {
+        responderReconciliationScheduled = false
+
         guard isInputEnabled else {
-            GhosttyRuntimeTrace.perf("responder.requestFirstResponder skip-disabled token=\(activationToken)")
-            return
-        }
-        guard wantsFirstResponder else {
-            GhosttyRuntimeTrace.perf("responder.requestFirstResponder skip-not-wanted token=\(activationToken)")
             pendingFirstResponderRequest = false
+            guard isFirstResponder else { return }
+            GhosttyRuntimeTrace.diagnostics("responder.reconcile resign disabled token=\(activationToken)")
+            _ = resignFirstResponder()
             return
         }
+
+        guard wantsFirstResponder else {
+            pendingFirstResponderRequest = false
+            guard isFirstResponder else { return }
+            GhosttyRuntimeTrace.diagnostics("responder.reconcile resign not-wanted token=\(activationToken)")
+            _ = resignFirstResponder()
+            return
+        }
+
+        guard pendingFirstResponderRequest else { return }
         guard window != nil else {
             GhosttyRuntimeTrace.perf("responder.requestFirstResponder skip-no-window token=\(activationToken)")
             return
         }
 
         GhosttyRuntimeTrace.perf(
-            "responder.requestFirstResponder immediate token=\(activationToken) firstResponder=\(isFirstResponder)"
+            "responder.requestFirstResponder deferred token=\(activationToken) firstResponder=\(isFirstResponder)"
         )
         GhosttyRuntimeTrace.flowEventIfActive(
             "terminal.input",
             event: "responder.becomeFirstResponder.scheduled",
             fields: [
-                "route": "immediate",
+                "route": "reconcile",
                 "token": "\(activationToken)",
             ]
         )
-        if attemptFirstResponderRequest(route: "immediate") {
-            return
-        }
-
-        GhosttyRuntimeTrace.flowEventIfActive(
-            "terminal.input",
-            event: "responder.becomeFirstResponder.scheduled",
-            fields: [
-                "route": "deferred",
-                "token": "\(activationToken)",
-            ]
-        )
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard self.pendingFirstResponderRequest else { return }
-            guard self.isInputEnabled else { return }
-            guard self.wantsFirstResponder else { return }
-
-            _ = self.attemptFirstResponderRequest(route: "deferred")
-        }
+        _ = attemptFirstResponderRequest(route: "reconcile")
     }
 
     @discardableResult
