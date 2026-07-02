@@ -1,0 +1,39 @@
+version: "3"
+
+vars:
+  GHOSTTYKIT_XCFRAMEWORK: ../ghostty-tmux-pane-store-refactor/macos/GhosttyKit.xcframework
+  DESTINATION: generic/platform=iOS Simulator
+  TEST_DESTINATION: platform=iOS Simulator,name=iPhone 17,OS=latest
+
+tasks:
+  preflight:
+    internal: true
+    cmds:
+      - test -d "{{.GHOSTTYKIT_XCFRAMEWORK}}" || (echo "Missing {{.GHOSTTYKIT_XCFRAMEWORK}}" && exit 1)
+
+  generate:
+    deps: [preflight]
+    cmds:
+      - xcodegen generate
+
+  build:
+    deps: [preflight]
+    cmds:
+      - xcodebuild build -project Remux.xcodeproj -scheme Remux -destination "{{.DESTINATION}}"
+
+  test:
+    deps: [preflight]
+    cmds:
+      - xcodebuild test -project Remux.xcodeproj -scheme Remux -destination "{{.TEST_DESTINATION}}"
+
+  start:
+    deps: [build]
+
+  stop:
+    cmds:
+      - pkill -x Remux || true
+
+  restart:
+    cmds:
+      - task: stop
+      - task: start
